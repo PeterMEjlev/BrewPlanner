@@ -1,5 +1,6 @@
 import type {
   ActiveState,
+  AuthState,
   ChecklistSummary,
   ChecklistWithSteps,
   Step,
@@ -13,6 +14,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // rejects an empty body that declares `Content-Type: application/json`.
   const headers = init?.body ? { 'Content-Type': 'application/json' } : undefined;
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  // A 401 on a normal request means the session expired (or never existed for
+  // a remote client). Bounce to the login page — except on /auth/* calls,
+  // where the caller handles the status itself (e.g. wrong password on login).
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    window.location.assign('/login');
+    throw new Error('401: Authentication required');
+  }
   if (!res.ok) {
     let detail = '';
     try {
@@ -29,6 +37,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // Auth
+  getAuth: () => request<AuthState>('/auth/me'),
+  login: (username: string, password: string) =>
+    request<AuthState>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => request<void>('/auth/logout', { method: 'POST' }),
+
   // Checklists
   listChecklists: () => request<ChecklistSummary[]>('/checklists'),
   getChecklist: (id: number) => request<ChecklistWithSteps>(`/checklists/${id}`),

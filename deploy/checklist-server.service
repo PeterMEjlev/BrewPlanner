@@ -11,6 +11,14 @@ WorkingDirectory=/home/pi/checklist
 Environment=DATABASE_PATH=/home/pi/checklist/data/checklist.sqlite
 Environment=PORT=3000
 Environment=HOST=0.0.0.0
+# Production mode: mark session cookies Secure (they only travel over the HTTPS
+# Cloudflare tunnel; local kiosk access is trusted and needs no cookie).
+Environment=NODE_ENV=production
+Environment=COOKIE_SECURE=true
+# Secrets (SESSION_SECRET, ADMIN_USERNAME, ADMIN_PASSWORD) live in this file,
+# which is NOT in git. Create it from deploy/brewplanner.env.example.
+# "-" means the unit still starts if the file is absent.
+EnvironmentFile=-/etc/brewplanner.env
 ExecStart=/usr/bin/node apps/server/dist/index.js
 Restart=on-failure
 RestartSec=3

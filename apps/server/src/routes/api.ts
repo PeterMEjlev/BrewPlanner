@@ -12,6 +12,7 @@ import {
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { requireAuth } from '../auth/index.js';
 import * as repo from '../repo.js';
 
 /** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
@@ -25,6 +26,11 @@ function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T |
 }
 
 export async function apiRoutes(app: FastifyInstance): Promise<void> {
+  // Every route below requires authentication, except when the request is
+  // trusted-local (the Pi's own kiosk on the LAN). Auth endpoints live in a
+  // separate plugin (/api/auth) and are deliberately not affected by this.
+  app.addHook('preHandler', requireAuth);
+
   // --- Checklists -------------------------------------------------------
   app.get('/checklists', async () => repo.listChecklists());
 

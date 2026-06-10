@@ -1,8 +1,11 @@
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
+import { authRoutes, seedAdminUser } from './auth/index.js';
+import { resolveSessionSecret } from './auth/secret.js';
 import { runMigrations } from './db/index.js';
 import { apiRoutes } from './routes/api.js';
 
@@ -16,6 +19,16 @@ async function main(): Promise<void> {
   runMigrations();
 
   const app = Fastify({ logger: true });
+
+  // Ensure a login account exists (first boot creates the admin user).
+  seedAdminUser(app.log);
+
+  // Signed session cookies. The secret signs the session cookie; a stable
+  // value keeps sessions valid across restarts. See auth/secret.ts.
+  await app.register(fastifyCookie, { secret: resolveSessionSecret(app.log) });
+
+  // Auth endpoints (login/logout/me) live outside the guarded /api routes.
+  await app.register(authRoutes, { prefix: '/api/auth' });
 
   // Treat an empty body as no body even when the request declares
   // `Content-Type: application/json` — several endpoints are bodyless POSTs.

@@ -1,0 +1,16 @@
+[Unit]
+Description=Cloudflare Tunnel for BrewPlanner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# cloudflared reads /etc/cloudflared/config.yml (see cloudflared-config.example.yml).
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/config.yml tunnel run
+Restart=on-failure
+RestartSec=5
+# The tunnel only needs to reach localhost:3000; run it unprivileged.
+User=pi
+
+[Install]
+WantedBy=multi-user.target

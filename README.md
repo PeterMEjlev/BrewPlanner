@@ -95,6 +95,9 @@ device just works. Data persists in the file at `DATABASE_PATH`
 
 | Method | Path                                       | Purpose                              |
 | ------ | ------------------------------------------ | ------------------------------------ |
+| GET    | `/api/auth/me`                             | Current user + whether local-trusted |
+| POST   | `/api/auth/login`                          | Log in (`{ username, password }`)    |
+| POST   | `/api/auth/logout`                         | Clear the session                    |
 | GET    | `/api/checklists`                          | List checklists (with step counts)   |
 | POST   | `/api/checklists`                          | Create a checklist                   |
 | GET    | `/api/checklists/:id`                      | Get a checklist with its steps       |
@@ -130,15 +133,50 @@ checklist (no steps, runs or progress reset). On the `/display` page it lives
 behind its own **To-Do** button in the top bar so it never gets mixed up with
 procedure checklists; the button shows a badge with the open-item count.
 
+## Authentication & remote access
+
+The app supports logging in and being reached from anywhere over the internet,
+while the Pi's own touchscreen keeps working with no login.
+
+- **Sessions** are signed, httpOnly cookies (`@fastify/cookie`). Passwords are
+  hashed with scrypt (Node built-in — nothing to compile on the Pi). Accounts
+  live in a real `users` table; the app ships with a single admin but can grow
+  to multiple users/roles without rework.
+- **Trusted-local bypass**: requests that hit the server directly on
+  loopback/LAN *without* Cloudflare headers (the kiosk, LAN PCs) skip the login.
+  Requests arriving through the Cloudflare tunnel require a session. Force a
+  login everywhere with `TRUST_LOCAL=false`.
+- **First boot** seeds an `admin` user from `ADMIN_USERNAME` / `ADMIN_PASSWORD`,
+  or generates a one-off password and logs it. Reset any time with
+  `npm run user -- <username> <password>`.
+
+In **local development** everything runs on localhost, which is trusted-local,
+so `npm run dev` needs no login — the `/login` page only matters for remote
+access.
+
+| Env var          | Purpose                                                        |
+| ---------------- | -------------------------------------------------------------- |
+| `SESSION_SECRET` | Signs session cookies. Auto-generated + persisted if unset.    |
+| `ADMIN_USERNAME` | Initial admin username (first boot only). Default `admin`.     |
+| `ADMIN_PASSWORD` | Initial admin password (first boot only).                      |
+| `COOKIE_SECURE`  | Mark cookies Secure (auto-on when `NODE_ENV=production`).       |
+| `TRUST_LOCAL`    | Set to `false` to require login even on the LAN/kiosk.         |
+
+To expose the app at your own domain over HTTPS via a **Cloudflare Tunnel** (no
+port-forwarding, home IP stays hidden), see
+**[deploy/README-internet.md](deploy/README-internet.md)**.
+
 ## Raspberry Pi deployment
 
 See **[deploy/README-pi.md](deploy/README-pi.md)** for the full appliance setup:
 flashing Raspberry Pi OS Lite, setting the `checklist01.local` hostname,
 installing the systemd services, and launching Chromium in kiosk mode with
-`cage` (no desktop environment).
+`cage` (no desktop environment). For internet exposure + login, then follow
+**[deploy/README-internet.md](deploy/README-internet.md)**.
 
-## Roadmap (intentionally out of scope for v1)
+## Roadmap
 
-Reverse proxy + HTTPS, authentication / operator login, CSV exports, barcode
-scanner input, audit trail. The structure (shared contract, per-run history
-rows, single API surface) is set up to add these later without rework.
+CSV exports, barcode scanner input, audit trail, plus the "other data and
+sensors" integrations the dashboard is being prepared for. The structure
+(shared contract, per-run history rows, single API surface, real users table)
+is set up to add these without rework.

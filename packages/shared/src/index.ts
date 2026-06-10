@@ -69,9 +69,36 @@ export interface Todo {
   doneAt: string | null;
 }
 
+/**
+ * An authenticated user. The password hash never leaves the server, so the
+ * shape exposed to the client is intentionally just the public fields.
+ */
+export interface User {
+  id: number;
+  username: string;
+  createdAt: string;
+}
+
+/**
+ * Result of GET /api/auth/me. `isLocal` is true when the request reached the
+ * server directly on the LAN/loopback (e.g. the Pi's own kiosk) rather than
+ * through the public Cloudflare tunnel — those requests are trusted without a
+ * login so operators are never locked out of the physical touchscreen.
+ */
+export interface AuthState {
+  user: User | null;
+  isLocal: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Request validation schemas (Zod)
 // ---------------------------------------------------------------------------
+
+export const loginSchema = z.object({
+  username: z.string().trim().min(1, 'Username is required').max(200),
+  password: z.string().min(1, 'Password is required').max(500),
+});
+export type LoginInput = z.infer<typeof loginSchema>;
 
 /**
  * Optional free-text description for a step or to-do. An empty/blank value is

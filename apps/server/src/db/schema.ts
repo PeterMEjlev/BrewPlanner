@@ -7,6 +7,23 @@ import { integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
  * (see db/index.ts) and can also be run manually with `npm run db:migrate`.
  */
 
+/**
+ * Login accounts. The appliance ships with a single admin account, but this is
+ * a real table so more users (and later, roles) can be added without rework.
+ * `passwordHash` is a scrypt hash — see auth/password.ts.
+ */
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  username: text('username').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: text('updated_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
 export const checklists = sqliteTable('checklists', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),

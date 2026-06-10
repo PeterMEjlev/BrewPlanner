@@ -6,8 +6,10 @@ import type {
 } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { useAuth } from '../auth';
 
 export function AdminPage() {
+  const { auth, refresh: refreshAuth } = useAuth();
   const [checklists, setChecklists] = useState<ChecklistSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selected, setSelected] = useState<ChecklistWithSteps | null>(null);
@@ -142,6 +144,23 @@ export function AdminPage() {
         >
           Open display view ↗
         </a>
+        {auth.user && (
+          <div className="flex items-center justify-between border-t border-slate-200 px-3 py-2 text-sm">
+            <span className="truncate text-slate-500">
+              Signed in as <span className="font-medium text-slate-700">{auth.user.username}</span>
+            </span>
+            <button
+              type="button"
+              onClick={async () => {
+                await api.logout();
+                await refreshAuth();
+              }}
+              className="shrink-0 rounded-md px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* Detail */}

@@ -1,0 +1,19 @@
+# Cloudflare Tunnel config for BrewPlanner.
+#
+# Copy this to the Pi at /etc/cloudflared/config.yml and fill in your tunnel ID,
+# credentials path, and hostname. See deploy/README-internet.md for the full
+# walkthrough (creating the tunnel, routing DNS, installing the service).
+#
+# The tunnel dials OUT to Cloudflare, so no router port-forwarding is needed and
+# your home IP is never exposed. Cloudflare terminates HTTPS for your domain and
+# forwards plain HTTP to the BrewPlanner server on localhost:3000.
+
+tunnel: <YOUR_TUNNEL_ID>
+credentials-file: /etc/cloudflared/<YOUR_TUNNEL_ID>.json
+
+ingress:
+  # Public hostname → the local BrewPlanner server.
+  - hostname: brew.example.com
+    service: http://localhost:3000
+  # Required catch-all: anything else gets a 404.
+  - service: http_status:404
