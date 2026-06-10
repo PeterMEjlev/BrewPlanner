@@ -1,0 +1,19 @@
+[Unit]
+Description=Checklist app server (Fastify + SQLite)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/checklist
+# Path to the SQLite database. Lives outside the build dir so updates don't wipe data.
+Environment=DATABASE_PATH=/home/pi/checklist/data/checklist.sqlite
+Environment=PORT=3000
+Environment=HOST=0.0.0.0
+ExecStart=/usr/bin/node apps/server/dist/index.js
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

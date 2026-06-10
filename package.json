@@ -1,0 +1,29 @@
+{
+  "name": "checklist",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Raspberry Pi touchscreen checklist appliance",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace @checklist/shared",
+    "dev": "npm run build:shared && concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev --workspace @checklist/server",
+    "dev:web": "npm run dev --workspace @checklist/web",
+    "build": "npm run build:shared && npm run build --workspace @checklist/web && npm run build --workspace @checklist/server",
+    "start": "npm run start --workspace @checklist/server",
+    "db:generate": "npm run db:generate --workspace @checklist/server",
+    "db:migrate": "npm run db:migrate --workspace @checklist/server",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

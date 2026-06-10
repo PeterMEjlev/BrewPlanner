@@ -1,0 +1,1 @@
+ALTER TABLE `todos` ADD `position` integer DEFAULT 0 NOT NULL;
