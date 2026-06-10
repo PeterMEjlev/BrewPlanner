@@ -2,11 +2,9 @@ node_modules/
 dist/
 *.log
 
-# SQLite database files (data is generated at runtime)
-*.sqlite
+# SQLite WAL/lock files (transient, can be inconsistent)
 *.sqlite-shm
 *.sqlite-wal
-data/
 
 # Editor / OS
 .DS_Store
