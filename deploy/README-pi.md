@@ -26,7 +26,7 @@ Raspberry Pi OS. From any PC on the same LAN you can then open
 
 ```bash
 sudo apt update
-sudo apt install -y nodejs npm git curl cage chromium-browser
+sudo apt install -y nodejs npm git curl cage chromium fonts-noto-color-emoji
 node --version   # needs Node 20+. If apt's Node is too old, use nodesource:
 #   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 #   sudo apt install -y nodejs
@@ -34,7 +34,10 @@ node --version   # needs Node 20+. If apt's Node is too old, use nodesource:
 
 - `cage` is a tiny Wayland kiosk compositor that runs a single fullscreen app
   on the display with no desktop environment.
-- `chromium-browser` is the kiosk browser.
+- `chromium` is the kiosk browser (the binary is `/usr/bin/chromium` on
+  Debian 13 / current Raspberry Pi OS — the old name was `chromium-browser`).
+- `fonts-noto-color-emoji` provides the emoji glyphs the dashboard uses
+  (🍺 📈 🎛️ …); without it they render as empty rectangles.
 
 > better-sqlite3 ships prebuilt binaries for arm64, so `npm install` normally
 > needs no compiler. If it falls back to building from source, also install

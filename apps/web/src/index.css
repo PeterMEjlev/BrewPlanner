@@ -55,3 +55,15 @@ textarea {
   user-select: none;
   -webkit-touch-callout: none;
 }
+
+/* Hide the mouse cursor on touch-only screens (the Pi kiosk), so the operator
+   doesn't see a stray pointer. Keyed off the input device, not the route, so it
+   also covers /display. A mouse plugged in for maintenance reports a fine
+   pointer and keeps its cursor, so you can still see what you're doing. */
+@media (hover: none) and (pointer: coarse) {
+  *,
+  *::before,
+  *::after {
+    cursor: none !important;
+  }
+}
