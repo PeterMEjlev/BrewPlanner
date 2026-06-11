@@ -12,6 +12,9 @@ User=pi
 # Install with:  sudo apt install -y cage chromium-browser
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 ExecStartPre=/bin/sh -c 'until curl -sf http://localhost:3000/api/active >/dev/null; do sleep 1; done'
+# Boots to the touch hub home (/kiosk); tap into the checklist, to-do, or a
+# sensor from there. Point this at /display instead to boot straight to the
+# checklist.
 ExecStart=/usr/bin/cage -- /usr/bin/chromium-browser \
   --kiosk \
   --noerrdialogs \
@@ -20,7 +23,7 @@ ExecStart=/usr/bin/cage -- /usr/bin/chromium-browser \
   --disable-features=TranslateUI \
   --check-for-update-interval=31536000 \
   --overscroll-history-navigation=0 \
-  --app=http://localhost:3000/display
+  --app=http://localhost:3000/kiosk
 Restart=on-failure
 RestartSec=3
 

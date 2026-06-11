@@ -2,12 +2,18 @@ import type {
   ActiveState,
   ChecklistSummary,
   ChecklistWithSteps,
-  Todo,
 } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
+import { asMessage } from '../util';
 
+/**
+ * Checklist admin: manage procedure checklists and their steps. The brewery
+ * to-do list is a separate page ([TodosPage]); both are reached from the
+ * dashboard so neither carries the other's chrome.
+ */
 export function AdminPage() {
   const { auth, refresh: refreshAuth } = useAuth();
   const [checklists, setChecklists] = useState<ChecklistSummary[]>([]);
@@ -15,8 +21,6 @@ export function AdminPage() {
   const [selected, setSelected] = useState<ChecklistWithSteps | null>(null);
   const [active, setActive] = useState<ActiveState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // When true the detail pane shows the brewery to-do manager instead of a checklist.
-  const [showTodos, setShowTodos] = useState(false);
 
   const refreshList = useCallback(async () => {
     const list = await api.listChecklists();
@@ -80,22 +84,17 @@ export function AdminPage() {
   }
 
   return (
-    <div className="flex h-full bg-slate-50 text-slate-900">
+    <div className="flex h-full bg-slate-950 text-slate-100">
       {/* Sidebar */}
-      <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-white">
-        {/* Brewery to-do (separate from checklists) */}
-        <div className="border-b border-slate-200 p-2">
-          <button
-            type="button"
-            onClick={() => setShowTodos(true)}
-            className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium ${
-              showTodos ? 'bg-amber-50 text-amber-800' : 'hover:bg-slate-100'
-            }`}
-          >
-            🍺 Brewery To-Do
-          </button>
-        </div>
-        <div className="flex items-center justify-between border-b border-slate-200 p-4">
+      <aside className="flex w-72 shrink-0 flex-col border-r border-slate-800 bg-slate-900">
+        {/* Back to the hub dashboard */}
+        <Link
+          to="/"
+          className="border-b border-slate-800 px-4 py-2 text-sm text-slate-500 hover:bg-slate-800 hover:text-slate-100"
+        >
+          ← Dashboard
+        </Link>
+        <div className="flex items-center justify-between border-b border-slate-800 p-4">
           <h1 className="text-lg font-bold">Checklists</h1>
           <button
             type="button"
@@ -113,20 +112,17 @@ export function AdminPage() {
               <button
                 type="button"
                 key={c.id}
-                onClick={() => {
-                  setSelectedId(c.id);
-                  setShowTodos(false);
-                }}
+                onClick={() => setSelectedId(c.id)}
                 className={`mb-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm ${
-                  !showTodos && c.id === selectedId
-                    ? 'bg-blue-50 text-blue-800'
-                    : 'hover:bg-slate-100'
+                  c.id === selectedId
+                    ? 'bg-blue-500/15 text-blue-300'
+                    : 'hover:bg-slate-800'
                 }`}
               >
                 <span className="truncate font-medium">{c.name}</span>
                 <span className="ml-2 flex shrink-0 items-center gap-2">
                   {c.isActive && (
-                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-400">
                       active
                     </span>
                   )}
@@ -140,14 +136,14 @@ export function AdminPage() {
           href="/display"
           target="_blank"
           rel="noreferrer"
-          className="border-t border-slate-200 p-3 text-center text-sm text-blue-600 hover:underline"
+          className="border-t border-slate-800 p-3 text-center text-sm text-blue-400 hover:underline"
         >
           Open display view ↗
         </a>
         {auth.user && (
-          <div className="flex items-center justify-between border-t border-slate-200 px-3 py-2 text-sm">
+          <div className="flex items-center justify-between border-t border-slate-800 px-3 py-2 text-sm">
             <span className="truncate text-slate-500">
-              Signed in as <span className="font-medium text-slate-700">{auth.user.username}</span>
+              Signed in as <span className="font-medium text-slate-200">{auth.user.username}</span>
             </span>
             <button
               type="button"
@@ -155,7 +151,7 @@ export function AdminPage() {
                 await api.logout();
                 await refreshAuth();
               }}
-              className="shrink-0 rounded-md px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+              className="shrink-0 rounded-md px-2 py-1 text-slate-500 hover:bg-slate-800 hover:text-slate-100"
             >
               Sign out
             </button>
@@ -166,13 +162,11 @@ export function AdminPage() {
       {/* Detail */}
       <main className="flex-1 overflow-y-auto">
         {error && (
-          <div className="m-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          <div className="m-4 rounded-md border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}
           </div>
         )}
-        {showTodos ? (
-          <TodoManager onError={setError} />
-        ) : selected ? (
+        {selected ? (
           <ChecklistEditor
             checklist={selected}
             active={active}
@@ -224,10 +218,10 @@ function ChecklistEditor({
               void onRun(() => api.renameChecklist(checklist.id, name.trim()));
             }
           }}
-          className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-xl font-semibold focus:border-blue-500 focus:outline-none"
+          className="flex-1 rounded-md border border-slate-700 px-3 py-2 text-xl font-semibold focus:border-blue-500 focus:outline-none"
         />
         {isActive ? (
-          <span className="rounded-md bg-green-100 px-3 py-2 text-sm font-semibold text-green-700">
+          <span className="rounded-md bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-400">
             Active
           </span>
         ) : (
@@ -246,7 +240,7 @@ function ChecklistEditor({
               void api.deleteChecklist(checklist.id).then(onDeleted);
             }
           }}
-          className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+          className="rounded-md border border-red-500/40 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/10"
         >
           Delete
         </button>
@@ -254,10 +248,10 @@ function ChecklistEditor({
 
       {/* Active progress */}
       {isActive && active && (
-        <div className="mt-4 flex items-center justify-between rounded-md border border-slate-200 bg-white px-4 py-3">
-          <span className="text-sm text-slate-600">
+        <div className="mt-4 flex items-center justify-between rounded-md border border-slate-800 bg-slate-900 px-4 py-3">
+          <span className="text-sm text-slate-300">
             Progress:{' '}
-            <span className="font-semibold text-slate-900">
+            <span className="font-semibold text-slate-100">
               {active.progress.completed} / {active.progress.total}
             </span>{' '}
             complete
@@ -269,7 +263,7 @@ function ChecklistEditor({
                 void onRun(() => api.resetRun());
               }
             }}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-100"
+            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm font-medium hover:bg-slate-800"
           >
             Reset progress
           </button>
@@ -317,7 +311,7 @@ function ChecklistEditor({
           value={newStep}
           onChange={(e) => setNewStep(e.target.value)}
           placeholder="Add a step…"
-          className="flex-1 rounded-md border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
+          className="flex-1 rounded-md border border-slate-700 px-3 py-2 focus:border-blue-500 focus:outline-none"
         />
         <button
           type="submit"
@@ -359,13 +353,13 @@ function StepRow({
   useEffect(() => setDesc(description ?? ''), [description]);
 
   return (
-    <li className="flex gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+    <li className="flex gap-2 rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
       <div className="flex flex-col pt-1">
         <button
           type="button"
           disabled={isFirst}
           onClick={() => void onMove(-1)}
-          className="px-1 text-slate-500 disabled:opacity-30 hover:text-slate-900"
+          className="px-1 text-slate-500 disabled:opacity-30 hover:text-slate-100"
           aria-label="Move up"
         >
           ▲
@@ -374,7 +368,7 @@ function StepRow({
           type="button"
           disabled={isLast}
           onClick={() => void onMove(1)}
-          className="px-1 text-slate-500 disabled:opacity-30 hover:text-slate-900"
+          className="px-1 text-slate-500 disabled:opacity-30 hover:text-slate-100"
           aria-label="Move down"
         >
           ▼
@@ -401,7 +395,7 @@ function StepRow({
           <button
             type="button"
             onClick={() => void onDelete()}
-            className="shrink-0 rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50"
+            className="shrink-0 rounded px-2 py-1 text-sm text-red-400 hover:bg-red-500/10"
             aria-label="Delete step"
           >
             ✕
@@ -415,166 +409,9 @@ function StepRow({
           }}
           rows={desc ? 2 : 1}
           placeholder="Add a description (optional)…"
-          className="resize-y rounded border border-transparent px-2 py-1 text-sm text-slate-600 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+          className="resize-y rounded border border-transparent px-2 py-1 text-sm text-slate-300 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
         />
       </div>
     </li>
   );
-}
-
-function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [text, setText] = useState('');
-
-  const refresh = useCallback(async () => {
-    setTodos(await api.listTodos());
-  }, []);
-
-  useEffect(() => {
-    void refresh().catch((e) => onError(asMessage(e)));
-  }, [refresh, onError]);
-
-  async function run(action: () => Promise<unknown>) {
-    try {
-      onError(null);
-      await action();
-      await refresh();
-    } catch (e) {
-      onError(asMessage(e));
-    }
-  }
-
-  const openCount = todos.filter((t) => !t.done).length;
-  const hasCompleted = todos.some((t) => t.done);
-
-  return (
-    <div className="mx-auto max-w-3xl p-6">
-      <h2 className="text-xl font-semibold">Brewery To-Do</h2>
-      <p className="mt-1 text-sm text-slate-500">
-        A standalone task list, separate from procedure checklists. Add and edit tasks
-        here; the touchscreen can tick them off.
-      </p>
-
-      {/* Add task */}
-      <form
-        className="mt-5 flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const value = text.trim();
-          if (!value) return;
-          void run(() => api.createTodo(value)).then(() => setText(''));
-        }}
-      >
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Add a brewery task…"
-          className="flex-1 rounded-md border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
-        />
-        <button
-          type="submit"
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          Add
-        </button>
-      </form>
-
-      <div className="mt-6 mb-2 flex items-center justify-between">
-        <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Tasks ({openCount} open)
-        </span>
-        {hasCompleted && (
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm('Remove all completed tasks?')) {
-                void run(() => api.clearCompletedTodos());
-              }
-            }}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-100"
-          >
-            Clear completed
-          </button>
-        )}
-      </div>
-
-      <ul className="flex flex-col gap-2">
-        {todos.map((t) => (
-          <TodoRow
-            key={t.id}
-            todo={t}
-            onToggle={() => void run(() => api.updateTodo(t.id, { done: !t.done }))}
-            onSave={(fields) => void run(() => api.updateTodo(t.id, fields))}
-            onDelete={() => void run(() => api.deleteTodo(t.id))}
-          />
-        ))}
-        {todos.length === 0 && <li className="text-sm text-slate-400">No tasks yet.</li>}
-      </ul>
-    </div>
-  );
-}
-
-function TodoRow({
-  todo,
-  onToggle,
-  onSave,
-  onDelete,
-}: {
-  todo: Todo;
-  onToggle: () => void;
-  onSave: (fields: { text?: string; description?: string | null }) => void;
-  onDelete: () => void;
-}) {
-  const [value, setValue] = useState(todo.text);
-  const [desc, setDesc] = useState(todo.description ?? '');
-  useEffect(() => setValue(todo.text), [todo.text]);
-  useEffect(() => setDesc(todo.description ?? ''), [todo.description]);
-
-  return (
-    <li className="flex gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-      <input
-        type="checkbox"
-        checked={todo.done}
-        onChange={onToggle}
-        className="mt-1.5 h-5 w-5 shrink-0"
-        aria-label={todo.done ? 'Mark not done' : 'Mark done'}
-      />
-      <div className="flex flex-1 flex-col gap-1">
-        <div className="flex items-center gap-2">
-          <input
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onBlur={() => {
-              if (value.trim() && value.trim() !== todo.text) onSave({ text: value.trim() });
-            }}
-            className={`flex-1 rounded border border-transparent px-2 py-1 focus:border-blue-500 focus:outline-none ${
-              todo.done ? 'text-slate-400 line-through' : ''
-            }`}
-          />
-          <button
-            type="button"
-            onClick={onDelete}
-            className="shrink-0 rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50"
-            aria-label="Delete task"
-          >
-            ✕
-          </button>
-        </div>
-        <textarea
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          onBlur={() => {
-            if (desc !== (todo.description ?? '')) onSave({ description: desc });
-          }}
-          rows={desc ? 2 : 1}
-          placeholder="Add a description (optional)…"
-          className="resize-y rounded border border-transparent px-2 py-1 text-sm text-slate-600 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
-        />
-      </div>
-    </li>
-  );
-}
-
-function asMessage(e: unknown): string {
-  return e instanceof Error ? e.message : 'Something went wrong';
 }

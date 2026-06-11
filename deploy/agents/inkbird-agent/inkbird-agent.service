@@ -1,0 +1,22 @@
+[Unit]
+Description=BrewPlanner Inkbird ITC-308-WIFI agent (pushes to the hub)
+# Network must be up before we can reach the hub and the controller.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+# Secrets and config live here so they're not baked into the unit or git.
+# Create it (root-only readable) with:
+#   sudo install -m 600 /dev/null /etc/inkbird-agent.env
+#   sudo nano /etc/inkbird-agent.env
+# and set at least HUB_URL, DEVICE_KEY and the INKBIRD_* values
+# (see the .env.example file).
+EnvironmentFile=/etc/inkbird-agent.env
+ExecStart=/usr/bin/python3 /home/pi/checklist/deploy/agents/inkbird-agent/agent.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

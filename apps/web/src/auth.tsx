@@ -40,7 +40,7 @@ export function RequireAuth({ children }: { children: ReactNode }): JSX.Element 
 
   if (failed) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center text-gray-600">
+      <div className="flex h-full items-center justify-center bg-slate-950 p-6 text-center text-slate-400">
         Couldn’t reach the server. Check your connection and reload.
       </div>
     );
@@ -48,7 +48,9 @@ export function RequireAuth({ children }: { children: ReactNode }): JSX.Element 
 
   if (!auth) {
     return (
-      <div className="flex h-full items-center justify-center text-gray-400">Loading…</div>
+      <div className="flex h-full items-center justify-center bg-slate-950 text-slate-500">
+        Loading…
+      </div>
     );
   }
 

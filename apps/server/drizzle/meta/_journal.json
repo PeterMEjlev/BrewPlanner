@@ -36,6 +36,13 @@
       "when": 1781097668113,
       "tag": "0004_wakeful_ironclad",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1781167418789,
+      "tag": "0005_striped_sauron",
+      "breakpoints": true
     }
   ]
 }

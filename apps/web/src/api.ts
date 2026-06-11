@@ -3,6 +3,8 @@ import type {
   AuthState,
   ChecklistSummary,
   ChecklistWithSteps,
+  DeviceStatus,
+  Reading,
   Step,
   Todo,
 } from '@checklist/shared';
@@ -106,4 +108,19 @@ export const api = {
     request<Todo[]>('/todos/reorder', { method: 'POST', body: JSON.stringify({ todoIds }) }),
   clearCompletedTodos: () =>
     request<Todo[]>('/todos/clear-completed', { method: 'POST' }),
+
+  // Telemetry devices (fermentation pressure, brew controller, …)
+  listDevices: () => request<DeviceStatus[]>('/devices'),
+  getDevice: (id: number) => request<DeviceStatus>(`/devices/${id}`),
+  getDeviceHistory: (
+    id: number,
+    opts: { metric?: string; since?: string; limit?: number } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (opts.metric) params.set('metric', opts.metric);
+    if (opts.since) params.set('since', opts.since);
+    if (opts.limit) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    return request<Reading[]>(`/devices/${id}/history${qs ? `?${qs}` : ''}`);
+  },
 };

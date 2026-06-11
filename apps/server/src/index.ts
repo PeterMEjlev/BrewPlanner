@@ -8,6 +8,7 @@ import { authRoutes, seedAdminUser } from './auth/index.js';
 import { resolveSessionSecret } from './auth/secret.js';
 import { runMigrations } from './db/index.js';
 import { apiRoutes } from './routes/api.js';
+import { deviceRoutes, ingestRoutes } from './routes/devices.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -46,6 +47,11 @@ async function main(): Promise<void> {
   );
 
   await app.register(apiRoutes, { prefix: '/api' });
+
+  // Telemetry: satellites push to /api/ingest (device-key auth); the dashboard
+  // reads device status/history from /api/devices (user-session auth).
+  await app.register(ingestRoutes, { prefix: '/api/ingest' });
+  await app.register(deviceRoutes, { prefix: '/api/devices' });
 
   // Serve the built web app (apps/web/dist) in production. In dev the web app
   // is served by Vite on its own port, so this directory may not exist.

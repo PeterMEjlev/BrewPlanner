@@ -78,7 +78,11 @@ journalctl -u checklist-kiosk.service -f
 
 The `checklist-server` unit serves both the API and the built web app on port
 3000. The `checklist-kiosk` unit waits for the server to answer, then launches
-Chromium fullscreen on `http://localhost:3000/display`.
+Chromium fullscreen on `http://localhost:3000/kiosk` — the touch-first **hub
+home**, with big tiles for the checklist, brewery to-do, and live sensors. From
+there the checklist opens at `/display`; a home button (⌂) returns to the hub.
+The hub layout reflows for either landscape or portrait. To boot straight to the
+checklist instead, point `--app=` at `/display` in `checklist-kiosk.service`.
 
 ## 5. Updating the app
 
@@ -94,6 +98,29 @@ sudo systemctl restart checklist-kiosk.service
 
 The database lives in `data/` (set via `DATABASE_PATH`) and is **not** touched
 by rebuilds, so progress and checklists survive updates and reboots.
+
+## 6. Telemetry / sensor devices (optional)
+
+This Pi doubles as the brewery **hub**: other Pis (a fermentation-pressure
+sensor, a brew controller, …) push readings to it and they show up on the
+dashboard at `/`. Each satellite authenticates with its own API key.
+
+Register a device on the hub and copy the key it prints **once**:
+
+```bash
+npm run device -- add "Fermenter 1" pressure_sensor   # prints a bp_… key
+npm run device -- list                                # id, type, name, last seen
+npm run device -- rotate "Fermenter 1"                # new key if one leaks
+npm run device -- delete "Fermenter 1"                # remove device + readings
+```
+
+Then set up the satellite agent on the sensor Pi — see
+[agents/pressure-agent/README.md](agents/pressure-agent/README.md). It pushes to
+`POST /api/ingest` with `Authorization: Bearer <key>`; the dashboard reads
+`/api/devices` and `/api/devices/:id/history`.
+
+> Device pushes are authenticated by API key, **not** by the trusted-LAN rule —
+> so the same mechanism works whether a satellite is local or remote.
 
 ## Notes / troubleshooting
 

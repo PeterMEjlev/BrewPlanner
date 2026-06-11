@@ -8,9 +8,45 @@ body,
   height: 100%;
 }
 
+html {
+  /* Dark-only app: render native controls (inputs, scrollbars, date pickers)
+     with dark defaults and avoid a white flash before React mounts. */
+  color-scheme: dark;
+  background-color: #020617; /* slate-950 */
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background-color: #020617; /* slate-950 */
+  color: #e2e8f0; /* slate-200 */
+}
+
+/* Slim, unobtrusive scrollbars that fit the dark UI. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent; /* slate-700 thumb */
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #334155;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* Text inputs blend into their dark surface by default; add an explicit
+   bg-* utility where you want a filled field (e.g. the login form). */
+input:not([type]),
+input[type='text'],
+input[type='password'],
+input[type='search'],
+textarea {
+  background-color: transparent;
+  color: inherit;
 }
 
 /* Prevent text selection / long-press menus on the touchscreen. */

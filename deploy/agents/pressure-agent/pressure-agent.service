@@ -1,0 +1,21 @@
+[Unit]
+Description=BrewPlanner fermentation-pressure agent (pushes to the hub)
+# Network must be up before we can reach the hub.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+# Secrets and config live here so they're not baked into the unit or git.
+# Create it (root-only readable) with:
+#   sudo install -m 600 /dev/null /etc/pressure-agent.env
+#   sudo nano /etc/pressure-agent.env
+# and set at least HUB_URL and DEVICE_KEY (see the .env.example file).
+EnvironmentFile=/etc/pressure-agent.env
+ExecStart=/usr/bin/python3 /home/pi/checklist/deploy/agents/pressure-agent/agent.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

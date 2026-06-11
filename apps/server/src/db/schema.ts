@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
 
 /**
  * Database schema. Edit this file, then run `npm run db:generate` to produce a
@@ -86,6 +86,48 @@ export const todos = sqliteTable('todos', {
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),
 });
+
+/**
+ * Satellite devices that push telemetry to the hub (fermentation-pressure Pi,
+ * brew controller, …). Each device authenticates with its own API key; only a
+ * SHA-256 hash of that key is stored. The key is high-entropy and random, so an
+ * unsalted hash is safe here and lets us look a device up by an indexed column
+ * on every push. `lastSeenAt` is the heartbeat used to derive online/offline.
+ */
+export const devices = sqliteTable('devices', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  type: text('type').notNull().default('other'),
+  apiKeyHash: text('api_key_hash').notNull().unique(),
+  lastSeenAt: text('last_seen_at'),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: text('updated_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+/**
+ * Time-series sensor samples. Deliberately generic — any numeric metric from
+ * any device fits without a schema change. Indexed by (device, metric, time)
+ * so both "latest per metric" and "history for a metric" queries stay fast.
+ */
+export const readings = sqliteTable(
+  'readings',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    deviceId: integer('device_id')
+      .notNull()
+      .references(() => devices.id, { onDelete: 'cascade' }),
+    metric: text('metric').notNull(),
+    value: real('value').notNull(),
+    recordedAt: text('recorded_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+  },
+  (t) => [index('readings_device_metric_time_idx').on(t.deviceId, t.metric, t.recordedAt)],
+);
 
 /** Per-run check state for a single step. */
 export const runSteps = sqliteTable(

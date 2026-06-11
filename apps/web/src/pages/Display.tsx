@@ -1,17 +1,5 @@
-import type {
-  ActiveState,
-  ChecklistSummary,
-  DisplayStep,
-  Todo,
-} from '@checklist/shared';
-import {
-  DndContext,
-  type DragEndEvent,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
+import type { ActiveState, ChecklistSummary, DisplayStep } from '@checklist/shared';
+import { DndContext, type DragEndEvent, closestCenter } from '@dnd-kit/core';
 import {
   SortableContext,
   arrayMove,
@@ -20,7 +8,9 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
+import { DescriptionModal, InfoButton, useTouchSensors } from '../components/touch';
 
 /** Poll interval so a second device / the admin page stays roughly in sync. */
 const POLL_MS = 5000;
@@ -31,25 +21,16 @@ export function DisplayPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [todoOpen, setTodoOpen] = useState(false);
-  // When set, an item's description is shown in a modal over everything else.
+  // When set, a step's description is shown in a modal over everything else.
   const [info, setInfo] = useState<{ title: string; description: string } | null>(null);
   const pendingToggles = useRef(new Set<number>());
   const pendingReorder = useRef(false);
-  const pendingTodoReorder = useRef(false);
 
-  // Long-press to start a drag (so a quick tap still toggles, and a swipe scrolls).
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
-  );
+  const sensors = useTouchSensors();
 
   const load = useCallback(async () => {
     try {
       setChecklists(await api.listChecklists());
-      if (!pendingTodoReorder.current) {
-        setTodos(await api.listTodos());
-      }
       // Don't clobber optimistic step state while a tap/drag is in flight.
       if (pendingToggles.current.size === 0 && !pendingReorder.current) {
         setState(await api.getActive());
@@ -125,59 +106,6 @@ export function DisplayPage() {
     }
   }
 
-  // Brewery to-do handlers — independent of checklists/runs.
-  async function runTodo(action: () => Promise<unknown>) {
-    try {
-      await action();
-      setTodos(await api.listTodos());
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'To-do action failed');
-    }
-  }
-
-  async function handleTodoReorder(newTodos: Todo[]) {
-    pendingTodoReorder.current = true;
-    setTodos(newTodos); // optimistic
-    try {
-      await api.reorderTodos(newTodos.map((t) => t.id));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to reorder');
-      setTodos(await api.listTodos()); // revert
-    } finally {
-      pendingTodoReorder.current = false;
-    }
-  }
-
-  const openTodoCount = todos.filter((t) => !t.done).length;
-
-  const todoButton = (
-    <button
-      type="button"
-      onClick={() => setTodoOpen(true)}
-      className="shrink-0 rounded-xl bg-slate-700 px-5 py-3 text-xl font-semibold active:bg-slate-600"
-    >
-      To-Do
-      {openTodoCount > 0 && (
-        <span className="ml-2 rounded-full bg-blue-600 px-2 py-0.5 text-base">
-          {openTodoCount}
-        </span>
-      )}
-    </button>
-  );
-
-  const todoOverlay = todoOpen ? (
-    <TodoOverlay
-      todos={todos}
-      sensors={sensors}
-      onToggle={(t) => runTodo(() => api.updateTodo(t.id, { done: !t.done }))}
-      onReorder={handleTodoReorder}
-      onInfo={(t) => setInfo({ title: t.text, description: t.description ?? '' })}
-      onClose={() => setTodoOpen(false)}
-    />
-  ) : null;
-
   const infoModal = info ? (
     <DescriptionModal
       title={info.title}
@@ -214,13 +142,9 @@ export function DisplayPage() {
             </button>
           </>
         )}
-        <button
-          type="button"
-          onClick={() => setTodoOpen(true)}
-          className="mt-8 text-xl text-slate-400 underline active:text-slate-200"
-        >
-          Open brewery to-do{openTodoCount > 0 ? ` (${openTodoCount})` : ''}
-        </button>
+        <Link to="/kiosk" className="mt-8 text-xl text-slate-400 underline active:text-slate-200">
+          ⌂ Home
+        </Link>
         {pickerOpen && (
           <ChecklistPicker
             checklists={checklists}
@@ -229,7 +153,6 @@ export function DisplayPage() {
             onClose={() => setPickerOpen(false)}
           />
         )}
-        {todoOverlay}
         {infoModal}
       </CenteredMessage>
     );
@@ -242,22 +165,30 @@ export function DisplayPage() {
     <div className="touch-none-select flex h-full flex-col bg-slate-900 text-white">
       {/* Header */}
       <header className="flex items-center justify-between gap-4 border-b border-slate-700 px-6 py-4">
-        <button
-          type="button"
-          onClick={() => setPickerOpen(true)}
-          className="flex min-w-0 items-center gap-3 text-left active:opacity-70"
-        >
-          <h1 className="min-w-0 truncate py-1 text-3xl font-bold leading-normal sm:text-4xl">
-            {checklist.name}
-          </h1>
-          {checklists.length > 1 && (
-            <span className="shrink-0 text-2xl text-slate-400" aria-hidden>
-              ▾
-            </span>
-          )}
-        </button>
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            to="/kiosk"
+            className="shrink-0 rounded-xl bg-slate-700 px-4 py-3 text-2xl leading-none active:bg-slate-600"
+            aria-label="Home"
+          >
+            ⌂
+          </Link>
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="flex min-w-0 items-center gap-3 text-left active:opacity-70"
+          >
+            <h1 className="min-w-0 truncate py-1 text-3xl font-bold leading-normal sm:text-4xl">
+              {checklist.name}
+            </h1>
+            {checklists.length > 1 && (
+              <span className="shrink-0 text-2xl text-slate-400" aria-hidden>
+                ▾
+              </span>
+            )}
+          </button>
+        </div>
         <div className="flex shrink-0 items-center gap-3">
-          {todoButton}
           <div
             className={`rounded-xl px-5 py-2 text-2xl font-bold sm:text-3xl ${
               allDone ? 'bg-green-600' : 'bg-slate-700'
@@ -353,7 +284,6 @@ export function DisplayPage() {
         </div>
       )}
 
-      {todoOverlay}
       {infoModal}
     </div>
   );
@@ -460,184 +390,6 @@ function ChecklistPicker({
           type="button"
           onClick={onClose}
           className="mt-5 w-full rounded-xl bg-slate-600 py-4 text-2xl font-semibold text-white active:bg-slate-500"
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function TodoOverlay({
-  todos,
-  sensors,
-  onToggle,
-  onReorder,
-  onInfo,
-  onClose,
-}: {
-  todos: Todo[];
-  sensors: ReturnType<typeof useSensors>;
-  onToggle: (todo: Todo) => Promise<void>;
-  onReorder: (todos: Todo[]) => void;
-  onInfo: (todo: Todo) => void;
-  onClose: () => void;
-}) {
-  function onDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = todos.findIndex((t) => t.id === active.id);
-    const newIndex = todos.findIndex((t) => t.id === over.id);
-    if (oldIndex < 0 || newIndex < 0) return;
-    onReorder(arrayMove(todos, oldIndex, newIndex));
-  }
-
-  return (
-    <div className="touch-none-select absolute inset-0 z-10 flex flex-col bg-slate-900 text-white">
-      {/* Header */}
-      <header className="flex items-center justify-between gap-4 border-b border-slate-700 px-6 py-4">
-        <h1 className="py-1 text-3xl font-bold leading-normal sm:text-4xl">Brewery To-Do</h1>
-        <button
-          type="button"
-          onClick={onClose}
-          className="shrink-0 rounded-xl bg-slate-700 px-6 py-3 text-xl font-semibold active:bg-slate-600"
-        >
-          Close
-        </button>
-      </header>
-
-      {/* Tap to tick off; hold and drag to reorder. Tasks are added in admin. */}
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-        {todos.length === 0 ? (
-          <p className="mt-10 text-center text-2xl text-slate-400">
-            No to-do items. Add some from the admin page.
-          </p>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={onDragEnd}
-          >
-            <SortableContext
-              items={todos.map((t) => t.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <ul className="flex flex-col gap-4">
-                {todos.map((t) => (
-                  <SortableTodo
-                    key={t.id}
-                    todo={t}
-                    onToggle={() => void onToggle(t)}
-                    onInfo={() => onInfo(t)}
-                  />
-                ))}
-              </ul>
-            </SortableContext>
-          </DndContext>
-        )}
-      </main>
-    </div>
-  );
-}
-
-function SortableTodo({
-  todo,
-  onToggle,
-  onInfo,
-}: {
-  todo: Todo;
-  onToggle: () => void;
-  onInfo: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: todo.id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <li ref={setNodeRef} style={style} className={`relative ${isDragging ? 'z-10' : ''}`}>
-      <button
-        type="button"
-        onClick={onToggle}
-        {...attributes}
-        {...listeners}
-        className={`flex w-full touch-manipulation items-center gap-5 rounded-2xl border-2 py-6 pl-6 text-left transition active:scale-[0.99] ${
-          todo.description ? 'pr-24' : 'pr-6'
-        } ${
-          todo.done ? 'border-green-500 bg-green-600/20' : 'border-slate-600 bg-slate-800'
-        } ${isDragging ? 'opacity-90 shadow-2xl ring-2 ring-blue-400' : ''}`}
-      >
-        <span
-          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border-2 text-3xl ${
-            todo.done
-              ? 'border-green-400 bg-green-500 text-white'
-              : 'border-slate-500 text-transparent'
-          }`}
-          aria-hidden
-        >
-          ✓
-        </span>
-        <span
-          className={`text-2xl sm:text-3xl ${
-            todo.done ? 'text-slate-300 line-through' : 'text-white'
-          }`}
-        >
-          {todo.text}
-        </span>
-      </button>
-      {todo.description && <InfoButton onClick={onInfo} />}
-    </li>
-  );
-}
-
-/**
- * Round "i" badge overlaid on a step/to-do tile. It sits above the toggle
- * button (a sibling, not a child) so a tap opens the description instead of
- * ticking the item off.
- */
-function InfoButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="absolute right-4 top-1/2 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-full bg-slate-700/90 text-3xl font-bold italic text-slate-100 shadow-lg active:bg-slate-600"
-      aria-label="Show description"
-    >
-      i
-    </button>
-  );
-}
-
-/** Modal showing an item's title and its full description. */
-function DescriptionModal({
-  title,
-  description,
-  onClose,
-}: {
-  title: string;
-  description: string;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-6"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl bg-slate-800 p-8"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <p className="text-2xl font-bold text-white">{title}</p>
-        <p className="mt-4 overflow-y-auto whitespace-pre-wrap text-xl leading-relaxed text-slate-200">
-          {description}
-        </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-8 w-full shrink-0 rounded-xl bg-slate-600 py-4 text-2xl font-semibold text-white active:bg-slate-500"
         >
           Close
         </button>

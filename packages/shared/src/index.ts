@@ -91,6 +91,73 @@ export interface AuthState {
 }
 
 // ---------------------------------------------------------------------------
+// Telemetry: satellite devices and their sensor readings
+// ---------------------------------------------------------------------------
+
+/**
+ * Known device kinds. Kept as a string union (not an enum) so a new satellite
+ * can be added without a schema migration — the dashboard renders an unknown
+ * type with a generic tile. Each kind only picks a tile icon; the actual metrics
+ * a device reports are free-form (see `Reading.metric`), so adding a metric to
+ * an existing kind needs no change here.
+ *
+ * - `pressure_sensor` — fermentation pressure (`pressure_bar`).
+ * - `brew_controller` — Inkbird ITC-308 fridge/heater, also reused for the
+ *   brewery ambient thermometer (`temp_c`, `setpoint_c`, `hvac_state`).
+ * - `power_meter`     — mains electricity (`power_w`, `energy_kwh`).
+ * - `water_meter`     — water flow/usage (`flow_lpm`, `water_l`).
+ * - `hydrometer`      — Tilt floating gravity sensor (`gravity_sg`, `temp_c`).
+ */
+export type DeviceType =
+  | 'pressure_sensor'
+  | 'brew_controller'
+  | 'power_meter'
+  | 'water_meter'
+  | 'hydrometer'
+  | 'other';
+
+/**
+ * A satellite that pushes data to the hub (e.g. the fermentation-pressure Pi).
+ * The API key never leaves the server — only its hash is stored — so the shape
+ * exposed to the client deliberately omits it.
+ */
+export interface Device {
+  id: number;
+  name: string;
+  type: DeviceType;
+  /** ISO timestamp of the last accepted push, or null if never seen. */
+  lastSeenAt: string | null;
+  createdAt: string;
+}
+
+/** A single time-series sample pushed by a device. */
+export interface Reading {
+  id: number;
+  deviceId: number;
+  /** Stable key for the quantity, e.g. `pressure_bar`, `temp_c`. */
+  metric: string;
+  value: number;
+  recordedAt: string;
+}
+
+/** The most recent value for one metric on a device. */
+export interface LatestReading {
+  metric: string;
+  value: number;
+  recordedAt: string;
+}
+
+/**
+ * A device enriched for the dashboard: whether it is currently considered
+ * online (a fresh push within the staleness window) and its latest value per
+ * metric. `online` is derived server-side from `lastSeenAt`.
+ */
+export interface DeviceStatus extends Device {
+  online: boolean;
+  latest: LatestReading[];
+}
+
+// ---------------------------------------------------------------------------
 // Request validation schemas (Zod)
 // ---------------------------------------------------------------------------
 
@@ -160,6 +227,53 @@ export const reorderTodosSchema = z.object({
   todoIds: z.array(z.number().int().positive()).min(1),
 });
 export type ReorderTodosInput = z.infer<typeof reorderTodosSchema>;
+
+// --- Telemetry --------------------------------------------------------------
+
+export const deviceTypeSchema = z.enum([
+  'pressure_sensor',
+  'brew_controller',
+  'power_meter',
+  'water_meter',
+  'hydrometer',
+  'other',
+]);
+
+export const createDeviceSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(200),
+  type: deviceTypeSchema.default('other'),
+});
+export type CreateDeviceInput = z.infer<typeof createDeviceSchema>;
+
+/**
+ * Body for `POST /api/ingest`. A device pushes one or more readings; the
+ * request itself doubles as a heartbeat, so an empty `readings` array is a
+ * valid "I'm still alive" ping. `recordedAt` defaults to the server's receive
+ * time when a sample omits it (satellites needn't have an accurate clock).
+ */
+export const ingestSchema = z.object({
+  readings: z
+    .array(
+      z.object({
+        metric: z.string().trim().min(1).max(64),
+        value: z.number().finite(),
+        // Accept any RFC3339 timestamp (a trailing `Z` or a `±hh:mm` offset),
+        // since satellites may format their clock either way.
+        recordedAt: z.string().datetime({ offset: true }).optional(),
+      }),
+    )
+    .max(500)
+    .default([]),
+});
+export type IngestInput = z.infer<typeof ingestSchema>;
+
+/** Query for `GET /api/devices/:id/history`. */
+export const historyQuerySchema = z.object({
+  metric: z.string().trim().min(1).max(64).optional(),
+  since: z.string().datetime({ offset: true }).optional(),
+  limit: z.coerce.number().int().positive().max(5000).default(1000),
+});
+export type HistoryQuery = z.infer<typeof historyQuerySchema>;
 
 // ---------------------------------------------------------------------------
 // Path param helpers
