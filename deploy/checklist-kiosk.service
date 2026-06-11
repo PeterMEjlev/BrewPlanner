@@ -1,21 +1,37 @@
 [Unit]
 Description=Chromium kiosk for the checklist display
-# Wait for the app server to be up, plus a graphical/seat target.
-After=checklist-server.service systemd-user-sessions.service
+# Wait for the app server plus the seat/login + VT infrastructure.
+After=checklist-server.service systemd-user-sessions.service plymouth-quit-wait.service getty@tty1.service
 Wants=checklist-server.service
+# Take tty1 away from the text-login prompt so the kiosk owns the screen.
+Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
-User=pi
-# Launch Chromium directly on the KMS/DRM display via cage (a minimal Wayland
-# kiosk compositor) — no full desktop environment required.
-# Install with:  sudo apt install -y cage chromium-browser
+User=brewplanner
+# Run through PAM's "login" stack so logind opens a real seat session
+# (seat0) for this user. WITHOUT this, cage runs with no session, logind
+# refuses it a seat, and it fails with "Could not get primary session" /
+# "Permission denied" / "Failed to start a DRM session" — and you drop to
+# the text login instead of the kiosk.
+PAMName=login
+# Own tty1 directly.
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 ExecStartPre=/bin/sh -c 'until curl -sf http://localhost:3000/api/active >/dev/null; do sleep 1; done'
-# Boots to the touch hub home (/kiosk); tap into the checklist, to-do, or a
-# sensor from there. Point this at /display instead to boot straight to the
-# checklist.
-ExecStart=/usr/bin/cage -- /usr/bin/chromium-browser \
+# Launch Chromium directly on the KMS/DRM display via cage (a minimal Wayland
+# kiosk compositor) — no full desktop environment required.
+# NOTE: on Debian 13 / current Raspberry Pi OS the binary is `chromium`
+# (NOT the old `chromium-browser`). Install with: sudo apt install -y cage chromium
+# Boots to the touch hub home (/kiosk); point --app= at /display to boot
+# straight to the checklist instead.
+ExecStart=/usr/bin/cage -- /usr/bin/chromium \
   --kiosk \
   --noerrdialogs \
   --disable-infobars \
