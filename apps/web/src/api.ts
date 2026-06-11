@@ -9,6 +9,13 @@ import type {
   Todo,
 } from '@checklist/shared';
 
+import {
+  USE_MOCK_DEVICES,
+  mockGetDevice,
+  mockGetDeviceHistory,
+  mockListDevices,
+} from './mockDevices';
+
 const BASE = '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -110,12 +117,21 @@ export const api = {
     request<Todo[]>('/todos/clear-completed', { method: 'POST' }),
 
   // Telemetry devices (fermentation pressure, brew controller, …)
-  listDevices: () => request<DeviceStatus[]>('/devices'),
-  getDevice: (id: number) => request<DeviceStatus>(`/devices/${id}`),
+  // While USE_MOCK_DEVICES is on, these serve design-time mock data instead of
+  // hitting the hub (see mockDevices.ts).
+  listDevices: () =>
+    USE_MOCK_DEVICES
+      ? Promise.resolve(mockListDevices())
+      : request<DeviceStatus[]>('/devices'),
+  getDevice: (id: number) =>
+    USE_MOCK_DEVICES
+      ? Promise.resolve(mockGetDevice(id))
+      : request<DeviceStatus>(`/devices/${id}`),
   getDeviceHistory: (
     id: number,
     opts: { metric?: string; since?: string; limit?: number } = {},
   ) => {
+    if (USE_MOCK_DEVICES) return Promise.resolve(mockGetDeviceHistory(id, opts));
     const params = new URLSearchParams();
     if (opts.metric) params.set('metric', opts.metric);
     if (opts.since) params.set('since', opts.since);
