@@ -91,6 +91,30 @@ export interface AuthState {
 }
 
 // ---------------------------------------------------------------------------
+// Brewer's Friend recipes
+// ---------------------------------------------------------------------------
+
+/**
+ * A recipe from the user's Brewer's Friend account, normalized down to just the
+ * fields the kiosk needs. The server proxies the Brewer's Friend API (key held
+ * server-side) and maps each recipe to this shape.
+ */
+export interface Recipe {
+  id: string;
+  name: string;
+  /** Beer style (e.g. "West Coast IPA"); may be empty if the recipe has none. */
+  style: string;
+}
+
+/**
+ * The single "currently in the fermenter" recipe selection (GET/PUT /api/recipe).
+ * `recipe` is null when nothing has been chosen yet.
+ */
+export interface ActiveRecipe {
+  recipe: Recipe | null;
+}
+
+// ---------------------------------------------------------------------------
 // Telemetry: satellite devices and their sensor readings
 // ---------------------------------------------------------------------------
 
@@ -274,6 +298,20 @@ export const historyQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(5000).default(1000),
 });
 export type HistoryQuery = z.infer<typeof historyQuerySchema>;
+
+// --- Brewer's Friend recipe selection --------------------------------------
+
+/**
+ * Body for `PUT /api/recipe` — the recipe the operator picked from their
+ * Brewer's Friend account. The client sends the already-fetched recipe so the
+ * server needn't re-query Brewer's Friend just to persist the choice.
+ */
+export const setActiveRecipeSchema = z.object({
+  id: z.string().trim().min(1).max(200),
+  name: z.string().trim().min(1, 'Recipe name is required').max(300),
+  style: z.string().trim().max(300).default(''),
+});
+export type SetActiveRecipeInput = z.infer<typeof setActiveRecipeSchema>;
 
 // ---------------------------------------------------------------------------
 // Path param helpers

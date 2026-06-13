@@ -5,6 +5,7 @@ import {
   idParamSchema,
   reorderStepsSchema,
   reorderTodosSchema,
+  setActiveRecipeSchema,
   stepIdParamSchema,
   updateChecklistSchema,
   updateStepSchema,
@@ -13,6 +14,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { requireAuth } from '../auth/index.js';
+import * as bf from '../brewersfriend.js';
 import * as repo from '../repo.js';
 
 /** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
@@ -181,4 +183,38 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/todos/clear-completed', async () => repo.clearCompletedTodos());
+
+  // --- Brewer's Friend recipes -----------------------------------------
+  // List the account's recipes (server-side proxy; the API key stays on the
+  // server). 503 when no key is configured; 502 if the upstream call fails.
+  app.get('/recipes', async (req, reply) => {
+    try {
+      return await bf.listRecipes();
+    } catch (err) {
+      if (err instanceof bf.BrewersFriendNotConfiguredError) {
+        return reply.status(503).send({ error: err.message });
+      }
+      req.log.error(err, 'Brewer\'s Friend recipe fetch failed');
+      return reply.status(502).send({ error: 'Could not reach Brewer\'s Friend' });
+    }
+  });
+
+  // The single "currently in the fermenter" recipe shown on the kiosk card.
+  app.get('/recipe', async () => ({ recipe: repo.getActiveRecipe() }));
+
+  app.put('/recipe', async (req, reply) => {
+    const body = parse(setActiveRecipeSchema, req.body, reply);
+    if (!body) return;
+    const recipe = repo.setActiveRecipe({
+      id: body.id,
+      name: body.name,
+      style: body.style ?? '',
+    });
+    return { recipe };
+  });
+
+  app.delete('/recipe', async (_req, reply) => {
+    repo.clearActiveRecipe();
+    return reply.status(204).send();
+  });
 }

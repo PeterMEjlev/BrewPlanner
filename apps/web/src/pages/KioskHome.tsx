@@ -4,6 +4,7 @@
   DeviceType,
   LatestReading,
   Reading,
+  Recipe,
   Todo,
 } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
@@ -114,9 +115,6 @@ function groupByName(devices: DeviceStatus[]): DeviceStatus[][] {
 function groupRank(group: DeviceStatus[]): number {
   return Math.min(...group.map((d) => TYPE_RANK[d.type]));
 }
-
-/** Placeholder until the recipe (and its style) comes from Brewer's Friend — see TODO.md. */
-const BEER_STYLE = '<Beer Style>';
 
 // --- Fermentation status (derived from gravity history) ---------------------
 
@@ -273,18 +271,21 @@ export function KioskHomePage(): JSX.Element {
   const [active, setActive] = useState<ActiveState | null>(null);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
+  const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [a, t, d] = await Promise.all([
+      const [a, t, d, r] = await Promise.all([
         api.getActive(),
         api.listTodos(),
         api.listDevices(),
+        api.getActiveRecipe(),
       ]);
       setActive(a);
       setTodos(t);
       setDevices(d);
+      setRecipe(r);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
@@ -340,7 +341,11 @@ export function KioskHomePage(): JSX.Element {
             ) : (
               stations.map((group) => (
                 <div key={group[0]!.name} className="min-h-0 flex-1">
-                  <StationTile name={group[0]!.name} devices={group} />
+                  <StationTile
+                    name={group[0]!.name}
+                    devices={group}
+                    recipeStyle={recipe?.style ?? null}
+                  />
                 </div>
               ))
             )}
@@ -421,11 +426,21 @@ function ActionButton({
 
 /**
  * The fermenter hero card. Merges the same-named pressure sensor, fridge
- * controller (Inkbird) and floating hydrometer (Tilt) into four columns —
- * Pressure | Fridge Temp | Beer Temp | Gravity — with a live fermentation
- * status derived from gravity. Each column links to its source device's chart.
+ * controller (Inkbird) and floating hydrometer (Tilt) into three columns —
+ * Pressure | Temperature | Gravity — with a live fermentation status derived
+ * from gravity. Each column links to its source device's chart. Tapping the
+ * header opens the recipe picker; `recipeStyle` is the chosen recipe's beer
+ * style (null when none has been selected yet).
  */
-function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] }): JSX.Element {
+function StationTile({
+  name,
+  devices,
+  recipeStyle,
+}: {
+  name: string;
+  devices: DeviceStatus[];
+  recipeStyle: string | null;
+}): JSX.Element {
   const status = useFermentStatus(devices);
 
   const pressure = findReading(devices, 'pressure_bar');
@@ -443,15 +458,23 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
 
   return (
     <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5">
-      {/* Header: tank icon, name + style, fermentation status. */}
+      {/* Header: tank icon, name + recipe style, fermentation status. Tapping the
+          icon/name opens the recipe picker (the style comes from the choice). */}
       <div className="flex shrink-0 items-center gap-4">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black text-zinc-200">
-          <FermenterIcon />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-3xl font-bold leading-tight tracking-tight">{name}</div>
-          <div className="truncate text-base text-zinc-500">{BEER_STYLE}</div>
-        </div>
+        <Link
+          to="/kiosk/recipes"
+          className="flex min-w-0 flex-1 touch-manipulation items-center gap-4 rounded-2xl py-1 transition active:bg-zinc-800/60"
+        >
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black text-zinc-200">
+            <FermenterIcon />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-3xl font-bold leading-tight tracking-tight">{name}</div>
+            <div className="truncate text-base text-zinc-500">
+              {recipeStyle || 'Tap to select recipe'}
+            </div>
+          </div>
+        </Link>
         <div className="flex shrink-0 items-center gap-2">
           <span className={`h-2.5 w-2.5 rounded-full ${status.dotClass}`} aria-hidden />
           <span className={`text-sm font-semibold uppercase tracking-wide ${status.textClass}`}>
@@ -612,19 +635,19 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
   return (
     <Link
       to={`/kiosk/devices/${device.id}`}
-      className={`flex min-h-0 flex-1 touch-manipulation flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-4 transition active:scale-[0.98] active:bg-zinc-800 ${
+      className={`flex min-h-0 flex-1 touch-manipulation flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-4 py-4 transition active:scale-[0.98] active:bg-zinc-800 ${
         device.online ? '' : 'opacity-50'
       }`}
     >
-      {/* Header: glyph circle + name. */}
-      <div className="flex shrink-0 items-center gap-3">
+      {/* Header: glyph circle + name (wraps to a second line when long). */}
+      <div className="flex shrink-0 items-center gap-2.5">
         <span
           className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black ${SIDEBAR_TINT[device.type]}`}
           aria-hidden
         >
           <DeviceGlyph type={device.type} />
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-medium uppercase tracking-wider text-zinc-400">
+        <span className="min-w-0 flex-1 text-sm font-medium uppercase leading-tight tracking-wider text-zinc-400 line-clamp-2">
           {device.name}
         </span>
       </div>
@@ -663,12 +686,12 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
 function MetricValue({ reading, compact }: { reading: LatestReading; compact?: boolean }): JSX.Element {
   const { value, unit } = formatValueParts(reading);
   return (
-    <span className="max-w-full truncate leading-none">
+    <span className="whitespace-nowrap leading-none">
       <span className={`font-semibold tracking-tight tabular-nums ${compact ? 'text-2xl' : 'text-4xl'}`}>
         {value}
       </span>
       {unit && (
-        <span className={`font-medium text-zinc-500 ${compact ? 'ml-1 text-xs' : 'ml-1.5 text-base'}`}>
+        <span className={`font-medium text-zinc-500 ${compact ? 'ml-0.5 text-xs' : 'ml-1.5 text-base'}`}>
           {unit}
         </span>
       )}

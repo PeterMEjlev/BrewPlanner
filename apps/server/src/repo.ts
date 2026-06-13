@@ -4,12 +4,13 @@ import type {
   ChecklistSummary,
   ChecklistWithSteps,
   DisplayStep,
+  Recipe,
   Step,
   Todo,
 } from '@checklist/shared';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from './db/index.js';
-import { checklists, runSteps, runs, steps, todos } from './db/schema.js';
+import { checklists, runSteps, runs, settings, steps, todos } from './db/schema.js';
 
 const now = () => new Date().toISOString();
 
@@ -328,4 +329,42 @@ export function deleteTodo(id: number): boolean {
 export function clearCompletedTodos(): Todo[] {
   db.delete(todos).where(eq(todos.done, true)).run();
   return listTodos();
+}
+
+// ---------------------------------------------------------------------------
+// App settings (key-value) + the active Brewer's Friend recipe
+// ---------------------------------------------------------------------------
+
+const ACTIVE_RECIPE_KEY = 'active_recipe';
+
+function setSetting(key: string, value: string): void {
+  db.insert(settings)
+    .values({ key, value, updatedAt: now() })
+    .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: now() } })
+    .run();
+}
+
+function getSetting(key: string): string | null {
+  return db.select().from(settings).where(eq(settings.key, key)).get()?.value ?? null;
+}
+
+/** The recipe currently in the fermenter, or null if none has been chosen. */
+export function getActiveRecipe(): Recipe | null {
+  const raw = getSetting(ACTIVE_RECIPE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as Recipe;
+  } catch {
+    // Corrupt/legacy value — treat as "nothing selected" rather than throwing.
+    return null;
+  }
+}
+
+export function setActiveRecipe(recipe: Recipe): Recipe {
+  setSetting(ACTIVE_RECIPE_KEY, JSON.stringify(recipe));
+  return recipe;
+}
+
+export function clearActiveRecipe(): void {
+  db.delete(settings).where(eq(settings.key, ACTIVE_RECIPE_KEY)).run();
 }

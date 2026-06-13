@@ -1,10 +1,12 @@
 import type {
+  ActiveRecipe,
   ActiveState,
   AuthState,
   ChecklistSummary,
   ChecklistWithSteps,
   DeviceStatus,
   Reading,
+  Recipe,
   Step,
   Todo,
 } from '@checklist/shared';
@@ -139,4 +141,16 @@ export const api = {
     const qs = params.toString();
     return request<Reading[]>(`/devices/${id}/history${qs ? `?${qs}` : ''}`);
   },
+
+  // Brewer's Friend recipes. listRecipes proxies the user's account via the
+  // server (the API key stays server-side); the active recipe is the one shown
+  // on the kiosk fermenter card.
+  listRecipes: () => request<Recipe[]>('/recipes'),
+  getActiveRecipe: () => request<ActiveRecipe>('/recipe').then((r) => r.recipe),
+  setActiveRecipe: (recipe: Recipe) =>
+    request<ActiveRecipe>('/recipe', {
+      method: 'PUT',
+      body: JSON.stringify(recipe),
+    }).then((r) => r.recipe),
+  clearActiveRecipe: () => request<void>('/recipe', { method: 'DELETE' }),
 };

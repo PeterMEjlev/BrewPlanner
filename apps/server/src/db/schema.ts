@@ -88,6 +88,20 @@ export const todos = sqliteTable('todos', {
 });
 
 /**
+ * Generic key-value app settings (one row per key, value is free-form text —
+ * JSON for structured values). Currently holds the "active recipe" selection
+ * picked from Brewer's Friend; deliberately generic so future singletons don't
+ * each need their own table.
+ */
+export const settings = sqliteTable('settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+/**
  * Satellite devices that push telemetry to the hub (fermentation-pressure Pi,
  * brew controller, …). Each device authenticates with its own API key; only a
  * SHA-256 hash of that key is stored. The key is high-entropy and random, so an

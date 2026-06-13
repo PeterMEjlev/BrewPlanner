@@ -43,6 +43,13 @@
       "when": 1781167418789,
       "tag": "0005_striped_sauron",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1781366558591,
+      "tag": "0006_narrow_dark_beast",
+      "breakpoints": true
     }
   ]
 }

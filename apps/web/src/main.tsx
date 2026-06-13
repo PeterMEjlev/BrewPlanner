@@ -8,6 +8,7 @@ import { DisplayPage } from './pages/Display';
 import { KioskHomePage } from './pages/KioskHome';
 import { KioskTodosPage } from './pages/KioskTodos';
 import { LoginPage } from './pages/Login';
+import { RecipesPage } from './pages/Recipes';
 import { TodosPage } from './pages/Todos';
 import './index.css';
 
@@ -92,6 +93,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <KioskTodosPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/kiosk/recipes',
+    element: (
+      <RequireAuth>
+        <RecipesPage />
       </RequireAuth>
     ),
   },
