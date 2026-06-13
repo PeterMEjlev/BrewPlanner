@@ -460,9 +460,52 @@ function StationTile({
 
   const fridgeColor = state ? hvacColor(state.reading.value) : '';
 
-  // Track which column is visually first so only that one omits its left border.
-  let firstCol = true;
-  const col = () => { const f = firstCol; firstCol = false; return f; };
+  // Collect the present columns, then interleave straight divider lines between
+  // them in the render. Drawing each divider as its own element — rather than a
+  // left border on the column — keeps it perfectly straight even though the
+  // linked columns have rounded corners for their tap highlight.
+  const columns: JSX.Element[] = [];
+  if (pressure) {
+    columns.push(
+      <MetricColumn key="pressure" deviceId={pressure.deviceId} label="Pressure">
+        <BigValue value={String(Math.round(pressure.reading.value * 14.5038))} unit="PSI" />
+      </MetricColumn>,
+    );
+  }
+  if (beer || fridge) {
+    // The whole Temperature column opens the combined chart (beer + fridge on
+    // one graph), so the inner rows are plain readings, not their own links.
+    const tempParams = new URLSearchParams();
+    if (beer) tempParams.set('beer', String(beer.deviceId));
+    if (fridge) tempParams.set('fridge', String(fridge.deviceId));
+    columns.push(
+      <MetricColumn key="temp" label="Temperature" wide to={`/kiosk/temperature?${tempParams}`}>
+        <div className="flex w-full flex-col items-center gap-3 py-1">
+          {beer && <TempRow label="Beer" value={beer.reading.value.toFixed(1)} />}
+          {beer && fridge && <hr className="w-3/4 border-zinc-800" />}
+          {fridge && (
+            <TempRow
+              label="Fridge"
+              value={fridge.reading.value.toFixed(1)}
+              valueClass={fridgeColor}
+            />
+          )}
+          {setpoint && (
+            <span className="mt-1 text-sm text-zinc-500">
+              Set: {setpoint.reading.value.toFixed(1)}°C
+            </span>
+          )}
+        </div>
+      </MetricColumn>,
+    );
+  }
+  if (gravity) {
+    columns.push(
+      <MetricColumn key="gravity" deviceId={gravity.deviceId} label="Gravity">
+        <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
+      </MetricColumn>,
+    );
+  }
 
   return (
     <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5">
@@ -493,44 +536,20 @@ function StationTile({
 
       <hr className="my-5 shrink-0 border-zinc-800" />
 
-      {/* Pressure | Temperature | Gravity — labels pinned to top row. The
-          temperature column stacks Beer over Fridge (plus the setpoint); the
-          fridge value is tinted blue/orange by the cooling/heating state. */}
+      {/* Pressure | Temperature | Gravity — labels pinned to the top row, with a
+          straight divider line between each present column. */}
       <div className="flex min-h-0 flex-1">
-        {pressure && (
-          <MetricColumn deviceId={pressure.deviceId} label="Pressure" first={col()}>
-            <BigValue value={String(Math.round(pressure.reading.value * 14.5038))} unit="PSI" />
-          </MetricColumn>
-        )}
-
-        {(beer || fridge) && (
-          <MetricColumn label="Temperature" first={col()} wide>
-            <div className="flex w-full flex-col items-center gap-3 py-1">
-              {beer && (
-                <TempRow deviceId={beer.deviceId} label="Beer" value={beer.reading.value.toFixed(1)} />
-              )}
-              {beer && fridge && <hr className="w-3/4 border-zinc-800" />}
-              {fridge && (
-                <TempRow
-                  deviceId={fridge.deviceId}
-                  label="Fridge"
-                  value={fridge.reading.value.toFixed(1)}
-                  valueClass={fridgeColor}
-                />
-              )}
-              {setpoint && (
-                <span className="mt-1 text-sm text-zinc-500">
-                  Set: {setpoint.reading.value.toFixed(1)}°C
-                </span>
-              )}
-            </div>
-          </MetricColumn>
-        )}
-
-        {gravity && (
-          <MetricColumn deviceId={gravity.deviceId} label="Gravity" first={col()}>
-            <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
-          </MetricColumn>
+        {columns.flatMap((c, i) =>
+          i === 0
+            ? [c]
+            : [
+                <span
+                  key={`divider-${i}`}
+                  className="w-px shrink-0 self-stretch bg-zinc-800"
+                  aria-hidden
+                />,
+                c,
+              ],
         )}
       </div>
     </div>
@@ -542,26 +561,27 @@ function StationTile({
  * column so all labels sit on the same horizontal line regardless of how tall
  * the value content below each one is. The value area fills the remaining height
  * and vertically centers its content. `wide` gives the multi-row Temperature
- * column extra width so its stacked readings have room to breathe.
+ * column extra width so its stacked readings have room to breathe. Pass `to` for
+ * a custom destination (the Temperature column opens the combined chart); else
+ * `deviceId` links to that device's own chart.
  */
 function MetricColumn({
+  to,
   deviceId,
   label,
-  first,
   wide,
   children,
 }: {
+  to?: string;
   deviceId?: number | undefined;
   label: string;
-  first?: boolean;
   wide?: boolean;
   children: React.ReactNode;
 }): JSX.Element {
+  const href = to ?? (deviceId != null ? `/kiosk/devices/${deviceId}` : null);
   const className = `flex min-w-0 ${
     wide ? 'flex-[1.5]' : 'flex-1'
-  } touch-manipulation flex-col items-center px-3 text-center ${
-    first ? '' : 'border-l border-zinc-800'
-  }`;
+  } touch-manipulation flex-col items-center px-3 text-center`;
   const body = (
     <>
       <span className="shrink-0 text-xs font-medium uppercase tracking-wider text-zinc-400">
@@ -570,10 +590,10 @@ function MetricColumn({
       <div className="flex flex-1 items-center justify-center">{children}</div>
     </>
   );
-  return deviceId == null ? (
+  return href == null ? (
     <div className={className}>{body}</div>
   ) : (
-    <Link to={`/kiosk/devices/${deviceId}`} className={`${className} rounded-xl active:bg-zinc-800/60`}>
+    <Link to={href} className={`${className} rounded-xl active:bg-zinc-800/60`}>
       {body}
     </Link>
   );
@@ -581,39 +601,26 @@ function MetricColumn({
 
 /**
  * One temperature reading inside the combined Temperature column: a label
- * (Beer / Fridge) to the left of the value. Links to its own source device's
- * chart since beer (Tilt) and fridge (Inkbird) come from different sensors.
+ * (Beer / Fridge) to the left of the value. Purely display — the whole column is
+ * the tap target now, opening the combined beer + fridge chart.
  */
 function TempRow({
-  deviceId,
   label,
   value,
   valueClass,
 }: {
-  deviceId: number | undefined;
   label: string;
   value: string;
   valueClass?: string;
 }): JSX.Element {
-  const content = (
-    <>
+  return (
+    <div className="flex items-baseline justify-center gap-2.5">
       <span className="w-14 shrink-0 text-right text-base text-zinc-500">{label}</span>
       <span className={`text-3xl font-semibold tracking-tight tabular-nums ${valueClass ?? ''}`}>
         {value}
         <span className="ml-0.5 text-base font-medium text-zinc-500">°C</span>
       </span>
-    </>
-  );
-  const className = 'flex items-baseline justify-center gap-2.5';
-  return deviceId == null ? (
-    <div className={className}>{content}</div>
-  ) : (
-    <Link
-      to={`/kiosk/devices/${deviceId}`}
-      className={`${className} touch-manipulation rounded-lg px-2 py-0.5 active:bg-zinc-800/60`}
-    >
-      {content}
-    </Link>
+    </div>
   );
 }
 
@@ -649,7 +656,9 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
         multi ? 'flex-[1.6]' : 'flex-1'
       } ${device.online ? '' : 'opacity-50'}`}
     >
-      {/* Header: glyph circle + name (wraps to a second line when long). */}
+      {/* Header: glyph circle + name. A spacer matching the icon balances the
+          row so the name centers against the card's borders, not just the space
+          to the right of the icon. The name wraps to a second line when long. */}
       <div className="flex shrink-0 items-center gap-2.5">
         <span
           className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black ${SIDEBAR_TINT[device.type]}`}
@@ -660,6 +669,7 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
         <span className="min-w-0 flex-1 text-center text-sm font-medium uppercase leading-tight tracking-wider text-zinc-400 line-clamp-2">
           {device.name}
         </span>
+        <span className="w-12 shrink-0" aria-hidden />
       </div>
 
       {/* Readings — multi-metric cards split into captioned columns (e.g. power's

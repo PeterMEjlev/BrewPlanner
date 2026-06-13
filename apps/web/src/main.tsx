@@ -32,6 +32,9 @@ const DevicePage = lazy(() =>
 const KioskDevicePage = lazy(() =>
   import('./pages/KioskDevice').then((m) => ({ default: m.KioskDevicePage })),
 );
+const TemperaturePage = lazy(() =>
+  import('./pages/Temperature').then((m) => ({ default: m.TemperaturePage })),
+);
 
 const router = createBrowserRouter([
   // The hub dashboard is the front door. The physical kiosk still boots
@@ -119,6 +122,22 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <SettingsPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/kiosk/temperature',
+    element: (
+      <RequireAuth>
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center bg-zinc-900 text-xl text-zinc-400">
+              Loading chart…
+            </div>
+          }
+        >
+          <TemperaturePage />
+        </Suspense>
       </RequireAuth>
     ),
   },
