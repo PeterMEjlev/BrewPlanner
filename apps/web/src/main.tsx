@@ -10,6 +10,7 @@ import { KioskHomePage } from './pages/KioskHome';
 import { KioskTodosPage } from './pages/KioskTodos';
 import { LoginPage } from './pages/Login';
 import { RecipesPage } from './pages/Recipes';
+import { SettingsPage } from './pages/Settings';
 import { TodosPage } from './pages/Todos';
 import './index.css';
 
@@ -110,6 +111,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <KegsPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/kiosk/settings',
+    element: (
+      <RequireAuth>
+        <SettingsPage />
       </RequireAuth>
     ),
   },

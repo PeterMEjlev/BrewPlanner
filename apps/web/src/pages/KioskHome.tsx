@@ -241,7 +241,7 @@ function FermenterIcon(): JSX.Element {
       strokeWidth={2.4}
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="h-9 w-9"
+      className="h-[1.8rem] w-[1.8rem]"
       aria-hidden
     >
       {/* top port */}
@@ -342,34 +342,40 @@ export function KioskHomePage(): JSX.Element {
           </main>
 
           <div className="grid shrink-0 grid-cols-2 gap-3">
-            {/* Checklist + To-Do share one card: the left half opens the checklist
-                display, the right half the to-do list. Icons only, no labels. */}
-            <div className="flex h-[4.5rem] overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
+            {/* Left column: a gear settings button pinned to the far edge, then
+                the combined checklist | to-do card (which gives up the width). */}
+            <div className="flex gap-3">
               <Link
-                to="/display"
-                aria-label="Checklists"
-                className="flex flex-1 touch-manipulation items-center justify-center text-zinc-300 transition active:bg-zinc-800"
+                to="/kiosk/settings"
+                aria-label="Settings"
+                className="flex h-[4.5rem] w-[4.5rem] shrink-0 touch-manipulation items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition active:scale-[0.98] active:bg-zinc-800"
               >
-                <ClipboardIcon className="h-8 w-8" />
+                <GearIcon className="h-8 w-8" />
               </Link>
-              <span className="w-px shrink-0 self-stretch bg-zinc-800" aria-hidden />
-              <Link
-                to="/kiosk/todos"
-                aria-label="To-Do list"
-                className="flex flex-1 touch-manipulation items-center justify-center text-zinc-300 transition active:bg-zinc-800"
-              >
-                <TodoIcon className="h-8 w-8" />
-              </Link>
+
+              {/* Checklist + To-Do share one card: the left half opens the
+                  checklist display, the right half the to-do list. Icons only. */}
+              <div className="flex h-[4.5rem] flex-1 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
+                <Link
+                  to="/display"
+                  aria-label="Checklists"
+                  className="flex flex-1 touch-manipulation items-center justify-center text-zinc-300 transition active:bg-zinc-800"
+                >
+                  <ClipboardIcon className="h-8 w-8" />
+                </Link>
+                <span className="w-px shrink-0 self-stretch bg-zinc-800" aria-hidden />
+                <Link
+                  to="/kiosk/todos"
+                  aria-label="To-Do list"
+                  className="flex flex-1 touch-manipulation items-center justify-center text-zinc-300 transition active:bg-zinc-800"
+                >
+                  <TodoIcon className="h-8 w-8" />
+                </Link>
+              </div>
             </div>
 
-            {/* Reclaimed space → a shortcut into the keg inventory view. */}
-            <ActionButton
-              to="/kiosk/kegs"
-              title="Kegs"
-              subtitle={kegInfo}
-              icon={<KegIcon />}
-              accent="border-zinc-700 text-zinc-300"
-            />
+            {/* Right column → a shortcut into the keg inventory view. */}
+            <ActionButton to="/kiosk/kegs" title="Kegs" subtitle={kegInfo} icon={<KegIcon />} />
           </div>
         </div>
 
@@ -398,13 +404,11 @@ function ActionButton({
   title,
   subtitle,
   icon,
-  accent,
 }: {
   to: string;
   title: string;
   subtitle: string;
   icon: JSX.Element;
-  accent: string;
 }): JSX.Element {
   return (
     <Link
@@ -412,7 +416,7 @@ function ActionButton({
       className="flex h-[4.5rem] touch-manipulation items-center gap-3.5 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-5 transition active:scale-[0.98] active:bg-zinc-800"
     >
       <span
-        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${accent}`}
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black text-zinc-300"
         aria-hidden
       >
         {icon}
@@ -653,7 +657,7 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
         >
           <DeviceGlyph type={device.type} />
         </span>
-        <span className="min-w-0 flex-1 text-sm font-medium uppercase leading-tight tracking-wider text-zinc-400 line-clamp-2">
+        <span className="min-w-0 flex-1 text-center text-sm font-medium uppercase leading-tight tracking-wider text-zinc-400 line-clamp-2">
           {device.name}
         </span>
       </div>
@@ -732,7 +736,8 @@ const GLYPH_PROPS = {
   strokeWidth: 2,
   strokeLinecap: 'round',
   strokeLinejoin: 'round',
-  className: 'h-6 w-6',
+  // ~20% smaller than the 24px circle glyphs used to be, for a lighter look.
+  className: 'h-[1.2rem] w-[1.2rem]',
   'aria-hidden': true,
 } as const;
 
@@ -796,6 +801,16 @@ function KegIcon({ className }: { className?: string }): JSX.Element {
       <path d="M8 3c-1.3 1.6-2 4.6-2 9s.7 7.4 2 9h8c1.3-1.6 2-4.6 2-9s-.7-7.4-2-9" />
       <path d="M5.7 8.5h12.6" />
       <path d="M5.7 15.5h12.6" />
+    </svg>
+  );
+}
+
+/** Settings gear for the home-screen shortcut. */
+function GearIcon({ className }: { className?: string }): JSX.Element {
+  return (
+    <svg {...GLYPH_PROPS} className={className ?? GLYPH_PROPS.className}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }
