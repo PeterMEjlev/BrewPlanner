@@ -639,9 +639,11 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
   return (
     <Link
       to={`/kiosk/devices/${device.id}`}
-      className={`flex min-h-0 flex-1 touch-manipulation flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-4 py-4 transition active:scale-[0.98] active:bg-zinc-800 ${
-        device.online ? '' : 'opacity-50'
-      }`}
+      className={`flex min-h-0 touch-manipulation flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-4 py-4 transition active:scale-[0.98] active:bg-zinc-800 ${
+        // Multi-metric cards (power/water) carry more, so they take a larger share
+        // of the rail height; a single-reading card (brewery temp) stays compact.
+        multi ? 'flex-[1.6]' : 'flex-1'
+      } ${device.online ? '' : 'opacity-50'}`}
     >
       {/* Header: glyph circle + name (wraps to a second line when long). */}
       <div className="flex shrink-0 items-center gap-2.5">
@@ -656,7 +658,9 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
         </span>
       </div>
 
-      {/* Readings — one column per metric, captioned with its label. */}
+      {/* Readings — multi-metric cards split into captioned columns (e.g. power's
+          Current + Today); a single-reading card drops the caption, since the
+          device name above already says what the value is. */}
       <div className="flex min-h-0 flex-1 items-center">
         {metrics.length === 0 ? (
           <span className="text-base text-zinc-500">No readings</span>
@@ -669,11 +673,11 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
               }`}
             >
               <MetricValue reading={m} compact={multi} />
-              <span
-                className={`mt-1.5 max-w-full truncate text-zinc-500 ${multi ? 'text-xs' : 'text-sm'}`}
-              >
-                {METRIC_CAPTION[m.metric] ?? metricLabel(m.metric)}
-              </span>
+              {multi && (
+                <span className="mt-1.5 max-w-full truncate text-xs text-zinc-500">
+                  {METRIC_CAPTION[m.metric] ?? metricLabel(m.metric)}
+                </span>
+              )}
             </div>
           ))
         )}

@@ -48,13 +48,13 @@ const MOCK_FLEET: MockDevice[] = [
   },
   {
     id: 4,
-    name: 'Mains Power',
+    name: 'Power',
     type: 'power_meter',
     base: { power_w: 1850, energy_kwh: 142.6 },
   },
   {
     id: 5,
-    name: 'Water Supply',
+    name: 'Water',
     type: 'water_meter',
     base: { flow_lpm: 3.4, water_l: 318.5 },
   },
