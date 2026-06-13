@@ -1,4 +1,4 @@
-import type { Todo } from '@checklist/shared';
+﻿import type { Todo } from '@checklist/shared';
 import { DndContext, type DragEndEvent, closestCenter } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -76,12 +76,12 @@ export function KioskTodosPage() {
   }
 
   return (
-    <div className="touch-none-select flex h-full flex-col bg-slate-900 text-white">
-      <header className="flex items-center justify-between gap-4 border-b border-slate-700 px-6 py-4">
+    <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
+      <header className="flex items-center justify-between gap-4 border-b border-zinc-700 px-6 py-4">
         <div className="flex min-w-0 items-center gap-3">
           <Link
             to="/kiosk"
-            className="shrink-0 rounded-xl bg-slate-700 px-4 py-3 text-2xl leading-none active:bg-slate-600"
+            className="shrink-0 rounded-xl bg-zinc-700 px-4 py-3 text-2xl leading-none active:bg-zinc-600"
             aria-label="Home"
           >
             ⌂
@@ -97,7 +97,7 @@ export function KioskTodosPage() {
       {/* Tap to tick off; hold and drag to reorder. Tasks are added on the To-Do page. */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-6">
         {todos.length === 0 ? (
-          <p className="mt-10 text-center text-2xl text-slate-400">
+          <p className="mt-10 text-center text-2xl text-zinc-400">
             No to-do items. Add some from the To-Do page.
           </p>
         ) : (
@@ -156,14 +156,14 @@ function SortableTodo({
         className={`flex w-full touch-manipulation items-center gap-5 rounded-2xl border-2 py-6 pl-6 text-left transition active:scale-[0.99] ${
           todo.description ? 'pr-24' : 'pr-6'
         } ${
-          todo.done ? 'border-green-500 bg-green-600/20' : 'border-slate-600 bg-slate-800'
+          todo.done ? 'border-green-500 bg-green-600/20' : 'border-zinc-600 bg-zinc-800'
         } ${isDragging ? 'opacity-90 shadow-2xl ring-2 ring-blue-400' : ''}`}
       >
         <span
           className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border-2 text-3xl ${
             todo.done
               ? 'border-green-400 bg-green-500 text-white'
-              : 'border-slate-500 text-transparent'
+              : 'border-zinc-500 text-transparent'
           }`}
           aria-hidden
         >
@@ -171,7 +171,7 @@ function SortableTodo({
         </span>
         <span
           className={`text-2xl sm:text-3xl ${
-            todo.done ? 'text-slate-300 line-through' : 'text-white'
+            todo.done ? 'text-zinc-300 line-through' : 'text-white'
           }`}
         >
           {todo.text}

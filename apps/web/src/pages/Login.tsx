@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 
@@ -34,38 +34,38 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-slate-950 p-6">
+    <div className="flex min-h-full items-center justify-center bg-zinc-950 p-6">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm space-y-5 rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-xl shadow-black/30"
+        className="w-full max-w-sm space-y-5 rounded-2xl border border-zinc-800 bg-zinc-900 p-8 shadow-xl shadow-black/30"
       >
         <div className="space-y-1">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-slate-100">
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-zinc-100">
             <span aria-hidden>🍺</span> Konfus Brewing
           </h1>
-          <p className="text-sm text-slate-400">Sign in to continue.</p>
+          <p className="text-sm text-zinc-400">Sign in to continue.</p>
         </div>
 
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-slate-300">Username</span>
+          <span className="text-sm font-medium text-zinc-300">Username</span>
           <input
             type="text"
             autoComplete="username"
             autoFocus
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-base text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-blue-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-base text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-blue-500"
           />
         </label>
 
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-slate-300">Password</span>
+          <span className="text-sm font-medium text-zinc-300">Password</span>
           <input
             type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-base text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-blue-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-base text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-blue-500"
           />
         </label>
 

@@ -1,4 +1,4 @@
-import type { DeviceStatus, DeviceType, LatestReading } from '@checklist/shared';
+﻿import type { DeviceStatus, DeviceType, LatestReading } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -90,21 +90,21 @@ export function DashboardPage(): JSX.Element {
   }, [load]);
 
   return (
-    <div className="min-h-full bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/80 px-6 py-4 backdrop-blur">
+    <div className="min-h-full bg-zinc-950 text-zinc-100">
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-950/80 px-6 py-4 backdrop-blur">
         <div className="flex items-center gap-3">
           <span className="text-2xl" aria-hidden>
             🍺
           </span>
           <div>
             <h1 className="text-lg font-semibold tracking-tight">Konfus Brewing</h1>
-            <p className="text-xs text-slate-400">Brewery dashboard</p>
+            <p className="text-xs text-zinc-400">Brewery dashboard</p>
           </div>
         </div>
         {auth.user && (
           <div className="flex items-center gap-3 text-sm">
-            <span className="text-slate-400">
-              <span className="font-medium text-slate-200">{auth.user.username}</span>
+            <span className="text-zinc-400">
+              <span className="font-medium text-zinc-200">{auth.user.username}</span>
             </span>
             <button
               type="button"
@@ -112,7 +112,7 @@ export function DashboardPage(): JSX.Element {
                 await api.logout();
                 await refreshAuth();
               }}
-              className="rounded-lg px-2.5 py-1 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+              className="rounded-lg px-2.5 py-1 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
             >
               Sign out
             </button>
@@ -127,7 +127,7 @@ export function DashboardPage(): JSX.Element {
           </div>
         )}
 
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">
           Apps
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -135,11 +135,11 @@ export function DashboardPage(): JSX.Element {
           <AppTile to="/todos" icon="🍺" title="Brewery To-Do" subtitle="Ad-hoc task list" />
         </div>
 
-        <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-zinc-500">
           Sensors & equipment
         </h2>
         {devices === null ? (
-          <p className="text-sm text-slate-400">Loading…</p>
+          <p className="text-sm text-zinc-400">Loading…</p>
         ) : (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -151,10 +151,10 @@ export function DashboardPage(): JSX.Element {
               ))}
             </div>
             {devices.length === 0 && (
-              <p className="mt-3 text-xs text-slate-500">
+              <p className="mt-3 text-xs text-zinc-500">
                 No live devices yet — the tiles above are planned sensors. Register one on the
                 Pi with{' '}
-                <code className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-300">
+                <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
                   npm run device -- add "Fermenter 1" pressure_sensor
                 </code>{' '}
                 and point its agent at this server.
@@ -181,14 +181,14 @@ function AppTile({
   return (
     <Link
       to={to}
-      className="group flex items-center gap-4 rounded-xl border border-slate-800 bg-slate-900 p-5 transition hover:border-slate-700 hover:bg-slate-800/60"
+      className="group flex items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900 p-5 transition hover:border-zinc-700 hover:bg-zinc-800/60"
     >
       <span className="text-3xl transition group-hover:scale-105" aria-hidden>
         {icon}
       </span>
       <span>
-        <span className="block font-semibold text-slate-100">{title}</span>
-        <span className="block text-sm text-slate-400">{subtitle}</span>
+        <span className="block font-semibold text-zinc-100">{title}</span>
+        <span className="block text-sm text-zinc-400">{subtitle}</span>
       </span>
     </Link>
   );
@@ -198,14 +198,14 @@ function DeviceTile({ device }: { device: DeviceStatus }): JSX.Element {
   return (
     <Link
       to={`/devices/${device.id}`}
-      className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900 p-5 transition hover:border-slate-700 hover:bg-slate-800/60"
+      className="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-5 transition hover:border-zinc-700 hover:bg-zinc-800/60"
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <span className="text-2xl" aria-hidden>
             {TYPE_ICON[device.type]}
           </span>
-          <span className="font-semibold text-slate-100">{device.name}</span>
+          <span className="font-semibold text-zinc-100">{device.name}</span>
         </div>
         <StatusBadge online={device.online} />
       </div>
@@ -217,19 +217,19 @@ function DeviceTile({ device }: { device: DeviceStatus }): JSX.Element {
               <StateBadge key={r.metric} value={r.value} />
             ) : (
               <div key={r.metric}>
-                <span className="text-2xl font-semibold tabular-nums text-slate-50">
+                <span className="text-2xl font-semibold tabular-nums text-zinc-50">
                   {formatValue(r)}
                 </span>
-                <span className="ml-1 text-sm text-slate-400">{metricLabel(r.metric)}</span>
+                <span className="ml-1 text-sm text-zinc-400">{metricLabel(r.metric)}</span>
               </div>
             ),
           )}
         </div>
       ) : (
-        <p className="text-sm text-slate-500">No readings yet.</p>
+        <p className="text-sm text-zinc-500">No readings yet.</p>
       )}
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-zinc-500">
         {device.lastSeenAt ? `Updated ${relativeTime(device.lastSeenAt)}` : 'Never reported'}
       </p>
     </Link>
@@ -239,20 +239,20 @@ function DeviceTile({ device }: { device: DeviceStatus }): JSX.Element {
 /** Dimmed, non-interactive tile for a planned-but-not-yet-connected sensor. */
 function PlannedTile({ sensor }: { sensor: PlannedSensor }): JSX.Element {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-5">
+    <div className="flex flex-col gap-3 rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-5">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <span className="text-2xl opacity-60" aria-hidden>
             {sensor.icon}
           </span>
-          <span className="font-semibold text-slate-300">{sensor.title}</span>
+          <span className="font-semibold text-zinc-300">{sensor.title}</span>
         </div>
-        <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs font-semibold text-slate-400">
+        <span className="inline-flex items-center rounded-full bg-zinc-800 px-2 py-0.5 text-xs font-semibold text-zinc-400">
           Planned
         </span>
       </div>
-      <p className="text-sm text-slate-500">{sensor.subtitle}</p>
-      <p className="text-xs text-slate-600">Not connected yet</p>
+      <p className="text-sm text-zinc-500">{sensor.subtitle}</p>
+      <p className="text-xs text-zinc-600">Not connected yet</p>
     </div>
   );
 }
@@ -261,12 +261,12 @@ function StatusBadge({ online }: { online: boolean }): JSX.Element {
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ${
-        online ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-800 text-slate-400'
+        online ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
       }`}
     >
       <span
         className={`h-2 w-2 rounded-full ${
-          online ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]' : 'bg-slate-500'
+          online ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]' : 'bg-zinc-500'
         }`}
         aria-hidden
       />
@@ -354,7 +354,7 @@ function stateLook(value: number): StateLook {
     return { label: 'Cooling', icon: '❄️', cls: 'bg-sky-500/15 text-sky-300 ring-sky-500/40' };
   if (value >= 0.5)
     return { label: 'Heating', icon: '🔥', cls: 'bg-amber-500/15 text-amber-400 ring-amber-500/40' };
-  return { label: 'Idle', icon: '⏸️', cls: 'bg-slate-800/60 text-slate-400 ring-slate-700/60' };
+  return { label: 'Idle', icon: '⏸️', cls: 'bg-zinc-800/60 text-zinc-400 ring-zinc-700/60' };
 }
 
 /** Short axis-tick label for an hvac_state value. */

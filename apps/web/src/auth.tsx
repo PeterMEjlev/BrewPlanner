@@ -1,4 +1,4 @@
-import type { AuthState } from '@checklist/shared';
+﻿import type { AuthState } from '@checklist/shared';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
@@ -40,7 +40,7 @@ export function RequireAuth({ children }: { children: ReactNode }): JSX.Element 
 
   if (failed) {
     return (
-      <div className="flex h-full items-center justify-center bg-slate-950 p-6 text-center text-slate-400">
+      <div className="flex h-full items-center justify-center bg-zinc-950 p-6 text-center text-zinc-400">
         Couldn’t reach the server. Check your connection and reload.
       </div>
     );
@@ -48,7 +48,7 @@ export function RequireAuth({ children }: { children: ReactNode }): JSX.Element 
 
   if (!auth) {
     return (
-      <div className="flex h-full items-center justify-center bg-slate-950 text-slate-500">
+      <div className="flex h-full items-center justify-center bg-zinc-950 text-zinc-500">
         Loading…
       </div>
     );

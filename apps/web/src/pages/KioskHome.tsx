@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   ActiveState,
   DeviceStatus,
   DeviceType,
@@ -33,7 +33,7 @@ const TYPE_ACCENT: Record<DeviceType, string> = {
   power_meter: 'bg-yellow-500/15 text-yellow-300',
   water_meter: 'bg-cyan-500/15 text-cyan-300',
   hydrometer: 'bg-fuchsia-500/15 text-fuchsia-300',
-  other: 'bg-slate-600/30 text-slate-300',
+  other: 'bg-zinc-600/30 text-zinc-300',
 };
 
 /**
@@ -175,7 +175,7 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
   }, [gravityDeviceId]);
 
   if (!anyOnline) {
-    return { label: 'Offline', dotClass: 'bg-slate-600', textClass: 'text-slate-400' };
+    return { label: 'Offline', dotClass: 'bg-zinc-600', textClass: 'text-zinc-400' };
   }
   if (gravityDeviceId == null) {
     return { label: 'Online', dotClass: 'bg-emerald-400', textClass: 'text-emerald-300' };
@@ -211,7 +211,7 @@ function findReading(
 function hvacLook(value: number): { label: string; icon: string; cls: string } {
   if (value < 0) return { label: 'Cooling', icon: '❄', cls: 'text-sky-400' };
   if (value > 0) return { label: 'Heating', icon: '🔥', cls: 'text-orange-400' };
-  return { label: 'Idle', icon: '○', cls: 'text-slate-400' };
+  return { label: 'Idle', icon: '○', cls: 'text-zinc-400' };
 }
 
 /** Line-art conical fermenter, tinted via currentColor. */
@@ -294,7 +294,7 @@ export function KioskHomePage(): JSX.Element {
   );
 
   return (
-    <div className="touch-none-select flex h-full flex-col gap-2 overflow-hidden bg-slate-900 p-2 text-white">
+    <div className="touch-none-select flex h-full flex-col gap-2 overflow-hidden bg-zinc-900 p-2 text-white">
       {error && (
         <div className="shrink-0 rounded-lg bg-red-900/40 px-4 py-1 text-center text-sm text-red-300">
           {error}
@@ -306,19 +306,19 @@ export function KioskHomePage(): JSX.Element {
         <ActionButton to="/display" icon="✅" label="Checklist">
           {active?.checklist ? (
             <>
-              <span className="min-w-0 flex-1 truncate text-base font-medium text-slate-200">
+              <span className="min-w-0 flex-1 truncate text-base font-medium text-zinc-200">
                 {active.checklist.name}
               </span>
               <span
                 className={`shrink-0 rounded-md px-2 py-0.5 text-lg font-bold tabular-nums ${
-                  checklistDone ? 'bg-green-600' : 'bg-slate-700'
+                  checklistDone ? 'bg-green-600' : 'bg-zinc-700'
                 }`}
               >
                 {active.progress.completed}/{active.progress.total}
               </span>
             </>
           ) : (
-            <span className="text-sm text-slate-400">No active checklist</span>
+            <span className="text-sm text-zinc-400">No active checklist</span>
           )}
         </ActionButton>
 
@@ -329,7 +329,7 @@ export function KioskHomePage(): JSX.Element {
               <span className="ml-1 text-sm font-normal text-amber-100/80">open</span>
             </span>
           ) : (
-            <span className="ml-auto text-sm text-slate-400">All clear</span>
+            <span className="ml-auto text-sm text-zinc-400">All clear</span>
           )}
         </ActionButton>
       </div>
@@ -339,7 +339,7 @@ export function KioskHomePage(): JSX.Element {
           width of a single-sensor card. */}
       <main className="flex min-h-0 flex-1 gap-2">
         {primaryGroups.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-slate-700 text-slate-500">
+          <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-zinc-700 text-zinc-500">
             No sensors connected yet
           </div>
         ) : (
@@ -388,12 +388,12 @@ function ActionButton({
   return (
     <Link
       to={to}
-      className="flex h-14 touch-manipulation items-center gap-2 overflow-hidden rounded-xl border border-slate-700 bg-slate-800 px-3 transition active:scale-[0.98] active:bg-slate-700"
+      className="flex h-14 touch-manipulation items-center gap-2 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-800 px-3 transition active:scale-[0.98] active:bg-zinc-700"
     >
       <span className="shrink-0 text-xl" aria-hidden>
         {icon}
       </span>
-      <span className="shrink-0 text-base font-semibold text-slate-300">{label}</span>
+      <span className="shrink-0 text-base font-semibold text-zinc-300">{label}</span>
       {children}
     </Link>
   );
@@ -401,9 +401,9 @@ function ActionButton({
 
 /**
  * The fermenter hero card. Merges the same-named pressure sensor, fridge
- * controller (Inkbird) and floating hydrometer (Tilt) into three columns —
- * Pressure | Temperature | Gravity — with a live fermentation status derived
- * from gravity. Each column links to its source device's chart.
+ * controller (Inkbird) and floating hydrometer (Tilt) into four columns —
+ * Pressure | Fridge Temp | Beer Temp | Gravity — with a live fermentation
+ * status derived from gravity. Each column links to its source device's chart.
  */
 function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] }): JSX.Element {
   const status = useFermentStatus(devices);
@@ -416,18 +416,21 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
   const gravity = findReading(devices, 'gravity_sg');
 
   const hvac = state ? hvacLook(state.reading.value) : null;
-  const tempDeviceId = (fridge ?? beer)?.deviceId;
+
+  // Track which column is visually first so only that one omits its left border.
+  let firstCol = true;
+  const col = () => { const f = firstCol; firstCol = false; return f; };
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3">
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-800 px-4 py-3">
       {/* Header: tank icon, name + style, fermentation status. */}
       <div className="flex shrink-0 items-center gap-3">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900/40 text-slate-200">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900/40 text-zinc-200">
           <FermenterIcon />
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-3xl font-bold leading-tight">{name}</div>
-          <div className="truncate text-base text-slate-400">{BEER_STYLE}</div>
+          <div className="truncate text-base text-zinc-400">{BEER_STYLE}</div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className={`h-2.5 w-2.5 rounded-full ${status.dotClass}`} aria-hidden />
@@ -437,41 +440,49 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
         </div>
       </div>
 
-      <hr className="my-3 shrink-0 border-slate-700/70" />
+      <hr className="my-3 shrink-0 border-zinc-700/70" />
 
-      {/* Pressure | Temperature | Gravity */}
+      {/* Pressure | Fridge Temp | Beer Temp | Gravity — labels pinned to top row */}
       <div className="flex min-h-0 flex-1">
         {pressure && (
-          <MetricColumn deviceId={pressure.deviceId} label="Pressure" first>
-            <BigValue value={pressure.reading.value.toFixed(2)} unit="bar" />
+          <MetricColumn deviceId={pressure.deviceId} label="Pressure" first={col()}>
+            <BigValue value={String(Math.round(pressure.reading.value * 14.5038))} unit="PSI" />
           </MetricColumn>
         )}
 
-        {(beer || fridge) && (
-          <MetricColumn deviceId={tempDeviceId} label="Temperature" first={!pressure}>
-            <div className="flex w-full flex-col items-center gap-1.5">
-              {beer && <TempRow label="Beer" value={beer.reading.value} />}
-              {beer && fridge && <hr className="w-4/5 border-slate-700/60" />}
-              {fridge && (
-                <TempRow label="Fridge" value={fridge.reading.value} valueClass={hvac?.cls} />
-              )}
+        {fridge && (
+          <MetricColumn deviceId={fridge.deviceId} label="Fridge Temp" first={col()}>
+            <div className="flex flex-col items-center gap-1">
+              <span className={`text-4xl font-bold tabular-nums ${hvac?.cls ?? ''}`}>
+                {fridge.reading.value.toFixed(1)}
+                <span className="ml-0.5 text-base font-medium text-zinc-400">°C</span>
+              </span>
               {setpoint && (
-                <div className="text-sm text-slate-400">
+                <span className="text-sm text-zinc-400">
                   Set: {setpoint.reading.value.toFixed(1)}°C
-                </div>
+                </span>
               )}
               {hvac && (
-                <div className={`flex items-center gap-1.5 text-sm font-semibold ${hvac.cls}`}>
+                <span className={`flex items-center gap-1 text-sm font-semibold ${hvac.cls}`}>
                   <span aria-hidden>{hvac.icon}</span>
                   <span className="uppercase tracking-wide">{hvac.label}</span>
-                </div>
+                </span>
               )}
             </div>
           </MetricColumn>
         )}
 
+        {beer && (
+          <MetricColumn deviceId={beer.deviceId} label="Beer Temp" first={col()}>
+            <span className="text-4xl font-bold tabular-nums">
+              {beer.reading.value.toFixed(1)}
+              <span className="ml-0.5 text-base font-medium text-zinc-400">°C</span>
+            </span>
+          </MetricColumn>
+        )}
+
         {gravity && (
-          <MetricColumn deviceId={gravity.deviceId} label="Gravity" first={!pressure && !beer && !fridge}>
+          <MetricColumn deviceId={gravity.deviceId} label="Gravity" first={col()}>
             <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
           </MetricColumn>
         )}
@@ -480,7 +491,12 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
   );
 }
 
-/** One vertically-centred column of the fermenter card; links to its device. */
+/**
+ * One column of the fermenter card. The label is pinned to the top of the
+ * column so all four labels sit on the same horizontal line regardless of how
+ * tall the value content below each one is. The value area fills the remaining
+ * height and vertically centers its content.
+ */
 function MetricColumn({
   deviceId,
   label,
@@ -492,21 +508,21 @@ function MetricColumn({
   first?: boolean;
   children: React.ReactNode;
 }): JSX.Element {
-  const className = `flex min-w-0 flex-1 touch-manipulation flex-col items-center justify-center px-2 text-center ${
-    first ? '' : 'border-l border-slate-700/70'
+  const className = `flex min-w-0 flex-1 touch-manipulation flex-col items-center px-2 text-center ${
+    first ? '' : 'border-l border-zinc-700/70'
   }`;
   const body = (
     <>
-      <span className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-400">
+      <span className="shrink-0 text-xs font-medium uppercase tracking-wider text-zinc-400">
         {label}
       </span>
-      {children}
+      <div className="flex flex-1 items-center justify-center">{children}</div>
     </>
   );
   return deviceId == null ? (
     <div className={className}>{body}</div>
   ) : (
-    <Link to={`/kiosk/devices/${deviceId}`} className={`${className} rounded-xl active:bg-slate-700/40`}>
+    <Link to={`/kiosk/devices/${deviceId}`} className={`${className} rounded-xl active:bg-zinc-700/40`}>
       {body}
     </Link>
   );
@@ -517,31 +533,11 @@ function BigValue({ value, unit }: { value: string; unit: string }): JSX.Element
   return (
     <>
       <span className="text-5xl font-bold leading-none tabular-nums">{value}</span>
-      <span className="mt-1.5 text-base text-slate-400">{unit}</span>
+      <span className="mt-1.5 text-base text-zinc-400">{unit}</span>
     </>
   );
 }
 
-/** A "Beer 18.3°C" / "Fridge 2.1°C" row inside the temperature column. */
-function TempRow({
-  label,
-  value,
-  valueClass,
-}: {
-  label: string;
-  value: number;
-  valueClass?: string;
-}): JSX.Element {
-  return (
-    <div className="flex items-baseline justify-center gap-2">
-      <span className="text-sm text-slate-400">{label}</span>
-      <span className={`text-2xl font-bold tabular-nums ${valueClass ?? ''}`}>
-        {value.toFixed(1)}
-        <span className="ml-0.5 text-sm font-medium text-slate-400">°C</span>
-      </span>
-    </div>
-  );
-}
 
 /** Large hero tile for a single watched sensor (e.g. brewery temperature). */
 function SensorTile({ device }: { device: DeviceStatus }): JSX.Element {
@@ -552,7 +548,7 @@ function SensorTile({ device }: { device: DeviceStatus }): JSX.Element {
   return (
     <Link
       to={`/kiosk/devices/${device.id}`}
-      className="flex h-full w-full min-h-0 touch-manipulation flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 p-3 transition active:scale-[0.98] active:bg-slate-700"
+      className="flex h-full w-full min-h-0 touch-manipulation flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-800 p-3 transition active:scale-[0.98] active:bg-zinc-700"
     >
       <div className="flex items-start gap-2">
         <span
@@ -561,7 +557,7 @@ function SensorTile({ device }: { device: DeviceStatus }): JSX.Element {
         >
           {TYPE_ICON[device.type]}
         </span>
-        <span className="min-w-0 flex-1 text-base font-semibold leading-tight text-slate-200 [overflow-wrap:anywhere] line-clamp-2">
+        <span className="min-w-0 flex-1 text-base font-semibold leading-tight text-zinc-200 [overflow-wrap:anywhere] line-clamp-2">
           {device.name}
         </span>
         <StatusDot online={device.online} />
@@ -571,12 +567,12 @@ function SensorTile({ device }: { device: DeviceStatus }): JSX.Element {
         {headline ? (
           <div className="leading-none">
             <span className="text-4xl font-bold tabular-nums">{formatValue(headline)}</span>
-            <span className="ml-2 text-sm font-medium text-slate-400">
+            <span className="ml-2 text-sm font-medium text-zinc-400">
               {metricLabel(headline.metric)}
             </span>
           </div>
         ) : (
-          <span className="text-base text-slate-500">No readings</span>
+          <span className="text-base text-zinc-500">No readings</span>
         )}
 
         {extras.length > 0 && (
@@ -584,9 +580,9 @@ function SensorTile({ device }: { device: DeviceStatus }): JSX.Element {
             {extras.map((m) => (
               <span
                 key={m.metric}
-                className="rounded-md bg-slate-700/60 px-2 py-0.5 text-xs text-slate-300"
+                className="rounded-md bg-zinc-700/60 px-2 py-0.5 text-xs text-zinc-300"
               >
-                <span className="text-slate-400">{metricLabel(m.metric)} </span>
+                <span className="text-zinc-400">{metricLabel(m.metric)} </span>
                 <span className="font-semibold tabular-nums">{formatValue(m)}</span>
               </span>
             ))}
@@ -594,7 +590,7 @@ function SensorTile({ device }: { device: DeviceStatus }): JSX.Element {
         )}
       </div>
 
-      <span className="shrink-0 text-xs text-slate-500">
+      <span className="shrink-0 text-xs text-zinc-500">
         {device.lastSeenAt ? `Updated ${relativeTime(device.lastSeenAt)}` : 'Never reported'}
       </span>
     </Link>
@@ -608,7 +604,7 @@ function UtilityTile({ device }: { device: DeviceStatus }): JSX.Element {
   return (
     <Link
       to={`/kiosk/devices/${device.id}`}
-      className="flex h-16 touch-manipulation items-center gap-2.5 overflow-hidden rounded-xl border border-slate-700 bg-slate-800 px-3 transition active:scale-[0.98] active:bg-slate-700"
+      className="flex h-16 touch-manipulation items-center gap-2.5 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-800 px-3 transition active:scale-[0.98] active:bg-zinc-700"
     >
       <span
         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xl ${TYPE_ACCENT[device.type]}`}
@@ -617,9 +613,9 @@ function UtilityTile({ device }: { device: DeviceStatus }): JSX.Element {
         {TYPE_ICON[device.type]}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-medium text-slate-400">{device.name}</div>
+        <div className="truncate text-xs font-medium text-zinc-400">{device.name}</div>
         <div className="text-xl font-bold leading-tight tabular-nums">
-          {headline ? formatValue(headline) : <span className="text-slate-500">—</span>}
+          {headline ? formatValue(headline) : <span className="text-zinc-500">—</span>}
         </div>
       </div>
       <StatusDot online={device.online} />
@@ -632,7 +628,7 @@ function StatusDot({ online }: { online: boolean }): JSX.Element {
   return (
     <span
       className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-        online ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]' : 'bg-slate-600'
+        online ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]' : 'bg-zinc-600'
       }`}
       aria-label={online ? 'Online' : 'Offline'}
     />

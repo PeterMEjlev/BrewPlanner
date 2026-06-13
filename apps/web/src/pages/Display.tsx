@@ -1,4 +1,4 @@
-import type { ActiveState, ChecklistSummary, DisplayStep } from '@checklist/shared';
+﻿import type { ActiveState, ChecklistSummary, DisplayStep } from '@checklist/shared';
 import { DndContext, type DragEndEvent, closestCenter } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -117,7 +117,7 @@ export function DisplayPage() {
   if (!state) {
     return (
       <CenteredMessage>
-        <p className="text-3xl text-slate-300">{error ?? 'Loading…'}</p>
+        <p className="text-3xl text-zinc-300">{error ?? 'Loading…'}</p>
       </CenteredMessage>
     );
   }
@@ -127,12 +127,12 @@ export function DisplayPage() {
       <CenteredMessage>
         {checklists.length === 0 ? (
           <>
-            <p className="text-4xl font-semibold text-slate-200">No checklists yet</p>
-            <p className="mt-4 text-2xl text-slate-400">Create one from the admin page.</p>
+            <p className="text-4xl font-semibold text-zinc-200">No checklists yet</p>
+            <p className="mt-4 text-2xl text-zinc-400">Create one from the admin page.</p>
           </>
         ) : (
           <>
-            <p className="text-4xl font-semibold text-slate-200">No active checklist</p>
+            <p className="text-4xl font-semibold text-zinc-200">No active checklist</p>
             <button
               type="button"
               onClick={() => setPickerOpen(true)}
@@ -142,7 +142,7 @@ export function DisplayPage() {
             </button>
           </>
         )}
-        <Link to="/kiosk" className="mt-8 text-xl text-slate-400 underline active:text-slate-200">
+        <Link to="/kiosk" className="mt-8 text-xl text-zinc-400 underline active:text-zinc-200">
           ⌂ Home
         </Link>
         {pickerOpen && (
@@ -162,13 +162,13 @@ export function DisplayPage() {
   const allDone = progress.total > 0 && progress.completed === progress.total;
 
   return (
-    <div className="touch-none-select flex h-full flex-col bg-slate-900 text-white">
+    <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
       {/* Header */}
-      <header className="flex items-center justify-between gap-4 border-b border-slate-700 px-6 py-4">
+      <header className="flex items-center justify-between gap-4 border-b border-zinc-700 px-6 py-4">
         <div className="flex min-w-0 items-center gap-3">
           <Link
             to="/kiosk"
-            className="shrink-0 rounded-xl bg-slate-700 px-4 py-3 text-2xl leading-none active:bg-slate-600"
+            className="shrink-0 rounded-xl bg-zinc-700 px-4 py-3 text-2xl leading-none active:bg-zinc-600"
             aria-label="Home"
           >
             ⌂
@@ -182,7 +182,7 @@ export function DisplayPage() {
               {checklist.name}
             </h1>
             {checklists.length > 1 && (
-              <span className="shrink-0 text-2xl text-slate-400" aria-hidden>
+              <span className="shrink-0 text-2xl text-zinc-400" aria-hidden>
                 ▾
               </span>
             )}
@@ -191,7 +191,7 @@ export function DisplayPage() {
         <div className="flex shrink-0 items-center gap-3">
           <div
             className={`rounded-xl px-5 py-2 text-2xl font-bold sm:text-3xl ${
-              allDone ? 'bg-green-600' : 'bg-slate-700'
+              allDone ? 'bg-green-600' : 'bg-zinc-700'
             }`}
           >
             {progress.completed} / {progress.total}
@@ -216,7 +216,7 @@ export function DisplayPage() {
       {/* Steps */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-6">
         {steps.length === 0 ? (
-          <p className="mt-10 text-center text-2xl text-slate-400">
+          <p className="mt-10 text-center text-2xl text-zinc-400">
             This checklist has no steps yet.
           </p>
         ) : (
@@ -259,16 +259,16 @@ export function DisplayPage() {
       {/* Reset confirmation */}
       {confirmReset && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6">
-          <div className="w-full max-w-md rounded-2xl bg-slate-800 p-8 text-center">
+          <div className="w-full max-w-md rounded-2xl bg-zinc-800 p-8 text-center">
             <p className="text-3xl font-bold">Reset progress?</p>
-            <p className="mt-3 text-xl text-slate-300">
+            <p className="mt-3 text-xl text-zinc-300">
               All checked steps will be cleared and a fresh run started.
             </p>
             <div className="mt-8 flex gap-4">
               <button
                 type="button"
                 onClick={() => setConfirmReset(false)}
-                className="flex-1 rounded-xl bg-slate-600 py-4 text-2xl font-semibold active:bg-slate-500"
+                className="flex-1 rounded-xl bg-zinc-600 py-4 text-2xl font-semibold active:bg-zinc-500"
               >
                 Cancel
               </button>
@@ -316,14 +316,14 @@ function SortableStep({
         className={`flex w-full touch-manipulation items-center gap-5 rounded-2xl border-2 py-6 pl-6 text-left transition active:scale-[0.99] ${
           step.description ? 'pr-24' : 'pr-6'
         } ${
-          step.checked ? 'border-green-500 bg-green-600/20' : 'border-slate-600 bg-slate-800'
+          step.checked ? 'border-green-500 bg-green-600/20' : 'border-zinc-600 bg-zinc-800'
         } ${isDragging ? 'opacity-90 shadow-2xl ring-2 ring-blue-400' : ''}`}
       >
         <span
           className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border-2 text-3xl ${
             step.checked
               ? 'border-green-400 bg-green-500 text-white'
-              : 'border-slate-500 text-transparent'
+              : 'border-zinc-500 text-transparent'
           }`}
           aria-hidden
         >
@@ -331,12 +331,12 @@ function SortableStep({
         </span>
         <span
           className={`text-2xl sm:text-3xl ${
-            step.checked ? 'text-slate-300 line-through' : 'text-white'
+            step.checked ? 'text-zinc-300 line-through' : 'text-white'
           }`}
         >
           {step.text}
           {step.required ? null : (
-            <span className="ml-2 align-middle text-base text-slate-400">(optional)</span>
+            <span className="ml-2 align-middle text-base text-zinc-400">(optional)</span>
           )}
         </span>
       </button>
@@ -362,7 +362,7 @@ function ChecklistPicker({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-2xl bg-slate-800 p-6"
+        className="w-full max-w-lg rounded-2xl bg-zinc-800 p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <p className="mb-4 text-2xl font-bold text-white">Choose checklist</p>
@@ -375,11 +375,11 @@ function ChecklistPicker({
                 className={`flex w-full items-center justify-between gap-3 rounded-xl border-2 px-5 py-5 text-left text-2xl text-white transition active:scale-[0.99] ${
                   c.id === activeId
                     ? 'border-green-500 bg-green-600/20'
-                    : 'border-slate-600 bg-slate-700'
+                    : 'border-zinc-600 bg-zinc-700'
                 }`}
               >
                 <span className="min-w-0 truncate">{c.name}</span>
-                <span className="shrink-0 text-base text-slate-300">
+                <span className="shrink-0 text-base text-zinc-300">
                   {c.id === activeId ? 'active' : `${c.stepCount} steps`}
                 </span>
               </button>
@@ -389,7 +389,7 @@ function ChecklistPicker({
         <button
           type="button"
           onClick={onClose}
-          className="mt-5 w-full rounded-xl bg-slate-600 py-4 text-2xl font-semibold text-white active:bg-slate-500"
+          className="mt-5 w-full rounded-xl bg-zinc-600 py-4 text-2xl font-semibold text-white active:bg-zinc-500"
         >
           Close
         </button>
@@ -400,7 +400,7 @@ function ChecklistPicker({
 
 function CenteredMessage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center bg-slate-900 p-8 text-center">
+    <div className="flex h-full flex-col items-center justify-center bg-zinc-900 p-8 text-center">
       {children}
     </div>
   );

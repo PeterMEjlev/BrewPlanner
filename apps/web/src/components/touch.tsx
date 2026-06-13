@@ -1,4 +1,4 @@
-import { PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+﻿import { PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 
 /**
  * Touch building blocks shared by the kiosk views (checklist display + to-do).
@@ -23,7 +23,7 @@ export function InfoButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="absolute right-4 top-1/2 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-full bg-slate-700/90 text-3xl font-bold italic text-slate-100 shadow-lg active:bg-slate-600"
+      className="absolute right-4 top-1/2 flex h-14 w-14 -tranzinc-y-1/2 items-center justify-center rounded-full bg-zinc-700/90 text-3xl font-bold italic text-zinc-100 shadow-lg active:bg-zinc-600"
       aria-label="Show description"
     >
       i
@@ -47,17 +47,17 @@ export function DescriptionModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl bg-slate-800 p-8"
+        className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl bg-zinc-800 p-8"
         onClick={(e) => e.stopPropagation()}
       >
         <p className="text-2xl font-bold text-white">{title}</p>
-        <p className="mt-4 overflow-y-auto whitespace-pre-wrap text-xl leading-relaxed text-slate-200">
+        <p className="mt-4 overflow-y-auto whitespace-pre-wrap text-xl leading-relaxed text-zinc-200">
           {description}
         </p>
         <button
           type="button"
           onClick={onClose}
-          className="mt-8 w-full shrink-0 rounded-xl bg-slate-600 py-4 text-2xl font-semibold text-white active:bg-slate-500"
+          className="mt-8 w-full shrink-0 rounded-xl bg-zinc-600 py-4 text-2xl font-semibold text-white active:bg-zinc-500"
         >
           Close
         </button>

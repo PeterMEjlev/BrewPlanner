@@ -1,4 +1,4 @@
-import type { Todo } from '@checklist/shared';
+﻿import type { Todo } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -16,18 +16,18 @@ export function TodosPage() {
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div className="flex h-full flex-col bg-slate-950 text-slate-100">
-      <header className="flex items-center justify-between gap-4 border-b border-slate-800 bg-slate-900 px-6 py-3">
+    <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
+      <header className="flex items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-900 px-6 py-3">
         <Link
           to="/"
-          className="rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+          className="rounded-lg px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
         >
           ← Dashboard
         </Link>
         {auth.user && (
           <div className="flex items-center gap-3 text-sm">
-            <span className="text-slate-500">
-              Signed in as <span className="font-medium text-slate-200">{auth.user.username}</span>
+            <span className="text-zinc-500">
+              Signed in as <span className="font-medium text-zinc-200">{auth.user.username}</span>
             </span>
             <button
               type="button"
@@ -35,7 +35,7 @@ export function TodosPage() {
                 await api.logout();
                 await refreshAuth();
               }}
-              className="rounded-md px-2 py-1 text-slate-500 hover:bg-slate-800 hover:text-slate-100"
+              className="rounded-md px-2 py-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-100"
             >
               Sign out
             </button>
@@ -83,7 +83,7 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
   return (
     <div className="mx-auto max-w-3xl p-6">
       <h2 className="text-xl font-semibold">Brewery To-Do</h2>
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="mt-1 text-sm text-zinc-500">
         A standalone task list, separate from procedure checklists. Add and edit tasks
         here; the touchscreen can tick them off.
       </p>
@@ -102,7 +102,7 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Add a brewery task…"
-          className="flex-1 rounded-md border border-slate-700 px-3 py-2 focus:border-blue-500 focus:outline-none"
+          className="flex-1 rounded-md border border-zinc-700 px-3 py-2 focus:border-blue-500 focus:outline-none"
         />
         <button
           type="submit"
@@ -113,7 +113,7 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
       </form>
 
       <div className="mt-6 mb-2 flex items-center justify-between">
-        <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+        <span className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
           Tasks ({openCount} open)
         </span>
         {hasCompleted && (
@@ -124,7 +124,7 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
                 void run(() => api.clearCompletedTodos());
               }
             }}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm font-medium hover:bg-slate-800"
+            className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
           >
             Clear completed
           </button>
@@ -141,7 +141,7 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
             onDelete={() => void run(() => api.deleteTodo(t.id))}
           />
         ))}
-        {todos.length === 0 && <li className="text-sm text-slate-400">No tasks yet.</li>}
+        {todos.length === 0 && <li className="text-sm text-zinc-400">No tasks yet.</li>}
       </ul>
     </div>
   );
@@ -164,7 +164,7 @@ function TodoRow({
   useEffect(() => setDesc(todo.description ?? ''), [todo.description]);
 
   return (
-    <li className="flex gap-2 rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+    <li className="flex gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2">
       <input
         type="checkbox"
         checked={todo.done}
@@ -181,7 +181,7 @@ function TodoRow({
               if (value.trim() && value.trim() !== todo.text) onSave({ text: value.trim() });
             }}
             className={`flex-1 rounded border border-transparent px-2 py-1 focus:border-blue-500 focus:outline-none ${
-              todo.done ? 'text-slate-400 line-through' : ''
+              todo.done ? 'text-zinc-400 line-through' : ''
             }`}
           />
           <button
@@ -201,7 +201,7 @@ function TodoRow({
           }}
           rows={desc ? 2 : 1}
           placeholder="Add a description (optional)…"
-          className="resize-y rounded border border-transparent px-2 py-1 text-sm text-slate-300 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+          className="resize-y rounded border border-transparent px-2 py-1 text-sm text-zinc-300 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none"
         />
       </div>
     </li>

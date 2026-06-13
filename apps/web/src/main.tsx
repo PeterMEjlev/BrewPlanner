@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+﻿import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
 import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { RequireAuth } from './auth';
@@ -71,7 +71,7 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <Suspense
-          fallback={<div className="p-6 text-sm text-slate-400">Loading chart…</div>}
+          fallback={<div className="p-6 text-sm text-zinc-400">Loading chart…</div>}
         >
           <DevicePage />
         </Suspense>
@@ -101,7 +101,7 @@ const router = createBrowserRouter([
       <RequireAuth>
         <Suspense
           fallback={
-            <div className="flex h-full items-center justify-center bg-slate-900 text-xl text-slate-400">
+            <div className="flex h-full items-center justify-center bg-zinc-900 text-xl text-zinc-400">
               Loading chart…
             </div>
           }

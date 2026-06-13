@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom';
+﻿import { Link, useParams } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -26,12 +26,12 @@ export function KioskDevicePage(): JSX.Element {
     useDeviceData(deviceId);
 
   return (
-    <div className="touch-none-select flex h-full flex-col bg-slate-900 text-white">
-      <header className="flex items-center justify-between gap-4 border-b border-slate-700 px-5 py-4 sm:px-6">
+    <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
+      <header className="flex items-center justify-between gap-4 border-b border-zinc-700 px-5 py-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-4">
           <Link
             to="/kiosk"
-            className="shrink-0 rounded-xl bg-slate-700 px-5 py-3 text-2xl font-semibold active:bg-slate-600"
+            className="shrink-0 rounded-xl bg-zinc-700 px-5 py-3 text-2xl font-semibold active:bg-zinc-600"
             aria-label="Back to home"
           >
             ←
@@ -43,14 +43,14 @@ export function KioskDevicePage(): JSX.Element {
         {device && (
           <span
             className={`inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-lg font-semibold ${
-              device.online ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-700 text-slate-400'
+              device.online ? 'bg-emerald-500/15 text-emerald-300' : 'bg-zinc-700 text-zinc-400'
             }`}
           >
             <span
               className={`h-3 w-3 rounded-full ${
                 device.online
                   ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]'
-                  : 'bg-slate-500'
+                  : 'bg-zinc-500'
               }`}
               aria-hidden
             />
@@ -70,11 +70,11 @@ export function KioskDevicePage(): JSX.Element {
                 <span className="text-6xl font-bold tabular-nums sm:text-7xl">
                   {formatValue(latest)}
                 </span>
-                <span className="text-2xl text-slate-400">{metricLabel(latest.metric)}</span>
+                <span className="text-2xl text-zinc-400">{metricLabel(latest.metric)}</span>
               </>
             )
           ) : (
-            <span className="text-3xl text-slate-400">No readings yet</span>
+            <span className="text-3xl text-zinc-400">No readings yet</span>
           )}
         </div>
 
@@ -88,7 +88,7 @@ export function KioskDevicePage(): JSX.Element {
                   type="button"
                   onClick={() => setMetric(r.metric)}
                   className={`rounded-xl px-5 py-3 text-xl font-semibold active:scale-[0.98] ${
-                    r.metric === metric ? 'bg-blue-600' : 'bg-slate-700 active:bg-slate-600'
+                    r.metric === metric ? 'bg-blue-600' : 'bg-zinc-700 active:bg-zinc-600'
                   }`}
                 >
                   {metricLabel(r.metric)}
@@ -103,7 +103,7 @@ export function KioskDevicePage(): JSX.Element {
                 type="button"
                 onClick={() => setRangeMs(r.ms)}
                 className={`rounded-xl px-5 py-3 text-xl font-semibold active:scale-[0.98] ${
-                  r.ms === rangeMs ? 'bg-blue-600' : 'bg-slate-700 active:bg-slate-600'
+                  r.ms === rangeMs ? 'bg-blue-600' : 'bg-zinc-700 active:bg-zinc-600'
                 }`}
               >
                 {r.label}
@@ -113,9 +113,9 @@ export function KioskDevicePage(): JSX.Element {
         </div>
 
         {/* Chart fills the rest of the screen */}
-        <div className="min-h-0 flex-1 rounded-2xl border-2 border-slate-700 bg-slate-800 p-3">
+        <div className="min-h-0 flex-1 rounded-2xl border-2 border-zinc-700 bg-zinc-800 p-3">
           {chartData.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-2xl text-slate-400">
+            <div className="flex h-full items-center justify-center text-2xl text-zinc-400">
               No readings in this range.
             </div>
           ) : (

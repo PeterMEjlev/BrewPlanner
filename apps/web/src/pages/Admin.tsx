@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   ActiveState,
   ChecklistSummary,
   ChecklistWithSteps,
@@ -84,23 +84,23 @@ export function AdminPage() {
   }
 
   return (
-    <div className="flex h-full bg-slate-950 text-slate-100">
+    <div className="flex h-full bg-zinc-950 text-zinc-100">
       {/* Sidebar. On phones this becomes a full-width list and is hidden once a
           checklist is selected so its steps get the whole screen; from `sm` up
           it's the fixed side rail next to the detail pane. */}
       <aside
         className={`${
           selectedId != null ? 'hidden sm:flex' : 'flex'
-        } w-full shrink-0 flex-col border-r border-slate-800 bg-slate-900 sm:w-72`}
+        } w-full shrink-0 flex-col border-r border-zinc-800 bg-zinc-900 sm:w-72`}
       >
         {/* Back to the hub dashboard */}
         <Link
           to="/"
-          className="border-b border-slate-800 px-4 py-2 text-sm text-slate-500 hover:bg-slate-800 hover:text-slate-100"
+          className="border-b border-zinc-800 px-4 py-2 text-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-100"
         >
           ← Dashboard
         </Link>
-        <div className="flex items-center justify-between border-b border-slate-800 p-4">
+        <div className="flex items-center justify-between border-b border-zinc-800 p-4">
           <h1 className="text-lg font-bold">Checklists</h1>
           <button
             type="button"
@@ -112,7 +112,7 @@ export function AdminPage() {
         </div>
         <nav className="flex-1 overflow-y-auto p-2">
           {checklists.length === 0 ? (
-            <p className="p-3 text-sm text-slate-500">No checklists yet.</p>
+            <p className="p-3 text-sm text-zinc-500">No checklists yet.</p>
           ) : (
             checklists.map((c) => (
               <button
@@ -122,7 +122,7 @@ export function AdminPage() {
                 className={`mb-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm ${
                   c.id === selectedId
                     ? 'bg-blue-500/15 text-blue-300'
-                    : 'hover:bg-slate-800'
+                    : 'hover:bg-zinc-800'
                 }`}
               >
                 <span className="truncate font-medium">{c.name}</span>
@@ -132,7 +132,7 @@ export function AdminPage() {
                       active
                     </span>
                   )}
-                  <span className="text-xs text-slate-400">{c.stepCount}</span>
+                  <span className="text-xs text-zinc-400">{c.stepCount}</span>
                 </span>
               </button>
             ))
@@ -142,14 +142,14 @@ export function AdminPage() {
           href="/display"
           target="_blank"
           rel="noreferrer"
-          className="border-t border-slate-800 p-3 text-center text-sm text-blue-400 hover:underline"
+          className="border-t border-zinc-800 p-3 text-center text-sm text-blue-400 hover:underline"
         >
           Open display view ↗
         </a>
         {auth.user && (
-          <div className="flex items-center justify-between border-t border-slate-800 px-3 py-2 text-sm">
-            <span className="truncate text-slate-500">
-              Signed in as <span className="font-medium text-slate-200">{auth.user.username}</span>
+          <div className="flex items-center justify-between border-t border-zinc-800 px-3 py-2 text-sm">
+            <span className="truncate text-zinc-500">
+              Signed in as <span className="font-medium text-zinc-200">{auth.user.username}</span>
             </span>
             <button
               type="button"
@@ -157,7 +157,7 @@ export function AdminPage() {
                 await api.logout();
                 await refreshAuth();
               }}
-              className="shrink-0 rounded-md px-2 py-1 text-slate-500 hover:bg-slate-800 hover:text-slate-100"
+              className="shrink-0 rounded-md px-2 py-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-100"
             >
               Sign out
             </button>
@@ -175,7 +175,7 @@ export function AdminPage() {
           <button
             type="button"
             onClick={() => setSelectedId(null)}
-            className="sticky top-0 z-10 flex w-full items-center gap-1 border-b border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-300 hover:text-slate-100 sm:hidden"
+            className="sticky top-0 z-10 flex w-full items-center gap-1 border-b border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-300 hover:text-zinc-100 sm:hidden"
           >
             ← Checklists
           </button>
@@ -197,7 +197,7 @@ export function AdminPage() {
             }}
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-slate-400">
+          <div className="flex h-full items-center justify-center text-zinc-400">
             Select or create a checklist to begin.
           </div>
         )}
@@ -237,7 +237,7 @@ function ChecklistEditor({
               void onRun(() => api.renameChecklist(checklist.id, name.trim()));
             }
           }}
-          className="flex-1 rounded-md border border-slate-700 px-3 py-2 text-xl font-semibold focus:border-blue-500 focus:outline-none"
+          className="flex-1 rounded-md border border-zinc-700 px-3 py-2 text-xl font-semibold focus:border-blue-500 focus:outline-none"
         />
         {isActive ? (
           <span className="rounded-md bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-400">
@@ -267,10 +267,10 @@ function ChecklistEditor({
 
       {/* Active progress */}
       {isActive && active && (
-        <div className="mt-4 flex items-center justify-between rounded-md border border-slate-800 bg-slate-900 px-4 py-3">
-          <span className="text-sm text-slate-300">
+        <div className="mt-4 flex items-center justify-between rounded-md border border-zinc-800 bg-zinc-900 px-4 py-3">
+          <span className="text-sm text-zinc-300">
             Progress:{' '}
-            <span className="font-semibold text-slate-100">
+            <span className="font-semibold text-zinc-100">
               {active.progress.completed} / {active.progress.total}
             </span>{' '}
             complete
@@ -282,7 +282,7 @@ function ChecklistEditor({
                 void onRun(() => api.resetRun());
               }
             }}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm font-medium hover:bg-slate-800"
+            className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
           >
             Reset progress
           </button>
@@ -290,7 +290,7 @@ function ChecklistEditor({
       )}
 
       {/* Steps */}
-      <h2 className="mt-8 mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <h2 className="mt-8 mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
         Steps
       </h2>
       <ul className="flex flex-col gap-2">
@@ -313,7 +313,7 @@ function ChecklistEditor({
             }}
           />
         ))}
-        {steps.length === 0 && <li className="text-sm text-slate-400">No steps yet.</li>}
+        {steps.length === 0 && <li className="text-sm text-zinc-400">No steps yet.</li>}
       </ul>
 
       {/* Add step */}
@@ -330,7 +330,7 @@ function ChecklistEditor({
           value={newStep}
           onChange={(e) => setNewStep(e.target.value)}
           placeholder="Add a step…"
-          className="flex-1 rounded-md border border-slate-700 px-3 py-2 focus:border-blue-500 focus:outline-none"
+          className="flex-1 rounded-md border border-zinc-700 px-3 py-2 focus:border-blue-500 focus:outline-none"
         />
         <button
           type="submit"
@@ -372,13 +372,13 @@ function StepRow({
   useEffect(() => setDesc(description ?? ''), [description]);
 
   return (
-    <li className="flex gap-2 rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+    <li className="flex gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2">
       <div className="flex flex-col pt-1">
         <button
           type="button"
           disabled={isFirst}
           onClick={() => void onMove(-1)}
-          className="px-1 text-slate-500 disabled:opacity-30 hover:text-slate-100"
+          className="px-1 text-zinc-500 disabled:opacity-30 hover:text-zinc-100"
           aria-label="Move up"
         >
           ▲
@@ -387,7 +387,7 @@ function StepRow({
           type="button"
           disabled={isLast}
           onClick={() => void onMove(1)}
-          className="px-1 text-slate-500 disabled:opacity-30 hover:text-slate-100"
+          className="px-1 text-zinc-500 disabled:opacity-30 hover:text-zinc-100"
           aria-label="Move down"
         >
           ▼
@@ -403,7 +403,7 @@ function StepRow({
             }}
             className="flex-1 rounded border border-transparent px-2 py-1 focus:border-blue-500 focus:outline-none"
           />
-          <label className="flex shrink-0 items-center gap-1 text-xs text-slate-500">
+          <label className="flex shrink-0 items-center gap-1 text-xs text-zinc-500">
             <input
               type="checkbox"
               checked={required}
@@ -428,7 +428,7 @@ function StepRow({
           }}
           rows={desc ? 2 : 1}
           placeholder="Add a description (optional)…"
-          className="resize-y rounded border border-transparent px-2 py-1 text-sm text-slate-300 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+          className="resize-y rounded border border-transparent px-2 py-1 text-sm text-zinc-300 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none"
         />
       </div>
     </li>

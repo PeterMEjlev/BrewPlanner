@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom';
+﻿import { Link, useParams } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -27,19 +27,19 @@ export function DevicePage(): JSX.Element {
     useDeviceData(deviceId);
 
   return (
-    <div className="min-h-full bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/80 px-6 py-4 backdrop-blur">
+    <div className="min-h-full bg-zinc-950 text-zinc-100">
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-950/80 px-6 py-4 backdrop-blur">
         <div className="flex items-center gap-3">
           <Link
             to="/"
-            className="rounded-lg px-2 py-1 text-lg text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+            className="rounded-lg px-2 py-1 text-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
             aria-label="Back to dashboard"
           >
             ←
           </Link>
           <div>
             <h1 className="text-lg font-semibold tracking-tight">{device?.name ?? 'Device'}</h1>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-zinc-400">
               {device?.lastSeenAt
                 ? `Last update ${relativeTime(device.lastSeenAt)}`
                 : 'Never reported'}
@@ -49,14 +49,14 @@ export function DevicePage(): JSX.Element {
         {device && (
           <span
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-semibold ${
-              device.online ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-800 text-slate-400'
+              device.online ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
             }`}
           >
             <span
               className={`h-2 w-2 rounded-full ${
                 device.online
                   ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]'
-                  : 'bg-slate-500'
+                  : 'bg-zinc-500'
               }`}
               aria-hidden
             />
@@ -78,10 +78,10 @@ export function DevicePage(): JSX.Element {
               <StateBadge value={latest.value} size="lg" />
             ) : (
               <>
-                <span className="text-5xl font-bold tabular-nums text-slate-50">
+                <span className="text-5xl font-bold tabular-nums text-zinc-50">
                   {formatValue(latest)}
                 </span>
-                <span className="ml-2 text-lg text-slate-400">{metricLabel(latest.metric)}</span>
+                <span className="ml-2 text-lg text-zinc-400">{metricLabel(latest.metric)}</span>
               </>
             )}
           </div>
@@ -99,7 +99,7 @@ export function DevicePage(): JSX.Element {
                   className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                     r.metric === metric
                       ? 'bg-blue-600 text-white'
-                      : 'border border-slate-700 text-slate-300 hover:bg-slate-800'
+                      : 'border border-zinc-700 text-zinc-300 hover:bg-zinc-800'
                   }`}
                 >
                   {metricLabel(r.metric)}
@@ -115,8 +115,8 @@ export function DevicePage(): JSX.Element {
                 onClick={() => setRangeMs(r.ms)}
                 className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                   r.ms === rangeMs
-                    ? 'bg-slate-100 text-slate-900'
-                    : 'border border-slate-700 text-slate-300 hover:bg-slate-800'
+                    ? 'bg-zinc-100 text-zinc-900'
+                    : 'border border-zinc-700 text-zinc-300 hover:bg-zinc-800'
                 }`}
               >
                 {r.label}
@@ -126,9 +126,9 @@ export function DevicePage(): JSX.Element {
         </div>
 
         {/* Chart */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
           {chartData.length === 0 ? (
-            <p className="py-20 text-center text-sm text-slate-500">
+            <p className="py-20 text-center text-sm text-zinc-500">
               No readings in this range.
             </p>
           ) : (
