@@ -32,11 +32,12 @@ export interface DeviceDataState {
 /**
  * Loads a device's live status and metric history, polling both. Shared so the
  * laptop ([Device]) and touch ([KioskDevice]) views stay in sync without
- * duplicating the fetch/poll logic.
+ * duplicating the fetch/poll logic. Pass `lockedMetric` to pin the view to a
+ * single metric (e.g. the gravity page ignores the Tilt's beer temp).
  */
-export function useDeviceData(deviceId: number): DeviceDataState {
+export function useDeviceData(deviceId: number, lockedMetric?: string): DeviceDataState {
   const [device, setDevice] = useState<DeviceStatus | null>(null);
-  const [metric, setMetric] = useState<string | null>(null);
+  const [metric, setMetric] = useState<string | null>(lockedMetric ?? null);
   const [rangeMs, setRangeMs] = useState<number>(DEFAULT_RANGE_MS);
   const [history, setHistory] = useState<Reading[]>([]);
   const [error, setError] = useState<string | null>(null);

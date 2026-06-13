@@ -42,7 +42,7 @@ const MOCK_FLEET: MockDevice[] = [
   },
   {
     id: 3,
-    name: 'Brewery Temperature',
+    name: 'Brewery',
     type: 'brew_controller',
     base: { temp_c: 21.3 },
   },

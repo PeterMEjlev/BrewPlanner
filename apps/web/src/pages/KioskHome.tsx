@@ -241,7 +241,7 @@ function FermenterIcon(): JSX.Element {
       strokeWidth={2.4}
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="h-[1.8rem] w-[1.8rem]"
+      className="h-[2.34rem] w-[2.34rem]"
       aria-hidden
     >
       {/* top port */}
@@ -500,8 +500,14 @@ function StationTile({
     );
   }
   if (gravity) {
+    // Lock the device page to gravity — the Tilt also reports beer temp, but that
+    // now lives on the combined Temperature chart, so this view is gravity-only.
     columns.push(
-      <MetricColumn key="gravity" deviceId={gravity.deviceId} label="Gravity">
+      <MetricColumn
+        key="gravity"
+        to={`/kiosk/devices/${gravity.deviceId}?metric=gravity_sg`}
+        label="Gravity"
+      >
         <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
       </MetricColumn>,
     );
@@ -746,8 +752,7 @@ const GLYPH_PROPS = {
   strokeWidth: 2,
   strokeLinecap: 'round',
   strokeLinejoin: 'round',
-  // ~20% smaller than the 24px circle glyphs used to be, for a lighter look.
-  className: 'h-[1.2rem] w-[1.2rem]',
+  className: 'h-[1.56rem] w-[1.56rem]',
   'aria-hidden': true,
 } as const;
 

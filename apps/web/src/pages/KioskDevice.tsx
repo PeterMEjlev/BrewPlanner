@@ -1,4 +1,4 @@
-﻿import { Link, useParams } from 'react-router-dom';
+﻿import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -21,9 +21,13 @@ import {
 /** Touch-first sensor view for the Pi screen: big number, big controls, big chart. */
 export function KioskDevicePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
+  const [params] = useSearchParams();
+  // A `?metric=` query pins the page to one metric and hides the selector (the
+  // fermenter's gravity link uses this so the Tilt's beer temp never shows here).
+  const lockedMetric = params.get('metric') ?? undefined;
   const deviceId = Number(id);
   const { device, metric, setMetric, rangeMs, setRangeMs, chartData, latest, longRange } =
-    useDeviceData(deviceId);
+    useDeviceData(deviceId, lockedMetric);
 
   return (
     <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
@@ -80,7 +84,7 @@ export function KioskDevicePage(): JSX.Element {
 
         {/* Metric (if several) + range selectors */}
         <div className="flex flex-wrap items-center gap-3">
-          {device && device.latest.length > 1 && (
+          {!lockedMetric && device && device.latest.length > 1 && (
             <div className="flex flex-wrap gap-2">
               {device.latest.map((r) => (
                 <button
