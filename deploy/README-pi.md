@@ -83,8 +83,13 @@ The `checklist-server` unit serves both the API and the built web app on port
 3000. The `checklist-kiosk` unit waits for the server to answer, then launches
 Chromium fullscreen on `http://localhost:3000/kiosk?kiosk=1` — the touch-first
 **hub home**, with big tiles for the checklist, brewery to-do, and live sensors.
-The `?kiosk=1` flag tells the web app it is the physical kiosk so it hides the
-mouse pointer; keep it on whichever route you boot to. From
+The `?kiosk=1` flag tells the web app it is the physical kiosk so it hides
+Chromium's pointer if a USB mouse is ever attached; keep it on whichever route
+you boot to. Separately, cage draws its own static arrow in the centre of the
+screen (a compositor cursor that page CSS cannot remove), so the kiosk unit sets
+`XCURSOR_THEME=transparent` and `deploy/install-transparent-cursor.sh` installs a
+fully transparent cursor theme. `update.sh` runs that installer automatically.
+From
 there the checklist opens at `/display`; a home button (⌂) returns to the hub.
 The hub layout reflows for either landscape or portrait. To boot straight to the
 checklist instead, point `--app=` at `/display` in `checklist-kiosk.service`.

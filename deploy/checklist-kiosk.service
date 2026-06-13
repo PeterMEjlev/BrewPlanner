@@ -24,6 +24,15 @@ StandardInput=tty
 StandardOutput=journal
 StandardError=journal
 Environment=XDG_RUNTIME_DIR=/run/user/1000
+# Hide the mouse pointer. cage draws a default arrow in the CENTRE of the screen
+# on startup and — with only a touchscreen and no mouse to move it — it just sits
+# there forever. That cursor is the compositor's, so CSS cannot touch it; instead
+# point wlroots at a fully transparent XCursor theme (installed by
+# deploy/install-transparent-cursor.sh). The ?kiosk=1 flag below is the second
+# layer: it makes the web app hide Chromium's own pointer if a USB mouse is ever
+# plugged in for maintenance (see apps/web/src/main.tsx).
+Environment=XCURSOR_THEME=transparent
+Environment=XCURSOR_SIZE=24
 ExecStartPre=/bin/sh -c 'until curl -sf http://localhost:3000/api/active >/dev/null; do sleep 1; done'
 # Launch Chromium directly on the KMS/DRM display via cage (a minimal Wayland
 # kiosk compositor) — no full desktop environment required.

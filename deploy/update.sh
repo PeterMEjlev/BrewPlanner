@@ -40,6 +40,11 @@ sudo cp "$SCRIPT_DIR/checklist-server.service" /etc/systemd/system/
 sudo cp "$SCRIPT_DIR/checklist-kiosk.service" /etc/systemd/system/
 sudo systemctl daemon-reload
 
+# Ensure the transparent cursor theme exists (the kiosk unit references it via
+# XCURSOR_THEME to hide cage's static centre-screen pointer).
+echo "==> ensuring transparent cursor theme"
+bash "$SCRIPT_DIR/install-transparent-cursor.sh"
+
 echo "==> restarting services"
 sudo systemctl restart checklist-server.service
 sudo systemctl restart checklist-kiosk.service
