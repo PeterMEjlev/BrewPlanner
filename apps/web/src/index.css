@@ -56,10 +56,19 @@ textarea {
   -webkit-touch-callout: none;
 }
 
-/* Hide the mouse cursor on touch-only screens (the Pi kiosk), so the operator
-   doesn't see a stray pointer. Keyed off the input device, not the route, so it
-   also covers /display. A mouse plugged in for maintenance reports a fine
-   pointer and keeps its cursor, so you can still see what you're doing. */
+/* Hide the mouse cursor on the physical Pi kiosk. main.tsx tags <html class="kiosk">
+   when Chromium is launched with ?kiosk=1, which is the only reliable signal:
+   under cage/wlroots the touchscreen also advertises a fine pointer, so the
+   input-device media query below never matches on the Pi. */
+html.kiosk,
+html.kiosk *,
+html.kiosk *::before,
+html.kiosk *::after {
+  cursor: none !important;
+}
+
+/* Fallback for genuine touch-only browsers (e.g. a phone visiting /display):
+   hide the pointer when the input device reports no hover and a coarse pointer. */
 @media (hover: none) and (pointer: coarse) {
   *,
   *::before,

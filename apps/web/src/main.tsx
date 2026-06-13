@@ -11,6 +11,16 @@ import { LoginPage } from './pages/Login';
 import { TodosPage } from './pages/Todos';
 import './index.css';
 
+// The physical Pi kiosk launches Chromium with ?kiosk=1 (see
+// deploy/checklist-kiosk.service). Latch that onto <html> so CSS can hide the
+// mouse pointer for the whole session: react-router drops the query string on
+// the first in-app navigation, and on the Pi the pointer media query is
+// unreliable (cage/wlroots reports a fine pointer), so a one-time class is the
+// dependable signal that "we are the kiosk".
+if (new URLSearchParams(window.location.search).has('kiosk')) {
+  document.documentElement.classList.add('kiosk');
+}
+
 // The chart pages pull in recharts (~400 kB). Load them on demand so the
 // dashboard, admin, and kiosk-home bundles stay small.
 const DevicePage = lazy(() =>

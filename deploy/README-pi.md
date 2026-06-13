@@ -81,8 +81,10 @@ journalctl -u checklist-kiosk.service -f
 
 The `checklist-server` unit serves both the API and the built web app on port
 3000. The `checklist-kiosk` unit waits for the server to answer, then launches
-Chromium fullscreen on `http://localhost:3000/kiosk` — the touch-first **hub
-home**, with big tiles for the checklist, brewery to-do, and live sensors. From
+Chromium fullscreen on `http://localhost:3000/kiosk?kiosk=1` — the touch-first
+**hub home**, with big tiles for the checklist, brewery to-do, and live sensors.
+The `?kiosk=1` flag tells the web app it is the physical kiosk so it hides the
+mouse pointer; keep it on whichever route you boot to. From
 there the checklist opens at `/display`; a home button (⌂) returns to the hub.
 The hub layout reflows for either landscape or portrait. To boot straight to the
 checklist instead, point `--app=` at `/display` in `checklist-kiosk.service`.

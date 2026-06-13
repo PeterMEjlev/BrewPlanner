@@ -33,6 +33,13 @@ npm run build
 echo "==> npm run db:migrate"
 npm run db:migrate
 
+# Re-sync the systemd units so changes committed to deploy/*.service (e.g. the
+# kiosk launch URL) actually reach the installed copies under /etc.
+echo "==> syncing systemd units"
+sudo cp "$SCRIPT_DIR/checklist-server.service" /etc/systemd/system/
+sudo cp "$SCRIPT_DIR/checklist-kiosk.service" /etc/systemd/system/
+sudo systemctl daemon-reload
+
 echo "==> restarting services"
 sudo systemctl restart checklist-server.service
 sudo systemctl restart checklist-kiosk.service

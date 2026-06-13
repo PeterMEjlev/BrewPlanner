@@ -30,7 +30,9 @@ ExecStartPre=/bin/sh -c 'until curl -sf http://localhost:3000/api/active >/dev/n
 # NOTE: on Debian 13 / current Raspberry Pi OS the binary is `chromium`
 # (NOT the old `chromium-browser`). Install with: sudo apt install -y cage chromium
 # Boots to the touch hub home (/kiosk); point --app= at /display to boot
-# straight to the checklist instead.
+# straight to the checklist instead. The ?kiosk=1 flag tells the web app it is
+# the physical kiosk so it hides the mouse pointer (see apps/web/src/main.tsx);
+# keep it on whichever route you boot to.
 ExecStart=/usr/bin/cage -- /usr/bin/chromium \
   --kiosk \
   --noerrdialogs \
@@ -39,7 +41,7 @@ ExecStart=/usr/bin/cage -- /usr/bin/chromium \
   --disable-features=TranslateUI \
   --check-for-update-interval=31536000 \
   --overscroll-history-navigation=0 \
-  --app=http://localhost:3000/kiosk
+  --app=http://localhost:3000/kiosk?kiosk=1
 Restart=on-failure
 RestartSec=3
 
