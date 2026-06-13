@@ -372,9 +372,11 @@ export function stateTick(value: number): string {
   return value <= -0.5 ? 'Cool' : value >= 0.5 ? 'Heat' : 'Idle';
 }
 
-/** Chart stroke per metric — violet for the hvac state track, blue otherwise. */
+/** Chart stroke per metric — violet hvac track, yellow power/energy, blue otherwise. */
 export function metricColor(metric: string): string {
-  return metric === 'hvac_state' ? '#a78bfa' : '#3b82f6';
+  if (metric === 'hvac_state') return '#a78bfa';
+  if (metric === 'power_w' || metric === 'energy_kwh') return '#eab308';
+  return '#3b82f6';
 }
 
 /**

@@ -31,10 +31,22 @@ const TYPE_ICON: Record<DeviceType, string> = {
 const SIDEBAR_TINT: Record<DeviceType, string> = {
   pressure_sensor: 'text-indigo-300',
   brew_controller: 'text-zinc-200',
-  power_meter: 'text-green-400',
+  power_meter: 'text-yellow-400',
   water_meter: 'text-sky-400',
   hydrometer: 'text-fuchsia-300',
   other: 'text-zinc-300',
+};
+
+/**
+ * Friendlier captions for the utility cards: the instantaneous reading (power,
+ * flow) reads as "Current", the running daily total (energy, water) as "Today".
+ * Anything else falls back to its metric label.
+ */
+const METRIC_CAPTION: Record<string, string> = {
+  power_w: 'Current',
+  energy_kwh: 'Today',
+  flow_lpm: 'Current',
+  water_l: 'Today',
 };
 
 /**
@@ -208,11 +220,15 @@ function findReading(
   return undefined;
 }
 
-/** Cooling / idle / heating look for the controller's hvac_state value. */
-function hvacLook(value: number): { label: string; icon: string; cls: string } {
-  if (value < 0) return { label: 'Cooling', icon: '❄', cls: 'text-sky-400' };
-  if (value > 0) return { label: 'Heating', icon: '🔥', cls: 'text-orange-400' };
-  return { label: 'Idle', icon: '○', cls: 'text-zinc-400' };
+/**
+ * Tint for the fridge temperature from the controller's hvac_state: blue while
+ * cooling, orange while heating, and plain white when idle — the colour is the
+ * only cue (no separate status line).
+ */
+function hvacColor(value: number): string {
+  if (value < 0) return 'text-sky-400';
+  if (value > 0) return 'text-orange-400';
+  return '';
 }
 
 /** Line-art conical fermenter, tinted via currentColor. */
@@ -336,21 +352,20 @@ export function KioskHomePage(): JSX.Element {
               title="Checklists"
               subtitle={checklistInfo}
               icon={<ClipboardIcon />}
-              accent="border-sky-500/40 text-sky-400"
+              accent="border-zinc-700 text-zinc-300"
             />
             <ActionButton
               to="/kiosk/todos"
               title="ToDo List"
               subtitle={todoInfo}
               icon={<ClipboardIcon />}
-              accent="border-green-500/40 text-green-400"
+              accent="border-zinc-700 text-zinc-300"
             />
           </div>
         </div>
 
-        {/* Right rail: a clock plus the remaining sensor + utility cards. */}
+        {/* Right rail: the remaining sensor + utility cards, filling the height. */}
         <div className="flex w-[30%] min-w-0 shrink-0 flex-col gap-3">
-          <Clock />
           {railDevices.length === 0 ? (
             <div className="flex flex-1 items-center justify-center rounded-3xl border border-dashed border-zinc-800 text-center text-sm text-zinc-500">
               No other sensors
@@ -360,30 +375,6 @@ export function KioskHomePage(): JSX.Element {
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-/**
- * Live clock for the top of the side rail — time and date, refreshed every few
- * seconds. Mirrors the wall-clock header in the reference layout.
- */
-function Clock(): JSX.Element {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 10_000);
-    return () => clearInterval(id);
-  }, []);
-  const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  const date = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  return (
-    <div className="flex shrink-0 items-center justify-end gap-2.5 px-2 py-1 text-zinc-300">
-      <ClockIcon />
-      <span className="text-xl font-semibold tabular-nums">{time}</span>
-      <span className="text-zinc-600" aria-hidden>
-        |
-      </span>
-      <span className="text-xl text-zinc-400">{date}</span>
     </div>
   );
 }
@@ -409,7 +400,7 @@ function ActionButton({
   return (
     <Link
       to={to}
-      className="flex h-[4.5rem] touch-manipulation items-center gap-3.5 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 px-5 transition active:scale-[0.98] active:bg-zinc-800"
+      className="flex h-[4.5rem] touch-manipulation items-center gap-3.5 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-5 transition active:scale-[0.98] active:bg-zinc-800"
     >
       <span
         className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${accent}`}
@@ -444,17 +435,17 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
   const state = findReading(devices, 'hvac_state', 'brew_controller');
   const gravity = findReading(devices, 'gravity_sg');
 
-  const hvac = state ? hvacLook(state.reading.value) : null;
+  const fridgeColor = state ? hvacColor(state.reading.value) : '';
 
   // Track which column is visually first so only that one omits its left border.
   let firstCol = true;
   const col = () => { const f = firstCol; firstCol = false; return f; };
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 px-6 py-5">
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5">
       {/* Header: tank icon, name + style, fermentation status. */}
       <div className="flex shrink-0 items-center gap-4">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950 text-zinc-200">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black text-zinc-200">
           <FermenterIcon />
         </span>
         <div className="min-w-0 flex-1">
@@ -472,8 +463,8 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
       <hr className="my-5 shrink-0 border-zinc-800" />
 
       {/* Pressure | Temperature | Gravity — labels pinned to top row. The
-          temperature column stacks Beer over Fridge (with setpoint + hvac
-          state) so both readings sit together, mirroring the fermenter card. */}
+          temperature column stacks Beer over Fridge (plus the setpoint); the
+          fridge value is tinted blue/orange by the cooling/heating state. */}
       <div className="flex min-h-0 flex-1">
         {pressure && (
           <MetricColumn deviceId={pressure.deviceId} label="Pressure" first={col()}>
@@ -493,18 +484,12 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
                   deviceId={fridge.deviceId}
                   label="Fridge"
                   value={fridge.reading.value.toFixed(1)}
-                  valueClass={hvac?.cls}
+                  valueClass={fridgeColor}
                 />
               )}
               {setpoint && (
                 <span className="mt-1 text-sm text-zinc-500">
                   Set: {setpoint.reading.value.toFixed(1)}°C
-                </span>
-              )}
-              {hvac && (
-                <span className={`flex items-center gap-1.5 text-sm font-semibold ${hvac.cls}`}>
-                  <span aria-hidden>{hvac.icon}</span>
-                  <span className="uppercase tracking-wide">{hvac.label}</span>
                 </span>
               )}
             </div>
@@ -627,14 +612,14 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
   return (
     <Link
       to={`/kiosk/devices/${device.id}`}
-      className={`flex min-h-0 flex-1 touch-manipulation flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 px-5 py-4 transition active:scale-[0.98] active:bg-zinc-800 ${
+      className={`flex min-h-0 flex-1 touch-manipulation flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-4 transition active:scale-[0.98] active:bg-zinc-800 ${
         device.online ? '' : 'opacity-50'
       }`}
     >
       {/* Header: glyph circle + name. */}
       <div className="flex shrink-0 items-center gap-3">
         <span
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950 ${SIDEBAR_TINT[device.type]}`}
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black ${SIDEBAR_TINT[device.type]}`}
           aria-hidden
         >
           <DeviceGlyph type={device.type} />
@@ -660,7 +645,7 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
               <span
                 className={`mt-1.5 max-w-full truncate text-zinc-500 ${multi ? 'text-xs' : 'text-sm'}`}
               >
-                {metricLabel(m.metric)}
+                {METRIC_CAPTION[m.metric] ?? metricLabel(m.metric)}
               </span>
             </div>
           ))
@@ -754,15 +739,6 @@ function ClipboardIcon(): JSX.Element {
       <path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" />
       <path d="m8.5 11 1.5 1.5 3-3" />
       <path d="M8.5 16.5h7" />
-    </svg>
-  );
-}
-
-function ClockIcon(): JSX.Element {
-  return (
-    <svg {...GLYPH_PROPS} className="h-5 w-5">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7.5V12l3 2" />
     </svg>
   );
 }
