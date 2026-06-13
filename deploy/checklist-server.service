@@ -5,10 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/checklist
+User=brewplanner
+WorkingDirectory=/home/brewplanner/checklist
 # Path to the SQLite database. Lives outside the build dir so updates don't wipe data.
-Environment=DATABASE_PATH=/home/pi/checklist/data/checklist.sqlite
+Environment=DATABASE_PATH=/home/brewplanner/checklist/data/checklist.sqlite
 Environment=PORT=3000
 Environment=HOST=0.0.0.0
 # Production mode: mark session cookies Secure (they only travel over the HTTPS
