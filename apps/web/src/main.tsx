@@ -5,6 +5,7 @@ import { RequireAuth } from './auth';
 import { AdminPage } from './pages/Admin';
 import { DashboardPage } from './pages/Dashboard';
 import { DisplayPage } from './pages/Display';
+import { KegsPage } from './pages/Kegs';
 import { KioskHomePage } from './pages/KioskHome';
 import { KioskTodosPage } from './pages/KioskTodos';
 import { LoginPage } from './pages/Login';
@@ -101,6 +102,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <RecipesPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/kiosk/kegs',
+    element: (
+      <RequireAuth>
+        <KegsPage />
       </RequireAuth>
     ),
   },

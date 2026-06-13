@@ -27,7 +27,10 @@ npm run typecheck
 npm run build      # same build the Pi runs
 ```
 
-## Deploy to the Pi (over SSH)
+## Deploy to the Pi (over SSH) - "~/checklist/deploy/update.sh"
+
+
+
 
 The Pi runs the code from a git checkout at `/home/pi/checklist`, so deploying =
 push your commits, then pull + rebuild on the Pi.

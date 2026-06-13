@@ -1,19 +1,21 @@
 ﻿import type {
-  ActiveState,
   DeviceStatus,
   DeviceType,
   LatestReading,
   Reading,
   Recipe,
-  Todo,
 } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import { isUnknownContents, useKegs } from '../kegs';
 import { formatValueParts, metricLabel } from './Dashboard';
 
 /** Refresh cadence for the wall display — frequent enough to feel live. */
 const POLL_MS = 5000;
+
+/** Keg counts move slowly — re-pull the sheet once a minute for the home tile. */
+const KEG_POLL_MS = 60_000;
 
 const TYPE_ICON: Record<DeviceType, string> = {
   pressure_sensor: '📈',
@@ -268,22 +270,16 @@ function FermenterIcon(): JSX.Element {
  * water).
  */
 export function KioskHomePage(): JSX.Element {
-  const [active, setActive] = useState<ActiveState | null>(null);
-  const [todos, setTodos] = useState<Todo[]>([]);
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Keg inventory comes from the shared Google Sheet (read-only here), polled
+  // independently so a sheet hiccup never blanks the rest of the dashboard.
+  const { kegs } = useKegs(KEG_POLL_MS);
 
   const load = useCallback(async () => {
     try {
-      const [a, t, d, r] = await Promise.all([
-        api.getActive(),
-        api.listTodos(),
-        api.listDevices(),
-        api.getActiveRecipe(),
-      ]);
-      setActive(a);
-      setTodos(t);
+      const [d, r] = await Promise.all([api.listDevices(), api.getActiveRecipe()]);
       setDevices(d);
       setRecipe(r);
       setError(null);
@@ -297,8 +293,6 @@ export function KioskHomePage(): JSX.Element {
     const id = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(id);
   }, [load]);
-
-  const openTodos = todos.filter((t) => !t.done).length;
 
   // The fermenter (a multi-device "station") is the hero on the left; every
   // other sensor — lone watched sensors and the utility meters — lines up in
@@ -314,13 +308,9 @@ export function KioskHomePage(): JSX.Element {
   const loneSensors = primaryGroups.filter((g) => g.length === 1).map((g) => g[0]!);
   const railDevices = [...loneSensors, ...secondary];
 
-  const checklistInfo = active?.checklist
-    ? `${active.checklist.name} · ${active.progress.completed}/${active.progress.total}`
-    : 'View and complete brewing checklists';
-  const todoInfo =
-    openTodos > 0
-      ? `${openTodos} open task${openTodos === 1 ? '' : 's'}`
-      : 'View and manage your tasks';
+  const filledKegs = kegs.filter((k) => !isUnknownContents(k.contents)).length;
+  const kegInfo =
+    kegs.length > 0 ? `${filledKegs} of ${kegs.length} filled` : 'View keg inventory';
 
   return (
     <div className="touch-none-select flex h-full flex-col gap-3 overflow-hidden bg-black p-3 text-white">
@@ -352,18 +342,32 @@ export function KioskHomePage(): JSX.Element {
           </main>
 
           <div className="grid shrink-0 grid-cols-2 gap-3">
+            {/* Checklist + To-Do share one card: the left half opens the checklist
+                display, the right half the to-do list. Icons only, no labels. */}
+            <div className="flex h-[4.5rem] overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
+              <Link
+                to="/display"
+                aria-label="Checklists"
+                className="flex flex-1 touch-manipulation items-center justify-center text-zinc-300 transition active:bg-zinc-800"
+              >
+                <ClipboardIcon className="h-8 w-8" />
+              </Link>
+              <span className="w-px shrink-0 self-stretch bg-zinc-800" aria-hidden />
+              <Link
+                to="/kiosk/todos"
+                aria-label="To-Do list"
+                className="flex flex-1 touch-manipulation items-center justify-center text-zinc-300 transition active:bg-zinc-800"
+              >
+                <TodoIcon className="h-8 w-8" />
+              </Link>
+            </div>
+
+            {/* Reclaimed space → a shortcut into the keg inventory view. */}
             <ActionButton
-              to="/display"
-              title="Checklists"
-              subtitle={checklistInfo}
-              icon={<ClipboardIcon />}
-              accent="border-zinc-700 text-zinc-300"
-            />
-            <ActionButton
-              to="/kiosk/todos"
-              title="ToDo List"
-              subtitle={todoInfo}
-              icon={<ClipboardIcon />}
+              to="/kiosk/kegs"
+              title="Kegs"
+              subtitle={kegInfo}
+              icon={<KegIcon />}
               accent="border-zinc-700 text-zinc-300"
             />
           </div>
@@ -385,9 +389,9 @@ export function KioskHomePage(): JSX.Element {
 }
 
 /**
- * A shortcut card beneath the fermenter (Checklists / To-Do): an outlined glyph,
- * a title, and a live-status subtitle (active checklist + progress, or the open
- * task count), with a trailing chevron.
+ * A wide shortcut card beneath the fermenter (the Kegs inventory link): an
+ * outlined glyph, a title, and a live-status subtitle (the filled-keg count),
+ * with a trailing chevron.
  */
 function ActionButton({
   to,
@@ -755,13 +759,39 @@ function DropletIcon(): JSX.Element {
   );
 }
 
-function ClipboardIcon(): JSX.Element {
+function ClipboardIcon({ className }: { className?: string }): JSX.Element {
   return (
-    <svg {...GLYPH_PROPS}>
+    <svg {...GLYPH_PROPS} className={className ?? GLYPH_PROPS.className}>
       <rect x="5" y="4" width="14" height="17" rx="2" />
       <path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" />
       <path d="m8.5 11 1.5 1.5 3-3" />
       <path d="M8.5 16.5h7" />
+    </svg>
+  );
+}
+
+/** A ticked task list — distinguishes the to-do half from the checklist half. */
+function TodoIcon({ className }: { className?: string }): JSX.Element {
+  return (
+    <svg {...GLYPH_PROPS} className={className ?? GLYPH_PROPS.className}>
+      <path d="M9 5h11" />
+      <path d="M9 12h11" />
+      <path d="M9 19h11" />
+      <path d="m3.5 5 1.1 1.1L7 3.6" />
+      <path d="m3.5 12 1.1 1.1L7 10.6" />
+      <path d="m3.5 19 1.1 1.1L7 17.6" />
+    </svg>
+  );
+}
+
+/** Line-art beer keg/barrel for the inventory shortcut. */
+function KegIcon({ className }: { className?: string }): JSX.Element {
+  return (
+    <svg {...GLYPH_PROPS} className={className ?? GLYPH_PROPS.className}>
+      <path d="M9 3h6" />
+      <path d="M8 3c-1.3 1.6-2 4.6-2 9s.7 7.4 2 9h8c1.3-1.6 2-4.6 2-9s-.7-7.4-2-9" />
+      <path d="M5.7 8.5h12.6" />
+      <path d="M5.7 15.5h12.6" />
     </svg>
   );
 }
