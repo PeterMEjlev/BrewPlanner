@@ -15,4 +15,4 @@
 
 - ## Add Keg status sheets (keep the same visual as in brewsystem 3.0)
 
-- ## 
+- ## update non RPI (computer / laptop) GUI to reflect the same design as the RPi version. (fermentor info collected in same place etc.) just with more info in the cards as there is more screen real estate.

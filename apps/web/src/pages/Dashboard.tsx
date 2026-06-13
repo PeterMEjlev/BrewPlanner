@@ -316,13 +316,23 @@ export function metricLabel(metric: string): string {
   return splitMetric(metric).label;
 }
 
-export function formatValue(r: LatestReading): string {
-  if (isStateMetric(r.metric)) return stateLook(r.value).label;
+/**
+ * Split a reading into its display number and unit so callers can lay the two
+ * out separately (e.g. a big value with a small unit beside it). {@link
+ * formatValue} simply joins them back into one string.
+ */
+export function formatValueParts(r: LatestReading): { value: string; unit: string | null } {
+  if (isStateMetric(r.metric)) return { value: stateLook(r.value).label, unit: null };
   // Gravity reads like 1.050 — keep three decimals and no unit.
-  if (isGravityMetric(r.metric)) return r.value.toFixed(3);
+  if (isGravityMetric(r.metric)) return { value: r.value.toFixed(3), unit: null };
   const { unit } = splitMetric(r.metric);
   const n = Math.abs(r.value) >= 100 ? r.value.toFixed(0) : r.value.toFixed(2);
-  return unit ? `${n} ${unit}` : n;
+  return { value: n, unit };
+}
+
+export function formatValue(r: LatestReading): string {
+  const { value, unit } = formatValueParts(r);
+  return unit ? `${value} ${unit}` : value;
 }
 
 function capitalize(s: string): string {

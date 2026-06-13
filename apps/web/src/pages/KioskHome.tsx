@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { formatValue, metricLabel, relativeTime } from './Dashboard';
+import { formatValueParts, metricLabel } from './Dashboard';
 
 /** Refresh cadence for the wall display — frequent enough to feel live. */
 const POLL_MS = 5000;
@@ -24,16 +24,17 @@ const TYPE_ICON: Record<DeviceType, string> = {
 };
 
 /**
- * Per-type icon tint. Gives each sensor a distinct colour at a glance without
- * colouring the reading itself (numbers stay white for max legibility).
+ * Per-type icon tint for the sidebar cards. The glyph sits in a plain circle
+ * (like the fermenter's), tinted to give each sensor a distinct colour at a
+ * glance while the reading itself stays white for max legibility.
  */
-const TYPE_ACCENT: Record<DeviceType, string> = {
-  pressure_sensor: 'bg-indigo-500/15 text-indigo-300',
-  brew_controller: 'bg-amber-500/15 text-amber-300',
-  power_meter: 'bg-yellow-500/15 text-yellow-300',
-  water_meter: 'bg-cyan-500/15 text-cyan-300',
-  hydrometer: 'bg-fuchsia-500/15 text-fuchsia-300',
-  other: 'bg-zinc-600/30 text-zinc-300',
+const SIDEBAR_TINT: Record<DeviceType, string> = {
+  pressure_sensor: 'text-indigo-300',
+  brew_controller: 'text-zinc-200',
+  power_meter: 'text-green-400',
+  water_meter: 'text-sky-400',
+  hydrometer: 'text-fuchsia-300',
+  other: 'text-zinc-300',
 };
 
 /**
@@ -245,11 +246,12 @@ function FermenterIcon(): JSX.Element {
 }
 
 /**
- * Touch-first hub home for the Pi's 7" (800×480) screen. Everything is visible
- * at a glance with no scrolling: a compact action bar (checklist + to-do) sits
- * on top, the equipment the brewer watches fills the middle as large hero tiles
- * (the fermenter merges its pressure / fridge / beer / gravity sensors into one
- * card), and the utility meters tuck into a slim strip at the bottom.
+ * Touch-first hub home for the Pi's 7" screen. Everything is visible at a glance
+ * with no scrolling: the fermenter the brewer watches fills the left as a large
+ * hero card (merging its pressure / fridge / beer / gravity sensors) with the
+ * Checklists and To-Do shortcuts beneath it, while a right-hand rail carries a
+ * live clock and the remaining sensor + utility cards (brewery temp, power,
+ * water).
  */
 export function KioskHomePage(): JSX.Element {
   const [active, setActive] = useState<ActiveState | null>(null);
@@ -280,11 +282,10 @@ export function KioskHomePage(): JSX.Element {
   }, [load]);
 
   const openTodos = todos.filter((t) => !t.done).length;
-  const checklistDone =
-    active?.checklist != null &&
-    active.progress.total > 0 &&
-    active.progress.completed === active.progress.total;
 
+  // The fermenter (a multi-device "station") is the hero on the left; every
+  // other sensor — lone watched sensors and the utility meters — lines up in
+  // the right rail, ordered most-watched first.
   const primary = devices.filter((d) => !SECONDARY_TYPES.has(d.type));
   const secondary = devices
     .filter((d) => SECONDARY_TYPES.has(d.type))
@@ -292,109 +293,137 @@ export function KioskHomePage(): JSX.Element {
   const primaryGroups = groupByName(primary).sort(
     (a, b) => groupRank(a) - groupRank(b) || a[0]!.name.localeCompare(b[0]!.name),
   );
+  const stations = primaryGroups.filter((g) => g.length > 1);
+  const loneSensors = primaryGroups.filter((g) => g.length === 1).map((g) => g[0]!);
+  const railDevices = [...loneSensors, ...secondary];
+
+  const checklistInfo = active?.checklist
+    ? `${active.checklist.name} · ${active.progress.completed}/${active.progress.total}`
+    : 'View and complete brewing checklists';
+  const todoInfo =
+    openTodos > 0
+      ? `${openTodos} open task${openTodos === 1 ? '' : 's'}`
+      : 'View and manage your tasks';
 
   return (
-    <div className="touch-none-select flex h-full flex-col gap-2 overflow-hidden bg-zinc-900 p-2 text-white">
+    <div className="touch-none-select flex h-full flex-col gap-2.5 overflow-hidden bg-zinc-900 p-2.5 text-white">
       {error && (
         <div className="shrink-0 rounded-lg bg-red-900/40 px-4 py-1 text-center text-sm text-red-300">
           {error}
         </div>
       )}
 
-      {/* Action bar — compact: the screen is for watching sensors, not chrome. */}
-      <div className="grid shrink-0 grid-cols-2 gap-2">
-        <ActionButton to="/display" icon="✅" label="Checklist">
-          {active?.checklist ? (
-            <>
-              <span className="min-w-0 flex-1 truncate text-base font-medium text-zinc-200">
-                {active.checklist.name}
-              </span>
-              <span
-                className={`shrink-0 rounded-md px-2 py-0.5 text-lg font-bold tabular-nums ${
-                  checklistDone ? 'bg-green-600' : 'bg-zinc-700'
-                }`}
-              >
-                {active.progress.completed}/{active.progress.total}
-              </span>
-            </>
-          ) : (
-            <span className="text-sm text-zinc-400">No active checklist</span>
-          )}
-        </ActionButton>
-
-        <ActionButton to="/kiosk/todos" icon="🍺" label="Brewery To-Do">
-          {openTodos > 0 ? (
-            <span className="ml-auto shrink-0 rounded-md bg-amber-600 px-2 py-0.5 text-lg font-bold tabular-nums">
-              {openTodos}
-              <span className="ml-1 text-sm font-normal text-amber-100/80">open</span>
-            </span>
-          ) : (
-            <span className="ml-auto text-sm text-zinc-400">All clear</span>
-          )}
-        </ActionButton>
-      </div>
-
-      {/* Hero equipment — fill the bulk of the screen. A station (the fermenter
-          merges several devices) is the most important, so it claims twice the
-          width of a single-sensor card. */}
-      <main className="flex min-h-0 flex-1 gap-2">
-        {primaryGroups.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-zinc-700 text-zinc-500">
-            No sensors connected yet
-          </div>
-        ) : (
-          primaryGroups.map((group) => {
-            const isStation = group.length > 1;
-            return (
-              <div
-                key={isStation ? group[0]!.name : group[0]!.id}
-                className={`min-w-0 ${isStation ? 'flex-[2]' : 'flex-1'}`}
-              >
-                {isStation ? (
-                  <StationTile name={group[0]!.name} devices={group} />
-                ) : (
-                  <SensorTile device={group[0]!} />
-                )}
+      <div className="flex min-h-0 flex-1 gap-2.5">
+        {/* Left: the fermenter hero card with the Checklist / To-Do shortcuts beneath. */}
+        <div className="flex min-w-0 flex-[7] flex-col gap-2.5">
+          <main className="flex min-h-0 flex-1 flex-col gap-2.5">
+            {stations.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-zinc-700 text-zinc-500">
+                No fermenter connected yet
               </div>
-            );
-          })
-        )}
-      </main>
+            ) : (
+              stations.map((group) => (
+                <div key={group[0]!.name} className="min-h-0 flex-1">
+                  <StationTile name={group[0]!.name} devices={group} />
+                </div>
+              ))
+            )}
+          </main>
 
-      {/* Utility meters — "nice to have", so a slim strip along the bottom. */}
-      {secondary.length > 0 && (
-        <div className="grid shrink-0 auto-cols-fr grid-flow-col gap-2">
-          {secondary.map((d) => (
-            <UtilityTile key={d.id} device={d} />
-          ))}
+          <div className="grid shrink-0 grid-cols-2 gap-2.5">
+            <ActionButton
+              to="/display"
+              title="Checklists"
+              subtitle={checklistInfo}
+              icon={<ClipboardIcon />}
+              accent="border-sky-500/40 text-sky-400"
+            />
+            <ActionButton
+              to="/kiosk/todos"
+              title="ToDo List"
+              subtitle={todoInfo}
+              icon={<ClipboardIcon />}
+              accent="border-green-500/40 text-green-400"
+            />
+          </div>
         </div>
-      )}
+
+        {/* Right rail: a clock plus the remaining sensor + utility cards. */}
+        <div className="flex w-[30%] min-w-0 shrink-0 flex-col gap-2.5">
+          <Clock />
+          {railDevices.length === 0 ? (
+            <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-zinc-700 text-center text-sm text-zinc-500">
+              No other sensors
+            </div>
+          ) : (
+            railDevices.map((d) => <SidebarCard key={d.id} device={d} />)
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-/** Compact top-bar link with an inline label and trailing status/badge. */
+/**
+ * Live clock for the top of the side rail — time and date, refreshed every few
+ * seconds. Mirrors the wall-clock header in the reference layout.
+ */
+function Clock(): JSX.Element {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 10_000);
+    return () => clearInterval(id);
+  }, []);
+  const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const date = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return (
+    <div className="flex shrink-0 items-center justify-end gap-2.5 px-2 py-1 text-zinc-300">
+      <ClockIcon />
+      <span className="text-xl font-semibold tabular-nums">{time}</span>
+      <span className="text-zinc-600" aria-hidden>
+        |
+      </span>
+      <span className="text-xl text-zinc-400">{date}</span>
+    </div>
+  );
+}
+
+/**
+ * A shortcut card beneath the fermenter (Checklists / To-Do): an outlined glyph,
+ * a title, and a live-status subtitle (active checklist + progress, or the open
+ * task count), with a trailing chevron.
+ */
 function ActionButton({
   to,
+  title,
+  subtitle,
   icon,
-  label,
-  children,
+  accent,
 }: {
   to: string;
-  icon: string;
-  label: string;
-  children: React.ReactNode;
+  title: string;
+  subtitle: string;
+  icon: JSX.Element;
+  accent: string;
 }): JSX.Element {
   return (
     <Link
       to={to}
-      className="flex h-14 touch-manipulation items-center gap-2 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-800 px-3 transition active:scale-[0.98] active:bg-zinc-700"
+      className="flex h-[4.5rem] touch-manipulation items-center gap-3.5 overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-800 px-4 transition active:scale-[0.98] active:bg-zinc-700"
     >
-      <span className="shrink-0 text-xl" aria-hidden>
+      <span
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${accent}`}
+        aria-hidden
+      >
         {icon}
       </span>
-      <span className="shrink-0 text-base font-semibold text-zinc-300">{label}</span>
-      {children}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-xl font-bold leading-tight">{title}</div>
+        <div className="truncate text-sm text-zinc-400">{subtitle}</div>
+      </div>
+      <span className="shrink-0 text-2xl text-zinc-500" aria-hidden>
+        ›
+      </span>
     </Link>
   );
 }
@@ -570,106 +599,144 @@ function TempRow({
 /** Big number with a unit underneath (pressure, gravity). */
 function BigValue({ value, unit }: { value: string; unit: string }): JSX.Element {
   return (
-    <>
+    <div className="flex flex-col items-center">
       <span className="text-5xl font-bold leading-none tabular-nums">{value}</span>
       <span className="mt-1.5 text-base text-zinc-400">{unit}</span>
-    </>
+    </div>
   );
 }
 
 
-/** Large hero tile for a single watched sensor (e.g. brewery temperature). */
-function SensorTile({ device }: { device: DeviceStatus }): JSX.Element {
+/**
+ * One card in the right rail: a watched sensor (brewery temp) or a utility meter
+ * (power / water). A tinted line-glyph in a circle and the device name head the
+ * card; below, each reading shows as a big value with a small unit and a metric
+ * caption — several metrics (e.g. power's current + total) split into columns.
+ * Offline devices dim. The card links to the device's chart.
+ */
+function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
   const metrics = orderedMetrics(device.latest);
-  const headline = metrics[0];
-  const extras = metrics.slice(1);
 
   return (
     <Link
       to={`/kiosk/devices/${device.id}`}
-      className="flex h-full w-full min-h-0 touch-manipulation flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-800 p-3 transition active:scale-[0.98] active:bg-zinc-700"
+      className={`flex min-h-0 flex-1 touch-manipulation flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-800 px-4 py-3 transition active:scale-[0.98] active:bg-zinc-700 ${
+        device.online ? '' : 'opacity-50'
+      }`}
     >
-      <div className="flex items-start gap-2">
+      {/* Header: glyph circle + name. */}
+      <div className="flex shrink-0 items-center gap-3">
         <span
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg ${TYPE_ACCENT[device.type]}`}
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900/40 ${SIDEBAR_TINT[device.type]}`}
           aria-hidden
         >
-          {TYPE_ICON[device.type]}
+          <DeviceGlyph type={device.type} />
         </span>
-        <span className="min-w-0 flex-1 text-base font-semibold leading-tight text-zinc-200 [overflow-wrap:anywhere] line-clamp-2">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium uppercase tracking-wider text-zinc-400">
           {device.name}
         </span>
-        <StatusDot online={device.online} />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col justify-center">
-        {headline ? (
-          <div className="leading-none">
-            <span className="text-4xl font-bold tabular-nums">{formatValue(headline)}</span>
-            <span className="ml-2 text-sm font-medium text-zinc-400">
-              {metricLabel(headline.metric)}
-            </span>
-          </div>
-        ) : (
+      {/* Readings — one column per metric, captioned with its label. */}
+      <div className="flex min-h-0 flex-1 items-center">
+        {metrics.length === 0 ? (
           <span className="text-base text-zinc-500">No readings</span>
-        )}
-
-        {extras.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {extras.map((m) => (
-              <span
-                key={m.metric}
-                className="rounded-md bg-zinc-700/60 px-2 py-0.5 text-xs text-zinc-300"
-              >
-                <span className="text-zinc-400">{metricLabel(m.metric)} </span>
-                <span className="font-semibold tabular-nums">{formatValue(m)}</span>
-              </span>
-            ))}
-          </div>
+        ) : (
+          metrics.map((m, i) => (
+            <div
+              key={m.metric}
+              className={`flex min-w-0 flex-1 flex-col items-center px-1 text-center ${
+                i > 0 ? 'border-l border-zinc-700/70' : ''
+              }`}
+            >
+              <MetricValue reading={m} />
+              <span className="mt-1 truncate text-sm text-zinc-400">{metricLabel(m.metric)}</span>
+            </div>
+          ))
         )}
       </div>
-
-      <span className="shrink-0 text-xs text-zinc-500">
-        {device.lastSeenAt ? `Updated ${relativeTime(device.lastSeenAt)}` : 'Never reported'}
-      </span>
     </Link>
   );
 }
 
-/** Slim tile for a "nice to have" utility meter (power / water). */
-function UtilityTile({ device }: { device: DeviceStatus }): JSX.Element {
-  const headline = orderedMetrics(device.latest)[0];
-
+/** A single reading as a big number with its unit beside it, baseline-aligned. */
+function MetricValue({ reading }: { reading: LatestReading }): JSX.Element {
+  const { value, unit } = formatValueParts(reading);
   return (
-    <Link
-      to={`/kiosk/devices/${device.id}`}
-      className="flex h-16 touch-manipulation items-center gap-2.5 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-800 px-3 transition active:scale-[0.98] active:bg-zinc-700"
-    >
-      <span
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xl ${TYPE_ACCENT[device.type]}`}
-        aria-hidden
-      >
-        {TYPE_ICON[device.type]}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-medium text-zinc-400">{device.name}</div>
-        <div className="text-xl font-bold leading-tight tabular-nums">
-          {headline ? formatValue(headline) : <span className="text-zinc-500">—</span>}
-        </div>
-      </div>
-      <StatusDot online={device.online} />
-    </Link>
+    <span className="leading-none">
+      <span className="text-4xl font-bold tabular-nums">{value}</span>
+      {unit && <span className="ml-1 text-base font-medium text-zinc-400">{unit}</span>}
+    </span>
   );
 }
 
-/** Minimal online indicator — a glowing dot, no text, to save tile space. */
-function StatusDot({ online }: { online: boolean }): JSX.Element {
+/** Line-art glyph for a rail card, picked by device type; tinted via currentColor. */
+function DeviceGlyph({ type }: { type: DeviceType }): JSX.Element {
+  switch (type) {
+    case 'brew_controller':
+      return <ThermometerIcon />;
+    case 'power_meter':
+      return <BoltIcon />;
+    case 'water_meter':
+      return <DropletIcon />;
+    default:
+      // Rare types (e.g. a lone "other" sensor) keep the emoji badge.
+      return <span className="text-2xl">{TYPE_ICON[type]}</span>;
+  }
+}
+
+/** Shared stroke styling for the inline line-art glyphs. */
+const GLYPH_PROPS = {
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  className: 'h-6 w-6',
+  'aria-hidden': true,
+} as const;
+
+function ThermometerIcon(): JSX.Element {
   return (
-    <span
-      className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-        online ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]' : 'bg-zinc-600'
-      }`}
-      aria-label={online ? 'Online' : 'Offline'}
-    />
+    <svg {...GLYPH_PROPS}>
+      <path d="M14 14.76V5a2 2 0 0 0-4 0v9.76a4 4 0 1 0 4 0z" />
+    </svg>
+  );
+}
+
+function BoltIcon(): JSX.Element {
+  return (
+    <svg {...GLYPH_PROPS}>
+      <path d="M13 2 4 14h6l-1 8 9-12h-6z" />
+    </svg>
+  );
+}
+
+function DropletIcon(): JSX.Element {
+  return (
+    <svg {...GLYPH_PROPS}>
+      <path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" />
+    </svg>
+  );
+}
+
+function ClipboardIcon(): JSX.Element {
+  return (
+    <svg {...GLYPH_PROPS}>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" />
+      <path d="m8.5 11 1.5 1.5 3-3" />
+      <path d="M8.5 16.5h7" />
+    </svg>
+  );
+}
+
+function ClockIcon(): JSX.Element {
+  return (
+    <svg {...GLYPH_PROPS} className="h-5 w-5">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5V12l3 2" />
+    </svg>
   );
 }
