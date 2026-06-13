@@ -30,13 +30,13 @@ interface MockDevice {
 const MOCK_FLEET: MockDevice[] = [
   {
     id: 1,
-    name: 'Fermenter 1 — Pressure',
+    name: 'Fermenter',
     type: 'pressure_sensor',
     base: { pressure_bar: 1.18 },
   },
   {
     id: 2,
-    name: 'Fermenter 1 — Fridge',
+    name: 'Fermenter',
     type: 'brew_controller',
     base: { temp_c: 18.4, setpoint_c: 18.0, hvac_state: -1 },
   },
@@ -59,8 +59,11 @@ const MOCK_FLEET: MockDevice[] = [
     base: { flow_lpm: 3.4, water_l: 318.5 },
   },
   {
+    // Named "Fermenter" (not "Tilt") so the kiosk hub merges the Tilt's beer
+    // temperature + gravity into the single fermenter card alongside the
+    // pressure sensor and fridge controller above.
     id: 6,
-    name: 'Tilt Hydrometer',
+    name: 'Fermenter',
     type: 'hydrometer',
     base: { gravity_sg: 1.048, temp_c: 18.9 },
   },
