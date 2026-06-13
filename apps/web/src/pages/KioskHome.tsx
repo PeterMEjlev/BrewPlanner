@@ -3,6 +3,7 @@ import type {
   DeviceStatus,
   DeviceType,
   LatestReading,
+  Reading,
   Todo,
 } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
@@ -101,75 +102,146 @@ function groupRank(group: DeviceStatus[]): number {
   return Math.min(...group.map((d) => TYPE_RANK[d.type]));
 }
 
+/** Placeholder until the recipe (and its style) comes from Brewer's Friend — see TODO.md. */
+const BEER_STYLE = '<Beer Style>';
+
+// --- Fermentation status (derived from gravity history) ---------------------
+
 /**
- * One reading on a station card. The label is source-aware so the two `temp_c`
- * readings (fridge from the controller, beer from the Tilt) don't collide.
+ * Fermentation is "complete" once gravity has held essentially flat for a good
+ * while: classic homebrew practice is a stable reading across ~2–3 days. We
+ * pull the recent gravity history and call it done when the spread over the
+ * trailing window is within a small threshold — but only if the readings
+ * actually span most of that window, so a freshly-booted Tilt doesn't read as
+ * finished off a few minutes of flat data.
  */
-interface Stat {
-  key: string;
-  deviceId: number;
+const FERMENT_STABLE_WINDOW_MS = 2 * 24 * 60 * 60 * 1000; // gravity flat this long ⇒ done
+const FERMENT_STABLE_THRESHOLD_SG = 0.002; // max SG spread that still counts as "flat"
+const FERMENT_LOOKBACK_MS = FERMENT_STABLE_WINDOW_MS + 12 * 60 * 60 * 1000; // history to fetch
+const FERMENT_POLL_MS = 60_000; // gravity moves slowly — re-evaluate once a minute
+
+function fermentationDone(history: Reading[]): boolean {
+  const windowStart = Date.now() - FERMENT_STABLE_WINDOW_MS;
+  const recent = history.filter((r) => Date.parse(r.recordedAt) >= windowStart);
+  if (recent.length < 2) return false;
+  const times = recent.map((r) => Date.parse(r.recordedAt));
+  // Need readings covering most of the window before trusting a "flat" verdict.
+  if (Math.max(...times) - Math.min(...times) < FERMENT_STABLE_WINDOW_MS * 0.8) return false;
+  const values = recent.map((r) => r.value);
+  return Math.max(...values) - Math.min(...values) <= FERMENT_STABLE_THRESHOLD_SG;
+}
+
+interface FermentStatus {
   label: string;
-  reading: LatestReading;
-  /** Extra detail under the value (fridge setpoint + cooling/heating state). */
-  sub: JSX.Element | null;
+  dotClass: string;
+  textClass: string;
 }
 
-/** Fixed left-to-right order for the fermenter's readings. */
-const STAT_ORDER = ['Pressure', 'Temp (Fridge)', 'Temp (Beer)', 'Gravity'];
+/**
+ * Watch the group's gravity history and report Fermenting / Complete. Falls
+ * back to an online/offline indicator when no device reports gravity. Gravity
+ * is polled on its own slow cadence (independent of the 5 s tile refresh).
+ */
+function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
+  const gravityDeviceId = devices.find((d) => d.latest.some((r) => r.metric === 'gravity_sg'))?.id;
+  const anyOnline = devices.some((d) => d.online);
+  const [done, setDone] = useState<boolean | null>(null);
 
-function statOrderRank(label: string): number {
-  const i = STAT_ORDER.indexOf(label);
-  return i === -1 ? STAT_ORDER.length : i;
-}
-
-function statLabel(type: DeviceType, metric: string): string {
-  if (metric === 'pressure_bar') return 'Pressure';
-  if (metric === 'gravity_sg') return 'Gravity';
-  if (metric === 'temp_c') {
-    if (type === 'brew_controller') return 'Temp (Fridge)';
-    if (type === 'hydrometer') return 'Temp (Beer)';
-    return 'Temp';
-  }
-  return metricLabel(metric);
-}
-
-/** Tailwind text colour for the cooling / idle / heating state value. */
-function stateClass(value: number): string {
-  if (value < 0) return 'font-semibold text-sky-300'; // cooling
-  if (value > 0) return 'font-semibold text-orange-300'; // heating
-  return 'text-slate-400'; // idle
-}
-
-function fridgeSub(setpoint?: LatestReading, state?: LatestReading): JSX.Element | null {
-  if (!setpoint && !state) return null;
-  return (
-    <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs leading-tight">
-      {setpoint && <span className="text-slate-400">→ {formatValue(setpoint)}</span>}
-      {state && <span className={stateClass(state.value)}>{formatValue(state)}</span>}
-    </span>
-  );
-}
-
-/** Flatten a group's devices into ordered station readings. */
-function stationStats(devices: DeviceStatus[]): Stat[] {
-  const stats: Stat[] = [];
-  for (const d of devices) {
-    const byMetric = new Map(d.latest.map((r) => [r.metric, r]));
-    for (const r of d.latest) {
-      // Setpoint and HVAC state aren't standalone readings — they annotate the
-      // fridge temperature instead.
-      if (r.metric === 'setpoint_c' || r.metric === 'hvac_state') continue;
-      const isFridge = d.type === 'brew_controller' && r.metric === 'temp_c';
-      stats.push({
-        key: `${d.id}-${r.metric}`,
-        deviceId: d.id,
-        label: statLabel(d.type, r.metric),
-        reading: r,
-        sub: isFridge ? fridgeSub(byMetric.get('setpoint_c'), byMetric.get('hvac_state')) : null,
-      });
+  useEffect(() => {
+    if (gravityDeviceId == null) {
+      setDone(null);
+      return;
     }
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const since = new Date(Date.now() - FERMENT_LOOKBACK_MS).toISOString();
+        const history = await api.getDeviceHistory(gravityDeviceId, {
+          metric: 'gravity_sg',
+          since,
+          limit: 2000,
+        });
+        if (!cancelled) setDone(fermentationDone(history));
+      } catch {
+        // Keep the last known verdict on a transient fetch error.
+      }
+    };
+    void check();
+    const id = setInterval(() => void check(), FERMENT_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [gravityDeviceId]);
+
+  if (!anyOnline) {
+    return { label: 'Offline', dotClass: 'bg-slate-600', textClass: 'text-slate-400' };
   }
-  return stats.sort((a, b) => statOrderRank(a.label) - statOrderRank(b.label));
+  if (gravityDeviceId == null) {
+    return { label: 'Online', dotClass: 'bg-emerald-400', textClass: 'text-emerald-300' };
+  }
+  if (done) {
+    return { label: 'Complete', dotClass: 'bg-emerald-400', textClass: 'text-emerald-300' };
+  }
+  return { label: 'Fermenting', dotClass: 'bg-amber-400', textClass: 'text-amber-300' };
+}
+
+// --- Reading lookups + display formatting for the fermenter card ------------
+
+interface Source {
+  reading: LatestReading;
+  deviceId: number;
+}
+
+/** First reading matching `metric` (optionally from a given device type). */
+function findReading(
+  devices: DeviceStatus[],
+  metric: string,
+  type?: DeviceType,
+): Source | undefined {
+  for (const d of devices) {
+    if (type && d.type !== type) continue;
+    const reading = d.latest.find((r) => r.metric === metric);
+    if (reading) return { reading, deviceId: d.id };
+  }
+  return undefined;
+}
+
+/** Cooling / idle / heating look for the controller's hvac_state value. */
+function hvacLook(value: number): { label: string; icon: string; cls: string } {
+  if (value < 0) return { label: 'Cooling', icon: '❄', cls: 'text-sky-400' };
+  if (value > 0) return { label: 'Heating', icon: '🔥', cls: 'text-orange-400' };
+  return { label: 'Idle', icon: '○', cls: 'text-slate-400' };
+}
+
+/** Line-art conical fermenter, tinted via currentColor. */
+function FermenterIcon(): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-9 w-9"
+      aria-hidden
+    >
+      {/* top port */}
+      <path d="M29 6h6M32 6v5" />
+      {/* domed lid + cylindrical body */}
+      <path d="M17 18c0-4 6.7-7 15-7s15 3 15 7" />
+      <path d="M17 18v18" />
+      <path d="M47 18v18" />
+      {/* conical bottom */}
+      <path d="M17 36l15 19 15-19" />
+      {/* butterfly valve */}
+      <circle cx="32" cy="45" r="3" />
+      {/* legs */}
+      <path d="M23 50l-3 8" />
+      <path d="M41 50l3 8" />
+    </svg>
+  );
 }
 
 /**
@@ -327,43 +399,146 @@ function ActionButton({
   );
 }
 
-/** Large hero card aggregating several same-named devices (e.g. the fermenter). */
+/**
+ * The fermenter hero card. Merges the same-named pressure sensor, fridge
+ * controller (Inkbird) and floating hydrometer (Tilt) into three columns —
+ * Pressure | Temperature | Gravity — with a live fermentation status derived
+ * from gravity. Each column links to its source device's chart.
+ */
 function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] }): JSX.Element {
-  const stats = stationStats(devices);
-  const online = devices.some((d) => d.online);
-  // Icon/accent follow the most important member (pressure for the fermenter).
-  const lead = [...devices].sort((a, b) => TYPE_RANK[a.type] - TYPE_RANK[b.type])[0]!;
+  const status = useFermentStatus(devices);
+
+  const pressure = findReading(devices, 'pressure_bar');
+  const beer = findReading(devices, 'temp_c', 'hydrometer');
+  const fridge = findReading(devices, 'temp_c', 'brew_controller');
+  const setpoint = findReading(devices, 'setpoint_c', 'brew_controller');
+  const state = findReading(devices, 'hvac_state', 'brew_controller');
+  const gravity = findReading(devices, 'gravity_sg');
+
+  const hvac = state ? hvacLook(state.reading.value) : null;
+  const tempDeviceId = (fridge ?? beer)?.deviceId;
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 p-3">
-      <div className="flex items-center gap-2">
-        <span
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg ${TYPE_ACCENT[lead.type]}`}
-          aria-hidden
-        >
-          {TYPE_ICON[lead.type]}
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3">
+      {/* Header: tank icon, name + style, fermentation status. */}
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900/40 text-slate-200">
+          <FermenterIcon />
         </span>
-        <span className="min-w-0 flex-1 truncate text-base font-semibold text-slate-200">
-          {name}
-        </span>
-        <StatusDot online={online} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-3xl font-bold leading-tight">{name}</div>
+          <div className="truncate text-base text-slate-400">{BEER_STYLE}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${status.dotClass}`} aria-hidden />
+          <span className={`text-sm font-semibold uppercase tracking-wide ${status.textClass}`}>
+            {status.label}
+          </span>
+        </div>
       </div>
 
-      <div className="mt-2 grid min-h-0 flex-1 grid-cols-2 gap-2">
-        {stats.map((s) => (
-          <Link
-            key={s.key}
-            to={`/kiosk/devices/${s.deviceId}`}
-            className="flex min-h-0 touch-manipulation flex-col justify-center overflow-hidden rounded-xl bg-slate-900/50 px-2.5 py-1.5 transition active:bg-slate-700"
-          >
-            <span className="truncate text-xs font-medium text-slate-400">{s.label}</span>
-            <span className="text-2xl font-bold leading-tight tabular-nums">
-              {formatValue(s.reading)}
-            </span>
-            {s.sub}
-          </Link>
-        ))}
+      <hr className="my-3 shrink-0 border-slate-700/70" />
+
+      {/* Pressure | Temperature | Gravity */}
+      <div className="flex min-h-0 flex-1">
+        {pressure && (
+          <MetricColumn deviceId={pressure.deviceId} label="Pressure" first>
+            <BigValue value={pressure.reading.value.toFixed(2)} unit="bar" />
+          </MetricColumn>
+        )}
+
+        {(beer || fridge) && (
+          <MetricColumn deviceId={tempDeviceId} label="Temperature" first={!pressure}>
+            <div className="flex w-full flex-col items-center gap-1.5">
+              {beer && <TempRow label="Beer" value={beer.reading.value} />}
+              {beer && fridge && <hr className="w-4/5 border-slate-700/60" />}
+              {fridge && (
+                <TempRow label="Fridge" value={fridge.reading.value} valueClass={hvac?.cls} />
+              )}
+              {setpoint && (
+                <div className="text-sm text-slate-400">
+                  Set: {setpoint.reading.value.toFixed(1)}°C
+                </div>
+              )}
+              {hvac && (
+                <div className={`flex items-center gap-1.5 text-sm font-semibold ${hvac.cls}`}>
+                  <span aria-hidden>{hvac.icon}</span>
+                  <span className="uppercase tracking-wide">{hvac.label}</span>
+                </div>
+              )}
+            </div>
+          </MetricColumn>
+        )}
+
+        {gravity && (
+          <MetricColumn deviceId={gravity.deviceId} label="Gravity" first={!pressure && !beer && !fridge}>
+            <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
+          </MetricColumn>
+        )}
       </div>
+    </div>
+  );
+}
+
+/** One vertically-centred column of the fermenter card; links to its device. */
+function MetricColumn({
+  deviceId,
+  label,
+  first,
+  children,
+}: {
+  deviceId: number | undefined;
+  label: string;
+  first?: boolean;
+  children: React.ReactNode;
+}): JSX.Element {
+  const className = `flex min-w-0 flex-1 touch-manipulation flex-col items-center justify-center px-2 text-center ${
+    first ? '' : 'border-l border-slate-700/70'
+  }`;
+  const body = (
+    <>
+      <span className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-400">
+        {label}
+      </span>
+      {children}
+    </>
+  );
+  return deviceId == null ? (
+    <div className={className}>{body}</div>
+  ) : (
+    <Link to={`/kiosk/devices/${deviceId}`} className={`${className} rounded-xl active:bg-slate-700/40`}>
+      {body}
+    </Link>
+  );
+}
+
+/** Big number with a unit underneath (pressure, gravity). */
+function BigValue({ value, unit }: { value: string; unit: string }): JSX.Element {
+  return (
+    <>
+      <span className="text-5xl font-bold leading-none tabular-nums">{value}</span>
+      <span className="mt-1.5 text-base text-slate-400">{unit}</span>
+    </>
+  );
+}
+
+/** A "Beer 18.3°C" / "Fridge 2.1°C" row inside the temperature column. */
+function TempRow({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string;
+  value: number;
+  valueClass?: string;
+}): JSX.Element {
+  return (
+    <div className="flex items-baseline justify-center gap-2">
+      <span className="text-sm text-slate-400">{label}</span>
+      <span className={`text-2xl font-bold tabular-nums ${valueClass ?? ''}`}>
+        {value.toFixed(1)}
+        <span className="ml-0.5 text-sm font-medium text-slate-400">°C</span>
+      </span>
     </div>
   );
 }
