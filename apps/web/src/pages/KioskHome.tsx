@@ -306,19 +306,19 @@ export function KioskHomePage(): JSX.Element {
       : 'View and manage your tasks';
 
   return (
-    <div className="touch-none-select flex h-full flex-col gap-2.5 overflow-hidden bg-zinc-900 p-2.5 text-white">
+    <div className="touch-none-select flex h-full flex-col gap-3 overflow-hidden bg-black p-3 text-white">
       {error && (
         <div className="shrink-0 rounded-lg bg-red-900/40 px-4 py-1 text-center text-sm text-red-300">
           {error}
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 gap-2.5">
+      <div className="flex min-h-0 flex-1 gap-3">
         {/* Left: the fermenter hero card with the Checklist / To-Do shortcuts beneath. */}
-        <div className="flex min-w-0 flex-[7] flex-col gap-2.5">
-          <main className="flex min-h-0 flex-1 flex-col gap-2.5">
+        <div className="flex min-w-0 flex-[7] flex-col gap-3">
+          <main className="flex min-h-0 flex-1 flex-col gap-3">
             {stations.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-zinc-700 text-zinc-500">
+              <div className="flex flex-1 items-center justify-center rounded-3xl border border-dashed border-zinc-800 text-zinc-500">
                 No fermenter connected yet
               </div>
             ) : (
@@ -330,7 +330,7 @@ export function KioskHomePage(): JSX.Element {
             )}
           </main>
 
-          <div className="grid shrink-0 grid-cols-2 gap-2.5">
+          <div className="grid shrink-0 grid-cols-2 gap-3">
             <ActionButton
               to="/display"
               title="Checklists"
@@ -349,10 +349,10 @@ export function KioskHomePage(): JSX.Element {
         </div>
 
         {/* Right rail: a clock plus the remaining sensor + utility cards. */}
-        <div className="flex w-[30%] min-w-0 shrink-0 flex-col gap-2.5">
+        <div className="flex w-[30%] min-w-0 shrink-0 flex-col gap-3">
           <Clock />
           {railDevices.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-zinc-700 text-center text-sm text-zinc-500">
+            <div className="flex flex-1 items-center justify-center rounded-3xl border border-dashed border-zinc-800 text-center text-sm text-zinc-500">
               No other sensors
             </div>
           ) : (
@@ -409,7 +409,7 @@ function ActionButton({
   return (
     <Link
       to={to}
-      className="flex h-[4.5rem] touch-manipulation items-center gap-3.5 overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-800 px-4 transition active:scale-[0.98] active:bg-zinc-700"
+      className="flex h-[4.5rem] touch-manipulation items-center gap-3.5 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 px-5 transition active:scale-[0.98] active:bg-zinc-800"
     >
       <span
         className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${accent}`}
@@ -451,15 +451,15 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
   const col = () => { const f = firstCol; firstCol = false; return f; };
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-800 px-4 py-3">
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 px-6 py-5">
       {/* Header: tank icon, name + style, fermentation status. */}
-      <div className="flex shrink-0 items-center gap-3">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900/40 text-zinc-200">
+      <div className="flex shrink-0 items-center gap-4">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950 text-zinc-200">
           <FermenterIcon />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-3xl font-bold leading-tight">{name}</div>
-          <div className="truncate text-base text-zinc-400">{BEER_STYLE}</div>
+          <div className="truncate text-3xl font-bold leading-tight tracking-tight">{name}</div>
+          <div className="truncate text-base text-zinc-500">{BEER_STYLE}</div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className={`h-2.5 w-2.5 rounded-full ${status.dotClass}`} aria-hidden />
@@ -469,7 +469,7 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
         </div>
       </div>
 
-      <hr className="my-3 shrink-0 border-zinc-700/70" />
+      <hr className="my-5 shrink-0 border-zinc-800" />
 
       {/* Pressure | Temperature | Gravity — labels pinned to top row. The
           temperature column stacks Beer over Fridge (with setpoint + hvac
@@ -482,12 +482,12 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
         )}
 
         {(beer || fridge) && (
-          <MetricColumn label="Temperature" first={col()}>
-            <div className="flex w-full flex-col items-center gap-1.5">
+          <MetricColumn label="Temperature" first={col()} wide>
+            <div className="flex w-full flex-col items-center gap-3 py-1">
               {beer && (
                 <TempRow deviceId={beer.deviceId} label="Beer" value={beer.reading.value.toFixed(1)} />
               )}
-              {beer && fridge && <hr className="w-3/4 border-zinc-700/70" />}
+              {beer && fridge && <hr className="w-3/4 border-zinc-800" />}
               {fridge && (
                 <TempRow
                   deviceId={fridge.deviceId}
@@ -497,12 +497,12 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
                 />
               )}
               {setpoint && (
-                <span className="text-sm text-zinc-400">
+                <span className="mt-1 text-sm text-zinc-500">
                   Set: {setpoint.reading.value.toFixed(1)}°C
                 </span>
               )}
               {hvac && (
-                <span className={`flex items-center gap-1 text-sm font-semibold ${hvac.cls}`}>
+                <span className={`flex items-center gap-1.5 text-sm font-semibold ${hvac.cls}`}>
                   <span aria-hidden>{hvac.icon}</span>
                   <span className="uppercase tracking-wide">{hvac.label}</span>
                 </span>
@@ -523,23 +523,28 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
 
 /**
  * One column of the fermenter card. The label is pinned to the top of the
- * column so all four labels sit on the same horizontal line regardless of how
- * tall the value content below each one is. The value area fills the remaining
- * height and vertically centers its content.
+ * column so all labels sit on the same horizontal line regardless of how tall
+ * the value content below each one is. The value area fills the remaining height
+ * and vertically centers its content. `wide` gives the multi-row Temperature
+ * column extra width so its stacked readings have room to breathe.
  */
 function MetricColumn({
   deviceId,
   label,
   first,
+  wide,
   children,
 }: {
   deviceId?: number | undefined;
   label: string;
   first?: boolean;
+  wide?: boolean;
   children: React.ReactNode;
 }): JSX.Element {
-  const className = `flex min-w-0 flex-1 touch-manipulation flex-col items-center px-2 text-center ${
-    first ? '' : 'border-l border-zinc-700/70'
+  const className = `flex min-w-0 ${
+    wide ? 'flex-[1.5]' : 'flex-1'
+  } touch-manipulation flex-col items-center px-3 text-center ${
+    first ? '' : 'border-l border-zinc-800'
   }`;
   const body = (
     <>
@@ -552,7 +557,7 @@ function MetricColumn({
   return deviceId == null ? (
     <div className={className}>{body}</div>
   ) : (
-    <Link to={`/kiosk/devices/${deviceId}`} className={`${className} rounded-xl active:bg-zinc-700/40`}>
+    <Link to={`/kiosk/devices/${deviceId}`} className={`${className} rounded-xl active:bg-zinc-800/60`}>
       {body}
     </Link>
   );
@@ -576,10 +581,10 @@ function TempRow({
 }): JSX.Element {
   const content = (
     <>
-      <span className="w-14 shrink-0 text-right text-base text-zinc-400">{label}</span>
-      <span className={`text-3xl font-bold tabular-nums ${valueClass ?? ''}`}>
+      <span className="w-14 shrink-0 text-right text-base text-zinc-500">{label}</span>
+      <span className={`text-3xl font-semibold tracking-tight tabular-nums ${valueClass ?? ''}`}>
         {value}
-        <span className="ml-0.5 text-base font-medium text-zinc-400">°C</span>
+        <span className="ml-0.5 text-base font-medium text-zinc-500">°C</span>
       </span>
     </>
   );
@@ -589,7 +594,7 @@ function TempRow({
   ) : (
     <Link
       to={`/kiosk/devices/${deviceId}`}
-      className={`${className} touch-manipulation rounded-lg px-2 py-0.5 active:bg-zinc-700/40`}
+      className={`${className} touch-manipulation rounded-lg px-2 py-0.5 active:bg-zinc-800/60`}
     >
       {content}
     </Link>
@@ -600,8 +605,8 @@ function TempRow({
 function BigValue({ value, unit }: { value: string; unit: string }): JSX.Element {
   return (
     <div className="flex flex-col items-center">
-      <span className="text-5xl font-bold leading-none tabular-nums">{value}</span>
-      <span className="mt-1.5 text-base text-zinc-400">{unit}</span>
+      <span className="text-4xl font-semibold leading-none tracking-tight tabular-nums">{value}</span>
+      <span className="mt-2 text-base text-zinc-500">{unit}</span>
     </div>
   );
 }
@@ -617,17 +622,19 @@ function BigValue({ value, unit }: { value: string; unit: string }): JSX.Element
 function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
   const metrics = orderedMetrics(device.latest);
 
+  const multi = metrics.length > 1;
+
   return (
     <Link
       to={`/kiosk/devices/${device.id}`}
-      className={`flex min-h-0 flex-1 touch-manipulation flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-800 px-4 py-3 transition active:scale-[0.98] active:bg-zinc-700 ${
+      className={`flex min-h-0 flex-1 touch-manipulation flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 px-5 py-4 transition active:scale-[0.98] active:bg-zinc-800 ${
         device.online ? '' : 'opacity-50'
       }`}
     >
       {/* Header: glyph circle + name. */}
       <div className="flex shrink-0 items-center gap-3">
         <span
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900/40 ${SIDEBAR_TINT[device.type]}`}
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950 ${SIDEBAR_TINT[device.type]}`}
           aria-hidden
         >
           <DeviceGlyph type={device.type} />
@@ -646,11 +653,15 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
             <div
               key={m.metric}
               className={`flex min-w-0 flex-1 flex-col items-center px-1 text-center ${
-                i > 0 ? 'border-l border-zinc-700/70' : ''
+                i > 0 ? 'border-l border-zinc-800' : ''
               }`}
             >
-              <MetricValue reading={m} />
-              <span className="mt-1 truncate text-sm text-zinc-400">{metricLabel(m.metric)}</span>
+              <MetricValue reading={m} compact={multi} />
+              <span
+                className={`mt-1.5 max-w-full truncate text-zinc-500 ${multi ? 'text-xs' : 'text-sm'}`}
+              >
+                {metricLabel(m.metric)}
+              </span>
             </div>
           ))
         )}
@@ -659,13 +670,23 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
   );
 }
 
-/** A single reading as a big number with its unit beside it, baseline-aligned. */
-function MetricValue({ reading }: { reading: LatestReading }): JSX.Element {
+/**
+ * A single reading as a big number with its unit beside it. `compact` shrinks it
+ * for cards that pack several metrics side by side (power, water) so they don't
+ * overflow their narrow columns.
+ */
+function MetricValue({ reading, compact }: { reading: LatestReading; compact?: boolean }): JSX.Element {
   const { value, unit } = formatValueParts(reading);
   return (
-    <span className="leading-none">
-      <span className="text-4xl font-bold tabular-nums">{value}</span>
-      {unit && <span className="ml-1 text-base font-medium text-zinc-400">{unit}</span>}
+    <span className="max-w-full truncate leading-none">
+      <span className={`font-semibold tracking-tight tabular-nums ${compact ? 'text-2xl' : 'text-4xl'}`}>
+        {value}
+      </span>
+      {unit && (
+        <span className={`font-medium text-zinc-500 ${compact ? 'ml-1 text-xs' : 'ml-1.5 text-base'}`}>
+          {unit}
+        </span>
+      )}
     </span>
   );
 }
@@ -674,7 +695,9 @@ function MetricValue({ reading }: { reading: LatestReading }): JSX.Element {
 function DeviceGlyph({ type }: { type: DeviceType }): JSX.Element {
   switch (type) {
     case 'brew_controller':
-      return <ThermometerIcon />;
+      // The rail's brew_controller is the brewery's ambient sensor — a hut reads
+      // as "the building" better than a thermometer here.
+      return <HutIcon />;
     case 'power_meter':
       return <BoltIcon />;
     case 'water_meter':
@@ -697,10 +720,13 @@ const GLYPH_PROPS = {
   'aria-hidden': true,
 } as const;
 
-function ThermometerIcon(): JSX.Element {
+function HutIcon(): JSX.Element {
   return (
     <svg {...GLYPH_PROPS}>
-      <path d="M14 14.76V5a2 2 0 0 0-4 0v9.76a4 4 0 1 0 4 0z" />
+      {/* pitched roof, walls, and a doorway */}
+      <path d="M3 11.5 12 4l9 7.5" />
+      <path d="M5.5 10v9.5h13V10" />
+      <path d="M10 19.5V14h4v5.5" />
     </svg>
   );
 }
