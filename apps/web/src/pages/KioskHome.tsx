@@ -442,7 +442,9 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
 
       <hr className="my-3 shrink-0 border-zinc-700/70" />
 
-      {/* Pressure | Fridge Temp | Beer Temp | Gravity — labels pinned to top row */}
+      {/* Pressure | Temperature | Gravity — labels pinned to top row. The
+          temperature column stacks Beer over Fridge (with setpoint + hvac
+          state) so both readings sit together, mirroring the fermenter card. */}
       <div className="flex min-h-0 flex-1">
         {pressure && (
           <MetricColumn deviceId={pressure.deviceId} label="Pressure" first={col()}>
@@ -450,13 +452,21 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
           </MetricColumn>
         )}
 
-        {fridge && (
-          <MetricColumn deviceId={fridge.deviceId} label="Fridge Temp" first={col()}>
-            <div className="flex flex-col items-center gap-1">
-              <span className={`text-4xl font-bold tabular-nums ${hvac?.cls ?? ''}`}>
-                {fridge.reading.value.toFixed(1)}
-                <span className="ml-0.5 text-base font-medium text-zinc-400">°C</span>
-              </span>
+        {(beer || fridge) && (
+          <MetricColumn label="Temperature" first={col()}>
+            <div className="flex w-full flex-col items-center gap-1.5">
+              {beer && (
+                <TempRow deviceId={beer.deviceId} label="Beer" value={beer.reading.value.toFixed(1)} />
+              )}
+              {beer && fridge && <hr className="w-3/4 border-zinc-700/70" />}
+              {fridge && (
+                <TempRow
+                  deviceId={fridge.deviceId}
+                  label="Fridge"
+                  value={fridge.reading.value.toFixed(1)}
+                  valueClass={hvac?.cls}
+                />
+              )}
               {setpoint && (
                 <span className="text-sm text-zinc-400">
                   Set: {setpoint.reading.value.toFixed(1)}°C
@@ -469,15 +479,6 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
                 </span>
               )}
             </div>
-          </MetricColumn>
-        )}
-
-        {beer && (
-          <MetricColumn deviceId={beer.deviceId} label="Beer Temp" first={col()}>
-            <span className="text-4xl font-bold tabular-nums">
-              {beer.reading.value.toFixed(1)}
-              <span className="ml-0.5 text-base font-medium text-zinc-400">°C</span>
-            </span>
           </MetricColumn>
         )}
 
@@ -503,7 +504,7 @@ function MetricColumn({
   first,
   children,
 }: {
-  deviceId: number | undefined;
+  deviceId?: number | undefined;
   label: string;
   first?: boolean;
   children: React.ReactNode;
@@ -524,6 +525,44 @@ function MetricColumn({
   ) : (
     <Link to={`/kiosk/devices/${deviceId}`} className={`${className} rounded-xl active:bg-zinc-700/40`}>
       {body}
+    </Link>
+  );
+}
+
+/**
+ * One temperature reading inside the combined Temperature column: a label
+ * (Beer / Fridge) to the left of the value. Links to its own source device's
+ * chart since beer (Tilt) and fridge (Inkbird) come from different sensors.
+ */
+function TempRow({
+  deviceId,
+  label,
+  value,
+  valueClass,
+}: {
+  deviceId: number | undefined;
+  label: string;
+  value: string;
+  valueClass?: string;
+}): JSX.Element {
+  const content = (
+    <>
+      <span className="w-14 shrink-0 text-right text-base text-zinc-400">{label}</span>
+      <span className={`text-3xl font-bold tabular-nums ${valueClass ?? ''}`}>
+        {value}
+        <span className="ml-0.5 text-base font-medium text-zinc-400">°C</span>
+      </span>
+    </>
+  );
+  const className = 'flex items-baseline justify-center gap-2.5';
+  return deviceId == null ? (
+    <div className={className}>{content}</div>
+  ) : (
+    <Link
+      to={`/kiosk/devices/${deviceId}`}
+      className={`${className} touch-manipulation rounded-lg px-2 py-0.5 active:bg-zinc-700/40`}
+    >
+      {content}
     </Link>
   );
 }
