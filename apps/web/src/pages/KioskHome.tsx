@@ -262,20 +262,30 @@ export function KioskHomePage(): JSX.Element {
         </ActionButton>
       </div>
 
-      {/* Hero equipment — fill the bulk of the screen. */}
-      <main className="grid min-h-0 flex-1 auto-rows-fr gap-2 [grid-template-columns:repeat(auto-fit,minmax(13rem,1fr))]">
+      {/* Hero equipment — fill the bulk of the screen. A station (the fermenter
+          merges several devices) is the most important, so it claims twice the
+          width of a single-sensor card. */}
+      <main className="flex min-h-0 flex-1 gap-2">
         {primaryGroups.length === 0 ? (
-          <div className="col-span-full flex items-center justify-center rounded-2xl border border-dashed border-slate-700 text-slate-500">
+          <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-slate-700 text-slate-500">
             No sensors connected yet
           </div>
         ) : (
-          primaryGroups.map((group) =>
-            group.length > 1 ? (
-              <StationTile key={group[0]!.name} name={group[0]!.name} devices={group} />
-            ) : (
-              <SensorTile key={group[0]!.id} device={group[0]!} />
-            ),
-          )
+          primaryGroups.map((group) => {
+            const isStation = group.length > 1;
+            return (
+              <div
+                key={isStation ? group[0]!.name : group[0]!.id}
+                className={`min-w-0 ${isStation ? 'flex-[2]' : 'flex-1'}`}
+              >
+                {isStation ? (
+                  <StationTile name={group[0]!.name} devices={group} />
+                ) : (
+                  <SensorTile device={group[0]!} />
+                )}
+              </div>
+            );
+          })
         )}
       </main>
 
@@ -325,7 +335,7 @@ function StationTile({ name, devices }: { name: string; devices: DeviceStatus[] 
   const lead = [...devices].sort((a, b) => TYPE_RANK[a.type] - TYPE_RANK[b.type])[0]!;
 
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 p-3">
+    <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 p-3">
       <div className="flex items-center gap-2">
         <span
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg ${TYPE_ACCENT[lead.type]}`}
@@ -367,7 +377,7 @@ function SensorTile({ device }: { device: DeviceStatus }): JSX.Element {
   return (
     <Link
       to={`/kiosk/devices/${device.id}`}
-      className="flex min-h-0 touch-manipulation flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 p-3 transition active:scale-[0.98] active:bg-slate-700"
+      className="flex h-full w-full min-h-0 touch-manipulation flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 p-3 transition active:scale-[0.98] active:bg-slate-700"
     >
       <div className="flex items-start gap-2">
         <span
