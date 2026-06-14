@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { isUnknownContents, useKegs } from '../kegs';
+import { formatPressure, useSettings } from '../settings';
 import { formatValueParts, metricLabel } from './Dashboard';
 
 /** Refresh cadence for the wall display — frequent enough to feel live. */
@@ -126,22 +127,20 @@ function groupRank(group: DeviceStatus[]): number {
  * pull the recent gravity history and call it done when the spread over the
  * trailing window is within a small threshold — but only if the readings
  * actually span most of that window, so a freshly-booted Tilt doesn't read as
- * finished off a few minutes of flat data.
+ * finished off a few minutes of flat data. The window (days) and threshold (SG)
+ * are tunable from the Settings screen; see [settings.ts].
  */
-const FERMENT_STABLE_WINDOW_MS = 2 * 24 * 60 * 60 * 1000; // gravity flat this long ⇒ done
-const FERMENT_STABLE_THRESHOLD_SG = 0.002; // max SG spread that still counts as "flat"
-const FERMENT_LOOKBACK_MS = FERMENT_STABLE_WINDOW_MS + 12 * 60 * 60 * 1000; // history to fetch
 const FERMENT_POLL_MS = 60_000; // gravity moves slowly — re-evaluate once a minute
 
-function fermentationDone(history: Reading[]): boolean {
-  const windowStart = Date.now() - FERMENT_STABLE_WINDOW_MS;
+function fermentationDone(history: Reading[], windowMs: number, thresholdSg: number): boolean {
+  const windowStart = Date.now() - windowMs;
   const recent = history.filter((r) => Date.parse(r.recordedAt) >= windowStart);
   if (recent.length < 2) return false;
   const times = recent.map((r) => Date.parse(r.recordedAt));
   // Need readings covering most of the window before trusting a "flat" verdict.
-  if (Math.max(...times) - Math.min(...times) < FERMENT_STABLE_WINDOW_MS * 0.8) return false;
+  if (Math.max(...times) - Math.min(...times) < windowMs * 0.8) return false;
   const values = recent.map((r) => r.value);
-  return Math.max(...values) - Math.min(...values) <= FERMENT_STABLE_THRESHOLD_SG;
+  return Math.max(...values) - Math.min(...values) <= thresholdSg;
 }
 
 interface FermentStatus {
@@ -156,6 +155,9 @@ interface FermentStatus {
  * is polled on its own slow cadence (independent of the 5 s tile refresh).
  */
 function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
+  const { fermentStableDays, fermentThresholdSg } = useSettings();
+  const windowMs = fermentStableDays * 24 * 60 * 60 * 1000;
+  const lookbackMs = windowMs + 12 * 60 * 60 * 1000; // a little extra history to fetch
   const gravityDeviceId = devices.find((d) => d.latest.some((r) => r.metric === 'gravity_sg'))?.id;
   const anyOnline = devices.some((d) => d.online);
   const [done, setDone] = useState<boolean | null>(null);
@@ -168,13 +170,13 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
     let cancelled = false;
     const check = async () => {
       try {
-        const since = new Date(Date.now() - FERMENT_LOOKBACK_MS).toISOString();
+        const since = new Date(Date.now() - lookbackMs).toISOString();
         const history = await api.getDeviceHistory(gravityDeviceId, {
           metric: 'gravity_sg',
           since,
           limit: 2000,
         });
-        if (!cancelled) setDone(fermentationDone(history));
+        if (!cancelled) setDone(fermentationDone(history, windowMs, fermentThresholdSg));
       } catch {
         // Keep the last known verdict on a transient fetch error.
       }
@@ -185,7 +187,7 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
       cancelled = true;
       clearInterval(id);
     };
-  }, [gravityDeviceId]);
+  }, [gravityDeviceId, windowMs, lookbackMs, fermentThresholdSg]);
 
   if (!anyOnline) {
     return { label: 'Offline', dotClass: 'bg-zinc-600', textClass: 'text-zinc-400' };
@@ -450,6 +452,7 @@ function StationTile({
   recipeStyle: string | null;
 }): JSX.Element {
   const status = useFermentStatus(devices);
+  const { pressureUnit } = useSettings();
 
   const pressure = findReading(devices, 'pressure_bar');
   const beer = findReading(devices, 'temp_c', 'hydrometer');
@@ -466,9 +469,10 @@ function StationTile({
   // linked columns have rounded corners for their tap highlight.
   const columns: JSX.Element[] = [];
   if (pressure) {
+    const p = formatPressure(pressure.reading.value, pressureUnit);
     columns.push(
       <MetricColumn key="pressure" deviceId={pressure.deviceId} label="Pressure">
-        <BigValue value={String(Math.round(pressure.reading.value * 14.5038))} unit="PSI" />
+        <BigValue value={p.value} unit={p.unit} />
       </MetricColumn>,
     );
   }

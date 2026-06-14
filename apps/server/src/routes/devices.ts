@@ -1,4 +1,11 @@
-import { historyQuerySchema, idParamSchema, ingestSchema } from '@checklist/shared';
+import {
+  ackCommandsSchema,
+  historyQuerySchema,
+  idParamSchema,
+  ingestSchema,
+  metricTotalQuerySchema,
+  setSetpointSchema,
+} from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { requireAuth } from '../auth/index.js';
@@ -61,5 +68,56 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const query = parse(historyQuerySchema, req.query, reply);
     if (!query) return;
     return devices.getHistory(params.id, query);
+  });
+
+  // All-time total for a cumulative metric (e.g. total energy / water used).
+  app.get('/:id/total', async (req, reply) => {
+    const params = parse(idParamSchema, req.params, reply);
+    if (!params) return;
+    if (!devices.getDevice(params.id)) {
+      return reply.status(404).send({ error: 'Device not found' });
+    }
+    const query = parse(metricTotalQuerySchema, req.query, reply);
+    if (!query) return;
+    return { metric: query.metric, total: devices.getMetricTotal(params.id, query.metric) };
+  });
+
+  // Queue a new target setpoint for a brew controller. The change isn't applied
+  // here — it's stored for the device's agent to pull and write to the hardware
+  // (see commandRoutes); the response echoes the now-pending target so the UI
+  // can show it immediately.
+  app.post('/:id/setpoint', async (req, reply) => {
+    const params = parse(idParamSchema, req.params, reply);
+    if (!params) return;
+    const device = devices.getDevice(params.id);
+    if (!device) return reply.status(404).send({ error: 'Device not found' });
+    if (device.type !== 'brew_controller') {
+      return reply.status(400).send({ error: 'Device does not support a setpoint' });
+    }
+    const body = parse(setSetpointSchema, req.body, reply);
+    if (!body) return;
+    devices.queueSetpoint(params.id, body.value);
+    return { pendingSetpointC: body.value };
+  });
+}
+
+/**
+ * Command API for satellites — a device pulls the commands queued for it (e.g. a
+ * new setpoint to write to its controller) and acks them once applied. Same
+ * per-device key trust path as ingestion (NOT user sessions); mounted under
+ * /api/commands.
+ */
+export async function commandRoutes(app: FastifyInstance): Promise<void> {
+  app.decorateRequest('device', undefined);
+  app.addHook('preHandler', requireDevice);
+
+  // GET /api/commands — this device's outstanding commands (oldest first).
+  app.get('/', async (req) => devices.pendingCommands(req.device!.id));
+
+  // POST /api/commands/ack — clear commands this device has applied.
+  app.post('/ack', async (req, reply) => {
+    const body = parse(ackCommandsSchema, req.body, reply);
+    if (!body) return;
+    return { acked: devices.ackCommands(req.device!.id, body.ids) };
   });
 }

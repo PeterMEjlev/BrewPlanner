@@ -8,7 +8,7 @@ import { authRoutes, seedAdminUser } from './auth/index.js';
 import { resolveSessionSecret } from './auth/secret.js';
 import { runMigrations } from './db/index.js';
 import { apiRoutes } from './routes/api.js';
-import { deviceRoutes, ingestRoutes } from './routes/devices.js';
+import { commandRoutes, deviceRoutes, ingestRoutes } from './routes/devices.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -48,9 +48,11 @@ async function main(): Promise<void> {
 
   await app.register(apiRoutes, { prefix: '/api' });
 
-  // Telemetry: satellites push to /api/ingest (device-key auth); the dashboard
-  // reads device status/history from /api/devices (user-session auth).
+  // Telemetry: satellites push to /api/ingest and pull queued commands from
+  // /api/commands (both device-key auth); the dashboard reads device
+  // status/history and queues setpoint changes via /api/devices (user-session).
   await app.register(ingestRoutes, { prefix: '/api/ingest' });
+  await app.register(commandRoutes, { prefix: '/api/commands' });
   await app.register(deviceRoutes, { prefix: '/api/devices' });
 
   // Serve the built web app (apps/web/dist) in production. In dev the web app

@@ -22,4 +22,4 @@
 
 - ## SMS integration (or other phone notification - Email?) when kegged beers have been stored too long and not been drunk (prevent beer getting old)
 
-- ## when clikcint the temperature button in the fermenter, instead of having a dedicated page for the beer temp and the fridge temp, combine them so both graphs are in the same window with a legend where they can be toggled in the graph (visually)
+- ## 

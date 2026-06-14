@@ -3,10 +3,14 @@
 A standalone service for a **satellite** Raspberry Pi (one on the same LAN as
 the Inkbird controller). It polls the ITC-308-WIFI fridge/heater controller and
 pushes its readings to the BrewPlanner **hub**, where they show up on the
-dashboard and the device's history charts.
+dashboard and the device's history charts. It also works the other way: each
+cycle it pulls any **setpoint change** the operator made from the dashboard and
+writes the new target to the controller.
 
 ```
-[ITC-308-WIFI] <--LAN (tinytuya)-- agent.py --POST /api/ingest--> [hub Pi] --> dashboard
+                  reads  --POST /api/ingest-->
+[ITC-308-WIFI] <--LAN (tinytuya)--> agent.py                        [hub Pi] --> dashboard
+                  writes <--GET /api/commands-- (setpoint changes) --
 ```
 
 It reports three metrics every cycle:
@@ -109,6 +113,13 @@ journalctl -u inkbird-agent.service -f
 
 ## Notes
 
+- **Changing the setpoint**: the dashboard's fermenter/brewery temperature pages
+  have a setpoint control. Applying it queues a command on the hub; this agent
+  picks it up on its next cycle (within `INTERVAL` seconds), writes it to the
+  controller (DPS 106, converting to the controller's °C/°F unit), and acks it.
+  The dashboard shows "Setting to N°…" until the controller's own setpoint
+  reading confirms the change. Set `BP_ALLOW_SETPOINT_WRITE=0` to disable writes
+  and keep the agent read-only.
 - **Reliability**: the ITC-308-WIFI is known to drop frequent pollers with an
   "Err 914" if a socket is held open. The agent opens a fresh, non-persistent
   connection each cycle and defaults to a gentle 30s interval to avoid this. If

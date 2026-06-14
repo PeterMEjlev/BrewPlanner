@@ -172,6 +172,17 @@ export interface LatestReading {
 }
 
 /**
+ * All-time consumption for a cumulative metric (e.g. total energy or water).
+ * It's the sum of positive step-to-step deltas across the metric's whole
+ * history, so a meter that resets to zero — as the daily `energy_kwh`/`water_l`
+ * counters do at midnight — still totals correctly over its lifetime.
+ */
+export interface MetricTotal {
+  metric: string;
+  total: number;
+}
+
+/**
  * A device enriched for the dashboard: whether it is currently considered
  * online (a fresh push within the staleness window) and its latest value per
  * metric. `online` is derived server-side from `lastSeenAt`.
@@ -179,7 +190,35 @@ export interface LatestReading {
 export interface DeviceStatus extends Device {
   online: boolean;
   latest: LatestReading[];
+  /**
+   * A target setpoint the operator has requested but the controller hasn't yet
+   * confirmed — i.e. there's a pending `set_setpoint` command waiting for the
+   * agent to write it to the device. Null when nothing is pending; cleared once
+   * the agent applies it (after which the device's own `setpoint_c` reading
+   * reflects the new value). Lets the UI show "Setting to N°…".
+   */
+  pendingSetpointC?: number | null;
 }
+
+/**
+ * A command queued for a satellite device to apply on its hardware. The hub
+ * stores these; the device pulls its pending commands (device-key auth), acts,
+ * then acks them. Today the only command is `set_setpoint` (target °C for a
+ * brew controller), but the shape is generic so future controls fit without a
+ * schema change.
+ */
+export interface DeviceCommand {
+  id: number;
+  deviceId: number;
+  /** Command kind, e.g. `set_setpoint`. */
+  command: string;
+  /** The command's numeric argument (for `set_setpoint`, the target in °C). */
+  value: number;
+  createdAt: string;
+}
+
+/** The only command kind today: set a brew controller's target temperature. */
+export const SET_SETPOINT_COMMAND = 'set_setpoint';
 
 // ---------------------------------------------------------------------------
 // Request validation schemas (Zod)
@@ -298,6 +337,32 @@ export const historyQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(5000).default(1000),
 });
 export type HistoryQuery = z.infer<typeof historyQuerySchema>;
+
+/** Query for `GET /api/devices/:id/total` — the metric to total over all time. */
+export const metricTotalQuerySchema = z.object({
+  metric: z.string().trim().min(1).max(64),
+});
+export type MetricTotalQuery = z.infer<typeof metricTotalQuerySchema>;
+
+/**
+ * Body for `POST /api/devices/:id/setpoint` — the new target temperature (°C)
+ * the operator wants the controller to hold. Bounded well inside the ITC-308's
+ * physical range as a guard against a fat-fingered value reaching the hardware
+ * (cold-crash to fridge-cold through hot-liquor warm covers every brewing need).
+ */
+export const setSetpointSchema = z.object({
+  value: z.number().finite().min(-10).max(50),
+});
+export type SetSetpointInput = z.infer<typeof setSetpointSchema>;
+
+/**
+ * Body for `POST /api/commands/ack` — the ids of the commands a device has
+ * applied and wants cleared from its pending queue.
+ */
+export const ackCommandsSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(100),
+});
+export type AckCommandsInput = z.infer<typeof ackCommandsSchema>;
 
 // --- Brewer's Friend recipe selection --------------------------------------
 

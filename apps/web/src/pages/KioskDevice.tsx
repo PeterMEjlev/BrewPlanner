@@ -8,7 +8,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { RANGES, formatTick, useDeviceData } from '../useDeviceData';
+import { SetpointControl } from '../SetpointControl';
+import {
+  RANGES,
+  cumulativeMetricOf,
+  formatTick,
+  useDeviceData,
+  useDeviceTotal,
+} from '../useDeviceData';
 import {
   StateBadge,
   formatValue,
@@ -26,8 +33,17 @@ export function KioskDevicePage(): JSX.Element {
   // fermenter's gravity link uses this so the Tilt's beer temp never shows here).
   const lockedMetric = params.get('metric') ?? undefined;
   const deviceId = Number(id);
-  const { device, metric, setMetric, rangeMs, setRangeMs, chartData, latest, longRange } =
+  const { device, metric, setMetric, rangeMs, setRangeMs, chartData, latest, longRange, refresh } =
     useDeviceData(deviceId, lockedMetric);
+  // The metric buttons only show with several metrics and no locked metric; when
+  // they do, the active button already names the metric, so the label beside the
+  // big value would just repeat it.
+  const hasMetricSelector = !lockedMetric && !!device && device.latest.length > 1;
+  // All-time consumption for energy/water meters (shown alongside the live value).
+  const totalMetric = cumulativeMetricOf(device);
+  const total = useDeviceTotal(deviceId, totalMetric);
+  // Brew controllers expose a target temperature the operator can change here.
+  const setpointReading = device?.latest.find((r) => r.metric === 'setpoint_c');
 
   return (
     <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
@@ -74,13 +90,36 @@ export function KioskDevicePage(): JSX.Element {
                 <span className="text-6xl font-bold tabular-nums sm:text-7xl">
                   {formatValue(latest)}
                 </span>
-                <span className="text-2xl text-zinc-400">{metricLabel(latest.metric)}</span>
+                {!hasMetricSelector && (
+                  <span className="text-2xl text-zinc-400">{metricLabel(latest.metric)}</span>
+                )}
               </>
             )
           ) : (
             <span className="text-3xl text-zinc-400">No readings yet</span>
           )}
         </div>
+
+        {/* All-time consumption (energy / water meters) */}
+        {totalMetric && total != null && (
+          <div className="text-xl text-zinc-400">
+            All-time{' '}
+            <span className="font-semibold tabular-nums text-zinc-200">
+              {formatValue({ metric: totalMetric, value: total, recordedAt: '' })}
+            </span>
+          </div>
+        )}
+
+        {/* Change the controller's target temperature (brew controllers only). */}
+        {setpointReading && (
+          <SetpointControl
+            deviceId={deviceId}
+            setpointC={setpointReading.value}
+            pendingC={device?.pendingSetpointC ?? null}
+            onApplied={refresh}
+            variant="kiosk"
+          />
+        )}
 
         {/* Metric (if several) + range selectors */}
         <div className="flex flex-wrap items-center gap-3">

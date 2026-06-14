@@ -8,7 +8,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { RANGES, formatTick, useDeviceData } from '../useDeviceData';
+import { SetpointControl } from '../SetpointControl';
+import {
+  RANGES,
+  cumulativeMetricOf,
+  formatTick,
+  useDeviceData,
+  useDeviceTotal,
+} from '../useDeviceData';
 import {
   StateBadge,
   formatValue,
@@ -23,8 +30,26 @@ import {
 export function DevicePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const deviceId = Number(id);
-  const { device, metric, setMetric, rangeMs, setRangeMs, chartData, latest, longRange, error } =
-    useDeviceData(deviceId);
+  const {
+    device,
+    metric,
+    setMetric,
+    rangeMs,
+    setRangeMs,
+    chartData,
+    latest,
+    longRange,
+    refresh,
+    error,
+  } = useDeviceData(deviceId);
+  // With several metrics the selector buttons name the active one, so the label
+  // beside the big value is redundant; keep it only for single-metric devices.
+  const hasMetricSelector = !!device && device.latest.length > 1;
+  // All-time consumption for energy/water meters.
+  const totalMetric = cumulativeMetricOf(device);
+  const total = useDeviceTotal(deviceId, totalMetric);
+  // Brew controllers expose a target temperature the operator can change here.
+  const setpointReading = device?.latest.find((r) => r.metric === 'setpoint_c');
 
   return (
     <div className="min-h-full bg-zinc-950 text-zinc-100">
@@ -81,9 +106,32 @@ export function DevicePage(): JSX.Element {
                 <span className="text-5xl font-bold tabular-nums text-zinc-50">
                   {formatValue(latest)}
                 </span>
-                <span className="ml-2 text-lg text-zinc-400">{metricLabel(latest.metric)}</span>
+                {!hasMetricSelector && (
+                  <span className="ml-2 text-lg text-zinc-400">{metricLabel(latest.metric)}</span>
+                )}
               </>
             )}
+            {totalMetric && total != null && (
+              <p className="mt-2 text-sm text-zinc-400">
+                All-time{' '}
+                <span className="font-semibold tabular-nums text-zinc-200">
+                  {formatValue({ metric: totalMetric, value: total, recordedAt: '' })}
+                </span>
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Change the controller's target temperature (brew controllers only). */}
+        {setpointReading && (
+          <div className="mb-6 max-w-md">
+            <SetpointControl
+              deviceId={deviceId}
+              setpointC={setpointReading.value}
+              pendingC={device?.pendingSetpointC ?? null}
+              onApplied={refresh}
+              variant="compact"
+            />
           </div>
         )}
 

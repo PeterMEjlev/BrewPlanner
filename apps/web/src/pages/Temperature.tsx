@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '../api';
+import { SetpointControl } from '../SetpointControl';
 import { RANGES, formatTick } from '../useDeviceData';
 
 const POLL_MS = 10000;
@@ -121,6 +122,13 @@ export function TemperaturePage(): JSX.Element {
     return r ? r.value : null;
   }
 
+  // The fridge line is the Inkbird controller, so its target temperature can be
+  // changed here — the brewer adjusts the fermenter setpoint without leaving the
+  // combined chart.
+  const fridgeSource = sources.find((s) => s.key === 'fridge');
+  const fridgeDevice = devices.fridge;
+  const fridgeSetpoint = fridgeDevice?.latest.find((r) => r.metric === 'setpoint_c');
+
   return (
     <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
       <header className="flex items-center gap-4 border-b border-zinc-700 px-5 py-4 sm:px-6">
@@ -158,6 +166,17 @@ export function TemperaturePage(): JSX.Element {
             );
           })}
         </div>
+
+        {/* Fridge (Inkbird) setpoint control — change the fermenter target here. */}
+        {fridgeSource && fridgeSetpoint && (
+          <SetpointControl
+            deviceId={fridgeSource.deviceId}
+            setpointC={fridgeSetpoint.value}
+            pendingC={fridgeDevice?.pendingSetpointC ?? null}
+            onApplied={load}
+            variant="kiosk"
+          />
+        )}
 
         {/* Legend toggles (left) + range selectors (right). Tapping a legend chip
             shows/hides that line in the chart. */}

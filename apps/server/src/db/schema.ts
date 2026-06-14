@@ -143,6 +143,31 @@ export const readings = sqliteTable(
   (t) => [index('readings_device_metric_time_idx').on(t.deviceId, t.metric, t.recordedAt)],
 );
 
+/**
+ * Outbound commands for satellite devices (the reverse of `readings`). The hub
+ * queues a command — today only `set_setpoint`, the target °C for a brew
+ * controller — and the device pulls its pending rows (device-key auth), applies
+ * them on its hardware, then acks them, which deletes them. Kept generic so
+ * future controls need no schema change. Indexed by (device, status) for the
+ * device's "what's pending for me?" poll.
+ */
+export const deviceCommands = sqliteTable(
+  'device_commands',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    deviceId: integer('device_id')
+      .notNull()
+      .references(() => devices.id, { onDelete: 'cascade' }),
+    command: text('command').notNull(),
+    value: real('value').notNull(),
+    status: text('status').notNull().default('pending'),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+  },
+  (t) => [index('device_commands_device_status_idx').on(t.deviceId, t.status)],
+);
+
 /** Per-run check state for a single step. */
 export const runSteps = sqliteTable(
   'run_steps',

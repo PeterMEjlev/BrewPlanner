@@ -95,10 +95,49 @@ function currentValue(metric: string, base: number): number {
   return base + wander(metric, WANDER[metric] ?? 0);
 }
 
+// --- Mock setpoint command queue --------------------------------------------
+// Mirrors the real hub→agent path so the stepper control can be designed and
+// exercised without a backend: a requested setpoint stays "pending" for a short
+// latency (the stand-in for the agent writing it to the controller), then is
+// "applied" — the device's reported setpoint_c jumps to it and pending clears.
+
+const APPLY_LATENCY_MS = 6000;
+
+interface PendingSetpoint {
+  value: number;
+  at: number;
+}
+const pendingSetpoints = new Map<number, PendingSetpoint>();
+const appliedSetpoints = new Map<number, number>();
+
+/** Queue a new target setpoint for a mock device (the api.setDeviceSetpoint mock). */
+export function mockSetSetpoint(id: number, value: number): { pendingSetpointC: number } {
+  if (!MOCK_FLEET.some((m) => m.id === id)) throw new Error(`404: mock device ${id} not found`);
+  pendingSetpoints.set(id, { value, at: Date.now() });
+  return { pendingSetpointC: value };
+}
+
+/** A device's pending setpoint, promoting it to "applied" once the latency elapses. */
+function resolvePendingSetpoint(id: number): number | null {
+  const p = pendingSetpoints.get(id);
+  if (!p) return null;
+  if (Date.now() - p.at >= APPLY_LATENCY_MS) {
+    appliedSetpoints.set(id, p.value);
+    pendingSetpoints.delete(id);
+    return null;
+  }
+  return p.value;
+}
+
+/** The setpoint the device reports — the last applied target, else its baseline. */
+function effectiveSetpoint(id: number, base: number): number {
+  return appliedSetpoints.get(id) ?? base;
+}
+
 function latestReadings(d: MockDevice, nowIso: string): LatestReading[] {
   return Object.entries(d.base).map(([metric, base]) => ({
     metric,
-    value: currentValue(metric, base),
+    value: metric === 'setpoint_c' ? effectiveSetpoint(d.id, base) : currentValue(metric, base),
     recordedAt: nowIso,
   }));
 }
@@ -115,6 +154,7 @@ function toStatus(d: MockDevice): DeviceStatus {
     lastSeenAt: nowIso,
     online: true,
     latest: latestReadings(d, nowIso),
+    pendingSetpointC: resolvePendingSetpoint(d.id),
   };
 }
 
@@ -163,6 +203,21 @@ export function mockGetDeviceHistory(
   }
   // The API returns newest→oldest; callers reverse for the time axis.
   return out.reverse();
+}
+
+/**
+ * All-time total for a cumulative metric, mirroring the server's sum-of-deltas.
+ * The mock history climbs monotonically to `base` over the requested span, so a
+ * representative "all-time" figure is simply a few weeks of that daily rate —
+ * enough to design the stat against. Non-cumulative metrics total to 0.
+ */
+export function mockGetDeviceTotal(id: number, metric: string): { metric: string; total: number } {
+  const d = MOCK_FLEET.find((m) => m.id === id);
+  if (!d) throw new Error(`404: mock device ${id} not found`);
+  if (!CUMULATIVE.has(metric)) return { metric, total: 0 };
+  // ~21 days (the mock's device age) of the per-day rate baked into the history.
+  const perDay = metric === 'energy_kwh' ? 1.8 * 24 : 2.0 * 24;
+  return { metric, total: Math.round(perDay * 21) };
 }
 
 function historyValue(

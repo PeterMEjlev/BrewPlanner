@@ -26,6 +26,8 @@ export interface DeviceDataState {
   latest: LatestReading | undefined;
   /** True for multi-day ranges, so axis ticks show dates instead of times. */
   longRange: boolean;
+  /** Force an immediate device-status refetch (e.g. after changing a setpoint). */
+  refresh: () => void;
   error: string | null;
 }
 
@@ -83,7 +85,66 @@ export function useDeviceData(deviceId: number, lockedMetric?: string): DeviceDa
   const latest = device?.latest.find((r) => r.metric === metric) ?? device?.latest[0];
   const longRange = rangeMs > 24 * 60 * 60 * 1000;
 
-  return { device, metric, setMetric, rangeMs, setRangeMs, chartData, latest, longRange, error };
+  return {
+    device,
+    metric,
+    setMetric,
+    rangeMs,
+    setRangeMs,
+    chartData,
+    latest,
+    longRange,
+    refresh: loadDevice,
+    error,
+  };
+}
+
+/** Cumulative meter metrics whose lifetime total ("all-time consumption") we surface. */
+const CUMULATIVE_METRICS = new Set(['energy_kwh', 'water_l']);
+
+/**
+ * The device's cumulative metric (energy/water), if it reports one — the metric
+ * whose all-time total is worth showing on its page. Returns undefined for
+ * devices without one (pressure, temperature, gravity, …).
+ */
+export function cumulativeMetricOf(device: DeviceStatus | null): string | undefined {
+  return device?.latest.find((r) => CUMULATIVE_METRICS.has(r.metric))?.metric;
+}
+
+/** Lifetime totals barely move — refresh them far less often than live readings. */
+const TOTAL_POLL_MS = 60_000;
+
+/**
+ * Fetch a device's all-time total for one cumulative metric, polled slowly. Pass
+ * `undefined` (a device with no cumulative metric) to disable; returns null until
+ * the first value lands and keeps the last value through a transient error.
+ */
+export function useDeviceTotal(deviceId: number, metric: string | undefined): number | null {
+  const [total, setTotal] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!metric) {
+      setTotal(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await api.getDeviceTotal(deviceId, metric);
+        if (!cancelled) setTotal(res.total);
+      } catch {
+        // Keep the last known total on a transient fetch error.
+      }
+    };
+    void load();
+    const t = setInterval(() => void load(), TOTAL_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [deviceId, metric]);
+
+  return total;
 }
 
 /** Axis tick: time-of-day for short ranges, date for multi-day ranges. */

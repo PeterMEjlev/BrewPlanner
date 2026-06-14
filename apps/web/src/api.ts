@@ -5,6 +5,7 @@ import type {
   ChecklistSummary,
   ChecklistWithSteps,
   DeviceStatus,
+  MetricTotal,
   Reading,
   Recipe,
   Step,
@@ -15,7 +16,9 @@ import {
   USE_MOCK_DEVICES,
   mockGetDevice,
   mockGetDeviceHistory,
+  mockGetDeviceTotal,
   mockListDevices,
+  mockSetSetpoint,
 } from './mockDevices';
 
 const BASE = '/api';
@@ -141,6 +144,20 @@ export const api = {
     const qs = params.toString();
     return request<Reading[]>(`/devices/${id}/history${qs ? `?${qs}` : ''}`);
   },
+  getDeviceTotal: (id: number, metric: string) =>
+    USE_MOCK_DEVICES
+      ? Promise.resolve(mockGetDeviceTotal(id, metric))
+      : request<MetricTotal>(`/devices/${id}/total?metric=${encodeURIComponent(metric)}`),
+  // Queue a new target setpoint (°C) for a brew controller. The change is
+  // applied asynchronously by the device's agent; the response echoes the
+  // now-pending target (surfaced on the device's status as pendingSetpointC).
+  setDeviceSetpoint: (id: number, value: number) =>
+    USE_MOCK_DEVICES
+      ? Promise.resolve(mockSetSetpoint(id, value))
+      : request<{ pendingSetpointC: number }>(`/devices/${id}/setpoint`, {
+          method: 'POST',
+          body: JSON.stringify({ value }),
+        }),
 
   // Brewer's Friend recipes. listRecipes proxies the user's account via the
   // server (the API key stays server-side); the active recipe is the one shown

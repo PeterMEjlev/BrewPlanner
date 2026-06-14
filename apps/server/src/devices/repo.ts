@@ -1,14 +1,16 @@
 import type {
   Device,
+  DeviceCommand,
   DeviceStatus,
   DeviceType,
   LatestReading,
   Reading,
 } from '@checklist/shared';
+import { SET_SETPOINT_COMMAND } from '@checklist/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { devices, readings } from '../db/schema.js';
+import { deviceCommands, devices, readings } from '../db/schema.js';
 
 /**
  * A device is considered online when its last push arrived within this window.
@@ -159,13 +161,40 @@ export function listDeviceStatus(): DeviceStatus[] {
     ...d,
     online: isOnline(d.lastSeenAt),
     latest: latestPerMetric(d.id),
+    pendingSetpointC: pendingSetpoint(d.id),
   }));
 }
 
 export function getDeviceStatus(id: number): DeviceStatus | null {
   const device = getDevice(id);
   if (!device) return null;
-  return { ...device, online: isOnline(device.lastSeenAt), latest: latestPerMetric(id) };
+  return {
+    ...device,
+    online: isOnline(device.lastSeenAt),
+    latest: latestPerMetric(id),
+    pendingSetpointC: pendingSetpoint(id),
+  };
+}
+
+/**
+ * All-time consumption for a cumulative metric (`energy_kwh`, `water_l`): the
+ * sum of positive step-to-step deltas across the whole history. Summing deltas
+ * rather than taking last − first means a meter that resets to zero — as the
+ * daily counters do at midnight — still totals correctly: each climb is counted
+ * and the negative reset step is dropped. The first reading has no predecessor
+ * (`prev` is NULL), so it isn't counted, i.e. the total is consumption observed
+ * since this device started reporting.
+ */
+export function getMetricTotal(deviceId: number, metric: string): number {
+  const row = db.get<{ total: number }>(sql`
+    SELECT COALESCE(SUM(CASE WHEN value > prev THEN value - prev ELSE 0 END), 0) AS total
+    FROM (
+      SELECT value, LAG(value) OVER (ORDER BY recorded_at, id) AS prev
+      FROM readings
+      WHERE device_id = ${deviceId} AND metric = ${metric}
+    )
+  `);
+  return Number(row?.total ?? 0);
 }
 
 /** History for a device, newest first, optionally filtered by metric/since. */
@@ -183,4 +212,81 @@ export function getHistory(
     .orderBy(desc(readings.recordedAt))
     .limit(opts.limit ?? 1000)
     .all();
+}
+
+// --- Device commands (hub → device) -----------------------------------------
+
+/** Build the public command shape from a row. */
+function toCommand(row: typeof deviceCommands.$inferSelect): DeviceCommand {
+  return {
+    id: row.id,
+    deviceId: row.deviceId,
+    command: row.command,
+    value: row.value,
+    createdAt: row.createdAt,
+  };
+}
+
+/**
+ * The target of the device's outstanding setpoint change, or null when none is
+ * pending. Surfaced on {@link DeviceStatus} so the dashboard can show "setting
+ * to N°" until the controller confirms the new value.
+ */
+export function pendingSetpoint(deviceId: number): number | null {
+  const row = db
+    .select({ value: deviceCommands.value })
+    .from(deviceCommands)
+    .where(
+      and(
+        eq(deviceCommands.deviceId, deviceId),
+        eq(deviceCommands.command, SET_SETPOINT_COMMAND),
+        eq(deviceCommands.status, 'pending'),
+      ),
+    )
+    .orderBy(desc(deviceCommands.id))
+    .get();
+  return row ? row.value : null;
+}
+
+/**
+ * Queue a new target setpoint for a device. Only the latest target matters, so
+ * any existing pending setpoint command is dropped first ("last write wins") —
+ * the device never has to reconcile a backlog of stale targets.
+ */
+export function queueSetpoint(deviceId: number, value: number): void {
+  db.delete(deviceCommands)
+    .where(
+      and(
+        eq(deviceCommands.deviceId, deviceId),
+        eq(deviceCommands.command, SET_SETPOINT_COMMAND),
+        eq(deviceCommands.status, 'pending'),
+      ),
+    )
+    .run();
+  db.insert(deviceCommands)
+    .values({ deviceId, command: SET_SETPOINT_COMMAND, value })
+    .run();
+}
+
+/** The commands a device still needs to apply, oldest first. */
+export function pendingCommands(deviceId: number): DeviceCommand[] {
+  return db
+    .select()
+    .from(deviceCommands)
+    .where(and(eq(deviceCommands.deviceId, deviceId), eq(deviceCommands.status, 'pending')))
+    .orderBy(asc(deviceCommands.id))
+    .all()
+    .map(toCommand);
+}
+
+/**
+ * Clear the commands a device reports it has applied. Scoped to the device's own
+ * ids so one device can't ack another's queue; returns how many rows cleared.
+ */
+export function ackCommands(deviceId: number, ids: number[]): number {
+  if (ids.length === 0) return 0;
+  return db
+    .delete(deviceCommands)
+    .where(and(eq(deviceCommands.deviceId, deviceId), inArray(deviceCommands.id, ids)))
+    .run().changes;
 }
