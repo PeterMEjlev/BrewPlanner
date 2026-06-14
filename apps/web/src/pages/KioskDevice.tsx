@@ -47,8 +47,8 @@ export function KioskDevicePage(): JSX.Element {
 
   return (
     <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
-      <header className="flex items-center justify-between gap-4 border-b border-zinc-700 px-5 py-4 sm:px-6">
-        <div className="flex min-w-0 items-center gap-4">
+      <header className="flex items-center gap-4 border-b border-zinc-700 px-5 py-3 sm:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
           <Link
             to="/kiosk"
             className="shrink-0 rounded-xl bg-zinc-700 px-5 py-3 text-2xl font-semibold active:bg-zinc-600"
@@ -60,23 +60,34 @@ export function KioskDevicePage(): JSX.Element {
             {device?.name ?? 'Sensor'}
           </h1>
         </div>
-        {device && (
-          <span
-            className={`inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-lg font-semibold ${
-              device.online ? 'bg-emerald-500/15 text-emerald-300' : 'bg-zinc-700 text-zinc-400'
-            }`}
-          >
-            <span
-              className={`h-3 w-3 rounded-full ${
-                device.online
-                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]'
-                  : 'bg-zinc-500'
-              }`}
-              aria-hidden
+        <div className="flex shrink-0 items-center gap-3">
+          {setpointReading && (
+            <SetpointControl
+              deviceId={deviceId}
+              setpointC={setpointReading.value}
+              pendingC={device?.pendingSetpointC ?? null}
+              onApplied={refresh}
+              variant="header"
             />
-            {device.online ? 'Online' : 'Offline'}
-          </span>
-        )}
+          )}
+          {device && (
+            <span
+              className={`inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-lg font-semibold ${
+                device.online ? 'bg-emerald-500/15 text-emerald-300' : 'bg-zinc-700 text-zinc-400'
+              }`}
+            >
+              <span
+                className={`h-3 w-3 rounded-full ${
+                  device.online
+                    ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]'
+                    : 'bg-zinc-500'
+                }`}
+                aria-hidden
+              />
+              {device.online ? 'Online' : 'Offline'}
+            </span>
+          )}
+        </div>
       </header>
 
       <main className="flex flex-1 flex-col gap-4 overflow-hidden p-5 sm:p-6">
@@ -108,17 +119,6 @@ export function KioskDevicePage(): JSX.Element {
               {formatValue({ metric: totalMetric, value: total, recordedAt: '' })}
             </span>
           </div>
-        )}
-
-        {/* Change the controller's target temperature (brew controllers only). */}
-        {setpointReading && (
-          <SetpointControl
-            deviceId={deviceId}
-            setpointC={setpointReading.value}
-            pendingC={device?.pendingSetpointC ?? null}
-            onApplied={refresh}
-            variant="kiosk"
-          />
         )}
 
         {/* Metric (if several) + range selectors */}

@@ -23,8 +23,8 @@ interface Props {
   pendingC: number | null;
   /** Called after a setpoint is successfully queued (e.g. to refetch status). */
   onApplied?: () => void;
-  /** `kiosk` = large touch target for the Pi; `compact` = laptop sizing. */
-  variant?: 'kiosk' | 'compact';
+  /** `kiosk` = large touch target, `header` = compact kiosk header, `compact` = laptop sizing. */
+  variant?: 'kiosk' | 'header' | 'compact';
 }
 
 /**
@@ -43,6 +43,7 @@ export function SetpointControl({
   variant = 'kiosk',
 }: Props): JSX.Element {
   const kiosk = variant === 'kiosk';
+  const header = variant === 'header';
   // The server's current intent: a pending target if one exists, else the
   // controller's reported setpoint.
   const baseline = pendingC ?? setpointC;
@@ -85,21 +86,28 @@ export function SetpointControl({
     }
   }
 
-  const stepBtn = kiosk
-    ? 'h-14 w-14 text-3xl active:scale-95'
-    : 'h-9 w-9 text-xl active:scale-95';
-  const applyBtn = kiosk ? 'px-6 py-3 text-xl' : 'px-4 py-2 text-sm';
-  const valueText = kiosk ? 'text-4xl sm:text-5xl' : 'text-3xl';
+  const stepBtn = header
+    ? 'h-11 w-11 text-2xl active:scale-95'
+    : kiosk
+      ? 'h-14 w-14 text-3xl active:scale-95'
+      : 'h-9 w-9 text-xl active:scale-95';
+  const applyBtn = header
+    ? 'h-11 px-4 text-base'
+    : kiosk
+      ? 'px-6 py-3 text-xl'
+      : 'px-4 py-2 text-sm';
+  const valueText = header ? 'text-3xl' : kiosk ? 'text-4xl sm:text-5xl' : 'text-3xl';
   const labelText = kiosk ? 'text-base' : 'text-xs';
+  const shellClass = header
+    ? 'shrink-0 rounded-2xl border border-zinc-700 bg-zinc-800/60 px-3 py-2'
+    : `rounded-2xl border bg-zinc-800/60 ${
+        kiosk ? 'border-zinc-700 p-4 sm:p-5' : 'border-zinc-800 p-4'
+      }`;
 
   return (
-    <div
-      className={`rounded-2xl border bg-zinc-800/60 ${
-        kiosk ? 'border-zinc-700 p-4 sm:p-5' : 'border-zinc-800 p-4'
-      }`}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+    <div className={shellClass}>
+      <div className={`flex items-center ${header ? 'gap-3' : 'flex-wrap justify-between gap-3'}`}>
+        <div className={header ? 'min-w-[5.75rem]' : undefined}>
           <div className={`font-medium uppercase tracking-wider text-zinc-400 ${labelText}`}>
             Setpoint
           </div>
@@ -155,7 +163,9 @@ export function SetpointControl({
       </div>
 
       {error && (
-        <p className={`mt-3 text-red-400 ${kiosk ? 'text-sm' : 'text-xs'}`}>{error}</p>
+        <p className={`${header ? 'mt-1' : 'mt-3'} text-red-400 ${kiosk ? 'text-sm' : 'text-xs'}`}>
+          {error}
+        </p>
       )}
     </div>
   );

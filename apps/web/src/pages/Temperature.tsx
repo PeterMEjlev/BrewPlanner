@@ -131,17 +131,28 @@ export function TemperaturePage(): JSX.Element {
 
   return (
     <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
-      <header className="flex items-center gap-4 border-b border-zinc-700 px-5 py-4 sm:px-6">
-        <Link
-          to="/kiosk"
-          className="shrink-0 rounded-xl bg-zinc-700 px-5 py-3 text-2xl font-semibold active:bg-zinc-600"
-          aria-label="Back to home"
-        >
-          ←
-        </Link>
-        <h1 className="min-w-0 truncate text-3xl font-bold tracking-tight sm:text-4xl">
-          Temperature
-        </h1>
+      <header className="flex items-center gap-4 border-b border-zinc-700 px-5 py-3 sm:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          <Link
+            to="/kiosk"
+            className="shrink-0 rounded-xl bg-zinc-700 px-5 py-3 text-2xl font-semibold active:bg-zinc-600"
+            aria-label="Back to home"
+          >
+            ←
+          </Link>
+          <h1 className="min-w-0 truncate text-3xl font-bold tracking-tight sm:text-4xl">
+            Temperature
+          </h1>
+        </div>
+        {fridgeSource && fridgeSetpoint && (
+          <SetpointControl
+            deviceId={fridgeSource.deviceId}
+            setpointC={fridgeSetpoint.value}
+            pendingC={fridgeDevice?.pendingSetpointC ?? null}
+            onApplied={load}
+            variant="header"
+          />
+        )}
       </header>
 
       {error && (
@@ -166,17 +177,6 @@ export function TemperaturePage(): JSX.Element {
             );
           })}
         </div>
-
-        {/* Fridge (Inkbird) setpoint control — change the fermenter target here. */}
-        {fridgeSource && fridgeSetpoint && (
-          <SetpointControl
-            deviceId={fridgeSource.deviceId}
-            setpointC={fridgeSetpoint.value}
-            pendingC={fridgeDevice?.pendingSetpointC ?? null}
-            onApplied={load}
-            variant="kiosk"
-          />
-        )}
 
         {/* Legend toggles (left) + range selectors (right). Tapping a legend chip
             shows/hides that line in the chart. */}
