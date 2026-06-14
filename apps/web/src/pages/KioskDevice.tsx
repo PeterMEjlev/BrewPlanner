@@ -42,8 +42,10 @@ export function KioskDevicePage(): JSX.Element {
   // All-time consumption for energy/water meters (shown alongside the live value).
   const totalMetric = cumulativeMetricOf(device);
   const total = useDeviceTotal(deviceId, totalMetric);
-  // Brew controllers expose a target temperature the operator can change here.
+  // Brew controllers expose a target temperature; show the control even before
+  // the controller's first setpoint_c sample arrives.
   const setpointReading = device?.latest.find((r) => r.metric === 'setpoint_c');
+  const supportsSetpoint = device?.type === 'brew_controller';
 
   return (
     <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
@@ -61,10 +63,10 @@ export function KioskDevicePage(): JSX.Element {
           </h1>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          {setpointReading && (
+          {supportsSetpoint && (
             <SetpointControl
               deviceId={deviceId}
-              setpointC={setpointReading.value}
+              setpointC={setpointReading?.value ?? null}
               pendingC={device?.pendingSetpointC ?? null}
               onApplied={refresh}
               variant="header"

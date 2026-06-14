@@ -48,8 +48,10 @@ export function DevicePage(): JSX.Element {
   // All-time consumption for energy/water meters.
   const totalMetric = cumulativeMetricOf(device);
   const total = useDeviceTotal(deviceId, totalMetric);
-  // Brew controllers expose a target temperature the operator can change here.
+  // Brew controllers expose a target temperature; show the control even before
+  // the controller's first setpoint_c sample arrives.
   const setpointReading = device?.latest.find((r) => r.metric === 'setpoint_c');
+  const supportsSetpoint = device?.type === 'brew_controller';
 
   return (
     <div className="min-h-full bg-zinc-950 text-zinc-100">
@@ -123,11 +125,11 @@ export function DevicePage(): JSX.Element {
         )}
 
         {/* Change the controller's target temperature (brew controllers only). */}
-        {setpointReading && (
+        {supportsSetpoint && (
           <div className="mb-6 max-w-md">
             <SetpointControl
               deviceId={deviceId}
-              setpointC={setpointReading.value}
+              setpointC={setpointReading?.value ?? null}
               pendingC={device?.pendingSetpointC ?? null}
               onApplied={refresh}
               variant="compact"

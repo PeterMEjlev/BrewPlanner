@@ -128,6 +128,7 @@ export function TemperaturePage(): JSX.Element {
   const fridgeSource = sources.find((s) => s.key === 'fridge');
   const fridgeDevice = devices.fridge;
   const fridgeSetpoint = fridgeDevice?.latest.find((r) => r.metric === 'setpoint_c');
+  const fridgeSupportsSetpoint = !!fridgeSource && fridgeDevice?.type === 'brew_controller';
 
   return (
     <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
@@ -144,10 +145,10 @@ export function TemperaturePage(): JSX.Element {
             Temperature
           </h1>
         </div>
-        {fridgeSource && fridgeSetpoint && (
+        {fridgeSource && fridgeSupportsSetpoint && (
           <SetpointControl
             deviceId={fridgeSource.deviceId}
-            setpointC={fridgeSetpoint.value}
+            setpointC={fridgeSetpoint?.value ?? null}
             pendingC={fridgeDevice?.pendingSetpointC ?? null}
             onApplied={load}
             variant="header"
