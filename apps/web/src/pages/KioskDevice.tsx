@@ -1,4 +1,5 @@
-﻿import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -25,6 +26,10 @@ import {
   stateTick,
 } from './Dashboard';
 
+function isBreweryTempDevice(device: { name: string; type: string }): boolean {
+  return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
+}
+
 /** Touch-first sensor view for the Pi screen: big number, big controls, big chart. */
 export function KioskDevicePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
@@ -35,10 +40,7 @@ export function KioskDevicePage(): JSX.Element {
   const deviceId = Number(id);
   const { device, metric, setMetric, rangeMs, setRangeMs, chartData, latest, longRange, refresh } =
     useDeviceData(deviceId, lockedMetric);
-  // The metric buttons only show with several metrics and no locked metric; when
-  // they do, the active button already names the metric, so the label beside the
-  // big value would just repeat it.
-  const hasMetricSelector = !lockedMetric && !!device && device.latest.length > 1;
+
   // All-time consumption for energy/water meters (shown alongside the live value).
   const totalMetric = cumulativeMetricOf(device);
   const total = useDeviceTotal(deviceId, totalMetric);
@@ -46,6 +48,24 @@ export function KioskDevicePage(): JSX.Element {
   // the controller's first setpoint_c sample arrives.
   const setpointReading = device?.latest.find((r) => r.metric === 'setpoint_c');
   const supportsSetpoint = device?.type === 'brew_controller';
+
+  const breweryTempOnly = !!device && isBreweryTempDevice(device);
+  const metricOptions = breweryTempOnly
+    ? device.latest.filter((r) => r.metric === 'temp_c')
+    : (device?.latest ?? []);
+  // Brewery ambient is a plain temperature page; hide controller internals from
+  // the graph picker while keeping the setpoint config available in the header.
+  const hasMetricSelector = !lockedMetric && !breweryTempOnly && metricOptions.length > 1;
+  const latestForDisplay = breweryTempOnly
+    ? device?.latest.find((r) => r.metric === 'temp_c')
+    : latest;
+  const chartMetric = breweryTempOnly ? 'temp_c' : metric;
+
+  useEffect(() => {
+    if (breweryTempOnly && metric !== 'temp_c') {
+      setMetric('temp_c');
+    }
+  }, [breweryTempOnly, metric, setMetric]);
 
   return (
     <div className="touch-none-select flex h-full flex-col bg-zinc-900 text-white">
@@ -72,6 +92,30 @@ export function KioskDevicePage(): JSX.Element {
               variant="header"
             />
           )}
+        </div>
+      </header>
+
+      <main className="flex flex-1 flex-col gap-4 overflow-hidden p-5 sm:p-6">
+        {/* Current value */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {latestForDisplay ? (
+            isStateMetric(latestForDisplay.metric) ? (
+              <StateBadge value={latestForDisplay.value} size="lg" />
+            ) : (
+              <>
+                <span className="text-6xl font-bold tabular-nums sm:text-7xl">
+                  {formatValue(latestForDisplay)}
+                </span>
+                {!hasMetricSelector && (
+                  <span className="text-2xl text-zinc-400">
+                    {metricLabel(latestForDisplay.metric)}
+                  </span>
+                )}
+              </>
+            )
+          ) : (
+            <span className="text-3xl text-zinc-400">No readings yet</span>
+          )}
           {device && (
             <span
               className={`inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-lg font-semibold ${
@@ -90,28 +134,6 @@ export function KioskDevicePage(): JSX.Element {
             </span>
           )}
         </div>
-      </header>
-
-      <main className="flex flex-1 flex-col gap-4 overflow-hidden p-5 sm:p-6">
-        {/* Current value */}
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          {latest ? (
-            isStateMetric(latest.metric) ? (
-              <StateBadge value={latest.value} size="lg" />
-            ) : (
-              <>
-                <span className="text-6xl font-bold tabular-nums sm:text-7xl">
-                  {formatValue(latest)}
-                </span>
-                {!hasMetricSelector && (
-                  <span className="text-2xl text-zinc-400">{metricLabel(latest.metric)}</span>
-                )}
-              </>
-            )
-          ) : (
-            <span className="text-3xl text-zinc-400">No readings yet</span>
-          )}
-        </div>
 
         {/* All-time consumption (energy / water meters) */}
         {totalMetric && total != null && (
@@ -125,9 +147,9 @@ export function KioskDevicePage(): JSX.Element {
 
         {/* Metric (if several) + range selectors */}
         <div className="flex flex-wrap items-center gap-3">
-          {!lockedMetric && device && device.latest.length > 1 && (
+          {hasMetricSelector && (
             <div className="flex flex-wrap gap-2">
-              {device.latest.map((r) => (
+              {metricOptions.map((r) => (
                 <button
                   key={r.metric}
                   type="button"
@@ -181,10 +203,10 @@ export function KioskDevicePage(): JSX.Element {
                   width={52}
                   tick={{ fontSize: 14, fill: '#cbd5e1' }}
                   stroke="#475569"
-                  domain={metric && isStateMetric(metric) ? [-1.1, 1.1] : ['auto', 'auto']}
-                  ticks={metric && isStateMetric(metric) ? [-1, 0, 1] : undefined}
+                  domain={chartMetric && isStateMetric(chartMetric) ? [-1.1, 1.1] : ['auto', 'auto']}
+                  ticks={chartMetric && isStateMetric(chartMetric) ? [-1, 0, 1] : undefined}
                   tickFormatter={
-                    metric && isStateMetric(metric) ? (v) => stateTick(v) : undefined
+                    chartMetric && isStateMetric(chartMetric) ? (v) => stateTick(v) : undefined
                   }
                 />
                 <Tooltip
@@ -202,15 +224,17 @@ export function KioskDevicePage(): JSX.Element {
                   formatter={(value) => {
                     const num = typeof value === 'number' ? value : Number(value);
                     return [
-                      metric ? formatValue({ metric, value: num, recordedAt: '' }) : num,
-                      metric ? metricLabel(metric) : 'value',
+                      chartMetric
+                        ? formatValue({ metric: chartMetric, value: num, recordedAt: '' })
+                        : num,
+                      chartMetric ? metricLabel(chartMetric) : 'value',
                     ];
                   }}
                 />
                 <Line
-                  type={metric && isStateMetric(metric) ? 'stepAfter' : 'monotone'}
+                  type={chartMetric && isStateMetric(chartMetric) ? 'stepAfter' : 'monotone'}
                   dataKey="value"
-                  stroke={metric ? metricColor(metric) : '#3b82f6'}
+                  stroke={chartMetric ? metricColor(chartMetric) : '#3b82f6'}
                   strokeWidth={3}
                   dot={false}
                   isAnimationActive={false}

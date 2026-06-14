@@ -34,6 +34,10 @@ interface PlannedSensor {
 const hasType = (devices: DeviceStatus[], type: DeviceType): boolean =>
   devices.some((d) => d.type === type);
 
+function isBreweryTempDevice(device: DeviceStatus): boolean {
+  return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
+}
+
 const PLANNED_SENSORS: PlannedSensor[] = [
   {
     icon: TYPE_ICON.power_meter,
@@ -195,6 +199,10 @@ function AppTile({
 }
 
 function DeviceTile({ device }: { device: DeviceStatus }): JSX.Element {
+  const readings = isBreweryTempDevice(device)
+    ? device.latest.filter((r) => r.metric === 'temp_c')
+    : device.latest;
+
   return (
     <Link
       to={`/devices/${device.id}`}
@@ -210,9 +218,9 @@ function DeviceTile({ device }: { device: DeviceStatus }): JSX.Element {
         <StatusBadge online={device.online} />
       </div>
 
-      {device.latest.length > 0 ? (
+      {readings.length > 0 ? (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          {device.latest.map((r) =>
+          {readings.map((r) =>
             isStateMetric(r.metric) ? (
               <StateBadge key={r.metric} value={r.value} />
             ) : (

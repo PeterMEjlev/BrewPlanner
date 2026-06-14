@@ -222,6 +222,10 @@ function findReading(
   return undefined;
 }
 
+function isBreweryTempDevice(device: DeviceStatus): boolean {
+  return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
+}
+
 /**
  * Tint for the fridge temperature from the controller's hvac_state: blue while
  * cooling, orange while heating, and plain white when idle — the colour is the
@@ -653,7 +657,9 @@ function BigValue({ value, unit }: { value: string; unit: string }): JSX.Element
  * Offline devices dim. The card links to the device's chart.
  */
 function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
-  const metrics = orderedMetrics(device.latest);
+  const metrics = isBreweryTempDevice(device)
+    ? orderedMetrics(device.latest.filter((r) => r.metric === 'temp_c'))
+    : orderedMetrics(device.latest);
 
   const multi = metrics.length > 1;
 

@@ -1,4 +1,5 @@
-﻿import { Link, useParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -26,6 +27,10 @@ import {
   stateTick,
 } from './Dashboard';
 
+function isBreweryTempDevice(device: { name: string; type: string }): boolean {
+  return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
+}
+
 /** Detail view for one device: live status plus a history chart per metric. */
 export function DevicePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
@@ -42,9 +47,7 @@ export function DevicePage(): JSX.Element {
     refresh,
     error,
   } = useDeviceData(deviceId);
-  // With several metrics the selector buttons name the active one, so the label
-  // beside the big value is redundant; keep it only for single-metric devices.
-  const hasMetricSelector = !!device && device.latest.length > 1;
+
   // All-time consumption for energy/water meters.
   const totalMetric = cumulativeMetricOf(device);
   const total = useDeviceTotal(deviceId, totalMetric);
@@ -52,6 +55,24 @@ export function DevicePage(): JSX.Element {
   // the controller's first setpoint_c sample arrives.
   const setpointReading = device?.latest.find((r) => r.metric === 'setpoint_c');
   const supportsSetpoint = device?.type === 'brew_controller';
+
+  const breweryTempOnly = !!device && isBreweryTempDevice(device);
+  const metricOptions = breweryTempOnly
+    ? device.latest.filter((r) => r.metric === 'temp_c')
+    : (device?.latest ?? []);
+  // With several metrics the selector buttons name the active one, so the label
+  // beside the big value is redundant. Brewery ambient stays temperature-only.
+  const hasMetricSelector = !breweryTempOnly && metricOptions.length > 1;
+  const latestForDisplay = breweryTempOnly
+    ? device?.latest.find((r) => r.metric === 'temp_c')
+    : latest;
+  const chartMetric = breweryTempOnly ? 'temp_c' : metric;
+
+  useEffect(() => {
+    if (breweryTempOnly && metric !== 'temp_c') {
+      setMetric('temp_c');
+    }
+  }, [breweryTempOnly, metric, setMetric]);
 
   return (
     <div className="min-h-full bg-zinc-950 text-zinc-100">
@@ -99,17 +120,19 @@ export function DevicePage(): JSX.Element {
           </div>
         )}
 
-        {latest && (
+        {latestForDisplay && (
           <div className="mb-6">
-            {isStateMetric(latest.metric) ? (
-              <StateBadge value={latest.value} size="lg" />
+            {isStateMetric(latestForDisplay.metric) ? (
+              <StateBadge value={latestForDisplay.value} size="lg" />
             ) : (
               <>
                 <span className="text-5xl font-bold tabular-nums text-zinc-50">
-                  {formatValue(latest)}
+                  {formatValue(latestForDisplay)}
                 </span>
                 {!hasMetricSelector && (
-                  <span className="ml-2 text-lg text-zinc-400">{metricLabel(latest.metric)}</span>
+                  <span className="ml-2 text-lg text-zinc-400">
+                    {metricLabel(latestForDisplay.metric)}
+                  </span>
                 )}
               </>
             )}
@@ -139,9 +162,9 @@ export function DevicePage(): JSX.Element {
 
         {/* Metric + range selectors */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          {device && device.latest.length > 1 && (
+          {hasMetricSelector && (
             <div className="flex gap-2">
-              {device.latest.map((r) => (
+              {metricOptions.map((r) => (
                 <button
                   key={r.metric}
                   type="button"
@@ -199,10 +222,10 @@ export function DevicePage(): JSX.Element {
                   width={48}
                   tick={{ fontSize: 12, fill: '#94a3b8' }}
                   stroke="#334155"
-                  domain={metric && isStateMetric(metric) ? [-1.1, 1.1] : ['auto', 'auto']}
-                  ticks={metric && isStateMetric(metric) ? [-1, 0, 1] : undefined}
+                  domain={chartMetric && isStateMetric(chartMetric) ? [-1.1, 1.1] : ['auto', 'auto']}
+                  ticks={chartMetric && isStateMetric(chartMetric) ? [-1, 0, 1] : undefined}
                   tickFormatter={
-                    metric && isStateMetric(metric) ? (v) => stateTick(v) : undefined
+                    chartMetric && isStateMetric(chartMetric) ? (v) => stateTick(v) : undefined
                   }
                 />
                 <Tooltip
@@ -219,15 +242,17 @@ export function DevicePage(): JSX.Element {
                   formatter={(value) => {
                     const num = typeof value === 'number' ? value : Number(value);
                     return [
-                      metric ? formatValue({ metric, value: num, recordedAt: '' }) : num,
-                      metric ? metricLabel(metric) : 'value',
+                      chartMetric
+                        ? formatValue({ metric: chartMetric, value: num, recordedAt: '' })
+                        : num,
+                      chartMetric ? metricLabel(chartMetric) : 'value',
                     ];
                   }}
                 />
                 <Line
-                  type={metric && isStateMetric(metric) ? 'stepAfter' : 'monotone'}
+                  type={chartMetric && isStateMetric(chartMetric) ? 'stepAfter' : 'monotone'}
                   dataKey="value"
-                  stroke={metric ? metricColor(metric) : '#3b82f6'}
+                  stroke={chartMetric ? metricColor(chartMetric) : '#3b82f6'}
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
