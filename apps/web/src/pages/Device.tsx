@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -34,7 +34,9 @@ function isBreweryTempDevice(device: { name: string; type: string }): boolean {
 /** Detail view for one device: live status plus a history chart per metric. */
 export function DevicePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
+  const [params] = useSearchParams();
   const deviceId = Number(id);
+  const initialMetric = params.get('metric') ?? undefined;
   const {
     device,
     metric,
@@ -46,7 +48,7 @@ export function DevicePage(): JSX.Element {
     longRange,
     refresh,
     error,
-  } = useDeviceData(deviceId);
+  } = useDeviceData(deviceId, initialMetric);
 
   // All-time consumption for energy/water meters.
   const totalMetric = cumulativeMetricOf(device);

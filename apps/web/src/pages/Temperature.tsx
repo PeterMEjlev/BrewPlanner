@@ -221,7 +221,7 @@ export function TemperaturePage(): JSX.Element {
             );
           })}
           {sources.length > 0 && (
-            <div className="ml-auto flex flex-wrap justify-end gap-2">
+            <div className="ml-auto flex shrink-0 flex-col items-end gap-2">
               {sources.map((s) => (
                 <SensorStatusPill key={s.key} source={s} device={devices[s.key]} />
               ))}
