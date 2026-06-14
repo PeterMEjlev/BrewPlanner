@@ -42,6 +42,49 @@ interface ChartRow {
   fridge?: number;
 }
 
+function SensorStatusPill({
+  source,
+  device,
+}: {
+  source: Source;
+  device: DeviceStatus | undefined;
+}): JSX.Element {
+  const online = device?.online === true;
+  const known = device != null;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-base font-semibold ${
+        !known
+          ? 'bg-zinc-800 text-zinc-400'
+          : online
+            ? 'bg-emerald-500/15 text-emerald-300'
+            : 'bg-zinc-700 text-zinc-400'
+      }`}
+    >
+      <span className="flex items-center gap-1.5 text-zinc-400">
+        <span
+          className="h-2.5 w-2.5 rounded-full"
+          style={{ backgroundColor: source.color }}
+          aria-hidden
+        />
+        {source.label}
+      </span>
+      <span
+        className={`h-2.5 w-2.5 rounded-full ${
+          !known
+            ? 'bg-zinc-500'
+            : online
+              ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]'
+              : 'bg-zinc-500'
+        }`}
+        aria-hidden
+      />
+      {known ? (online ? 'Online' : 'Offline') : 'Checking'}
+    </span>
+  );
+}
+
 /**
  * Combined fermenter temperature view for the Pi: the beer (Tilt) and fridge
  * (Inkbird) temperatures overlaid on a single chart instead of two separate
@@ -162,7 +205,7 @@ export function TemperaturePage(): JSX.Element {
 
       <main className="flex flex-1 flex-col gap-4 overflow-hidden p-5 sm:p-6">
         {/* Current values, one per source, coloured to match its line. */}
-        <div className="flex flex-wrap items-baseline gap-x-8 gap-y-1">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
           {sources.map((s) => {
             const v = latestValue(s.key);
             return (
@@ -177,6 +220,13 @@ export function TemperaturePage(): JSX.Element {
               </span>
             );
           })}
+          {sources.length > 0 && (
+            <div className="ml-auto flex flex-wrap justify-end gap-2">
+              {sources.map((s) => (
+                <SensorStatusPill key={s.key} source={s} device={devices[s.key]} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Legend toggles (left) + range selectors (right). Tapping a legend chip
