@@ -309,7 +309,7 @@ export function DashboardPage(): JSX.Element {
   return (
     <div className="min-h-full bg-zinc-950 text-zinc-100">
       <header className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
+        <div className="mx-auto flex max-w-[1580px] items-center justify-between gap-4 px-5 py-4">
           <div>
             <div className="flex items-center gap-3">
               <span className="text-2xl" aria-hidden>
@@ -347,78 +347,80 @@ export function DashboardPage(): JSX.Element {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto max-w-[1580px] px-5 py-5">
         {error && (
           <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          <section className="min-w-0">
-            <SectionHeader
-              title="Fermentation"
-              subtitle="All devices that belong to the same fermenter are grouped into one station."
-            />
-
-            {devices === null ? (
-              <LoadingPanel label="Loading fermenters..." />
-            ) : stationGroups.length === 0 ? (
-              <EmptyPanel
-                title="No fermenter station yet"
-                body="Register pressure, controller, or hydrometer devices with the same fermenter name and they will group here."
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="min-w-0 space-y-5">
+            <section>
+              <SectionHeader
+                title="Fermentation"
+                subtitle="All fermenter readings are grouped by equipment, not by sensor."
               />
-            ) : (
-              <div className="grid gap-5">
-                {stationGroups.map((group) => (
-                  <FermenterStationCard
-                    key={group[0]!.name}
-                    name={group[0]!.name}
-                    devices={group}
-                    recipe={recipe}
-                    onRefresh={load}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
 
-          <aside className="space-y-6">
+              {devices === null ? (
+                <LoadingPanel label="Loading fermenters..." />
+              ) : stationGroups.length === 0 ? (
+                <EmptyPanel
+                  title="No fermenter station yet"
+                  body="Register pressure, controller, or hydrometer devices with the same fermenter name and they will group here."
+                />
+              ) : (
+                <div className="grid gap-4">
+                  {stationGroups.map((group) => (
+                    <FermenterStationCard
+                      key={group[0]!.name}
+                      name={group[0]!.name}
+                      devices={group}
+                      recipe={recipe}
+                      onRefresh={load}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section>
+              <SectionHeader
+                title="Brewery And Utilities"
+                subtitle="Ambient temperature, power, water and other non-fermenter sensors."
+              />
+              {devices === null ? (
+                <LoadingPanel label="Loading equipment..." />
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {equipmentDevices.map((d) => (
+                      <EquipmentDeviceCard key={d.id} device={d} />
+                    ))}
+                    {plannedSensors.map((p) => (
+                      <PlannedTile key={p.title} sensor={p} />
+                    ))}
+                  </div>
+                  {deviceList.length === 0 && (
+                    <p className="mt-3 text-xs text-zinc-500">
+                      No live devices yet. Register one on the Pi with{' '}
+                      <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
+                        npm run device -- add "Fermenter" pressure_sensor
+                      </code>{' '}
+                      and point its agent at this server.
+                    </p>
+                  )}
+                </>
+              )}
+            </section>
+          </div>
+
+          <aside className="space-y-4">
             <KegStatusPanel kegs={kegs} loading={kegsLoading} error={kegsError} />
             <OperationsPanel />
             <FleetPanel devices={deviceList} loading={devices === null} />
           </aside>
         </div>
-
-        <section className="mt-8">
-          <SectionHeader
-            title="Brewery And Utilities"
-            subtitle="Ambient temperature, power, water and any other non-fermenter sensors."
-          />
-          {devices === null ? (
-            <LoadingPanel label="Loading equipment..." />
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {equipmentDevices.map((d) => (
-                  <EquipmentDeviceCard key={d.id} device={d} />
-                ))}
-                {plannedSensors.map((p) => (
-                  <PlannedTile key={p.title} sensor={p} />
-                ))}
-              </div>
-              {deviceList.length === 0 && (
-                <p className="mt-3 text-xs text-zinc-500">
-                  No live devices yet. Register one on the Pi with{' '}
-                  <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
-                    npm run device -- add "Fermenter" pressure_sensor
-                  </code>{' '}
-                  and point its agent at this server.
-                </p>
-              )}
-            </>
-          )}
-        </section>
       </main>
     </div>
   );
@@ -426,9 +428,9 @@ export function DashboardPage(): JSX.Element {
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle: string }): JSX.Element {
   return (
-    <div className="mb-3">
+    <div className="mb-2">
       <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">{title}</h2>
-      <p className="mt-1 text-sm text-zinc-500">{subtitle}</p>
+      <p className="mt-0.5 text-sm text-zinc-500">{subtitle}</p>
     </div>
   );
 }
@@ -475,7 +477,7 @@ function FermenterStationCard({
 
   return (
     <article className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-800 px-5 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-800 px-4 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             <span
@@ -485,7 +487,7 @@ function FermenterStationCard({
               {TYPE_ICON.pressure_sensor}
             </span>
             <div className="min-w-0">
-              <h3 className="truncate text-2xl font-semibold tracking-tight text-zinc-50">{name}</h3>
+              <h3 className="truncate text-xl font-semibold tracking-tight text-zinc-50">{name}</h3>
               <p className="truncate text-sm text-zinc-500">
                 {recipe ? `${recipe.name}${recipe.style ? ` - ${recipe.style}` : ''}` : 'No active recipe selected'}
               </p>
@@ -494,13 +496,13 @@ function FermenterStationCard({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span
-            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${status.shellClass}`}
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold ${status.shellClass}`}
             title={status.hint}
           >
             <span className={`h-2.5 w-2.5 rounded-full ${status.dotClass}`} aria-hidden />
             {status.label}
           </span>
-          <span className="rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400">
+          <span className="rounded-lg border border-zinc-800 px-3 py-1.5 text-sm text-zinc-400">
             {online} / {devices.length} sensors online
           </span>
         </div>
@@ -519,7 +521,7 @@ function FermenterStationCard({
         </StationMetricBlock>
 
         <StationMetricBlock title="Temperature And Control">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Beer</p>
               {beer ? (
@@ -546,7 +548,7 @@ function FermenterStationCard({
               )}
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-400">
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-zinc-400">
             {state && <StateBadge value={state.reading.value} />}
             {setpoint && (
               <span>
@@ -558,7 +560,7 @@ function FermenterStationCard({
             )}
           </div>
           {controller && (
-            <div className="mt-4">
+            <div className="mt-3">
               <SetpointControl
                 deviceId={controller.id}
                 setpointC={setpoint?.reading.value ?? null}
@@ -582,7 +584,7 @@ function FermenterStationCard({
         </StationMetricBlock>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800 px-5 py-3 text-sm text-zinc-500">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800 px-4 py-2.5 text-sm text-zinc-500">
         <span>{lastSeen ? `Updated ${relativeTime(lastSeen)}` : 'Never reported'}</span>
         <span className={`font-semibold ${status.textClass}`}>{status.hint}</span>
         <span className="hidden h-4 w-px bg-zinc-800 sm:block" aria-hidden />
@@ -607,8 +609,8 @@ function StationMetricBlock({
   children: React.ReactNode;
 }): JSX.Element {
   return (
-    <div className="min-w-0 p-5">
-      <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">{title}</p>
+    <div className="min-w-0 p-4">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">{title}</p>
       {children}
     </div>
   );
@@ -634,7 +636,7 @@ function LinkedMetric({
 function BigValue({ value, unit }: { value: string; unit: string }): JSX.Element {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="text-4xl font-semibold tracking-tight tabular-nums text-zinc-50">{value}</span>
+      <span className="text-3xl font-semibold tracking-tight tabular-nums text-zinc-50">{value}</span>
       <span className="text-sm font-medium uppercase tracking-wide text-zinc-500">{unit}</span>
     </div>
   );
@@ -650,7 +652,7 @@ function TemperatureValue({
   return (
     <div className="flex items-baseline gap-1.5">
       <span
-        className={`text-3xl font-semibold tracking-tight tabular-nums text-zinc-50 ${valueClass ?? ''}`}
+        className={`text-2xl font-semibold tracking-tight tabular-nums text-zinc-50 ${valueClass ?? ''}`}
       >
         {reading.value.toFixed(1)}
       </span>
@@ -698,13 +700,13 @@ function KegStatusPanel({
   const contents = contentCounts(kegs);
 
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
             Keg Status
           </h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className="mt-0.5 text-sm text-zinc-500">
             {loading ? 'Loading sheet...' : error ? 'Sheet unavailable' : 'Shared inventory sheet'}
           </p>
         </div>
@@ -714,26 +716,26 @@ function KegStatusPanel({
       </div>
 
       {error ? (
-        <p className="mt-5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {error}
         </p>
       ) : (
         <>
-          <div className="mt-5 flex items-end gap-2">
-            <span className="text-5xl font-semibold tracking-tight tabular-nums text-zinc-50">
+          <div className="mt-4 flex items-end gap-2">
+            <span className="text-4xl font-semibold tracking-tight tabular-nums text-zinc-50">
               {loading ? '-' : filled}
             </span>
             <span className="pb-1 text-sm text-zinc-500">
               of {loading ? '-' : total} filled
             </span>
           </div>
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-800">
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800">
             <div
               className="h-full rounded-full bg-emerald-400"
               style={{ width: `${percent}%` }}
             />
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             {contents.length === 0 && (
               <span className="text-sm text-zinc-600">
                 {loading ? 'Reading keg list...' : 'No filled kegs'}
@@ -772,11 +774,11 @@ function contentCounts(kegs: Keg[]): { contents: string; count: number }[] {
 
 function OperationsPanel(): JSX.Element {
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
         Operations
       </h2>
-      <div className="mt-4 grid gap-3">
+      <div className="mt-3 grid gap-2">
         <AppLink to="/admin" icon="✅" title="Brew Checklist" subtitle="Procedures and runs" />
         <AppLink to="/todos" icon="📝" title="Brewery To-Do" subtitle="Ad-hoc task list" />
       </div>
@@ -798,7 +800,7 @@ function AppLink({
   return (
     <Link
       to={to}
-      className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-3 transition hover:border-zinc-700 hover:bg-zinc-800/60"
+      className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2.5 transition hover:border-zinc-700 hover:bg-zinc-800/60"
     >
       <span className="text-xl" aria-hidden>
         {icon}
@@ -821,17 +823,17 @@ function FleetPanel({
   const online = devices.filter((d) => d.online).length;
   const lastSeen = latestDeviceTimestamp(devices);
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
         Device Fleet
       </h2>
-      <div className="mt-4 flex items-end gap-2">
-        <span className="text-4xl font-semibold tracking-tight text-zinc-50">
+      <div className="mt-3 flex items-end gap-2">
+        <span className="text-3xl font-semibold tracking-tight text-zinc-50">
           {loading ? '-' : online}
         </span>
         <span className="pb-1 text-sm text-zinc-500">of {loading ? '-' : devices.length} online</span>
       </div>
-      <p className="mt-3 text-sm text-zinc-500">
+      <p className="mt-2 text-sm text-zinc-500">
         {lastSeen ? `Latest update ${relativeTime(lastSeen)}` : 'No device reports yet'}
       </p>
     </section>
@@ -848,7 +850,7 @@ function EquipmentDeviceCard({ device }: { device: DeviceStatus }): JSX.Element 
   return (
     <Link
       to={`/devices/${device.id}`}
-      className={`flex min-h-[13rem] flex-col rounded-lg border border-zinc-800 bg-zinc-900 p-5 transition hover:border-zinc-700 hover:bg-zinc-800/60 ${
+      className={`flex min-h-[10.5rem] flex-col rounded-lg border border-zinc-800 bg-zinc-900 p-4 transition hover:border-zinc-700 hover:bg-zinc-800/60 ${
         device.online ? '' : 'opacity-60'
       }`}
     >
@@ -868,16 +870,16 @@ function EquipmentDeviceCard({ device }: { device: DeviceStatus }): JSX.Element 
       </div>
 
       {metrics.length > 0 ? (
-        <div className="mt-5 grid flex-1 gap-x-5 gap-y-4 sm:grid-cols-2">
+        <div className="mt-4 grid flex-1 gap-x-4 gap-y-3 sm:grid-cols-2">
           {metrics.map((r) => (
             <MetricReading key={r.metric} reading={r} />
           ))}
         </div>
       ) : (
-        <p className="mt-5 flex-1 text-sm text-zinc-500">No readings yet.</p>
+        <p className="mt-4 flex-1 text-sm text-zinc-500">No readings yet.</p>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 pt-3 text-xs text-zinc-500">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 pt-2.5 text-xs text-zinc-500">
         <span>{device.lastSeenAt ? `Updated ${relativeTime(device.lastSeenAt)}` : 'Never reported'}</span>
         {totalMetric && total != null && (
           <span>
@@ -910,7 +912,7 @@ function MetricReading({ reading }: { reading: LatestReading }): JSX.Element {
         {METRIC_CAPTION[reading.metric] ?? metricLabel(reading.metric)}
       </p>
       <div className="mt-1 flex items-baseline gap-1.5">
-        <span className="text-3xl font-semibold tracking-tight tabular-nums text-zinc-50">
+        <span className="text-2xl font-semibold tracking-tight tabular-nums text-zinc-50">
           {value}
         </span>
         {unit && <span className="text-sm font-medium text-zinc-500">{unit}</span>}
@@ -922,7 +924,7 @@ function MetricReading({ reading }: { reading: LatestReading }): JSX.Element {
 /** Dimmed, non-interactive tile for a planned-but-not-yet-connected sensor. */
 function PlannedTile({ sensor }: { sensor: PlannedSensor }): JSX.Element {
   return (
-    <div className="flex min-h-[13rem] flex-col rounded-lg border border-dashed border-zinc-700 bg-zinc-900/40 p-5">
+    <div className="flex min-h-[10.5rem] flex-col rounded-lg border border-dashed border-zinc-700 bg-zinc-900/40 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="text-2xl opacity-60" aria-hidden>
