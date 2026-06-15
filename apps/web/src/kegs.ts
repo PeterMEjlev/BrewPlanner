@@ -8,8 +8,10 @@ import { useEffect, useState } from 'react';
  * column layout, and the per-content colour scheme, so the kiosk Keg page and
  * the home-screen count stay in lockstep.
  */
-const SHEETS_CSV_URL =
-  'https://docs.google.com/spreadsheets/d/1c5CWo_-7lS9C0HSklylLVgFAT4OwADm2Svqfr9x28Do/export?format=csv&gid=0';
+const SHEET_ID = '1c5CWo_-7lS9C0HSklylLVgFAT4OwADm2Svqfr9x28Do';
+const SHEETS_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`;
+/** Human-facing sheet URL for "open in a new tab" links. */
+export const SHEETS_VIEW_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`;
 
 export interface Keg {
   number: string;

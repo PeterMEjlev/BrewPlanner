@@ -99,6 +99,48 @@ export function useDeviceData(deviceId: number, lockedMetric?: string): DeviceDa
   };
 }
 
+/** How often the lightweight Overview sparklines refetch their short history. */
+const SERIES_POLL_MS = 60_000;
+
+/**
+ * A bare metric history as a list of values (oldest→newest), for the Overview's
+ * inline sparklines. Lighter than {@link useDeviceData}: no metric/range state,
+ * a small point cap, and a slow poll. Pass `null` to disable (returns []) and
+ * keep the last series through a transient fetch error.
+ */
+export function useMetricSeries(
+  deviceId: number | null,
+  metric: string,
+  rangeMs = 24 * 60 * 60 * 1000,
+): number[] {
+  const [series, setSeries] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (deviceId == null) {
+      setSeries([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const since = new Date(Date.now() - rangeMs).toISOString();
+        const history = await api.getDeviceHistory(deviceId, { metric, since, limit: 200 });
+        if (!cancelled) setSeries([...history].reverse().map((r) => r.value));
+      } catch {
+        // Keep the last known series through a transient history failure.
+      }
+    };
+    void load();
+    const t = setInterval(() => void load(), SERIES_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [deviceId, metric, rangeMs]);
+
+  return series;
+}
+
 /** Cumulative meter metrics whose lifetime total ("all-time consumption") we surface. */
 const CUMULATIVE_METRICS = new Set(['energy_kwh', 'water_l']);
 

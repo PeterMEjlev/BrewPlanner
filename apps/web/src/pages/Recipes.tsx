@@ -1,6 +1,6 @@
 import type { Recipe } from '@checklist/shared';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 
 /**
@@ -11,6 +11,7 @@ import { api } from '../api';
  */
 export function RecipesPage(): JSX.Element {
   const navigate = useNavigate();
+  const location = useLocation();
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +42,11 @@ export function RecipesPage(): JSX.Element {
     try {
       if (recipe) await api.setActiveRecipe(recipe);
       else await api.clearActiveRecipe();
-      navigate('/kiosk');
+      // Return where we came from — the desktop dashboard or the kiosk home —
+      // rather than always dropping onto the touch kiosk. `key === 'default'`
+      // means there's no in-app history to pop (e.g. opened by direct URL).
+      if (location.key !== 'default') navigate(-1);
+      else navigate('/kiosk');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save selection');
       setSaving(false);

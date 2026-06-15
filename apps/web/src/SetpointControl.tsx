@@ -23,8 +23,11 @@ interface Props {
   pendingC: number | null;
   /** Called after a setpoint is successfully queued (e.g. to refetch status). */
   onApplied?: () => void;
-  /** `kiosk` = large touch target, `header` = compact kiosk header, `compact` = laptop sizing. */
-  variant?: 'kiosk' | 'header' | 'compact';
+  /**
+   * `kiosk` = large touch target, `header` = compact kiosk header, `compact` =
+   * laptop sizing, `inline` = a single dense desktop row with no card chrome.
+   */
+  variant?: 'kiosk' | 'header' | 'compact' | 'inline';
 }
 
 /**
@@ -44,10 +47,17 @@ export function SetpointControl({
 }: Props): JSX.Element {
   const kiosk = variant === 'kiosk';
   const header = variant === 'header';
+  const inline = variant === 'inline';
+  // Typing a value suits the laptop, but the touch variants have no keyboard, so
+  // they stay stepper-only.
+  const editable = variant === 'compact' || inline;
   // The server's current intent: a pending target if one exists, else the
   // controller's reported setpoint.
   const baseline = pendingC ?? setpointC;
   const [draft, setDraft] = useState<number | null>(null);
+  // Raw text while the value field is being typed (so partial entries like "1"
+  // aren't clobbered by re-render); null when not editing.
+  const [text, setText] = useState<string | null>(null);
   // The just-applied target, shown until the server's status catches up — avoids
   // a flicker back to the old value between Apply and the next status poll.
   const [optimistic, setOptimistic] = useState<number | null>(null);
@@ -68,7 +78,15 @@ export function SetpointControl({
 
   function step(delta: number): void {
     setError(null);
+    setText(null);
     setDraft(clamp(round1(target + delta)));
+  }
+
+  function onType(value: string): void {
+    setError(null);
+    setText(value);
+    const n = parseFloat(value);
+    if (!Number.isNaN(n)) setDraft(clamp(round1(n)));
   }
 
   async function apply(): Promise<void> {
@@ -78,6 +96,7 @@ export function SetpointControl({
       const res = await api.setDeviceSetpoint(deviceId, target);
       setOptimistic(res?.pendingSetpointC ?? target);
       setDraft(null);
+      setText(null);
       onApplied?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to set setpoint');
@@ -86,27 +105,45 @@ export function SetpointControl({
     }
   }
 
+  const displayValue = text ?? (target % 1 === 0 ? target.toFixed(0) : target.toFixed(1));
+
   const stepBtn = header
     ? 'h-11 w-11 text-2xl active:scale-95'
     : kiosk
       ? 'h-14 w-14 text-3xl active:scale-95'
-      : 'h-9 w-9 text-xl active:scale-95';
+      : inline
+        ? 'h-8 w-8 text-lg'
+        : 'h-9 w-9 text-xl active:scale-95';
   const applyBtn = header
     ? 'h-11 px-4 text-base'
     : kiosk
       ? 'px-6 py-3 text-xl'
-      : 'px-4 py-2 text-sm';
-  const valueText = header ? 'text-3xl' : kiosk ? 'text-4xl sm:text-5xl' : 'text-3xl';
+      : inline
+        ? 'h-8 px-3.5 text-sm'
+        : 'px-4 py-2 text-sm';
+  const valueText = header
+    ? 'text-3xl'
+    : kiosk
+      ? 'text-4xl sm:text-5xl'
+      : inline
+        ? 'text-2xl'
+        : 'text-3xl';
   const labelText = kiosk ? 'text-base' : 'text-xs';
   const shellClass = header
     ? 'shrink-0 rounded-2xl border border-zinc-700 bg-zinc-800/60 px-3 py-2'
-    : `rounded-2xl border bg-zinc-800/60 ${
-        kiosk ? 'border-zinc-700 p-4 sm:p-5' : 'border-zinc-800 p-4'
-      }`;
+    : inline
+      ? 'rounded-xl border border-zinc-800 bg-zinc-950/40 px-3 py-2'
+      : `rounded-2xl border bg-zinc-800/60 ${
+          kiosk ? 'border-zinc-700 p-4 sm:p-5' : 'border-zinc-800 p-4'
+        }`;
 
   return (
     <div className={shellClass}>
-      <div className={`flex items-center ${header ? 'gap-3' : 'flex-wrap justify-between gap-3'}`}>
+      <div
+        className={`flex items-center ${
+          header ? 'gap-3' : inline ? 'justify-between gap-3' : 'flex-wrap justify-between gap-3'
+        }`}
+      >
         <div className={header ? 'min-w-[5.75rem]' : undefined}>
           <div className={`font-medium uppercase tracking-wider text-zinc-400 ${labelText}`}>
             Setpoint
@@ -122,7 +159,7 @@ export function SetpointControl({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className={`flex items-center ${inline ? 'gap-2' : 'gap-3'}`}>
           <button
             type="button"
             onClick={() => step(-STEP_C)}
@@ -133,10 +170,37 @@ export function SetpointControl({
             −
           </button>
           <span
-            className={`min-w-[3.5ch] text-center font-bold tabular-nums tracking-tight ${valueText}`}
+            className={`flex items-baseline justify-center font-bold tabular-nums tracking-tight ${valueText}`}
           >
-            {target.toFixed(0)}
-            <span className={`ml-0.5 font-medium text-zinc-500 ${kiosk ? 'text-xl' : 'text-base'}`}>
+            {editable ? (
+              <input
+                type="number"
+                inputMode="decimal"
+                min={MIN_C}
+                max={MAX_C}
+                step={STEP_C}
+                value={displayValue}
+                disabled={busy}
+                onChange={(e) => onType(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={() => setText(null)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                    if (canApply) void apply();
+                  }
+                }}
+                aria-label="Setpoint value"
+                className="w-[3ch] rounded-md bg-transparent text-center font-bold tabular-nums tracking-tight outline-none focus:ring-2 focus:ring-cyan-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
+            ) : (
+              <span className="min-w-[3.5ch] text-center">{displayValue}</span>
+            )}
+            <span
+              className={`ml-0.5 font-medium text-zinc-500 ${
+                kiosk ? 'text-xl' : inline ? 'text-sm' : 'text-base'
+              }`}
+            >
               °C
             </span>
           </span>
@@ -163,7 +227,7 @@ export function SetpointControl({
       </div>
 
       {error && (
-        <p className={`${header ? 'mt-1' : 'mt-3'} text-red-400 ${kiosk ? 'text-sm' : 'text-xs'}`}>
+        <p className={`${header || inline ? 'mt-1' : 'mt-3'} text-red-400 ${kiosk ? 'text-sm' : 'text-xs'}`}>
           {error}
         </p>
       )}

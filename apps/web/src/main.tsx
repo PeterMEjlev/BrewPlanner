@@ -4,6 +4,7 @@ import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom'
 import { RequireAuth } from './auth';
 import { AdminPage } from './pages/Admin';
 import { DashboardPage } from './pages/Dashboard';
+import { DevicesPage } from './pages/Devices';
 import { DisplayPage } from './pages/Display';
 import { KegsPage } from './pages/Kegs';
 import { KioskHomePage } from './pages/KioskHome';
@@ -69,6 +70,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <TodosPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/devices',
+    element: (
+      <RequireAuth>
+        <DevicesPage />
       </RequireAuth>
     ),
   },

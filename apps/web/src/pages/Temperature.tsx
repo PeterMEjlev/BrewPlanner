@@ -25,8 +25,8 @@ type SeriesKey = 'beer' | 'fridge';
  * `temp_c` metric is read from whichever devices are supplied.
  */
 const SERIES_DEFS: { key: SeriesKey; label: string; color: string; param: string }[] = [
-  { key: 'beer', label: 'Beer', color: '#fb923c', param: 'beer' }, // orange-400
-  { key: 'fridge', label: 'Fridge', color: '#38bdf8', param: 'fridge' }, // sky-400
+  { key: 'beer', label: 'Beer', color: '#fb923c', param: 'beer' }, // amber / orange
+  { key: 'fridge', label: 'Fridge', color: '#d97706', param: 'fridge' }, // muted amber / orange
 ];
 
 interface Source {

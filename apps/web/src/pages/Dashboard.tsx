@@ -2,53 +2,84 @@ import type { DeviceStatus, DeviceType, LatestReading, Reading, Recipe } from '@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { useAuth } from '../auth';
+import {
+  BarSpark,
+  Donut,
+  type DonutSegment,
+  MultiLineSparkline,
+  RingGauge,
+  Sparkline,
+} from '../components/charts';
+import { DashboardShell } from '../components/DashboardShell';
+import {
+  BellIcon,
+  BoltIcon,
+  ChecklistIcon,
+  DropletIcon,
+  FermenterIcon,
+  FlaskIcon,
+  GaugeIcon,
+  HutIcon,
+  KegIcon,
+  MonitorIcon,
+  ThermometerIcon,
+  TodoIcon,
+  WrenchIcon,
+} from '../components/icons';
+import { MetricModal } from '../components/MetricModal';
 import {
   type Keg,
+  SHEETS_VIEW_URL,
   getContentColor,
   isUnknownContents,
   useKegs,
 } from '../kegs';
 import { SetpointControl } from '../SetpointControl';
 import { formatPressure, useSettings } from '../settings';
-import { cumulativeMetricOf, useDeviceTotal } from '../useDeviceData';
+import { useDeviceTotal, useMetricSeries } from '../useDeviceData';
+import { relativeTime } from '../util';
 
 /** Refresh device status often enough to feel live without hammering the Pi. */
 const POLL_MS = 10000;
 const KEG_POLL_MS = 60_000;
 const FERMENT_POLL_MS = 60_000;
 
-const TYPE_ICON: Record<DeviceType, string> = {
-  pressure_sensor: '📈',
-  brew_controller: '🎛️',
-  power_meter: '⚡',
-  water_meter: '🚰',
-  hydrometer: '🍷',
-  other: '📡',
+type IconComponent = (props: { className?: string }) => JSX.Element;
+
+/** Device-type → the dashboard's monochrome line icon, for the fleet list. */
+const TYPE_ICON: Record<DeviceType, IconComponent> = {
+  pressure_sensor: GaugeIcon,
+  brew_controller: ThermometerIcon,
+  power_meter: BoltIcon,
+  water_meter: DropletIcon,
+  hydrometer: FlaskIcon,
+  other: MonitorIcon,
 };
 
 const TYPE_LABEL: Record<DeviceType, string> = {
   pressure_sensor: 'Pressure',
-  brew_controller: 'Controller',
+  // The brew controller is an Inkbird and the hydrometer is a Tilt — label them
+  // by the device brand the brewer recognises.
+  brew_controller: 'Inkbird',
   power_meter: 'Power',
   water_meter: 'Water',
-  hydrometer: 'Hydrometer',
+  hydrometer: 'Tilt',
   other: 'Sensor',
 };
 
 /**
- * Sensors on the roadmap but not yet wired to hardware. A placeholder
- * disappears automatically once a live device that covers it starts reporting.
+ * Per-metric line colours, shared by the Overview sparklines, their legend, and
+ * the detail charts (see {@link metricColor}). Temperatures are a warm family:
+ * beer is a bright amber/orange, while the fridge and brewery ambient share a
+ * muted amber so they read as "the other temperature".
  */
-interface PlannedSensor {
-  icon: string;
-  title: string;
-  subtitle: string;
-  covered: (devices: DeviceStatus[]) => boolean;
-}
-
-const hasType = (devices: DeviceStatus[], type: DeviceType): boolean =>
-  devices.some((d) => d.type === type);
+const COLOR_PRESSURE = '#22d3ee'; // cyan
+const COLOR_GRAVITY = '#a78bfa'; // purple
+const COLOR_POWER = '#eab308'; // yellow
+const COLOR_WATER = '#3b82f6'; // blue
+const COLOR_BEER = '#fb923c'; // amber / orange
+const COLOR_TEMP_MUTED = '#d97706'; // muted amber / orange (fridge + ambient)
+const COLOR_SETPOINT = '#f59e0b'; // target reference line (amber)
 
 function isBreweryTempDevice(device: DeviceStatus): boolean {
   return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
@@ -62,34 +93,6 @@ function isFermenterDevice(device: DeviceStatus): boolean {
   );
 }
 
-const PLANNED_SENSORS: PlannedSensor[] = [
-  {
-    icon: TYPE_ICON.power_meter,
-    title: 'Electricity',
-    subtitle: 'Power and energy usage (W, kWh)',
-    covered: (d) => hasType(d, 'power_meter'),
-  },
-  {
-    icon: TYPE_ICON.water_meter,
-    title: 'Water',
-    subtitle: 'Flow and total usage (L/min, L)',
-    covered: (d) => hasType(d, 'water_meter'),
-  },
-  {
-    icon: '🌡️',
-    title: 'Brewery Temperature',
-    subtitle: 'Ambient temperature from the room controller',
-    covered: (d) =>
-      d.some((x) => x.type === 'brew_controller' && /brewery|ambient/i.test(x.name)),
-  },
-  {
-    icon: TYPE_ICON.hydrometer,
-    title: 'Fermentation Gravity',
-    subtitle: 'Specific gravity and beer temperature from the Tilt',
-    covered: (d) => hasType(d, 'hydrometer'),
-  },
-];
-
 const TYPE_RANK: Record<DeviceType, number> = {
   pressure_sensor: 0,
   hydrometer: 1,
@@ -98,36 +101,6 @@ const TYPE_RANK: Record<DeviceType, number> = {
   power_meter: 4,
   water_meter: 5,
 };
-
-const HEADLINE_ORDER = [
-  'pressure_bar',
-  'temp_c',
-  'gravity_sg',
-  'power_w',
-  'flow_lpm',
-  'water_l',
-  'energy_kwh',
-  'setpoint_c',
-  'hvac_state',
-];
-
-const METRIC_CAPTION: Record<string, string> = {
-  power_w: 'Current',
-  energy_kwh: 'Today',
-  flow_lpm: 'Current',
-  water_l: 'Today',
-  setpoint_c: 'Setpoint',
-  hvac_state: 'Mode',
-};
-
-function metricRank(metric: string): number {
-  const i = HEADLINE_ORDER.indexOf(metric);
-  return i === -1 ? HEADLINE_ORDER.length : i;
-}
-
-function orderedMetrics(latest: LatestReading[]): LatestReading[] {
-  return [...latest].sort((a, b) => metricRank(a.metric) - metricRank(b.metric));
-}
 
 function groupByName(devices: DeviceStatus[]): DeviceStatus[][] {
   const groups = new Map<string, DeviceStatus[]>();
@@ -161,7 +134,6 @@ function fermentationDone(history: Reading[], windowMs: number, thresholdSg: num
 
 interface FermentStatus {
   label: string;
-  hint: string;
   dotClass: string;
   textClass: string;
   shellClass: string;
@@ -205,7 +177,6 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
   if (!anyOnline) {
     return {
       label: 'Offline',
-      hint: 'No fermenter devices have checked in recently',
       dotClass: 'bg-zinc-500',
       textClass: 'text-zinc-400',
       shellClass: 'border-zinc-700 bg-zinc-900 text-zinc-300',
@@ -214,7 +185,6 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
   if (gravityDeviceId == null) {
     return {
       label: 'Online',
-      hint: 'Gravity is not connected, so completion cannot be inferred',
       dotClass: 'bg-emerald-400',
       textClass: 'text-emerald-300',
       shellClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
@@ -223,7 +193,6 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
   if (done) {
     return {
       label: 'Complete',
-      hint: 'Gravity has held steady inside the configured window',
       dotClass: 'bg-emerald-400',
       textClass: 'text-emerald-300',
       shellClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
@@ -231,7 +200,6 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
   }
   return {
     label: 'Fermenting',
-    hint: 'Gravity is still moving or the stable window is not complete',
     dotClass: 'bg-amber-400',
     textClass: 'text-amber-300',
     shellClass: 'border-amber-500/30 bg-amber-500/10 text-amber-100',
@@ -262,17 +230,58 @@ function hvacColor(value: number): string {
   return 'text-zinc-300';
 }
 
+// --- Derived alerts ---------------------------------------------------------
+
+interface Alert {
+  id: string;
+  severity: 'critical' | 'warning';
+  title: string;
+  detail: string;
+}
+
 /**
- * The hub landing page at `/`. On desktop this is an equipment overview, not a
- * generic card grid: fermenter-related devices are grouped into station cards,
- * while kegs, apps, ambient sensors and utility meters get their own areas.
+ * There is no alerts backend yet, so the Alerts feed is derived live from
+ * device state: any offline sensor is a critical alert. The count drives the
+ * sidebar badge.
+ */
+function deriveAlerts(devices: DeviceStatus[]): Alert[] {
+  const alerts: Alert[] = [];
+  for (const d of devices) {
+    if (!d.online) {
+      alerts.push({
+        id: `offline-${d.id}`,
+        severity: 'critical',
+        title: `${d.name} offline`,
+        detail: `${TYPE_LABEL[d.type]} sensor hasn't reported recently.`,
+      });
+    }
+  }
+  return alerts;
+}
+
+/** A metric the user clicked to enlarge in the chart overlay. */
+interface ChartTarget {
+  deviceId: number;
+  metric?: string;
+  title: string;
+}
+
+/** Opens the enlarge-on-click chart overlay for a metric. */
+type OpenChart = (target: ChartTarget) => void;
+
+/**
+ * The hub landing page at `/`. A desktop "command centre": the fermenter and
+ * utilities live in the main column, with keg inventory, operations, the device
+ * fleet and a derived alerts feed in the right rail. A persistent sidebar
+ * ([DashboardShell]) wraps it.
  */
 export function DashboardPage(): JSX.Element {
-  const { auth, refresh: refreshAuth } = useAuth();
   const [devices, setDevices] = useState<DeviceStatus[] | null>(null);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [chart, setChart] = useState<ChartTarget | null>(null);
   const { kegs, loading: kegsLoading, error: kegsError } = useKegs(KEG_POLL_MS);
+  const openChart = useCallback((target: ChartTarget) => setChart(target), []);
 
   const load = useCallback(async () => {
     try {
@@ -294,144 +303,137 @@ export function DashboardPage(): JSX.Element {
     return () => clearInterval(id);
   }, [load]);
 
+  // Scroll to a section when the sidebar links here with a hash from another page.
+  useEffect(() => {
+    if (devices && window.location.hash) {
+      const id = window.location.hash.slice(1);
+      requestAnimationFrame(() =>
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+      );
+    }
+  }, [devices]);
+
   const deviceList = devices ?? [];
   const groups = groupByName(deviceList);
   const stationGroups = groups
     .filter(isStationGroup)
     .sort((a, b) => groupRank(a) - groupRank(b) || a[0]!.name.localeCompare(b[0]!.name));
-  const stationIds = new Set(stationGroups.flat().map((d) => d.id));
-  const equipmentDevices = deviceList
-    .filter((d) => !stationIds.has(d.id))
-    .sort((a, b) => TYPE_RANK[a.type] - TYPE_RANK[b.type] || a.name.localeCompare(b.name));
-  const plannedSensors = devices ? PLANNED_SENSORS.filter((p) => !p.covered(devices)) : [];
-  const onlineCount = deviceList.filter((d) => d.online).length;
+
+  const alerts = deriveAlerts(deviceList);
+  const lastUpdate = latestDeviceTimestamp(deviceList);
+
+  const brewery = deviceList.find(isBreweryTempDevice) ?? null;
+  const power = deviceList.find((d) => d.type === 'power_meter') ?? null;
+  const water = deviceList.find((d) => d.type === 'water_meter') ?? null;
+  const utilityOnline = [brewery, power, water].filter((d) => d?.online).length;
+  const utilityTotal = [brewery, power, water].filter(Boolean).length;
 
   return (
-    <div className="min-h-full bg-zinc-950 text-zinc-100">
-      <header className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-[1580px] items-center justify-between gap-4 px-5 py-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="text-2xl" aria-hidden>
-                🍺
-              </span>
-              <h1 className="text-xl font-semibold tracking-tight">Konfus Brewing</h1>
-            </div>
-            <p className="mt-1 text-sm text-zinc-400">
-              Desktop brewery overview - fermenter, kegs, utilities and operations
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400 sm:block">
-              <span className="font-semibold text-zinc-100">{onlineCount}</span> /{' '}
-              {deviceList.length} devices online
-            </div>
-            {auth.user && (
-              <div className="flex items-center gap-3 text-sm">
-                <span className="hidden text-zinc-400 sm:inline">
-                  <span className="font-medium text-zinc-200">{auth.user.username}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await api.logout();
-                    await refreshAuth();
-                  }}
-                  className="rounded-lg px-2.5 py-1 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
-                >
-                  Sign out
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
-
+    <DashboardShell active="overview" alertCount={alerts.length} lastUpdate={lastUpdate}>
       <main className="mx-auto max-w-[1580px] px-5 py-5">
         {error && (
-          <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+          <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}
           </div>
         )}
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
           <div className="min-w-0 space-y-5">
-            <section>
-              <SectionHeader
-                title="Fermentation"
-                subtitle="All fermenter readings are grouped by equipment, not by sensor."
-              />
-
+            <section id="fermenter" className="scroll-mt-5">
               {devices === null ? (
-                <LoadingPanel label="Loading fermenters..." />
+                <LoadingPanel label="Loading fermenter…" />
               ) : stationGroups.length === 0 ? (
                 <EmptyPanel
                   title="No fermenter station yet"
                   body="Register pressure, controller, or hydrometer devices with the same fermenter name and they will group here."
                 />
               ) : (
-                <div className="grid gap-4">
+                <div className="space-y-5">
                   {stationGroups.map((group) => (
-                    <FermenterStationCard
+                    <FermenterCommandCenter
                       key={group[0]!.name}
                       name={group[0]!.name}
                       devices={group}
                       recipe={recipe}
                       onRefresh={load}
+                      onOpen={openChart}
                     />
                   ))}
                 </div>
               )}
             </section>
 
-            <section>
-              <SectionHeader
-                title="Brewery And Utilities"
-                subtitle="Ambient temperature, power, water and other non-fermenter sensors."
-              />
-              {devices === null ? (
-                <LoadingPanel label="Loading equipment..." />
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {equipmentDevices.map((d) => (
-                      <EquipmentDeviceCard key={d.id} device={d} />
-                    ))}
-                    {plannedSensors.map((p) => (
-                      <PlannedTile key={p.title} sensor={p} />
-                    ))}
-                  </div>
-                  {deviceList.length === 0 && (
-                    <p className="mt-3 text-xs text-zinc-500">
-                      No live devices yet. Register one on the Pi with{' '}
-                      <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
-                        npm run device -- add "Fermenter" pressure_sensor
-                      </code>{' '}
-                      and point its agent at this server.
-                    </p>
-                  )}
-                </>
-              )}
-            </section>
+            <BreweryUtilities
+              brewery={brewery}
+              power={power}
+              water={water}
+              online={utilityOnline}
+              total={utilityTotal}
+              loading={devices === null}
+              onOpen={openChart}
+            />
           </div>
 
-          <aside className="space-y-4">
-            <KegStatusPanel kegs={kegs} loading={kegsLoading} error={kegsError} />
+          <aside className="space-y-5">
+            <KegInventoryPanel kegs={kegs} loading={kegsLoading} error={kegsError} />
             <OperationsPanel />
-            <FleetPanel devices={deviceList} loading={devices === null} />
+            <DeviceFleetPanel devices={deviceList} loading={devices === null} />
+            <AlertsPanel alerts={alerts} loading={devices === null} />
           </aside>
         </div>
       </main>
+
+      {chart && (
+        <MetricModal
+          deviceId={chart.deviceId}
+          metric={chart.metric}
+          title={chart.title}
+          onClose={() => setChart(null)}
+        />
+      )}
+    </DashboardShell>
+  );
+}
+
+// --- Shared shells ----------------------------------------------------------
+
+function PanelHeading({
+  title,
+  icon,
+  right,
+  large,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  right?: React.ReactNode;
+  /** Use the larger fermenter-card heading size (for top-level section cards). */
+  large?: boolean;
+}): JSX.Element {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <h2
+        className={`flex items-center gap-2 font-semibold uppercase text-white ${
+          large ? 'text-base tracking-wide' : 'text-sm tracking-wider'
+        }`}
+      >
+        {icon}
+        {title}
+      </h2>
+      {right}
     </div>
   );
 }
 
-function SectionHeader({ title, subtitle }: { title: string; subtitle: string }): JSX.Element {
+function SensorsOnlinePill({ online, total }: { online: number; total: number }): JSX.Element {
+  const allUp = total > 0 && online === total;
   return (
-    <div className="mb-2">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">{title}</h2>
-      <p className="mt-0.5 text-sm text-zinc-500">{subtitle}</p>
-    </div>
+    <span className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400">
+      <span
+        className={`h-2 w-2 rounded-full ${allUp ? 'bg-emerald-400' : 'bg-amber-400'}`}
+        aria-hidden
+      />
+      {online} / {total} sensors online
+    </span>
   );
 }
 
@@ -452,16 +454,20 @@ function EmptyPanel({ title, body }: { title: string; body: string }): JSX.Eleme
   );
 }
 
-function FermenterStationCard({
+// --- Fermenter command centre -----------------------------------------------
+
+function FermenterCommandCenter({
   name,
   devices,
   recipe,
   onRefresh,
+  onOpen,
 }: {
   name: string;
   devices: DeviceStatus[];
   recipe: Recipe | null;
   onRefresh: () => void;
+  onOpen: OpenChart;
 }): JSX.Element {
   const { pressureUnit } = useSettings();
   const status = useFermentStatus(devices);
@@ -473,85 +479,150 @@ function FermenterStationCard({
   const gravity = findReading(devices, 'gravity_sg');
   const controller = devices.find((d) => d.type === 'brew_controller' && !isBreweryTempDevice(d));
   const online = devices.filter((d) => d.online).length;
-  const lastSeen = latestDeviceTimestamp(devices);
+  const gravitySeries = useMetricSeries(gravity?.deviceId ?? null, 'gravity_sg');
+  const pressureSeries = useMetricSeries(pressure?.deviceId ?? null, 'pressure_bar');
+  const tempSeries = useMetricSeries(beer?.deviceId ?? null, 'temp_c');
+  const fridgeSeries = useMetricSeries(fridge?.deviceId ?? null, 'temp_c');
+
+  // Value ranges for the sparkline axis labels. The temperature chart shares one
+  // scale across beer, fridge, and the setpoint reference line, so its range
+  // spans all three — and only shows once at least one line is drawable.
+  const pressureRange = minMax(pressureSeries);
+  const gravityRange = minMax(gravitySeries);
+  const tempDrawable = tempSeries.length >= 2 || fridgeSeries.length >= 2;
+  const tempValues = [
+    ...tempSeries,
+    ...fridgeSeries,
+    ...(setpoint ? [setpoint.reading.value] : []),
+  ];
+  const tempRange =
+    tempDrawable && tempValues.length > 0
+      ? { min: Math.min(...tempValues), max: Math.max(...tempValues) }
+      : null;
 
   return (
-    <article className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-800 px-4 py-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <span
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-lg"
-              aria-hidden
-            >
-              {TYPE_ICON.pressure_sensor}
-            </span>
-            <div className="min-w-0">
-              <h3 className="truncate text-xl font-semibold tracking-tight text-zinc-50">{name}</h3>
-              <p className="truncate text-sm text-zinc-500">
-                {recipe ? `${recipe.name}${recipe.style ? ` - ${recipe.style}` : ''}` : 'No active recipe selected'}
-              </p>
-            </div>
+    <article className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+      <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 px-5 py-4">
+        <div className="flex min-w-0 shrink-0 items-center gap-3">
+          <FermenterIcon className="h-11 w-11 shrink-0 text-white" strokeWidth={2.6} />
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold uppercase tracking-wide text-white">
+              {name}
+            </h2>
+            {recipe ? (
+              <Link
+                to="/kiosk/recipes"
+                className="block truncate text-sm text-zinc-500 transition hover:text-white"
+                title="Change recipe"
+              >
+                {recipe.name}
+                {recipe.style ? ` (${recipe.style})` : ''}
+              </Link>
+            ) : (
+              <Link
+                to="/kiosk/recipes"
+                className="mt-1 inline-flex items-center gap-1 rounded-lg border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-white/20"
+              >
+                <span className="text-sm leading-none" aria-hidden>
+                  +
+                </span>
+                Link Recipe
+              </Link>
+            )}
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <span
-            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold ${status.shellClass}`}
-            title={status.hint}
+        {controller && (
+          <div className="min-w-0 flex-1">
+            <SetpointControl
+              deviceId={controller.id}
+              setpointC={setpoint?.reading.value ?? null}
+              pendingC={controller.pendingSetpointC ?? null}
+              onApplied={onRefresh}
+              variant="inline"
+            />
+          </div>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <SensorsOnlinePill online={online} total={devices.length} />
+          <button
+            type="button"
+            onClick={onRefresh}
+            aria-label="Refresh fermenter readings"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
           >
-            <span className={`h-2.5 w-2.5 rounded-full ${status.dotClass}`} aria-hidden />
-            {status.label}
-          </span>
-          <span className="rounded-lg border border-zinc-800 px-3 py-1.5 text-sm text-zinc-400">
-            {online} / {devices.length} sensors online
-          </span>
+            ↻
+          </button>
         </div>
       </div>
 
-      <div className="grid gap-0 divide-y divide-zinc-800 lg:grid-cols-[1fr_1.7fr_1fr] lg:divide-x lg:divide-y-0">
-        <StationMetricBlock title="Pressure">
+      <div className="grid gap-4 p-5 md:grid-cols-3">
+        <FermenterSubCard
+          icon={<GaugeIcon className="h-6 w-6" />}
+          title="Pressure"
+          onClick={
+            pressure
+              ? () => onOpen({ deviceId: pressure.deviceId, metric: 'pressure_bar', title: `${name} · Pressure` })
+              : undefined
+          }
+        >
           {pressure ? (
-            <LinkedMetric to={`/devices/${pressure.deviceId}`}>
-              <BigValue {...formatPressure(pressure.reading.value, pressureUnit)} />
-              <MetricTimestamp iso={pressure.reading.recordedAt} />
-            </LinkedMetric>
+            <>
+              <div className="mt-3">
+                <BigValue {...formatPressure(pressure.reading.value, pressureUnit)} />
+              </div>
+              <div className="mt-3 flex-1 min-h-[12rem]">
+                <MiniChartFrame
+                  max={pressureRange ? formatPressure(pressureRange.max, pressureUnit).value : undefined}
+                  min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
+                  caption={pressureRange ? 'Last 24h' : undefined}
+                >
+                  <Sparkline data={pressureSeries} stroke={COLOR_PRESSURE} fill="rgba(34,211,238,0.10)" grow />
+                </MiniChartFrame>
+              </div>
+            </>
           ) : (
             <MissingMetric label="No pressure sensor" />
           )}
-        </StationMetricBlock>
+        </FermenterSubCard>
 
-        <StationMetricBlock title="Temperature And Control">
-          <div className="grid gap-3 sm:grid-cols-2">
+        <FermenterSubCard icon={<ThermometerIcon className="h-6 w-6" />} title="Temperature & Control">
+          <div className="mt-3 grid grid-cols-2 gap-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Beer</p>
               {beer ? (
-                <LinkedMetric to={`/devices/${beer.deviceId}`}>
+                <MetricButton
+                  onClick={() => onOpen({ deviceId: beer.deviceId, metric: 'temp_c', title: `${name} · Beer temperature` })}
+                >
                   <TemperatureValue reading={beer.reading} />
-                  <MetricTimestamp iso={beer.reading.recordedAt} />
-                </LinkedMetric>
+                </MetricButton>
               ) : (
-                <MissingMetric label="No beer temperature" compact />
+                <MissingMetric label="No beer temp" compact />
               )}
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Fridge</p>
               {fridge ? (
-                <LinkedMetric to={`/devices/${fridge.deviceId}`}>
+                <MetricButton
+                  onClick={() => onOpen({ deviceId: fridge.deviceId, metric: 'temp_c', title: `${name} · Fridge temperature` })}
+                >
                   <TemperatureValue
                     reading={fridge.reading}
                     valueClass={state ? hvacColor(state.reading.value) : undefined}
                   />
-                  <MetricTimestamp iso={fridge.reading.recordedAt} />
-                </LinkedMetric>
+                </MetricButton>
               ) : (
-                <MissingMetric label="No fridge temperature" compact />
+                <MissingMetric label="No fridge temp" compact />
               )}
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-zinc-400">
-            {state && <StateBadge value={state.reading.value} />}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {state ? (
+              <StateBadge value={state.reading.value} />
+            ) : (
+              <span className="text-sm text-zinc-500">No controller state</span>
+            )}
             {setpoint && (
-              <span>
+              <span className="text-sm text-zinc-400">
                 Target{' '}
                 <span className="font-semibold tabular-nums text-zinc-200">
                   {setpoint.reading.value.toFixed(1)} °C
@@ -559,77 +630,176 @@ function FermenterStationCard({
               </span>
             )}
           </div>
-          {controller && (
-            <div className="mt-3">
-              <SetpointControl
-                deviceId={controller.id}
-                setpointC={setpoint?.reading.value ?? null}
-                pendingC={controller.pendingSetpointC ?? null}
-                onApplied={onRefresh}
-                variant="compact"
-              />
-            </div>
+          {(beer || fridge) && (
+            <>
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                {beer && <LegendSwatch color={COLOR_BEER} label="Beer" />}
+                {fridge && <LegendSwatch color={COLOR_TEMP_MUTED} label="Fridge" dashed />}
+                {setpoint && <LegendSwatch color={COLOR_SETPOINT} label="Target" dotted />}
+              </div>
+              <div className="mt-2 flex-1 min-h-[12rem]">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpen({
+                      deviceId: (fridge ?? beer)!.deviceId,
+                      metric: 'temp_c',
+                      title: `${name} · Temperature`,
+                    })
+                  }
+                  className="block h-full w-full rounded-lg text-left transition hover:bg-zinc-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+                >
+                  <MiniChartFrame
+                    max={tempRange ? `${tempRange.max.toFixed(1)}°` : undefined}
+                    min={tempRange ? `${tempRange.min.toFixed(1)}°` : undefined}
+                    caption={tempRange ? 'Last 24h' : undefined}
+                  >
+                    <MultiLineSparkline
+                      series={[
+                        ...(beer ? [{ data: tempSeries, stroke: COLOR_BEER }] : []),
+                        ...(fridge ? [{ data: fridgeSeries, stroke: COLOR_TEMP_MUTED, dashed: true }] : []),
+                      ]}
+                      refLine={setpoint ? { value: setpoint.reading.value, stroke: COLOR_SETPOINT } : undefined}
+                      grow
+                    />
+                  </MiniChartFrame>
+                </button>
+              </div>
+            </>
           )}
-        </StationMetricBlock>
+        </FermenterSubCard>
 
-        <StationMetricBlock title="Gravity">
+        <FermenterSubCard
+          icon={<FlaskIcon className="h-6 w-6" />}
+          title="Gravity"
+          headerRight={
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${status.shellClass}`}
+            >
+              <span className={`h-2 w-2 rounded-full ${status.dotClass}`} aria-hidden />
+              {status.label}
+            </span>
+          }
+          onClick={
+            gravity
+              ? () => onOpen({ deviceId: gravity.deviceId, metric: 'gravity_sg', title: `${name} · Gravity` })
+              : undefined
+          }
+        >
           {gravity ? (
-            <LinkedMetric to={`/devices/${gravity.deviceId}?metric=gravity_sg`}>
-              <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
-              <MetricTimestamp iso={gravity.reading.recordedAt} />
-            </LinkedMetric>
+            <>
+              <div className="mt-3">
+                <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
+              </div>
+              <div className="mt-3 flex-1 min-h-[12rem]">
+                {gravitySeries.length > 1 ? (
+                  <MiniChartFrame
+                    max={gravityRange ? gravityRange.max.toFixed(3) : undefined}
+                    min={gravityRange ? gravityRange.min.toFixed(3) : undefined}
+                    caption="Last 24h"
+                  >
+                    <Sparkline data={gravitySeries} stroke={COLOR_GRAVITY} fill="rgba(167,139,250,0.12)" grow />
+                  </MiniChartFrame>
+                ) : (
+                  <div className="flex h-full items-center text-xs text-zinc-600">Collecting trend…</div>
+                )}
+              </div>
+            </>
           ) : (
             <MissingMetric label="No gravity data" />
           )}
-        </StationMetricBlock>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800 px-4 py-2.5 text-sm text-zinc-500">
-        <span>{lastSeen ? `Updated ${relativeTime(lastSeen)}` : 'Never reported'}</span>
-        <span className={`font-semibold ${status.textClass}`}>{status.hint}</span>
-        <span className="hidden h-4 w-px bg-zinc-800 sm:block" aria-hidden />
-        <div className="flex flex-wrap gap-2">
-          {devices
-            .slice()
-            .sort((a, b) => TYPE_RANK[a.type] - TYPE_RANK[b.type])
-            .map((d) => (
-              <SensorChip key={d.id} device={d} />
-            ))}
-        </div>
+        </FermenterSubCard>
       </div>
     </article>
   );
 }
 
-function StationMetricBlock({
+/**
+ * A blacker sub-card for one fermenter metric, mirroring the Brewery & Utilities
+ * card style: a large white title + icon, the value(s), and a small trend graph.
+ * Becomes a button (whole-card click → chart overlay) when `onClick` is given.
+ */
+function FermenterSubCard({
+  icon,
   title,
+  onClick,
+  headerRight,
   children,
 }: {
+  icon: React.ReactNode;
   title: string;
+  onClick?: () => void;
+  /** Optional element pinned to the top-right of the card head (e.g. a status pill). */
+  headerRight?: React.ReactNode;
   children: React.ReactNode;
 }): JSX.Element {
+  const base = 'flex flex-col rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 text-left';
+  const head = (
+    <div className="flex items-center gap-2.5 text-white">
+      {icon}
+      <h3 className="min-w-0 truncate text-base font-semibold tracking-tight text-white">{title}</h3>
+      {headerRight && <div className="ml-auto shrink-0">{headerRight}</div>}
+    </div>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${base} w-full transition hover:border-zinc-700 hover:bg-zinc-800/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500`}
+      >
+        {head}
+        {children}
+      </button>
+    );
+  }
   return (
-    <div className="min-w-0 p-4">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">{title}</p>
+    <div className={base}>
+      {head}
       {children}
     </div>
   );
 }
 
-function LinkedMetric({
-  to,
+function MetricButton({
+  onClick,
   children,
 }: {
-  to: string;
+  onClick: () => void;
   children: React.ReactNode;
 }): JSX.Element {
   return (
-    <Link
-      to={to}
-      className="block rounded-lg transition hover:bg-zinc-800/50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+    <button
+      type="button"
+      onClick={onClick}
+      className="block w-full rounded-lg text-left transition hover:bg-zinc-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
     >
       {children}
-    </Link>
+    </button>
+  );
+}
+
+/** A tiny solid/dashed/dotted line swatch + label for the temperature legend. */
+function LegendSwatch({
+  color,
+  label,
+  dashed,
+  dotted,
+}: {
+  color: string;
+  label: string;
+  dashed?: boolean;
+  dotted?: boolean;
+}): JSX.Element {
+  return (
+    <span className="flex items-center gap-1">
+      <span
+        className={`inline-block w-3.5 border-t-2 ${dashed ? 'border-dashed' : dotted ? 'border-dotted' : ''}`}
+        style={{ borderColor: color }}
+        aria-hidden
+      />
+      {label}
+    </span>
   );
 }
 
@@ -661,31 +831,276 @@ function TemperatureValue({
   );
 }
 
-function MetricTimestamp({ iso }: { iso: string }): JSX.Element {
-  return <p className="mt-1 text-xs text-zinc-500">{relativeTime(iso)}</p>;
-}
-
 function MissingMetric({ label, compact }: { label: string; compact?: boolean }): JSX.Element {
+  return <p className={`${compact ? 'mt-2' : 'mt-4'} text-sm text-zinc-600`}>{label}</p>;
+}
+
+/** Min/max of a series, or null when there aren't enough points to draw a line. */
+function minMax(data: number[]): { min: number; max: number } | null {
+  if (data.length < 2) return null;
+  return { min: Math.min(...data), max: Math.max(...data) };
+}
+
+/**
+ * Wraps a fermenter sub-card sparkline with light axis context: the value range
+ * (max top-right, min bottom-right) and the time window below — enough to read
+ * the trend without the heft of a full chart. Pass pre-formatted strings; omit
+ * any to hide that label (e.g. before a trend has enough points).
+ */
+function MiniChartFrame({
+  children,
+  max,
+  min,
+  caption,
+}: {
+  children: React.ReactNode;
+  max?: string;
+  min?: string;
+  caption?: string;
+}): JSX.Element {
   return (
-    <p className={`${compact ? 'mt-2' : 'mt-6'} text-sm text-zinc-600`}>{label}</p>
+    <div className="flex h-full flex-col">
+      <div className="relative min-h-0 flex-1">
+        <div className="absolute inset-0">{children}</div>
+        {max != null && (
+          <span className="pointer-events-none absolute right-0 top-0 rounded bg-zinc-950/60 px-1 text-[10px] leading-none tabular-nums text-zinc-500">
+            {max}
+          </span>
+        )}
+        {min != null && (
+          <span className="pointer-events-none absolute bottom-0 right-0 rounded bg-zinc-950/60 px-1 text-[10px] leading-none tabular-nums text-zinc-500">
+            {min}
+          </span>
+        )}
+      </div>
+      {caption != null && (
+        <div className="mt-1 text-[10px] leading-none text-zinc-600">{caption}</div>
+      )}
+    </div>
   );
 }
 
-function SensorChip({ device }: { device: DeviceStatus }): JSX.Element {
+// --- Brewery & utilities ----------------------------------------------------
+
+function BreweryUtilities({
+  brewery,
+  power,
+  water,
+  online,
+  total,
+  loading,
+  onOpen,
+}: {
+  brewery: DeviceStatus | null;
+  power: DeviceStatus | null;
+  water: DeviceStatus | null;
+  online: number;
+  total: number;
+  loading: boolean;
+  onOpen: OpenChart;
+}): JSX.Element {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 px-2 py-1 text-xs text-zinc-400">
-      <span
-        className={`h-2 w-2 rounded-full ${
-          device.online ? 'bg-emerald-400' : 'bg-zinc-600'
-        }`}
-        aria-hidden
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+      <PanelHeading
+        title="Brewery & Utilities"
+        icon={<HutIcon className="h-7 w-7" />}
+        right={total > 0 ? <SensorsOnlinePill online={online} total={total} /> : undefined}
+        large
       />
-      {TYPE_LABEL[device.type]}
-    </span>
+      {loading ? (
+        <p className="mt-4 text-sm text-zinc-400">Loading utilities…</p>
+      ) : (
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <BreweryTempCard device={brewery} onOpen={onOpen} />
+          <PowerCard device={power} onOpen={onOpen} />
+          <WaterCard device={water} onOpen={onOpen} />
+        </div>
+      )}
+    </section>
   );
 }
 
-function KegStatusPanel({
+/** Card wrapper that opens the chart overlay for its device + metric on click. */
+function UtilityCardButton({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:rounded-xl"
+    >
+      {children}
+    </button>
+  );
+}
+
+function UtilityShell({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <div className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+      <div className="flex items-center gap-2 text-white">
+        {icon}
+        <h3 className="font-semibold text-white">{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function UtilityPlaceholder({
+  icon,
+  title,
+}: {
+  icon: React.ReactNode;
+  title: string;
+}): JSX.Element {
+  return (
+    <div className="flex flex-col rounded-xl border border-dashed border-zinc-800 bg-zinc-950/30 p-4">
+      <div className="flex items-center gap-2 text-zinc-300 opacity-70">
+        {icon}
+        <h3 className="font-semibold text-zinc-300">{title}</h3>
+      </div>
+      <p className="mt-6 text-sm text-zinc-600">Not connected yet</p>
+    </div>
+  );
+}
+
+function BreweryTempCard({
+  device,
+  onOpen,
+}: {
+  device: DeviceStatus | null;
+  onOpen: OpenChart;
+}): JSX.Element {
+  const series = useMetricSeries(device?.id ?? null, 'temp_c');
+  if (!device) {
+    return <UtilityPlaceholder icon={<ThermometerIcon className="h-5 w-5" />} title="Brewery (Controller)" />;
+  }
+  const temp = device.latest.find((r) => r.metric === 'temp_c');
+  return (
+    <UtilityCardButton
+      onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Brewery ambient temperature' })}
+    >
+      <UtilityShell icon={<ThermometerIcon className="h-5 w-5" />} title="Brewery (Controller)">
+        <p className="mt-3 text-xs font-medium uppercase tracking-wider text-zinc-500">
+          Ambient Temp
+        </p>
+        <div className="mt-1 flex items-baseline gap-1.5">
+          <span className="text-2xl font-semibold tabular-nums text-zinc-50">
+            {temp ? temp.value.toFixed(1) : '—'}
+          </span>
+          <span className="text-sm font-medium text-zinc-500">°C</span>
+        </div>
+        <div className="mt-3">
+          <Sparkline data={series} stroke={COLOR_TEMP_MUTED} fill="rgba(217,119,6,0.10)" height={40} />
+        </div>
+      </UtilityShell>
+    </UtilityCardButton>
+  );
+}
+
+function PowerCard({
+  device,
+  onOpen,
+}: {
+  device: DeviceStatus | null;
+  onOpen: OpenChart;
+}): JSX.Element {
+  const series = useMetricSeries(device?.id ?? null, 'power_w');
+  const total = useDeviceTotal(device?.id ?? -1, device ? 'energy_kwh' : undefined);
+  if (!device) return <UtilityPlaceholder icon={<BoltIcon className="h-5 w-5" />} title="Power" />;
+  const current = device.latest.find((r) => r.metric === 'power_w');
+  const today = device.latest.find((r) => r.metric === 'energy_kwh');
+  return (
+    <UtilityCardButton
+      onClick={() => onOpen({ deviceId: device.id, metric: 'power_w', title: 'Power draw' })}
+    >
+      <UtilityShell icon={<BoltIcon className="h-5 w-5" />} title="Power">
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <StatPair label="Current" value={current ? formatValue(current) : '—'} />
+          <StatPair label="Today" value={today ? formatValue(today) : '—'} />
+        </div>
+        <div className="mt-3">
+          <BarSpark data={series} fill={COLOR_POWER} height={40} />
+        </div>
+        {total != null && (
+          <p className="mt-3 text-xs text-zinc-500">
+            All-time{' '}
+            <span className="font-semibold tabular-nums text-zinc-300">
+              {formatValue({ metric: 'energy_kwh', value: total, recordedAt: '' })}
+            </span>
+          </p>
+        )}
+      </UtilityShell>
+    </UtilityCardButton>
+  );
+}
+
+function WaterCard({
+  device,
+  onOpen,
+}: {
+  device: DeviceStatus | null;
+  onOpen: OpenChart;
+}): JSX.Element {
+  const series = useMetricSeries(device?.id ?? null, 'flow_lpm');
+  const total = useDeviceTotal(device?.id ?? -1, device ? 'water_l' : undefined);
+  if (!device) return <UtilityPlaceholder icon={<DropletIcon className="h-5 w-5" />} title="Water" />;
+  const current = device.latest.find((r) => r.metric === 'flow_lpm');
+  const today = device.latest.find((r) => r.metric === 'water_l');
+  return (
+    <UtilityCardButton
+      onClick={() => onOpen({ deviceId: device.id, metric: 'flow_lpm', title: 'Water flow' })}
+    >
+      <UtilityShell icon={<DropletIcon className="h-5 w-5" />} title="Water">
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <StatPair label="Current" value={current ? formatValue(current) : '—'} />
+          <StatPair label="Today" value={today ? formatValue(today) : '—'} />
+        </div>
+        <div className="mt-3">
+          <Sparkline data={series} stroke={COLOR_WATER} fill="rgba(59,130,246,0.10)" height={40} />
+        </div>
+        {total != null && (
+          <p className="mt-3 text-xs text-zinc-500">
+            All-time{' '}
+            <span className="font-semibold tabular-nums text-zinc-300">
+              {formatValue({ metric: 'water_l', value: total, recordedAt: '' })}
+            </span>
+          </p>
+        )}
+      </UtilityShell>
+    </UtilityCardButton>
+  );
+}
+
+function StatPair({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">{label}</p>
+      <p className="mt-0.5 text-xl font-semibold tabular-nums text-zinc-50">{value}</p>
+    </div>
+  );
+}
+
+// --- Keg inventory ----------------------------------------------------------
+
+/** Fallback palette for keg contents that have no defined colour in kegs.ts. */
+const KEG_FALLBACK_COLORS = ['#a78bfa', '#f472b6', '#fb923c', '#34d399', '#60a5fa'];
+const EMPTY_KEG_COLOR = '#3f3f46';
+
+function KegInventoryPanel({
   kegs,
   loading,
   error,
@@ -696,68 +1111,94 @@ function KegStatusPanel({
 }): JSX.Element {
   const filled = kegs.filter((k) => !isUnknownContents(k.contents)).length;
   const total = kegs.length;
-  const percent = total > 0 ? Math.round((filled / total) * 100) : 0;
+  const empty = total - filled;
   const contents = contentCounts(kegs);
 
+  // Pop the filled (beer) slices outward so the stocked inventory stands out,
+  // leaving the empty slice flush. A small gap still separates every slice.
+  const segments: DonutSegment[] = contents.map((c, i) => ({
+    value: c.count,
+    color: getContentColor(c.contents) ?? KEG_FALLBACK_COLORS[i % KEG_FALLBACK_COLORS.length]!,
+    explode: 7,
+  }));
+  if (empty > 0) segments.push({ value: empty, color: EMPTY_KEG_COLOR });
+
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
-            Keg Status
-          </h2>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            {loading ? 'Loading sheet...' : error ? 'Sheet unavailable' : 'Shared inventory sheet'}
-          </p>
-        </div>
-        <span className="text-2xl" aria-hidden>
-          🍺
-        </span>
-      </div>
+    <Link
+      to="/kiosk/kegs"
+      className="block rounded-xl border border-zinc-800 bg-zinc-900 p-5 transition hover:border-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+    >
+      <PanelHeading
+        title="Keg Inventory"
+        icon={<KegIcon className="h-5 w-5" />}
+        right={
+          <button
+            type="button"
+            onClick={(e) => {
+              // Don't let the click bubble to the card's link — open the sheet instead.
+              e.preventDefault();
+              e.stopPropagation();
+              window.open(SHEETS_VIEW_URL, '_blank', 'noopener,noreferrer');
+            }}
+            className="text-xs text-zinc-500 transition hover:text-white"
+          >
+            Inventory sheet ↗
+          </button>
+        }
+      />
 
       {error ? (
         <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {error}
         </p>
       ) : (
-        <>
-          <div className="mt-4 flex items-end gap-2">
-            <span className="text-4xl font-semibold tracking-tight tabular-nums text-zinc-50">
-              {loading ? '-' : filled}
-            </span>
-            <span className="pb-1 text-sm text-zinc-500">
-              of {loading ? '-' : total} filled
-            </span>
-          </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800">
-            <div
-              className="h-full rounded-full bg-emerald-400"
-              style={{ width: `${percent}%` }}
-            />
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {contents.length === 0 && (
-              <span className="text-sm text-zinc-600">
-                {loading ? 'Reading keg list...' : 'No filled kegs'}
+        <div className="mt-4 flex items-center gap-5">
+          <div className="relative shrink-0">
+            <Donut segments={segments} size={132} thickness={20} gap={2} />
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+              <span className="text-2xl font-semibold tabular-nums text-zinc-50">
+                {loading ? '—' : filled}
               </span>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                of {loading ? '—' : total} filled
+              </span>
+            </div>
+          </div>
+          <ul className="min-w-0 flex-1 space-y-1.5">
+            {contents.length === 0 && (
+              <li className="text-sm text-zinc-600">
+                {loading ? 'Reading keg list…' : 'No filled kegs'}
+              </li>
             )}
-            {contents.slice(0, 6).map(({ contents: label, count }) => {
-              const color = getContentColor(label);
+            {contents.slice(0, 6).map((c, i) => {
+              const color = getContentColor(c.contents) ?? KEG_FALLBACK_COLORS[i % KEG_FALLBACK_COLORS.length]!;
               return (
-                <span
-                  key={label}
-                  className="rounded-lg border border-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-300"
-                  style={color ? { borderColor: color, color } : undefined}
-                >
-                  {count > 1 ? `${count}x ` : ''}
-                  {label}
-                </span>
+                <li key={c.contents} className="flex items-center gap-2 text-sm">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: color }}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1 truncate text-zinc-300">{c.contents}</span>
+                  <span className="font-semibold tabular-nums text-zinc-100">{c.count}</span>
+                </li>
               );
             })}
-          </div>
-        </>
+            {empty > 0 && (
+              <li className="flex items-center gap-2 text-sm">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-inset ring-zinc-500"
+                  style={{ backgroundColor: EMPTY_KEG_COLOR }}
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1 truncate text-zinc-400">Empty</span>
+                <span className="font-semibold tabular-nums text-zinc-100">{empty}</span>
+              </li>
+            )}
+          </ul>
+        </div>
       )}
-    </section>
+    </Link>
   );
 }
 
@@ -772,15 +1213,25 @@ function contentCounts(kegs: Keg[]): { contents: string; count: number }[] {
     .sort((a, b) => b.count - a.count || a.contents.localeCompare(b.contents));
 }
 
+// --- Operations -------------------------------------------------------------
+
 function OperationsPanel(): JSX.Element {
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
-        Operations
-      </h2>
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+      <PanelHeading title="Operations" icon={<WrenchIcon className="h-5 w-5" />} />
       <div className="mt-3 grid gap-2">
-        <AppLink to="/admin" icon="✅" title="Brew Checklist" subtitle="Procedures and runs" />
-        <AppLink to="/todos" icon="📝" title="Brewery To-Do" subtitle="Ad-hoc task list" />
+        <AppLink
+          to="/admin"
+          icon={<ChecklistIcon className="h-5 w-5" />}
+          title="Brew Checklist"
+          subtitle="Procedures and runs"
+        />
+        <AppLink
+          to="/todos"
+          icon={<TodoIcon className="h-5 w-5" />}
+          title="Brewery To-Do"
+          subtitle="Ad-hoc task list"
+        />
       </div>
     </section>
   );
@@ -793,7 +1244,7 @@ function AppLink({
   subtitle,
 }: {
   to: string;
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   subtitle: string;
 }): JSX.Element {
@@ -802,18 +1253,48 @@ function AppLink({
       to={to}
       className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2.5 transition hover:border-zinc-700 hover:bg-zinc-800/60"
     >
-      <span className="text-xl" aria-hidden>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-white">
         {icon}
       </span>
-      <span className="min-w-0">
+      <span className="min-w-0 flex-1">
         <span className="block truncate font-semibold text-zinc-100">{title}</span>
         <span className="block truncate text-sm text-zinc-500">{subtitle}</span>
+      </span>
+      <span className="text-zinc-600" aria-hidden>
+        ›
       </span>
     </Link>
   );
 }
 
-function FleetPanel({
+// --- Device fleet -----------------------------------------------------------
+
+interface FleetGroup {
+  key: string;
+  type: DeviceType;
+  name: string;
+  count: number;
+  online: number;
+}
+
+function fleetGroups(devices: DeviceStatus[]): FleetGroup[] {
+  const map = new Map<string, FleetGroup>();
+  for (const d of devices) {
+    const key = `${d.type}|${d.name}`;
+    const g = map.get(key);
+    if (g) {
+      g.count += 1;
+      if (d.online) g.online += 1;
+    } else {
+      map.set(key, { key, type: d.type, name: d.name, count: 1, online: d.online ? 1 : 0 });
+    }
+  }
+  return [...map.values()].sort(
+    (a, b) => TYPE_RANK[a.type] - TYPE_RANK[b.type] || a.name.localeCompare(b.name),
+  );
+}
+
+function DeviceFleetPanel({
   devices,
   loading,
 }: {
@@ -821,142 +1302,115 @@ function FleetPanel({
   loading: boolean;
 }): JSX.Element {
   const online = devices.filter((d) => d.online).length;
-  const lastSeen = latestDeviceTimestamp(devices);
+  const total = devices.length;
+  const allUp = total > 0 && online === total;
+  const groups = fleetGroups(devices);
+
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
-        Device Fleet
-      </h2>
-      <div className="mt-3 flex items-end gap-2">
-        <span className="text-3xl font-semibold tracking-tight text-zinc-50">
-          {loading ? '-' : online}
-        </span>
-        <span className="pb-1 text-sm text-zinc-500">of {loading ? '-' : devices.length} online</span>
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+      <PanelHeading
+        title="Device Fleet"
+        icon={<MonitorIcon className="h-5 w-5" />}
+        right={
+          <Link to="/devices" className="text-xs text-zinc-500 transition hover:text-white">
+            All devices ↗
+          </Link>
+        }
+      />
+      <div className="mt-4 flex items-center gap-5">
+        <div className="relative shrink-0">
+          <RingGauge
+            value={online}
+            max={total}
+            size={120}
+            color={allUp ? '#22c55e' : '#f59e0b'}
+          />
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+            <span className="text-2xl font-semibold tabular-nums text-zinc-50">
+              {loading ? '—' : online}
+            </span>
+            <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              of {loading ? '—' : total} online
+            </span>
+          </div>
+        </div>
+        <ul className="min-w-0 flex-1 space-y-1.5">
+          {groups.length === 0 && (
+            <li className="text-sm text-zinc-600">{loading ? 'Loading fleet…' : 'No devices'}</li>
+          )}
+          {groups.map((g) => {
+            const Icon = TYPE_ICON[g.type];
+            return (
+              <li key={g.key} className="flex items-center gap-2.5 text-sm">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-zinc-300">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-zinc-300">
+                  {TYPE_LABEL[g.type]} <span className="text-zinc-500">({g.name})</span>
+                </span>
+                {g.count > 1 && <span className="tabular-nums text-zinc-500">{g.count}</span>}
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    g.online === g.count ? 'bg-emerald-400' : g.online === 0 ? 'bg-zinc-600' : 'bg-amber-400'
+                  }`}
+                  aria-hidden
+                />
+              </li>
+            );
+          })}
+        </ul>
       </div>
-      <p className="mt-2 text-sm text-zinc-500">
-        {lastSeen ? `Latest update ${relativeTime(lastSeen)}` : 'No device reports yet'}
-      </p>
     </section>
   );
 }
 
-function EquipmentDeviceCard({ device }: { device: DeviceStatus }): JSX.Element {
-  const metrics = isBreweryTempDevice(device)
-    ? orderedMetrics(device.latest.filter((r) => r.metric === 'temp_c'))
-    : orderedMetrics(device.latest);
-  const totalMetric = cumulativeMetricOf(device);
-  const total = useDeviceTotal(device.id, totalMetric);
+// --- Alerts -----------------------------------------------------------------
 
+function AlertsPanel({ alerts, loading }: { alerts: Alert[]; loading: boolean }): JSX.Element {
   return (
-    <Link
-      to={`/devices/${device.id}`}
-      className={`flex min-h-[10.5rem] flex-col rounded-lg border border-zinc-800 bg-zinc-900 p-4 transition hover:border-zinc-700 hover:bg-zinc-800/60 ${
-        device.online ? '' : 'opacity-60'
-      }`}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="text-2xl" aria-hidden>
-            {TYPE_ICON[device.type]}
-          </span>
-          <div className="min-w-0">
-            <h3 className="truncate font-semibold text-zinc-100">{device.name}</h3>
-            <p className="text-xs uppercase tracking-wider text-zinc-500">
-              {TYPE_LABEL[device.type]}
-            </p>
-          </div>
-        </div>
-        <StatusBadge online={device.online} />
-      </div>
-
-      {metrics.length > 0 ? (
-        <div className="mt-4 grid flex-1 gap-x-4 gap-y-3 sm:grid-cols-2">
-          {metrics.map((r) => (
-            <MetricReading key={r.metric} reading={r} />
-          ))}
-        </div>
-      ) : (
-        <p className="mt-4 flex-1 text-sm text-zinc-500">No readings yet.</p>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 pt-2.5 text-xs text-zinc-500">
-        <span>{device.lastSeenAt ? `Updated ${relativeTime(device.lastSeenAt)}` : 'Never reported'}</span>
-        {totalMetric && total != null && (
-          <span>
-            All-time{' '}
-            <span className="font-semibold tabular-nums text-zinc-300">
-              {formatValue({ metric: totalMetric, value: total, recordedAt: '' })}
+    <section id="alerts" className="scroll-mt-5 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+      <PanelHeading
+        title="Alerts"
+        icon={<BellIcon className="h-5 w-5" />}
+        right={
+          alerts.length > 0 ? (
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-zinc-950">
+              {alerts.length}
             </span>
-          </span>
-        )}
-      </div>
-    </Link>
-  );
-}
-
-function MetricReading({ reading }: { reading: LatestReading }): JSX.Element {
-  if (isStateMetric(reading.metric)) {
-    return (
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">
-          {METRIC_CAPTION[reading.metric] ?? metricLabel(reading.metric)}
-        </p>
-        <StateBadge value={reading.value} />
-      </div>
-    );
-  }
-  const { value, unit } = formatValueParts(reading);
-  return (
-    <div>
-      <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-        {METRIC_CAPTION[reading.metric] ?? metricLabel(reading.metric)}
-      </p>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <span className="text-2xl font-semibold tracking-tight tabular-nums text-zinc-50">
-          {value}
-        </span>
-        {unit && <span className="text-sm font-medium text-zinc-500">{unit}</span>}
-      </div>
-    </div>
-  );
-}
-
-/** Dimmed, non-interactive tile for a planned-but-not-yet-connected sensor. */
-function PlannedTile({ sensor }: { sensor: PlannedSensor }): JSX.Element {
-  return (
-    <div className="flex min-h-[10.5rem] flex-col rounded-lg border border-dashed border-zinc-700 bg-zinc-900/40 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl opacity-60" aria-hidden>
-            {sensor.icon}
-          </span>
-          <span className="font-semibold text-zinc-300">{sensor.title}</span>
-        </div>
-        <span className="inline-flex items-center rounded-lg bg-zinc-800 px-2 py-0.5 text-xs font-semibold text-zinc-400">
-          Planned
-        </span>
-      </div>
-      <p className="mt-4 text-sm text-zinc-500">{sensor.subtitle}</p>
-      <p className="mt-auto pt-4 text-xs text-zinc-600">Not connected yet</p>
-    </div>
-  );
-}
-
-function StatusBadge({ online }: { online: boolean }): JSX.Element {
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-xs font-semibold ${
-        online ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
-      }`}
-    >
-      <span
-        className={`h-2 w-2 rounded-full ${
-          online ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]' : 'bg-zinc-500'
-        }`}
-        aria-hidden
+          ) : undefined
+        }
       />
-      {online ? 'Online' : 'Offline'}
-    </span>
+      {loading ? (
+        <p className="mt-3 text-sm text-zinc-500">Loading…</p>
+      ) : alerts.length === 0 ? (
+        <p className="mt-3 flex items-center gap-2 text-sm text-zinc-500">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
+          No active alerts
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {alerts.map((a) => (
+            <li
+              key={a.id}
+              className={`rounded-lg border px-3 py-2 text-sm ${
+                a.severity === 'critical'
+                  ? 'border-red-500/30 bg-red-500/10'
+                  : 'border-amber-500/30 bg-amber-500/10'
+              }`}
+            >
+              <p
+                className={`font-semibold ${
+                  a.severity === 'critical' ? 'text-red-300' : 'text-amber-200'
+                }`}
+              >
+                {a.title}
+              </p>
+              <p className="mt-0.5 text-zinc-400">{a.detail}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -1059,11 +1513,16 @@ export function stateTick(value: number): string {
   return value <= -0.5 ? 'Cool' : value >= 0.5 ? 'Heat' : 'Idle';
 }
 
-/** Chart stroke per metric. */
+/** Chart stroke per metric, matching the Overview sparkline palette. */
 export function metricColor(metric: string): string {
+  if (metric === 'pressure_bar') return COLOR_PRESSURE;
+  if (isGravityMetric(metric)) return COLOR_GRAVITY;
+  if (metric === 'power_w' || metric === 'energy_kwh') return COLOR_POWER;
+  if (metric === 'flow_lpm' || metric === 'water_l') return COLOR_WATER;
+  if (metric === 'temp_c') return COLOR_BEER; // temperatures are the warm amber/orange family
+  if (metric === 'setpoint_c') return COLOR_SETPOINT;
   if (metric === 'hvac_state') return '#a78bfa';
-  if (metric === 'power_w' || metric === 'energy_kwh') return '#eab308';
-  return '#3b82f6';
+  return COLOR_WATER;
 }
 
 /**
@@ -1089,14 +1548,6 @@ export function StateBadge({
   );
 }
 
-/** Compact "x ago" string for a recent ISO timestamp. */
-export function relativeTime(iso: string): string {
-  const diffMs = Date.now() - Date.parse(iso);
-  const sec = Math.max(0, Math.round(diffMs / 1000));
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  return `${Math.round(hr / 24)}d ago`;
-}
+// relativeTime now lives in ../util; re-exported here so the device pages that
+// import it from this module keep working.
+export { relativeTime };
