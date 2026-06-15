@@ -15,11 +15,11 @@
 
 - ## Add Keg status sheets (keep the same visual as in brewsystem 3.0)
 
-- ## update non RPI (computer / laptop) GUI to reflect the same design as the RPi version. (fermentor info collected in same place etc.) just with more info in the cards as there is more screen real estate.
+- ## !!!  update  RPI (Kiosk) GUI to reflect the same design as the Desktop version. same icons, colours for graphs etc. dont change the layout of the kiosk version, just make sure the theme / design style is the same. !!!
 
 - ## Incorporate the readings from the TILT hydrometer to log to brewersfriend. "The Tilt wireless hydrometer operates on bluetooth. Log readings from the phone app or using a Raspberry pi with this Cloud URL. Turn on Tilt integration in your brew session under the Fermentation tab to start collecting temperature and gravity readings. 
   Cloud URL: https://log.brewersfriend.com/tilt/5a2c07e701f38d2c83ff2289df53f598c927129f" 
 
 - ## SMS integration (or other phone notification - Email?) when kegged beers have been stored too long and not been drunk (prevent beer getting old)
 
-- ## 
+- ## add inkbird set point stepper increment to settings
