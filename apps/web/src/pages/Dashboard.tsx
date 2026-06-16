@@ -329,17 +329,17 @@ export function DashboardPage(): JSX.Element {
   const utilityTotal = [brewery, power, water].filter(Boolean).length;
 
   return (
-    <DashboardShell active="overview" alertCount={alerts.length} lastUpdate={lastUpdate}>
-      <main className="mx-auto max-w-[1580px] px-5 py-5">
+    <DashboardShell active="overview" alertCount={alerts.length} lastUpdate={lastUpdate} fit>
+      <main className="mx-auto max-w-[1580px] px-5 py-5 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
         {error && (
           <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}
           </div>
         )}
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
-          <div className="min-w-0 space-y-5">
-            <section id="fermenter" className="scroll-mt-5">
+        <div className="grid gap-5 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_23rem] xl:grid-rows-[minmax(0,1fr)]">
+          <div className="min-w-0 space-y-5 xl:flex xl:min-h-0 xl:flex-col">
+            <section id="fermenter" className="scroll-mt-5 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
               {devices === null ? (
                 <LoadingPanel label="Loading fermenter…" />
               ) : stationGroups.length === 0 ? (
@@ -348,7 +348,7 @@ export function DashboardPage(): JSX.Element {
                   body="Register pressure, controller, or hydrometer devices with the same fermenter name and they will group here."
                 />
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-5 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
                   {stationGroups.map((group) => (
                     <FermenterCommandCenter
                       key={group[0]!.name}
@@ -374,7 +374,7 @@ export function DashboardPage(): JSX.Element {
             />
           </div>
 
-          <aside className="space-y-5">
+          <aside className="space-y-5 xl:flex xl:min-h-0 xl:flex-col">
             <KegInventoryPanel kegs={kegs} loading={kegsLoading} error={kegsError} />
             <OperationsPanel />
             <DeviceFleetPanel devices={deviceList} loading={devices === null} />
@@ -501,8 +501,8 @@ function FermenterCommandCenter({
       : null;
 
   return (
-    <article className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
-      <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 px-5 py-4">
+    <article className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
+      <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 px-5 py-4 xl:shrink-0">
         <div className="flex min-w-0 shrink-0 items-center gap-3">
           <FermenterIcon className="h-11 w-11 shrink-0 text-white" strokeWidth={2.6} />
           <div className="min-w-0">
@@ -555,7 +555,7 @@ function FermenterCommandCenter({
         </div>
       </div>
 
-      <div className="grid gap-4 p-5 md:grid-cols-3">
+      <div className="grid gap-4 p-5 md:grid-cols-3 xl:min-h-0 xl:flex-1 xl:grid-rows-[minmax(0,1fr)]">
         <FermenterSubCard
           icon={<GaugeIcon className="h-6 w-6" />}
           title="Pressure"
@@ -570,7 +570,7 @@ function FermenterCommandCenter({
               <div className="mt-3">
                 <BigValue {...formatPressure(pressure.reading.value, pressureUnit)} />
               </div>
-              <div className="mt-3 flex-1 min-h-[12rem]">
+              <div className="mt-3 flex-1 min-h-[12rem] xl:min-h-0">
                 <MiniChartFrame
                   max={pressureRange ? formatPressure(pressureRange.max, pressureUnit).value : undefined}
                   min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
@@ -637,7 +637,7 @@ function FermenterCommandCenter({
                 {fridge && <LegendSwatch color={COLOR_TEMP_MUTED} label="Fridge" dashed />}
                 {setpoint && <LegendSwatch color={COLOR_SETPOINT} label="Target" dotted />}
               </div>
-              <div className="mt-2 flex-1 min-h-[12rem]">
+              <div className="mt-2 flex-1 min-h-[12rem] xl:min-h-0">
                 <button
                   type="button"
                   onClick={() =>
@@ -691,7 +691,7 @@ function FermenterCommandCenter({
               <div className="mt-3">
                 <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
               </div>
-              <div className="mt-3 flex-1 min-h-[12rem]">
+              <div className="mt-3 flex-1 min-h-[12rem] xl:min-h-0">
                 {gravitySeries.length > 1 ? (
                   <MiniChartFrame
                     max={gravityRange ? gravityRange.max.toFixed(3) : undefined}
@@ -1277,6 +1277,29 @@ interface FleetGroup {
   online: number;
 }
 
+/**
+ * Top-down order of the Device Fleet list: pressure, fermenter temperature,
+ * gravity, brewery temperature, power, water. The two Inkbirds share the
+ * `brew_controller` type, so they're split by name (brewery/ambient sorts after
+ * the fermenter controller and after gravity).
+ */
+function fleetRank(group: FleetGroup): number {
+  switch (group.type) {
+    case 'pressure_sensor':
+      return 0;
+    case 'brew_controller':
+      return /brewery|ambient/i.test(group.name) ? 3 : 1;
+    case 'hydrometer':
+      return 2;
+    case 'power_meter':
+      return 4;
+    case 'water_meter':
+      return 5;
+    default:
+      return 6;
+  }
+}
+
 function fleetGroups(devices: DeviceStatus[]): FleetGroup[] {
   const map = new Map<string, FleetGroup>();
   for (const d of devices) {
@@ -1290,7 +1313,7 @@ function fleetGroups(devices: DeviceStatus[]): FleetGroup[] {
     }
   }
   return [...map.values()].sort(
-    (a, b) => TYPE_RANK[a.type] - TYPE_RANK[b.type] || a.name.localeCompare(b.name),
+    (a, b) => fleetRank(a) - fleetRank(b) || a.name.localeCompare(b.name),
   );
 }
 
@@ -1368,7 +1391,10 @@ function DeviceFleetPanel({
 
 function AlertsPanel({ alerts, loading }: { alerts: Alert[]; loading: boolean }): JSX.Element {
   return (
-    <section id="alerts" className="scroll-mt-5 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+    <section
+      id="alerts"
+      className="scroll-mt-5 rounded-xl border border-zinc-800 bg-zinc-900 p-5 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+    >
       <PanelHeading
         title="Alerts"
         icon={<BellIcon className="h-5 w-5" />}
@@ -1388,7 +1414,7 @@ function AlertsPanel({ alerts, loading }: { alerts: Alert[]; loading: boolean })
           No active alerts
         </p>
       ) : (
-        <ul className="mt-3 space-y-2">
+        <ul className="mt-3 space-y-2 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-1">
           {alerts.map((a) => (
             <li
               key={a.id}
@@ -1450,6 +1476,11 @@ function isGravityMetric(metric: string): boolean {
 
 function splitMetric(metric: string): { label: string; unit: string | null } {
   if (isGravityMetric(metric)) return { label: 'Gravity', unit: null };
+  // Cumulative totals read clearer with a "Total" qualifier (e.g. the metric
+  // selector buttons next to the instantaneous Flow / Power rates). Units are
+  // kept so the "Today" / "All-time" values still format with L / kWh.
+  if (metric === 'water_l') return { label: 'Total Water', unit: 'L' };
+  if (metric === 'energy_kwh') return { label: 'Total Energy', unit: 'kWh' };
   const parts = metric.split('_');
   const last = parts[parts.length - 1]?.toLowerCase() ?? '';
   if (parts.length > 1 && UNITS[last]) {

@@ -59,6 +59,7 @@ export function DashboardShell({
   active,
   alertCount = 0,
   lastUpdate,
+  fit = false,
   children,
 }: {
   active: ShellPage;
@@ -66,12 +67,25 @@ export function DashboardShell({
   alertCount?: number;
   /** ISO timestamp of the most recent device report, for the footer. */
   lastUpdate?: string | null;
+  /**
+   * Lock the shell to exactly one viewport height at `xl` and up, so the page
+   * fills the monitor without a scrollbar (the Overview opts in; the content is
+   * responsible for distributing the fixed height). Below `xl` — phones, small
+   * windows — the page flows and scrolls as normal.
+   */
+  fit?: boolean;
   children: React.ReactNode;
 }): JSX.Element {
   return (
-    <div className="flex min-h-screen bg-zinc-950 text-zinc-100">
+    <div
+      className={`flex min-h-screen bg-zinc-950 text-zinc-100 ${
+        fit ? 'xl:h-screen xl:overflow-hidden' : ''
+      }`}
+    >
       <Sidebar active={active} alertCount={alertCount} lastUpdate={lastUpdate} />
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className={`min-w-0 flex-1 ${fit ? 'xl:h-screen xl:overflow-hidden' : ''}`}>
+        {children}
+      </div>
     </div>
   );
 }
