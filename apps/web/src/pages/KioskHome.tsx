@@ -8,6 +8,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import {
+  BoltIcon,
+  ChecklistIcon,
+  DropletIcon,
+  FermenterIcon,
+  FlaskIcon,
+  GaugeIcon,
+  KegIcon,
+  MonitorIcon,
+  SettingsIcon,
+  ThermometerIcon,
+  TodoIcon,
+} from '../components/icons';
 import { isUnknownContents, useKegs } from '../kegs';
 import { formatPressure, useSettings } from '../settings';
 import { formatValueParts, metricLabel } from './Dashboard';
@@ -18,27 +31,20 @@ const POLL_MS = 5000;
 /** Keg counts move slowly — re-pull the sheet once a minute for the home tile. */
 const KEG_POLL_MS = 60_000;
 
-const TYPE_ICON: Record<DeviceType, string> = {
-  pressure_sensor: '📈',
-  brew_controller: '🌡️',
-  power_meter: '⚡',
-  water_meter: '🚰',
-  hydrometer: '🍷',
-  other: '📡',
-};
+type IconComponent = (props: { className?: string }) => JSX.Element;
 
 /**
- * Per-type icon tint for the sidebar cards. The glyph sits in a plain circle
- * (like the fermenter's), tinted to give each sensor a distinct colour at a
- * glance while the reading itself stays white for max legibility.
+ * Device-type → the dashboard's monochrome line icon. The same shared glyphs the
+ * desktop Overview uses for its fleet list, so the kiosk rail cards read with the
+ * identical icon set and weight.
  */
-const SIDEBAR_TINT: Record<DeviceType, string> = {
-  pressure_sensor: 'text-indigo-300',
-  brew_controller: 'text-zinc-200',
-  power_meter: 'text-yellow-400',
-  water_meter: 'text-sky-400',
-  hydrometer: 'text-fuchsia-300',
-  other: 'text-zinc-300',
+const TYPE_ICON: Record<DeviceType, IconComponent> = {
+  pressure_sensor: GaugeIcon,
+  brew_controller: ThermometerIcon,
+  power_meter: BoltIcon,
+  water_meter: DropletIcon,
+  hydrometer: FlaskIcon,
+  other: MonitorIcon,
 };
 
 /**
@@ -232,39 +238,9 @@ function isBreweryTempDevice(device: DeviceStatus): boolean {
  * only cue (no separate status line).
  */
 function hvacColor(value: number): string {
-  if (value < 0) return 'text-sky-400';
-  if (value > 0) return 'text-orange-400';
+  if (value < 0) return 'text-sky-300';
+  if (value > 0) return 'text-amber-300';
   return '';
-}
-
-/** Line-art conical fermenter, tinted via currentColor. */
-function FermenterIcon(): JSX.Element {
-  return (
-    <svg
-      viewBox="0 0 64 64"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.4}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-[2.34rem] w-[2.34rem]"
-      aria-hidden
-    >
-      {/* top port */}
-      <path d="M29 6h6M32 6v5" />
-      {/* domed lid + cylindrical body */}
-      <path d="M17 18c0-4 6.7-7 15-7s15 3 15 7" />
-      <path d="M17 18v18" />
-      <path d="M47 18v18" />
-      {/* conical bottom */}
-      <path d="M17 36l15 19 15-19" />
-      {/* butterfly valve */}
-      <circle cx="32" cy="45" r="3" />
-      {/* legs */}
-      <path d="M23 50l-3 8" />
-      <path d="M41 50l3 8" />
-    </svg>
-  );
 }
 
 /**
@@ -356,7 +332,7 @@ export function KioskHomePage(): JSX.Element {
                 aria-label="Settings"
                 className="flex h-[4.5rem] w-[4.5rem] shrink-0 touch-manipulation items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition active:scale-[0.98] active:bg-zinc-800"
               >
-                <GearIcon className="h-8 w-8" />
+                <SettingsIcon className="h-8 w-8" />
               </Link>
 
               {/* Checklist + To-Do share one card: the left half opens the
@@ -367,7 +343,7 @@ export function KioskHomePage(): JSX.Element {
                   aria-label="Checklists"
                   className="flex flex-1 touch-manipulation items-center justify-center text-zinc-300 transition active:bg-zinc-800"
                 >
-                  <ClipboardIcon className="h-8 w-8" />
+                  <ChecklistIcon className="h-8 w-8" />
                 </Link>
                 <span className="w-px shrink-0 self-stretch bg-zinc-800" aria-hidden />
                 <Link
@@ -381,7 +357,12 @@ export function KioskHomePage(): JSX.Element {
             </div>
 
             {/* Right column → a shortcut into the keg inventory view. */}
-            <ActionButton to="/kiosk/kegs" title="Kegs" subtitle={kegInfo} icon={<KegIcon />} />
+            <ActionButton
+              to="/kiosk/kegs"
+              title="Kegs"
+              subtitle={kegInfo}
+              icon={<KegIcon className="h-[1.56rem] w-[1.56rem]" />}
+            />
           </div>
         </div>
 
@@ -531,7 +512,7 @@ function StationTile({
           className="flex min-w-0 flex-1 touch-manipulation items-center gap-4 rounded-2xl py-1 transition active:bg-zinc-800/60"
         >
           <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black text-zinc-200">
-            <FermenterIcon />
+            <FermenterIcon strokeWidth={2.4} className="h-[2.34rem] w-[2.34rem]" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="truncate text-3xl font-bold leading-tight tracking-tight">{name}</div>
@@ -677,7 +658,7 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
           to the right of the icon. The name wraps to a second line when long. */}
       <div className="flex shrink-0 items-center gap-2.5">
         <span
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black ${SIDEBAR_TINT[device.type]}`}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black text-zinc-200"
           aria-hidden
         >
           <DeviceGlyph type={device.type} />
@@ -737,105 +718,8 @@ function MetricValue({ reading, compact }: { reading: LatestReading; compact?: b
   );
 }
 
-/** Line-art glyph for a rail card, picked by device type; tinted via currentColor. */
+/** Line-art glyph for a rail card, picked by device type (shared icon set). */
 function DeviceGlyph({ type }: { type: DeviceType }): JSX.Element {
-  switch (type) {
-    case 'brew_controller':
-      // The rail's brew_controller is the brewery's ambient sensor — a hut reads
-      // as "the building" better than a thermometer here.
-      return <HutIcon />;
-    case 'power_meter':
-      return <BoltIcon />;
-    case 'water_meter':
-      return <DropletIcon />;
-    default:
-      // Rare types (e.g. a lone "other" sensor) keep the emoji badge.
-      return <span className="text-2xl">{TYPE_ICON[type]}</span>;
-  }
-}
-
-/** Shared stroke styling for the inline line-art glyphs. */
-const GLYPH_PROPS = {
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 2,
-  strokeLinecap: 'round',
-  strokeLinejoin: 'round',
-  className: 'h-[1.56rem] w-[1.56rem]',
-  'aria-hidden': true,
-} as const;
-
-function HutIcon(): JSX.Element {
-  return (
-    <svg {...GLYPH_PROPS}>
-      {/* pitched roof, walls, and a doorway */}
-      <path d="M3 11.5 12 4l9 7.5" />
-      <path d="M5.5 10v9.5h13V10" />
-      <path d="M10 19.5V14h4v5.5" />
-    </svg>
-  );
-}
-
-function BoltIcon(): JSX.Element {
-  return (
-    <svg {...GLYPH_PROPS}>
-      <path d="M13 2 4 14h6l-1 8 9-12h-6z" />
-    </svg>
-  );
-}
-
-function DropletIcon(): JSX.Element {
-  return (
-    <svg {...GLYPH_PROPS}>
-      <path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" />
-    </svg>
-  );
-}
-
-function ClipboardIcon({ className }: { className?: string }): JSX.Element {
-  return (
-    <svg {...GLYPH_PROPS} className={className ?? GLYPH_PROPS.className}>
-      <rect x="5" y="4" width="14" height="17" rx="2" />
-      <path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" />
-      <path d="m8.5 11 1.5 1.5 3-3" />
-      <path d="M8.5 16.5h7" />
-    </svg>
-  );
-}
-
-/** A ticked task list — distinguishes the to-do half from the checklist half. */
-function TodoIcon({ className }: { className?: string }): JSX.Element {
-  return (
-    <svg {...GLYPH_PROPS} className={className ?? GLYPH_PROPS.className}>
-      <path d="M9 5h11" />
-      <path d="M9 12h11" />
-      <path d="M9 19h11" />
-      <path d="m3.5 5 1.1 1.1L7 3.6" />
-      <path d="m3.5 12 1.1 1.1L7 10.6" />
-      <path d="m3.5 19 1.1 1.1L7 17.6" />
-    </svg>
-  );
-}
-
-/** Line-art beer keg/barrel for the inventory shortcut. */
-function KegIcon({ className }: { className?: string }): JSX.Element {
-  return (
-    <svg {...GLYPH_PROPS} className={className ?? GLYPH_PROPS.className}>
-      <path d="M9 3h6" />
-      <path d="M8 3c-1.3 1.6-2 4.6-2 9s.7 7.4 2 9h8c1.3-1.6 2-4.6 2-9s-.7-7.4-2-9" />
-      <path d="M5.7 8.5h12.6" />
-      <path d="M5.7 15.5h12.6" />
-    </svg>
-  );
-}
-
-/** Settings gear for the home-screen shortcut. */
-function GearIcon({ className }: { className?: string }): JSX.Element {
-  return (
-    <svg {...GLYPH_PROPS} className={className ?? GLYPH_PROPS.className}>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
+  const Icon = TYPE_ICON[type];
+  return <Icon className="h-[1.56rem] w-[1.56rem]" />;
 }

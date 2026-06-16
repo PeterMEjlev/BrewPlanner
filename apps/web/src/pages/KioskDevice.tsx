@@ -188,21 +188,21 @@ export function KioskDevicePage(): JSX.Element {
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis
                   dataKey="t"
                   type="number"
                   domain={['dataMin', 'dataMax']}
                   scale="time"
                   tickFormatter={(t) => formatTick(t, longRange)}
-                  tick={{ fontSize: 14, fill: '#cbd5e1' }}
-                  stroke="#475569"
+                  tick={{ fontSize: 14, fill: '#94a3b8' }}
+                  stroke="#334155"
                   minTickGap={48}
                 />
                 <YAxis
                   width={52}
-                  tick={{ fontSize: 14, fill: '#cbd5e1' }}
-                  stroke="#475569"
+                  tick={{ fontSize: 14, fill: '#94a3b8' }}
+                  stroke="#334155"
                   domain={chartMetric && isStateMetric(chartMetric) ? [-1.1, 1.1] : ['auto', 'auto']}
                   ticks={chartMetric && isStateMetric(chartMetric) ? [-1, 0, 1] : undefined}
                   tickFormatter={
@@ -212,14 +212,14 @@ export function KioskDevicePage(): JSX.Element {
                 <Tooltip
                   contentStyle={{
                     background: '#0f172a',
-                    border: '1px solid #334155',
+                    border: '1px solid #1e293b',
                     borderRadius: 10,
                     color: '#e2e8f0',
                     fontSize: 16,
                   }}
                   labelStyle={{ color: '#94a3b8' }}
                   itemStyle={{ color: '#e2e8f0' }}
-                  cursor={{ stroke: '#475569' }}
+                  cursor={{ stroke: '#334155' }}
                   labelFormatter={(t) => new Date(t as number).toLocaleString()}
                   formatter={(value) => {
                     const num = typeof value === 'number' ? value : Number(value);
