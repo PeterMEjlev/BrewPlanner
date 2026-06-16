@@ -6,6 +6,7 @@ import type {
   ChecklistWithSteps,
   DeviceStatus,
   MetricTotal,
+  NotificationSettings,
   Reading,
   Recipe,
   Step,
@@ -170,4 +171,16 @@ export const api = {
       body: JSON.stringify(recipe),
     }).then((r) => r.recipe),
   clearActiveRecipe: () => request<void>('/recipe', { method: 'DELETE' }),
+
+  // Notification preferences (server-backed, shared across browsers) + a test
+  // send so the user can confirm Telegram delivery from the Settings screen.
+  getNotificationSettings: () =>
+    request<NotificationSettings>('/notifications/settings'),
+  updateNotificationSettings: (settings: NotificationSettings) =>
+    request<NotificationSettings>('/notifications/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+  sendTestNotification: () =>
+    request<{ sent: boolean }>('/notifications/test', { method: 'POST' }),
 };

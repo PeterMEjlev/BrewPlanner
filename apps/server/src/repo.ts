@@ -4,10 +4,12 @@ import type {
   ChecklistSummary,
   ChecklistWithSteps,
   DisplayStep,
+  NotificationSettings,
   Recipe,
   Step,
   Todo,
 } from '@checklist/shared';
+import { DEFAULT_NOTIFICATION_SETTINGS } from '@checklist/shared';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from './db/index.js';
 import { checklists, runSteps, runs, settings, steps, todos } from './db/schema.js';
@@ -336,16 +338,38 @@ export function clearCompletedTodos(): Todo[] {
 // ---------------------------------------------------------------------------
 
 const ACTIVE_RECIPE_KEY = 'active_recipe';
+const NOTIFY_SETTINGS_KEY = 'notify_settings';
 
-function setSetting(key: string, value: string): void {
+/** Upsert a key-value setting (exported for the notification dedup markers). */
+export function setSetting(key: string, value: string): void {
   db.insert(settings)
     .values({ key, value, updatedAt: now() })
     .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: now() } })
     .run();
 }
 
-function getSetting(key: string): string | null {
+/** Read a key-value setting, or null when unset. */
+export function getSetting(key: string): string | null {
   return db.select().from(settings).where(eq(settings.key, key)).get()?.value ?? null;
+}
+
+/**
+ * Notification preferences, merged over defaults so an older/partial stored blob
+ * still yields every key. Returns the defaults when nothing is stored yet.
+ */
+export function getNotificationSettings(): NotificationSettings {
+  const raw = getSetting(NOTIFY_SETTINGS_KEY);
+  if (!raw) return DEFAULT_NOTIFICATION_SETTINGS;
+  try {
+    return { ...DEFAULT_NOTIFICATION_SETTINGS, ...(JSON.parse(raw) as Partial<NotificationSettings>) };
+  } catch {
+    return DEFAULT_NOTIFICATION_SETTINGS;
+  }
+}
+
+export function setNotificationSettings(s: NotificationSettings): NotificationSettings {
+  setSetting(NOTIFY_SETTINGS_KEY, JSON.stringify(s));
+  return s;
 }
 
 /** The recipe currently in the fermenter, or null if none has been chosen. */

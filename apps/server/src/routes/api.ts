@@ -3,6 +3,7 @@ import {
   createStepSchema,
   createTodoSchema,
   idParamSchema,
+  notificationSettingsSchema,
   reorderStepsSchema,
   reorderTodosSchema,
   setActiveRecipeSchema,
@@ -15,6 +16,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
+import * as telegram from '../notify/telegram.js';
 import * as repo from '../repo.js';
 
 /** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
@@ -216,5 +218,33 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/recipe', async (_req, reply) => {
     repo.clearActiveRecipe();
     return reply.status(204).send();
+  });
+
+  // --- Notifications ----------------------------------------------------
+  // Operator-tunable alert preferences (keg age, fermentation done). The
+  // background scheduler reads these; Telegram credentials stay in env vars.
+  app.get('/notifications/settings', async () => repo.getNotificationSettings());
+
+  app.put('/notifications/settings', async (req, reply) => {
+    const body = parse(notificationSettingsSchema, req.body, reply);
+    if (!body) return;
+    return repo.setNotificationSettings(body);
+  });
+
+  // Send a test message so the operator can confirm delivery from the UI.
+  // 503 when the server has no Telegram credentials; 502 if the send fails.
+  app.post('/notifications/test', async (req, reply) => {
+    if (!telegram.isConfigured()) {
+      return reply
+        .status(503)
+        .send({ error: 'Telegram is not configured (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID).' });
+    }
+    try {
+      await telegram.sendTelegram('✅ <b>BrewPlanner</b> test notification from Settings.');
+      return { sent: true };
+    } catch (err) {
+      req.log.error(err, 'Telegram test send failed');
+      return reply.status(502).send({ error: 'Telegram send failed.' });
+    }
   });
 }

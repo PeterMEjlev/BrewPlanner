@@ -1,4 +1,7 @@
+import { DEFAULT_NOTIFICATION_SETTINGS, type NotificationSettings } from '@checklist/shared';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { api } from '../api';
 import {
   FERMENT_DAYS,
   FERMENT_SG,
@@ -7,6 +10,9 @@ import {
   useSettings,
   type PressureUnit,
 } from '../settings';
+
+/** Tap-stepper bounds for the keg-age alert threshold (server-backed setting). */
+const KEG_ALERT_DAYS = { min: 7, max: 180, step: 1 } as const;
 
 /**
  * Kiosk settings screen, reached from the gear button on the home hub. Built for
@@ -81,7 +87,139 @@ export function SettingsPage(): JSX.Element {
             />
           </div>
         </SettingCard>
+
+        {/* Telegram notifications (server-backed) -------------------------- */}
+        <NotificationSettingsCard />
       </main>
+    </div>
+  );
+}
+
+/**
+ * Telegram alert preferences. Unlike the cards above (kiosk-local localStorage),
+ * these are stored on the server — the background scheduler that sends the
+ * alerts must see one shared value — so this card loads and saves over the API.
+ * The Telegram bot token and chat id are server env vars, not edited here.
+ */
+function NotificationSettingsCard(): JSX.Element {
+  const [settings, setSettings] = useState<NotificationSettings | null>(null);
+  const [test, setTest] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getNotificationSettings()
+      .then((s) => !cancelled && setSettings(s))
+      .catch(() => !cancelled && setSettings(DEFAULT_NOTIFICATION_SETTINGS));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Apply a change optimistically and persist it (server is last-write-wins).
+  const update = (patch: Partial<NotificationSettings>): void => {
+    setSettings((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      void api.updateNotificationSettings(next).catch(() => {});
+      return next;
+    });
+  };
+
+  const runTest = (): void => {
+    setTest('sending');
+    api
+      .sendTestNotification()
+      .then(() => setTest('sent'))
+      .catch(() => setTest('error'));
+  };
+
+  return (
+    <SettingCard
+      title="Notifications"
+      hint="Telegram alerts sent by the server. The bot token and chat are set on the server (env vars)."
+    >
+      {!settings ? (
+        <p className="text-zinc-500">Loading…</p>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {/* Keg too old --------------------------------------------------- */}
+          <div className="flex flex-col gap-5">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-lg text-zinc-300">Keg stored too long</span>
+              <OnOffToggle
+                value={settings.kegAlertEnabled}
+                onChange={(v) => update({ kegAlertEnabled: v })}
+              />
+            </div>
+            <Stepper
+              label="Alert after"
+              value={settings.kegAlertDays}
+              format={(v) => `${v} ${v === 1 ? 'day' : 'days'}`}
+              onStep={(dir) =>
+                update({
+                  kegAlertDays: clampStep(
+                    settings.kegAlertDays + dir * KEG_ALERT_DAYS.step,
+                    KEG_ALERT_DAYS,
+                  ),
+                })
+              }
+              canDecrease={settings.kegAlertDays > KEG_ALERT_DAYS.min}
+              canIncrease={settings.kegAlertDays < KEG_ALERT_DAYS.max}
+            />
+          </div>
+
+          {/* Fermentation complete --------------------------------------- */}
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-lg text-zinc-300">Fermentation complete</span>
+            <OnOffToggle
+              value={settings.fermentDoneEnabled}
+              onChange={(v) => update({ fermentDoneEnabled: v })}
+            />
+          </div>
+
+          {/* Test send ---------------------------------------------------- */}
+          <div className="flex items-center justify-between gap-4 border-t border-zinc-800 pt-5">
+            <span className="text-sm leading-snug text-zinc-500">
+              {test === 'sent'
+                ? 'Sent — check Telegram.'
+                : test === 'error'
+                  ? 'Send failed — is the server configured?'
+                  : 'Send a test message now.'}
+            </span>
+            <button
+              type="button"
+              onClick={runTest}
+              disabled={test === 'sending'}
+              className="shrink-0 touch-manipulation rounded-2xl border border-zinc-800 bg-black px-5 py-3 text-lg font-semibold text-zinc-200 transition active:scale-[0.98] active:bg-zinc-800 disabled:opacity-40"
+            >
+              {test === 'sending' ? 'Sending…' : 'Send test'}
+            </button>
+          </div>
+        </div>
+      )}
+    </SettingCard>
+  );
+}
+
+/** A compact On/Off switch built on the segmented toggle, for boolean settings. */
+function OnOffToggle({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (value: boolean) => void;
+}): JSX.Element {
+  return (
+    <div className="w-40 shrink-0">
+      <SegmentedToggle<'on' | 'off'>
+        value={value ? 'on' : 'off'}
+        options={[
+          { value: 'on', label: 'On' },
+          { value: 'off', label: 'Off' },
+        ]}
+        onChange={(v) => onChange(v === 'on')}
+      />
     </div>
   );
 }

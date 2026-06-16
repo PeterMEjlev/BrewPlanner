@@ -13,6 +13,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "user": "tsx src/auth/cli.ts",
     "device": "tsx src/devices/cli.ts",
+    "notify": "tsx src/notify/cli.ts",
     "seed:demo": "tsx src/devices/seed-demo.ts"
   },
   "dependencies": {

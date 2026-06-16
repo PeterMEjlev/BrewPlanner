@@ -1,26 +1,22 @@
+import {
+  KEG_SHEET_CSV_URL,
+  KEG_SHEET_VIEW_URL,
+  type Keg,
+  parseKegDate,
+  parseKegs,
+} from '@checklist/shared';
 import { useEffect, useState } from 'react';
 
 /**
  * Keg inventory lives in a shared Google Sheet — the same one the brew-system
- * app reads (see brew-system-v3 KegStatusPage). The sheet is published and
- * CORS-enabled, so the published CSV is pulled straight from the client with no
- * server proxy. This module is the single place that knows the sheet URL, its
- * column layout, and the per-content colour scheme, so the kiosk Keg page and
- * the home-screen count stay in lockstep.
+ * app reads (see brew-system-v3 KegStatusPage). The sheet URL, column layout,
+ * and CSV parsing now live in @checklist/shared so the server's keg-age
+ * notification reads exactly the same data; this module re-exports them and
+ * keeps the web-only concerns (per-content colours, sorting, the polling hook).
  */
-const SHEET_ID = '1c5CWo_-7lS9C0HSklylLVgFAT4OwADm2Svqfr9x28Do';
-const SHEETS_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`;
+export type { Keg };
 /** Human-facing sheet URL for "open in a new tab" links. */
-export const SHEETS_VIEW_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`;
-
-export interface Keg {
-  number: string;
-  contents: string;
-  date: string;
-  note: string;
-  volume: string;
-  abv: string;
-}
+export const SHEETS_VIEW_URL = KEG_SHEET_VIEW_URL;
 
 /**
  * Per-content colours, chosen to evoke the actual appearance of each beer / keg
@@ -60,50 +56,8 @@ export function isUnknownContents(contents: string): boolean {
   return contents.trim() === '???';
 }
 
-/** Minimal CSV parser that respects quoted fields (no embedded newlines). */
-function parseCSV(text: string): string[][] {
-  return text
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const cols: string[] = [];
-      let cur = '';
-      let inQuotes = false;
-      for (const ch of line) {
-        if (ch === '"') {
-          inQuotes = !inQuotes;
-          continue;
-        }
-        if (ch === ',' && !inQuotes) {
-          cols.push(cur.trim());
-          cur = '';
-          continue;
-        }
-        cur += ch;
-      }
-      cols.push(cur.trim());
-      return cols;
-    });
-}
-
-function parseKegs(text: string): Keg[] {
-  const rows = parseCSV(text);
-  // Row 0 is a banner and row 1 the column headers — keg rows start at index 2.
-  return rows
-    .slice(2)
-    .map((cols) => ({
-      number: cols[1] || '',
-      contents: cols[2] || '',
-      date: cols[3] || '',
-      note: cols[4] || '',
-      volume: cols[5] || '',
-      abv: cols[6] || '',
-    }))
-    .filter((k) => k.number);
-}
-
 export async function fetchKegs(): Promise<Keg[]> {
-  const res = await fetch(SHEETS_CSV_URL);
+  const res = await fetch(KEG_SHEET_CSV_URL);
   if (!res.ok) throw new Error('Failed to fetch keg data');
   return parseKegs(await res.text());
 }
@@ -162,16 +116,6 @@ function parseVolume(v: string): number {
   return parseFloat(v) || 0;
 }
 
-/** Sheet dates are DD/MM/YYYY; fall back to Date parsing for anything else. */
-function parseDate(d: string): number {
-  if (!d) return 0;
-  const parts = d.split('/');
-  if (parts.length === 3) {
-    return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getTime() || 0;
-  }
-  return new Date(d).getTime() || 0;
-}
-
 export function sortKegs(kegs: Keg[], sortKey: SortKey, sortAsc: boolean): Keg[] {
   const dir = sortAsc ? 1 : -1;
   return [...kegs].sort((a, b) => {
@@ -183,8 +127,8 @@ export function sortKegs(kegs: Keg[], sortKey: SortKey, sortAsc: boolean): Keg[]
       case 'contents':
         return a.contents.localeCompare(b.contents) * dir;
       case 'date': {
-        const da = parseDate(a.date);
-        const db = parseDate(b.date);
+        const da = parseKegDate(a.date);
+        const db = parseKegDate(b.date);
         // Undated kegs always sort to the bottom, regardless of direction.
         if (!da && !db) return 0;
         if (!da) return 1;

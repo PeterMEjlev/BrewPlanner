@@ -4,9 +4,12 @@ import { fileURLToPath } from 'node:url';
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { authRoutes, seedAdminUser } from './auth/index.js';
 import { resolveSessionSecret } from './auth/secret.js';
 import { runMigrations } from './db/index.js';
+import { runNotificationChecks } from './notify/checks.js';
+import { isConfigured as telegramConfigured } from './notify/telegram.js';
 import { apiRoutes } from './routes/api.js';
 import { commandRoutes, deviceRoutes, ingestRoutes } from './routes/devices.js';
 
@@ -75,10 +78,32 @@ async function main(): Promise<void> {
 
   try {
     await app.listen({ host: HOST, port: PORT });
+    startNotificationScheduler(app);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
   }
+}
+
+/**
+ * Periodically check for notification conditions (keg age, fermentation done)
+ * and push Telegram alerts. Only runs when Telegram is configured; the interval
+ * is unref'd so it never holds the process open on shutdown. Override the cadence
+ * with NOTIFY_INTERVAL_SECONDS.
+ */
+function startNotificationScheduler(app: FastifyInstance): void {
+  if (!telegramConfigured()) {
+    app.log.info(
+      'Telegram notifications disabled (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to enable).',
+    );
+    return;
+  }
+  const intervalMs = Number(process.env.NOTIFY_INTERVAL_SECONDS ?? 300) * 1000;
+  const tick = () => void runNotificationChecks(app.log);
+  setInterval(tick, intervalMs).unref();
+  // Run once shortly after boot so a due alert doesn't wait a full interval.
+  setTimeout(tick, 15_000).unref();
+  app.log.info(`Telegram notifications enabled (checking every ${intervalMs / 1000}s).`);
 }
 
 void main();

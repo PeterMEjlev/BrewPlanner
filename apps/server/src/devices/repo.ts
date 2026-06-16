@@ -214,6 +214,20 @@ export function getHistory(
     .all();
 }
 
+/**
+ * Recent readings for one metric across all devices, oldest first. Used by the
+ * notification checker (e.g. the Tilt's `gravity_sg` history) where the relevant
+ * device isn't known up front — just the metric.
+ */
+export function getRecentReadingsByMetric(metric: string, since: string): Reading[] {
+  return db
+    .select()
+    .from(readings)
+    .where(and(eq(readings.metric, metric), gte(readings.recordedAt, since)))
+    .orderBy(asc(readings.recordedAt))
+    .all();
+}
+
 // --- Device commands (hub → device) -----------------------------------------
 
 /** Build the public command shape from a row. */

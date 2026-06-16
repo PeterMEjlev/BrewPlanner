@@ -221,6 +221,109 @@ export interface DeviceCommand {
 export const SET_SETPOINT_COMMAND = 'set_setpoint';
 
 // ---------------------------------------------------------------------------
+// Keg inventory (shared Google Sheet)
+// ---------------------------------------------------------------------------
+
+/**
+ * Keg inventory lives in a published Google Sheet — the same one the brew-system
+ * app reads. The sheet is CORS-enabled, so the web app pulls the CSV straight
+ * from the browser; the server fetches the same URL for the keg-age notification.
+ * Keeping the URL, column layout, and parsing here is the single source of truth
+ * for both sides.
+ */
+const KEG_SHEET_ID = '1c5CWo_-7lS9C0HSklylLVgFAT4OwADm2Svqfr9x28Do';
+export const KEG_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${KEG_SHEET_ID}/export?format=csv&gid=0`;
+/** Human-facing sheet URL for "open in a new tab" links. */
+export const KEG_SHEET_VIEW_URL = `https://docs.google.com/spreadsheets/d/${KEG_SHEET_ID}/edit`;
+
+export interface Keg {
+  number: string;
+  contents: string;
+  /** Fill date as written in the sheet, DD/MM/YYYY. */
+  date: string;
+  note: string;
+  volume: string;
+  abv: string;
+}
+
+/** Minimal CSV parser that respects quoted fields (no embedded newlines). */
+function parseCSV(text: string): string[][] {
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const cols: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (const ch of line) {
+        if (ch === '"') {
+          inQuotes = !inQuotes;
+          continue;
+        }
+        if (ch === ',' && !inQuotes) {
+          cols.push(cur.trim());
+          cur = '';
+          continue;
+        }
+        cur += ch;
+      }
+      cols.push(cur.trim());
+      return cols;
+    });
+}
+
+/** Parse the keg sheet CSV into rows. Row 0 is a banner, row 1 the headers. */
+export function parseKegs(text: string): Keg[] {
+  return parseCSV(text)
+    .slice(2)
+    .map((cols) => ({
+      number: cols[1] || '',
+      contents: cols[2] || '',
+      date: cols[3] || '',
+      note: cols[4] || '',
+      volume: cols[5] || '',
+      abv: cols[6] || '',
+    }))
+    .filter((k) => k.number);
+}
+
+/** Sheet dates are DD/MM/YYYY; returns an epoch-ms timestamp, or 0 if unparseable. */
+export function parseKegDate(d: string): number {
+  if (!d) return 0;
+  const parts = d.split('/');
+  if (parts.length === 3) {
+    return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getTime() || 0;
+  }
+  return new Date(d).getTime() || 0;
+}
+
+// ---------------------------------------------------------------------------
+// Notification settings (server-side, editable from the Settings page)
+// ---------------------------------------------------------------------------
+
+/**
+ * Operator-tunable notification preferences. Persisted server-side (the
+ * key-value `settings` table) — unlike the kiosk's localStorage prefs — because
+ * the background scheduler that actually sends the alerts runs on the server and
+ * must see one shared, authoritative value regardless of which browser changed
+ * it. Telegram credentials themselves are env vars, never stored here.
+ */
+export interface NotificationSettings {
+  /** Alert when a beer keg has been filled for at least `kegAlertDays`. */
+  kegAlertEnabled: boolean;
+  /** Age (days) at which a keg triggers the "drink it" alert. */
+  kegAlertDays: number;
+  /** Alert when the Tilt's gravity has held flat (fermentation complete). */
+  fermentDoneEnabled: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  kegAlertEnabled: true,
+  kegAlertDays: 30,
+  fermentDoneEnabled: true,
+};
+
+// ---------------------------------------------------------------------------
 // Request validation schemas (Zod)
 // ---------------------------------------------------------------------------
 
@@ -377,6 +480,20 @@ export const setActiveRecipeSchema = z.object({
   style: z.string().trim().max(300).default(''),
 });
 export type SetActiveRecipeInput = z.infer<typeof setActiveRecipeSchema>;
+
+// --- Notification settings -------------------------------------------------
+
+/**
+ * Body for `PUT /api/notifications/settings`. The Settings page sends the whole
+ * object each save (last-write-wins). `kegAlertDays` is bounded to a sane range
+ * so a fat-fingered value can't disable the alert (0) or push it years out.
+ */
+export const notificationSettingsSchema = z.object({
+  kegAlertEnabled: z.boolean(),
+  kegAlertDays: z.number().int().min(1).max(365),
+  fermentDoneEnabled: z.boolean(),
+});
+export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchema>;
 
 // ---------------------------------------------------------------------------
 // Path param helpers
