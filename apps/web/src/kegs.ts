@@ -1,6 +1,7 @@
 import {
   KEG_SHEET_CSV_URL,
   KEG_SHEET_VIEW_URL,
+  getContentColor,
   type Keg,
   parseKegDate,
   parseKegs,
@@ -12,38 +13,12 @@ import { useEffect, useState } from 'react';
  * app reads (see brew-system-v3 KegStatusPage). The sheet URL, column layout,
  * and CSV parsing now live in @checklist/shared so the server's keg-age
  * notification reads exactly the same data; this module re-exports them and
- * keeps the web-only concerns (per-content colours, sorting, the polling hook).
+ * keeps the web-only concerns (sorting and the polling hook).
  */
 export type { Keg };
+export { getContentColor };
 /** Human-facing sheet URL for "open in a new tab" links. */
 export const SHEETS_VIEW_URL = KEG_SHEET_VIEW_URL;
-
-/**
- * Per-content colours, chosen to evoke the actual appearance of each beer / keg
- * state. Mirrors the brew-system app so a keg looks the same in both UIs.
- */
-const CONTENT_COLORS: Record<string, string> = {
-  IPA: '#C8782A', // amber copper
-  NEIPA: '#3ee849', // hazy orange-gold
-  Wiessbeer: '#E8C84A', // cloudy banana-gold
-  Sour: '#D64878', // tart raspberry pink
-  'Brown Ale': '#7A3B1A', // rich mahogany
-  Starsan: '#b8faff', // sanitiser blue
-  SIPA: '#2a9826', // session IPA green
-  Pilsner: '#DEC05C', // pale straw gold
-  Stout: '#3A2A1A', // near-black dark roast
-  Dirty: '#ff0000', // warning red
-  Clean: '#ffffff', // fresh
-  '???': '#707070', // neutral grey
-};
-
-/** Colour for a keg's contents, or null when the content is unrecognised. */
-export function getContentColor(contents: string): string | null {
-  const key = Object.keys(CONTENT_COLORS).find(
-    (k) => k.toLowerCase() === contents.trim().toLowerCase(),
-  );
-  return key ? CONTENT_COLORS[key]! : null;
-}
 
 /** "#3ee849" → "62, 232, 73" so it can drop into an rgba() tint. */
 export function hexToRgb(hex: string): string {

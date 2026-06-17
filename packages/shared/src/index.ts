@@ -266,17 +266,46 @@ export type AlertsQuery = z.infer<typeof alertsQuerySchema>;
  * Keg inventory lives in a published Google Sheet — the same one the brew-system
  * app reads. The sheet is CORS-enabled, so the web app pulls the CSV straight
  * from the browser; the server fetches the same URL for the keg-age notification.
- * Keeping the URL, column layout, and parsing here is the single source of truth
- * for both sides.
+ * Keeping the URL, column layout, parsing, and per-content colours here is the
+ * single source of truth for both sides.
  */
 const KEG_SHEET_ID = '1c5CWo_-7lS9C0HSklylLVgFAT4OwADm2Svqfr9x28Do';
 export const KEG_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${KEG_SHEET_ID}/export?format=csv&gid=0`;
 /** Human-facing sheet URL for "open in a new tab" links. */
 export const KEG_SHEET_VIEW_URL = `https://docs.google.com/spreadsheets/d/${KEG_SHEET_ID}/edit`;
 
+/**
+ * Per-content colours, chosen to evoke the actual appearance of each beer / keg
+ * state. Mirrors the brew-system app so a keg looks the same everywhere.
+ */
+export const KEG_CONTENT_COLORS: Record<string, string> = {
+  IPA: '#C8782A', // amber copper
+  NEIPA: '#3ee849', // hazy orange-gold
+  Wiessbeer: '#E8C84A', // cloudy banana-gold
+  Sour: '#D64878', // tart raspberry pink
+  'Brown Ale': '#7A3B1A', // rich mahogany
+  Starsan: '#b8faff', // sanitiser blue
+  SIPA: '#2a9826', // session IPA green
+  Pilsner: '#DEC05C', // pale straw gold
+  Stout: '#3A2A1A', // near-black dark roast
+  Dirty: '#ff0000', // warning red
+  Clean: '#ffffff', // fresh
+  '???': '#707070', // neutral grey
+};
+
+/** Colour for a keg's contents, or null when the content is unrecognised. */
+export function getContentColor(contents: string): string | null {
+  const key = Object.keys(KEG_CONTENT_COLORS).find(
+    (k) => k.toLowerCase() === contents.trim().toLowerCase(),
+  );
+  return key ? KEG_CONTENT_COLORS[key]! : null;
+}
+
 export interface Keg {
   number: string;
   contents: string;
+  /** Resolved display colour for `contents`, as #rrggbb, or null if unknown. */
+  color: string | null;
   /** Fill date as written in the sheet, DD/MM/YYYY. */
   date: string;
   note: string;
@@ -314,14 +343,18 @@ function parseCSV(text: string): string[][] {
 export function parseKegs(text: string): Keg[] {
   return parseCSV(text)
     .slice(2)
-    .map((cols) => ({
-      number: cols[1] || '',
-      contents: cols[2] || '',
-      date: cols[3] || '',
-      note: cols[4] || '',
-      volume: cols[5] || '',
-      abv: cols[6] || '',
-    }))
+    .map((cols) => {
+      const contents = cols[2] || '';
+      return {
+        number: cols[1] || '',
+        contents,
+        color: getContentColor(contents),
+        date: cols[3] || '',
+        note: cols[4] || '',
+        volume: cols[5] || '',
+        abv: cols[6] || '',
+      };
+    })
     .filter((k) => k.number);
 }
 
