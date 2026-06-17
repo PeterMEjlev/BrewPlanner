@@ -2,6 +2,7 @@ import {
   DEFAULT_GRAPH_COLORS,
   DEFAULT_NOTIFICATION_SETTINGS,
   type GraphColors,
+  type KegContentColors,
   type NotificationSettings,
 } from '@checklist/shared';
 import { useEffect, useState } from 'react';
@@ -9,6 +10,11 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { resetGraphColors, saveGraphColors, useGraphColors } from '../graphColors';
+import {
+  resetKegContentColors,
+  saveKegContentColors,
+  useKegContentColors,
+} from '../kegContentColors';
 import {
   FERMENT_DAYS,
   FERMENT_SG,
@@ -45,6 +51,7 @@ export function SettingsDesktopPage(): JSX.Element {
           <DisplaySection />
           <FermentationSection />
           <GraphColorsSection />
+          <KegContentColorsSection />
           <NotificationsSection />
           <AccountSection />
           <ResetSection />
@@ -291,6 +298,121 @@ function GraphColorsSection(): JSX.Element {
       <div className="mt-4 flex items-center gap-3 border-t border-zinc-800 pt-4">
         <button type="button" className={btnPrimary} onClick={() => void save()} disabled={!dirty || status === 'saving'}>
           {status === 'saving' ? 'Saving…' : 'Save colours'}
+        </button>
+        <button
+          type="button"
+          className={btnGhost}
+          onClick={() => void reset()}
+          disabled={status === 'saving'}
+        >
+          Reset to defaults
+        </button>
+        <span className="text-sm text-zinc-500">
+          {error ? (
+            <span className="text-red-400">{error}</span>
+          ) : status === 'saved' ? (
+            'Saved.'
+          ) : dirty ? (
+            'Unsaved changes.'
+          ) : (
+            ''
+          )}
+        </span>
+      </div>
+    </Card>
+  );
+}
+
+// --- Keg content colours (server-shared) ------------------------------------
+
+const KEG_CONTENT_COLOR_FIELDS: { key: keyof KegContentColors; label: string }[] = [
+  { key: 'IPA', label: 'IPA' },
+  { key: 'NEIPA', label: 'NEIPA' },
+  { key: 'Wiessbeer', label: 'Wiessbeer' },
+  { key: 'Sour', label: 'Sour' },
+  { key: 'Brown Ale', label: 'Brown Ale' },
+  { key: 'SIPA', label: 'SIPA' },
+  { key: 'Pilsner', label: 'Pilsner' },
+  { key: 'Stout', label: 'Stout' },
+  { key: 'Starsan', label: 'Starsan' },
+  { key: 'Dirty', label: 'Dirty' },
+  { key: 'Clean', label: 'Clean' },
+  { key: '???', label: 'Empty / unknown' },
+];
+
+function KegContentColorsSection(): JSX.Element {
+  const live = useKegContentColors();
+  const [draft, setDraft] = useState<KegContentColors>(live);
+  const [touched, setTouched] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!touched) setDraft(live);
+  }, [live, touched]);
+
+  const dirty = KEG_CONTENT_COLOR_FIELDS.some(
+    (f) => draft[f.key].toLowerCase() !== live[f.key].toLowerCase(),
+  );
+
+  const save = async (): Promise<void> => {
+    setStatus('saving');
+    setError(null);
+    try {
+      await saveKegContentColors(draft);
+      setTouched(false);
+      setStatus('saved');
+    } catch (e) {
+      setError(asMessage(e));
+      setStatus('error');
+    }
+  };
+
+  const reset = async (): Promise<void> => {
+    setStatus('saving');
+    setError(null);
+    try {
+      const next = await resetKegContentColors();
+      setDraft(next);
+      setTouched(false);
+      setStatus('saved');
+    } catch (e) {
+      setError(asMessage(e));
+      setStatus('error');
+    }
+  };
+
+  return (
+    <Card
+      title="Keg content colours"
+      hint="The beer/type palette used by the keg inventory and the Garmin API endpoint."
+    >
+      <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+        {KEG_CONTENT_COLOR_FIELDS.map((f) => (
+          <Row key={f.key} label={f.label}>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs uppercase tabular-nums text-zinc-500">
+                {draft[f.key]}
+              </span>
+              <input
+                type="color"
+                aria-label={`${f.label} colour`}
+                value={draft[f.key]}
+                onChange={(e) => {
+                  setStatus('idle');
+                  setTouched(true);
+                  setDraft((d) => ({ ...d, [f.key]: e.target.value }));
+                }}
+                className="h-8 w-12 cursor-pointer rounded-md border border-zinc-700 bg-transparent"
+              />
+            </div>
+          </Row>
+        ))}
+      </div>
+
+      <div className="mt-4 flex items-center gap-3 border-t border-zinc-800 pt-4">
+        <button type="button" className={btnPrimary} onClick={() => void save()} disabled={!dirty || status === 'saving'}>
+          {status === 'saving' ? 'Savingâ€¦' : 'Save colours'}
         </button>
         <button
           type="button"
@@ -613,10 +735,11 @@ function ResetSection(): JSX.Element {
   const [done, setDone] = useState(false);
 
   const reset = async (): Promise<void> => {
-    if (!window.confirm('Reset display preferences and graph colours to their defaults?')) return;
+    if (!window.confirm('Reset display preferences and shared colour palettes to their defaults?')) return;
     resetSettings();
     try {
       await resetGraphColors();
+      await resetKegContentColors();
     } catch {
       // Colours are server-side; ignore a failed reset (e.g. offline).
     }
@@ -627,11 +750,11 @@ function ResetSection(): JSX.Element {
   return (
     <Card
       title="Reset"
-      hint="Restore this browser's display preferences and the shared graph colours to their defaults. Notifications and your account are left unchanged."
+      hint="Restore this browser's display preferences and the shared colour palettes to their defaults. Notifications and your account are left unchanged."
     >
       <div className="flex items-center gap-3">
         <button type="button" className={btnGhost} onClick={() => void reset()}>
-          Reset display & graph settings
+          Reset display & colours
         </button>
         {done && <span className="text-sm text-emerald-400">Reset to defaults.</span>}
       </div>

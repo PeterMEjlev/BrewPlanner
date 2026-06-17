@@ -7,6 +7,8 @@ import type {
   ChecklistWithSteps,
   DeviceStatus,
   GraphColors,
+  Keg,
+  KegContentColors,
   MetricTotal,
   NotificationSettings,
   Reading,
@@ -189,4 +191,15 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(colors),
     }),
+
+  // Shared keg content colour palette, used by `/api/kegs`.
+  getKegContentColors: () => request<KegContentColors>('/keg-content-colors'),
+  updateKegContentColors: (colors: KegContentColors) =>
+    request<KegContentColors>('/keg-content-colors', {
+      method: 'PUT',
+      body: JSON.stringify(colors),
+    }),
+
+  // Keg inventory, enriched server-side with the saved content colours.
+  getKegs: () => request<Keg[]>('/kegs'),
 };

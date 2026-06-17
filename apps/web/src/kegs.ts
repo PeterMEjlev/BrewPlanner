@@ -1,18 +1,16 @@
 import {
-  KEG_SHEET_CSV_URL,
   KEG_SHEET_VIEW_URL,
   getContentColor,
   type Keg,
   parseKegDate,
-  parseKegs,
 } from '@checklist/shared';
 import { useEffect, useState } from 'react';
+import { api } from './api';
 
 /**
  * Keg inventory lives in a shared Google Sheet — the same one the brew-system
- * app reads (see brew-system-v3 KegStatusPage). The sheet URL, column layout,
- * and CSV parsing now live in @checklist/shared so the server's keg-age
- * notification reads exactly the same data; this module re-exports them and
+ * app reads (see brew-system-v3 KegStatusPage). The server reads that sheet,
+ * applies the shared keg-content colour settings, and returns JSON; this module
  * keeps the web-only concerns (sorting and the polling hook).
  */
 export type { Keg };
@@ -32,9 +30,7 @@ export function isUnknownContents(contents: string): boolean {
 }
 
 export async function fetchKegs(): Promise<Keg[]> {
-  const res = await fetch(KEG_SHEET_CSV_URL);
-  if (!res.ok) throw new Error('Failed to fetch keg data');
-  return parseKegs(await res.text());
+  return api.getKegs();
 }
 
 export interface UseKegs {

@@ -113,7 +113,7 @@ export function KegsDesktopPage(): JSX.Element {
  * matching the brew-system app's card and the kiosk view.
  */
 function KegCard({ keg }: { keg: Keg }): JSX.Element {
-  const color = getContentColor(keg.contents);
+  const color = keg.color ?? getContentColor(keg.contents);
   const unknown = isUnknownContents(keg.contents);
   // Stout is near-black, so it reads better as a heavier tint with a muted label.
   const isStout = keg.contents.trim().toLowerCase() === 'stout';

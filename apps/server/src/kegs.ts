@@ -1,4 +1,4 @@
-import { KEG_SHEET_CSV_URL, type Keg, parseKegs } from '@checklist/shared';
+import { KEG_SHEET_CSV_URL, type Keg, type KegContentColors, parseKegs } from '@checklist/shared';
 
 /**
  * Keg inventory lives in a published Google Sheet (the same one the web app and
@@ -11,8 +11,8 @@ import { KEG_SHEET_CSV_URL, type Keg, parseKegs } from '@checklist/shared';
  * fetches it too so headless clients that can't parse CSV — notably the Garmin
  * watch app — can get the inventory as JSON.
  */
-export async function fetchKegs(): Promise<Keg[]> {
+export async function fetchKegs(colors?: KegContentColors): Promise<Keg[]> {
   const res = await fetch(KEG_SHEET_CSV_URL);
   if (!res.ok) throw new Error(`Keg sheet fetch failed: ${res.status} ${res.statusText}`);
-  return parseKegs(await res.text());
+  return parseKegs(await res.text(), colors);
 }

@@ -5,6 +5,7 @@ import {
   createTodoSchema,
   graphColorsSchema,
   idParamSchema,
+  kegContentColorsSchema,
   notificationSettingsSchema,
   reorderStepsSchema,
   reorderTodosSchema,
@@ -240,7 +241,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // unreachable.
   app.get('/kegs', async (req, reply) => {
     try {
-      return await fetchKegs();
+      return await fetchKegs(repo.getKegContentColors());
     } catch (err) {
       req.log.error(err, 'Keg sheet fetch failed');
       return reply.status(502).send({ error: 'Could not reach the keg inventory sheet' });
@@ -267,6 +268,17 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(graphColorsSchema, req.body, reply);
     if (!body) return;
     return repo.setGraphColors(body);
+  });
+
+  // --- Keg content colours ---------------------------------------------
+  // The shared keg/beer palette used by `/api/kegs` (including Garmin) and the
+  // web inventory views.
+  app.get('/keg-content-colors', async () => repo.getKegContentColors());
+
+  app.put('/keg-content-colors', async (req, reply) => {
+    const body = parse(kegContentColorsSchema, req.body, reply);
+    if (!body) return;
+    return repo.setKegContentColors(body);
   });
 
   // Send a test message so the operator can confirm delivery from the UI.

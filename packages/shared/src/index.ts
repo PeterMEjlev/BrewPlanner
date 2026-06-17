@@ -266,8 +266,9 @@ export type AlertsQuery = z.infer<typeof alertsQuerySchema>;
  * Keg inventory lives in a published Google Sheet — the same one the brew-system
  * app reads. The sheet is CORS-enabled, so the web app pulls the CSV straight
  * from the browser; the server fetches the same URL for the keg-age notification.
- * Keeping the URL, column layout, parsing, and per-content colours here is the
- * single source of truth for both sides.
+ * Keeping the URL, column layout, parsing, and default per-content colours here
+ * gives both sides the same starting point. The server can override the colours
+ * from its saved Settings palette.
  */
 const KEG_SHEET_ID = '1c5CWo_-7lS9C0HSklylLVgFAT4OwADm2Svqfr9x28Do';
 export const KEG_SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${KEG_SHEET_ID}/export?format=csv&gid=0`;
@@ -278,7 +279,7 @@ export const KEG_SHEET_VIEW_URL = `https://docs.google.com/spreadsheets/d/${KEG_
  * Per-content colours, chosen to evoke the actual appearance of each beer / keg
  * state. Mirrors the brew-system app so a keg looks the same everywhere.
  */
-export const KEG_CONTENT_COLORS: Record<string, string> = {
+export const DEFAULT_KEG_CONTENT_COLORS = {
   IPA: '#C8782A', // amber copper
   NEIPA: '#3ee849', // hazy orange-gold
   Wiessbeer: '#E8C84A', // cloudy banana-gold
@@ -292,13 +293,19 @@ export const KEG_CONTENT_COLORS: Record<string, string> = {
   Clean: '#ffffff', // fresh
   '???': '#707070', // neutral grey
 };
+export type KegContent = keyof typeof DEFAULT_KEG_CONTENT_COLORS;
+export type KegContentColors = Record<KegContent, string>;
+export const KEG_CONTENT_COLORS: KegContentColors = DEFAULT_KEG_CONTENT_COLORS;
 
 /** Colour for a keg's contents, or null when the content is unrecognised. */
-export function getContentColor(contents: string): string | null {
-  const key = Object.keys(KEG_CONTENT_COLORS).find(
+export function getContentColor(
+  contents: string,
+  colors: KegContentColors = DEFAULT_KEG_CONTENT_COLORS,
+): string | null {
+  const key = (Object.keys(DEFAULT_KEG_CONTENT_COLORS) as KegContent[]).find(
     (k) => k.toLowerCase() === contents.trim().toLowerCase(),
   );
-  return key ? KEG_CONTENT_COLORS[key]! : null;
+  return key ? colors[key] : null;
 }
 
 export interface Keg {
@@ -340,7 +347,10 @@ function parseCSV(text: string): string[][] {
 }
 
 /** Parse the keg sheet CSV into rows. Row 0 is a banner, row 1 the headers. */
-export function parseKegs(text: string): Keg[] {
+export function parseKegs(
+  text: string,
+  colors: KegContentColors = DEFAULT_KEG_CONTENT_COLORS,
+): Keg[] {
   return parseCSV(text)
     .slice(2)
     .map((cols) => {
@@ -348,7 +358,7 @@ export function parseKegs(text: string): Keg[] {
       return {
         number: cols[1] || '',
         contents,
-        color: getContentColor(contents),
+        color: getContentColor(contents, colors),
         date: cols[3] || '',
         note: cols[4] || '',
         volume: cols[5] || '',
@@ -605,6 +615,16 @@ export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchem
 
 /** A `#rrggbb` hex colour (the format `<input type="color">` produces). */
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Must be a #rrggbb hex colour');
+
+// --- Keg content colours ----------------------------------------------------
+
+const kegContentColorShape = Object.fromEntries(
+  (Object.keys(DEFAULT_KEG_CONTENT_COLORS) as KegContent[]).map((key) => [key, hexColor]),
+) as Record<KegContent, typeof hexColor>;
+
+/** Body for `PUT /api/keg-content-colors`. The whole palette is sent each save. */
+export const kegContentColorsSchema = z.object(kegContentColorShape);
+export type KegContentColorsInput = z.infer<typeof kegContentColorsSchema>;
 
 /** Body for `PUT /api/graph-colors`. The whole palette is sent each save. */
 export const graphColorsSchema = z.object({

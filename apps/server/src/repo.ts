@@ -5,12 +5,17 @@ import type {
   ChecklistWithSteps,
   DisplayStep,
   GraphColors,
+  KegContentColors,
   NotificationSettings,
   Recipe,
   Step,
   Todo,
 } from '@checklist/shared';
-import { DEFAULT_GRAPH_COLORS, DEFAULT_NOTIFICATION_SETTINGS } from '@checklist/shared';
+import {
+  DEFAULT_GRAPH_COLORS,
+  DEFAULT_KEG_CONTENT_COLORS,
+  DEFAULT_NOTIFICATION_SETTINGS,
+} from '@checklist/shared';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from './db/index.js';
 import { checklists, runSteps, runs, settings, steps, todos } from './db/schema.js';
@@ -341,6 +346,7 @@ export function clearCompletedTodos(): Todo[] {
 const ACTIVE_RECIPE_KEY = 'active_recipe';
 const NOTIFY_SETTINGS_KEY = 'notify_settings';
 const GRAPH_COLORS_KEY = 'graph_colors';
+const KEG_CONTENT_COLORS_KEY = 'keg_content_colors';
 
 /** Upsert a key-value setting (exported for the notification dedup markers). */
 export function setSetting(key: string, value: string): void {
@@ -391,6 +397,29 @@ export function getGraphColors(): GraphColors {
 
 export function setGraphColors(c: GraphColors): GraphColors {
   setSetting(GRAPH_COLORS_KEY, JSON.stringify(c));
+  return c;
+}
+
+/**
+ * Keg content colours, merged over defaults so older/partial stored palettes
+ * still yield every known beer/state key. Used by `/api/kegs` and edited from
+ * the desktop Settings page.
+ */
+export function getKegContentColors(): KegContentColors {
+  const raw = getSetting(KEG_CONTENT_COLORS_KEY);
+  if (!raw) return DEFAULT_KEG_CONTENT_COLORS;
+  try {
+    return {
+      ...DEFAULT_KEG_CONTENT_COLORS,
+      ...(JSON.parse(raw) as Partial<KegContentColors>),
+    };
+  } catch {
+    return DEFAULT_KEG_CONTENT_COLORS;
+  }
+}
+
+export function setKegContentColors(c: KegContentColors): KegContentColors {
+  setSetting(KEG_CONTENT_COLORS_KEY, JSON.stringify(c));
   return c;
 }
 

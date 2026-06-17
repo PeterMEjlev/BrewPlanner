@@ -1209,7 +1209,10 @@ function KegInventoryPanel({
   // leaving the empty slice flush. A small gap still separates every slice.
   const segments: DonutSegment[] = contents.map((c, i) => ({
     value: c.count,
-    color: getContentColor(c.contents) ?? KEG_FALLBACK_COLORS[i % KEG_FALLBACK_COLORS.length]!,
+    color:
+      c.color ??
+      getContentColor(c.contents) ??
+      KEG_FALLBACK_COLORS[i % KEG_FALLBACK_COLORS.length]!,
     explode: 7,
   }));
   if (empty > 0) segments.push({ value: empty, color: EMPTY_KEG_COLOR });
@@ -1262,7 +1265,10 @@ function KegInventoryPanel({
               </li>
             )}
             {contents.slice(0, 6).map((c, i) => {
-              const color = getContentColor(c.contents) ?? KEG_FALLBACK_COLORS[i % KEG_FALLBACK_COLORS.length]!;
+              const color =
+                c.color ??
+                getContentColor(c.contents) ??
+                KEG_FALLBACK_COLORS[i % KEG_FALLBACK_COLORS.length]!;
               return (
                 <li key={c.contents} className="flex items-center gap-2 text-sm">
                   <span
@@ -1293,14 +1299,18 @@ function KegInventoryPanel({
   );
 }
 
-function contentCounts(kegs: Keg[]): { contents: string; count: number }[] {
-  const counts = new Map<string, number>();
+function contentCounts(kegs: Keg[]): { contents: string; count: number; color: string | null }[] {
+  const counts = new Map<string, { count: number; color: string | null }>();
   for (const keg of kegs) {
     if (isUnknownContents(keg.contents)) continue;
-    counts.set(keg.contents, (counts.get(keg.contents) ?? 0) + 1);
+    const cur = counts.get(keg.contents);
+    counts.set(keg.contents, {
+      count: (cur?.count ?? 0) + 1,
+      color: cur?.color ?? keg.color,
+    });
   }
   return [...counts.entries()]
-    .map(([contents, count]) => ({ contents, count }))
+    .map(([contents, { count, color }]) => ({ contents, count, color }))
     .sort((a, b) => b.count - a.count || a.contents.localeCompare(b.contents));
 }
 
