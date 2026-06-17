@@ -11,7 +11,7 @@ import {
   upsertUser,
   verifyUserPassword,
 } from './users.js';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 export const SESSION_COOKIE = 'bp_session';
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -50,6 +50,28 @@ function isPrivateOrLoopback(ip: string): boolean {
   return false;
 }
 
+/**
+ * A long-lived read-only token for headless clients that can't hold a session
+ * cookie (notably the Garmin watch app, whose Connect IQ HTTP client has no
+ * cookie jar). When `WATCH_API_TOKEN` is set, a request carrying
+ * `Authorization: Bearer <token>` is allowed through `requireAuth`. The token
+ * grants the same read access as a logged-in user — there is no separate
+ * read-only scope — so treat it like a password: set it long and random, e.g.
+ * `openssl rand -base64 32`. Unset (the default) disables this path entirely.
+ */
+function hasValidBearerToken(req: FastifyRequest): boolean {
+  const expected = process.env.WATCH_API_TOKEN;
+  if (!expected) return false;
+  const header = req.headers.authorization;
+  const presented = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!presented) return false;
+  // Constant-time compare; equalize lengths first so timingSafeEqual never throws.
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
 /** Resolve the logged-in user from the signed session cookie, if any. */
 export function getSessionUser(req: FastifyRequest): User | null {
   const raw = req.cookies[SESSION_COOKIE];
@@ -79,6 +101,7 @@ function setSessionCookie(reply: FastifyReply, userId: number): void {
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (isLocalRequest(req)) return;
   if (getSessionUser(req)) return;
+  if (hasValidBearerToken(req)) return;
   await reply.status(401).send({ error: 'Authentication required' });
 }
 
