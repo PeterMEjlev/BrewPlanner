@@ -15,7 +15,7 @@ import {
 import { relativeTime } from '../util';
 
 /** Which Overview-shell page is currently showing (drives nav highlight). */
-export type ShellPage = 'overview' | 'devices';
+export type ShellPage = 'overview' | 'devices' | 'settings';
 
 type IconComponent = (props: { className?: string }) => JSX.Element;
 
@@ -47,7 +47,7 @@ const NAV: NavItem[] = [
   { kind: 'section', key: 'alerts', label: 'Alerts', Icon: BellIcon, section: 'alerts' },
   { kind: 'route', key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
   { kind: 'route', key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin' },
-  { kind: 'route', key: 'settings', label: 'Settings', Icon: SettingsIcon, to: '/kiosk/settings' },
+  { kind: 'route', key: 'settings', label: 'Settings', Icon: SettingsIcon, to: '/settings', page: 'settings' },
 ];
 
 /**

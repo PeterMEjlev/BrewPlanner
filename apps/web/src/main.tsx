@@ -12,6 +12,7 @@ import { KioskTodosPage } from './pages/KioskTodos';
 import { LoginPage } from './pages/Login';
 import { RecipesPage } from './pages/Recipes';
 import { SettingsPage } from './pages/Settings';
+import { SettingsDesktopPage } from './pages/SettingsDesktop';
 import { TodosPage } from './pages/Todos';
 import './index.css';
 
@@ -78,6 +79,16 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <DevicesPage />
+      </RequireAuth>
+    ),
+  },
+  // Desktop (mouse/keyboard) settings. The kiosk keeps its touch variant at
+  // /kiosk/settings; the desktop sidebar's Settings link points here.
+  {
+    path: '/settings',
+    element: (
+      <RequireAuth>
+        <SettingsDesktopPage />
       </RequireAuth>
     ),
   },

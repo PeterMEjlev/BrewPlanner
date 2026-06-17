@@ -4,12 +4,13 @@ import type {
   ChecklistSummary,
   ChecklistWithSteps,
   DisplayStep,
+  GraphColors,
   NotificationSettings,
   Recipe,
   Step,
   Todo,
 } from '@checklist/shared';
-import { DEFAULT_NOTIFICATION_SETTINGS } from '@checklist/shared';
+import { DEFAULT_GRAPH_COLORS, DEFAULT_NOTIFICATION_SETTINGS } from '@checklist/shared';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from './db/index.js';
 import { checklists, runSteps, runs, settings, steps, todos } from './db/schema.js';
@@ -339,6 +340,7 @@ export function clearCompletedTodos(): Todo[] {
 
 const ACTIVE_RECIPE_KEY = 'active_recipe';
 const NOTIFY_SETTINGS_KEY = 'notify_settings';
+const GRAPH_COLORS_KEY = 'graph_colors';
 
 /** Upsert a key-value setting (exported for the notification dedup markers). */
 export function setSetting(key: string, value: string): void {
@@ -370,6 +372,26 @@ export function getNotificationSettings(): NotificationSettings {
 export function setNotificationSettings(s: NotificationSettings): NotificationSettings {
   setSetting(NOTIFY_SETTINGS_KEY, JSON.stringify(s));
   return s;
+}
+
+/**
+ * Chart line colours, merged over defaults so a partial/older stored blob still
+ * yields every key. Shared by every screen (desktop + kiosk), edited from the
+ * desktop Settings page.
+ */
+export function getGraphColors(): GraphColors {
+  const raw = getSetting(GRAPH_COLORS_KEY);
+  if (!raw) return DEFAULT_GRAPH_COLORS;
+  try {
+    return { ...DEFAULT_GRAPH_COLORS, ...(JSON.parse(raw) as Partial<GraphColors>) };
+  } catch {
+    return DEFAULT_GRAPH_COLORS;
+  }
+}
+
+export function setGraphColors(c: GraphColors): GraphColors {
+  setSetting(GRAPH_COLORS_KEY, JSON.stringify(c));
+  return c;
 }
 
 /** The recipe currently in the fermenter, or null if none has been chosen. */

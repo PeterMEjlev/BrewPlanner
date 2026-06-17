@@ -9,11 +9,11 @@ import {
   YAxis,
 } from 'recharts';
 import { SetpointControl } from '../SetpointControl';
+import { metricColor, useGraphColors } from '../graphColors';
 import {
   StateBadge,
   formatValue,
   isStateMetric,
-  metricColor,
   metricLabel,
   stateTick,
 } from '../pages/Dashboard';
@@ -57,6 +57,7 @@ export default function MetricChart({
     error,
   } = useDeviceData(deviceId, initialMetric);
 
+  const colors = useGraphColors();
   const totalMetric = cumulativeMetricOf(device);
   const total = useDeviceTotal(deviceId, totalMetric);
   const setpointReading = device?.latest.find((r) => r.metric === 'setpoint_c');
@@ -213,7 +214,7 @@ export default function MetricChart({
               <Line
                 type={chartMetric && isStateMetric(chartMetric) ? 'stepAfter' : 'monotone'}
                 dataKey="value"
-                stroke={chartMetric ? metricColor(chartMetric) : '#3b82f6'}
+                stroke={chartMetric ? metricColor(chartMetric, colors) : '#3b82f6'}
                 strokeWidth={2}
                 dot={false}
                 isAnimationActive={false}

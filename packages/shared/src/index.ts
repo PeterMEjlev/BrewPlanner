@@ -324,6 +324,41 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 };
 
 // ---------------------------------------------------------------------------
+// Graph colours (server-side, editable from the desktop Settings page)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-metric line colours for every chart in the app. Persisted server-side (the
+ * key-value `settings` table) so the palette is shared across screens — editing
+ * it on the desktop Settings page also recolours the Pi kiosk's graphs. Beer and
+ * fridge temperatures get their own keys because they're drawn together (both are
+ * `temp_c`) and must stay distinguishable. Values are `#rrggbb` hex strings.
+ */
+export interface GraphColors {
+  pressure: string;
+  gravity: string;
+  power: string;
+  water: string;
+  /** Beer/wort temperature (the fermenter's main temp line). */
+  beerTemp: string;
+  /** Fridge / brewery-ambient temperature (the muted "other" temp line). */
+  fridgeTemp: string;
+  /** The target-temperature reference line. */
+  setpoint: string;
+}
+
+/** Defaults match the palette the dashboard shipped with (see Dashboard.tsx). */
+export const DEFAULT_GRAPH_COLORS: GraphColors = {
+  pressure: '#22d3ee', // cyan
+  gravity: '#a78bfa', // purple
+  power: '#eab308', // yellow
+  water: '#3b82f6', // blue
+  beerTemp: '#fb923c', // amber / orange
+  fridgeTemp: '#d97706', // muted amber / orange
+  setpoint: '#f59e0b', // amber reference line
+};
+
+// ---------------------------------------------------------------------------
 // Request validation schemas (Zod)
 // ---------------------------------------------------------------------------
 
@@ -494,6 +529,43 @@ export const notificationSettingsSchema = z.object({
   fermentDoneEnabled: z.boolean(),
 });
 export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchema>;
+
+// --- Graph colours ----------------------------------------------------------
+
+/** A `#rrggbb` hex colour (the format `<input type="color">` produces). */
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Must be a #rrggbb hex colour');
+
+/** Body for `PUT /api/graph-colors`. The whole palette is sent each save. */
+export const graphColorsSchema = z.object({
+  pressure: hexColor,
+  gravity: hexColor,
+  power: hexColor,
+  water: hexColor,
+  beerTemp: hexColor,
+  fridgeTemp: hexColor,
+  setpoint: hexColor,
+});
+export type GraphColorsInput = z.infer<typeof graphColorsSchema>;
+
+// --- Account (username / password changes) ---------------------------------
+
+/**
+ * Body for `POST /api/auth/change-password`. The current password is required so
+ * a hijacked session can't silently lock the owner out. The 8-char floor is a
+ * gentle minimum, not a policy — this is a single-brewery appliance.
+ */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required').max(500),
+  newPassword: z.string().min(8, 'New password must be at least 8 characters').max(500),
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+/** Body for `POST /api/auth/change-username` — current password re-confirms identity. */
+export const changeUsernameSchema = z.object({
+  username: z.string().trim().min(1, 'Username is required').max(200),
+  currentPassword: z.string().min(1, 'Current password is required').max(500),
+});
+export type ChangeUsernameInput = z.infer<typeof changeUsernameSchema>;
 
 // ---------------------------------------------------------------------------
 // Path param helpers

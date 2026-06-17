@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '../api';
+import { useGraphColors } from '../graphColors';
 import { SetpointControl } from '../SetpointControl';
 import { RANGES, formatTick } from '../useDeviceData';
 
@@ -22,11 +23,12 @@ type SeriesKey = 'beer' | 'fridge';
 /**
  * The two temperature lines this page can plot. Each maps to a query-param
  * carrying its source device id (the kiosk fermenter card passes both); the
- * `temp_c` metric is read from whichever devices are supplied.
+ * `temp_c` metric is read from whichever devices are supplied. Line colours come
+ * from the shared palette (see graphColors.ts) so they match the rest of the app.
  */
-const SERIES_DEFS: { key: SeriesKey; label: string; color: string; param: string }[] = [
-  { key: 'beer', label: 'Beer', color: '#fb923c', param: 'beer' }, // amber / orange
-  { key: 'fridge', label: 'Fridge', color: '#d97706', param: 'fridge' }, // muted amber / orange
+const SERIES_DEFS: { key: SeriesKey; label: string; param: string }[] = [
+  { key: 'beer', label: 'Beer', param: 'beer' },
+  { key: 'fridge', label: 'Fridge', param: 'fridge' },
 ];
 
 interface Source {
@@ -98,15 +100,18 @@ export function TemperaturePage(): JSX.Element {
   const [devices, setDevices] = useState<Record<string, DeviceStatus>>({});
   const [histories, setHistories] = useState<Record<string, Reading[]>>({});
   const [error, setError] = useState<string | null>(null);
+  const colors = useGraphColors();
 
-  // Which lines to plot, derived from the supplied device-id params.
+  // Which lines to plot, derived from the supplied device-id params. The beer
+  // and fridge lines take their colour from the shared palette.
   const sources = useMemo<Source[]>(
     () =>
       SERIES_DEFS.flatMap((s) => {
         const v = params.get(s.param);
-        return v ? [{ key: s.key, label: s.label, color: s.color, deviceId: Number(v) }] : [];
+        const color = s.key === 'beer' ? colors.beerTemp : colors.fridgeTemp;
+        return v ? [{ key: s.key, label: s.label, color, deviceId: Number(v) }] : [];
       }),
-    [params],
+    [params, colors],
   );
 
   const load = useCallback(async () => {

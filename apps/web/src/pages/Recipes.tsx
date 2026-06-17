@@ -2,6 +2,7 @@ import type { Recipe } from '@checklist/shared';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { homePath } from '../util';
 
 /**
  * Touch-first recipe picker for the Pi. Reached by tapping the top of the
@@ -46,7 +47,7 @@ export function RecipesPage(): JSX.Element {
       // rather than always dropping onto the touch kiosk. `key === 'default'`
       // means there's no in-app history to pop (e.g. opened by direct URL).
       if (location.key !== 'default') navigate(-1);
-      else navigate('/kiosk');
+      else navigate(homePath());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save selection');
       setSaving(false);
@@ -57,7 +58,7 @@ export function RecipesPage(): JSX.Element {
     <div className="touch-none-select flex h-full flex-col bg-black text-white">
       <header className="flex items-center gap-3 border-b border-zinc-800 px-6 py-4">
         <Link
-          to="/kiosk"
+          to={homePath()}
           className="shrink-0 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-2xl leading-none transition active:bg-zinc-800"
           aria-label="Home"
         >

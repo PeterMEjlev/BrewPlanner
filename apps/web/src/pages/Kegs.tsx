@@ -10,6 +10,7 @@ import {
   sortKegs,
   useKegs,
 } from '../kegs';
+import { homePath } from '../util';
 
 /** Re-pull the sheet every minute so a fill/empty done elsewhere shows up. */
 const POLL_MS = 60_000;
@@ -45,7 +46,7 @@ export function KegsPage(): JSX.Element {
     <div className="touch-none-select flex h-full flex-col bg-black text-white">
       <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 px-6 py-4">
         <Link
-          to="/kiosk"
+          to={homePath()}
           className="shrink-0 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-2xl leading-none transition active:bg-zinc-800"
           aria-label="Home"
         >

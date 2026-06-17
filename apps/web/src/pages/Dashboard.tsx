@@ -11,6 +11,7 @@ import {
   Sparkline,
 } from '../components/charts';
 import { DashboardShell } from '../components/DashboardShell';
+import { useGraphColors, withAlpha } from '../graphColors';
 import {
   BellIcon,
   BoltIcon,
@@ -39,8 +40,6 @@ import { formatPressure, useSettings } from '../settings';
 import { useDeviceTotal, useMetricSeries } from '../useDeviceData';
 import { relativeTime } from '../util';
 
-/** Refresh device status often enough to feel live without hammering the Pi. */
-const POLL_MS = 10000;
 const KEG_POLL_MS = 60_000;
 const FERMENT_POLL_MS = 60_000;
 
@@ -66,20 +65,6 @@ const TYPE_LABEL: Record<DeviceType, string> = {
   hydrometer: 'Tilt',
   other: 'Sensor',
 };
-
-/**
- * Per-metric line colours, shared by the Overview sparklines, their legend, and
- * the detail charts (see {@link metricColor}). Temperatures are a warm family:
- * beer is a bright amber/orange, while the fridge and brewery ambient share a
- * muted amber so they read as "the other temperature".
- */
-const COLOR_PRESSURE = '#22d3ee'; // cyan
-const COLOR_GRAVITY = '#a78bfa'; // purple
-const COLOR_POWER = '#eab308'; // yellow
-const COLOR_WATER = '#3b82f6'; // blue
-const COLOR_BEER = '#fb923c'; // amber / orange
-const COLOR_TEMP_MUTED = '#d97706'; // muted amber / orange (fridge + ambient)
-const COLOR_SETPOINT = '#f59e0b'; // target reference line (amber)
 
 function isBreweryTempDevice(device: DeviceStatus): boolean {
   return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
@@ -280,6 +265,7 @@ export function DashboardPage(): JSX.Element {
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chart, setChart] = useState<ChartTarget | null>(null);
+  const { dashboardRefreshSec } = useSettings();
   const { kegs, loading: kegsLoading, error: kegsError } = useKegs(KEG_POLL_MS);
   const openChart = useCallback((target: ChartTarget) => setChart(target), []);
 
@@ -299,9 +285,9 @@ export function DashboardPage(): JSX.Element {
 
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(), POLL_MS);
+    const id = setInterval(() => void load(), dashboardRefreshSec * 1000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, dashboardRefreshSec]);
 
   // Scroll to a section when the sidebar links here with a hash from another page.
   useEffect(() => {
@@ -470,6 +456,7 @@ function FermenterCommandCenter({
   onOpen: OpenChart;
 }): JSX.Element {
   const { pressureUnit } = useSettings();
+  const colors = useGraphColors();
   const status = useFermentStatus(devices);
   const pressure = findReading(devices, 'pressure_bar');
   const beer = findReading(devices, 'temp_c', 'hydrometer');
@@ -576,7 +563,7 @@ function FermenterCommandCenter({
                   min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
                   caption={pressureRange ? 'Last 24h' : undefined}
                 >
-                  <Sparkline data={pressureSeries} stroke={COLOR_PRESSURE} fill="rgba(34,211,238,0.10)" grow />
+                  <Sparkline data={pressureSeries} stroke={colors.pressure} fill={withAlpha(colors.pressure, 0.1)} grow />
                 </MiniChartFrame>
               </div>
             </>
@@ -633,9 +620,9 @@ function FermenterCommandCenter({
           {(beer || fridge) && (
             <>
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] uppercase tracking-wider text-zinc-500">
-                {beer && <LegendSwatch color={COLOR_BEER} label="Beer" />}
-                {fridge && <LegendSwatch color={COLOR_TEMP_MUTED} label="Fridge" dashed />}
-                {setpoint && <LegendSwatch color={COLOR_SETPOINT} label="Target" dotted />}
+                {beer && <LegendSwatch color={colors.beerTemp} label="Beer" />}
+                {fridge && <LegendSwatch color={colors.fridgeTemp} label="Fridge" dashed />}
+                {setpoint && <LegendSwatch color={colors.setpoint} label="Target" dotted />}
               </div>
               <div className="mt-2 flex-1 min-h-[12rem] xl:min-h-0">
                 <button
@@ -656,10 +643,10 @@ function FermenterCommandCenter({
                   >
                     <MultiLineSparkline
                       series={[
-                        ...(beer ? [{ data: tempSeries, stroke: COLOR_BEER }] : []),
-                        ...(fridge ? [{ data: fridgeSeries, stroke: COLOR_TEMP_MUTED, dashed: true }] : []),
+                        ...(beer ? [{ data: tempSeries, stroke: colors.beerTemp }] : []),
+                        ...(fridge ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dashed: true }] : []),
                       ]}
-                      refLine={setpoint ? { value: setpoint.reading.value, stroke: COLOR_SETPOINT } : undefined}
+                      refLine={setpoint ? { value: setpoint.reading.value, stroke: colors.setpoint } : undefined}
                       grow
                     />
                   </MiniChartFrame>
@@ -698,7 +685,7 @@ function FermenterCommandCenter({
                     min={gravityRange ? gravityRange.min.toFixed(3) : undefined}
                     caption="Last 24h"
                   >
-                    <Sparkline data={gravitySeries} stroke={COLOR_GRAVITY} fill="rgba(167,139,250,0.12)" grow />
+                    <Sparkline data={gravitySeries} stroke={colors.gravity} fill={withAlpha(colors.gravity, 0.12)} grow />
                   </MiniChartFrame>
                 ) : (
                   <div className="flex h-full items-center text-xs text-zinc-600">Collecting trend…</div>
@@ -985,6 +972,7 @@ function BreweryTempCard({
   onOpen: OpenChart;
 }): JSX.Element {
   const series = useMetricSeries(device?.id ?? null, 'temp_c');
+  const colors = useGraphColors();
   if (!device) {
     return <UtilityPlaceholder icon={<ThermometerIcon className="h-5 w-5" />} title="Brewery (Controller)" />;
   }
@@ -1004,7 +992,7 @@ function BreweryTempCard({
           <span className="text-sm font-medium text-zinc-500">°C</span>
         </div>
         <div className="mt-3">
-          <Sparkline data={series} stroke={COLOR_TEMP_MUTED} fill="rgba(217,119,6,0.10)" height={40} />
+          <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} />
         </div>
       </UtilityShell>
     </UtilityCardButton>
@@ -1020,6 +1008,7 @@ function PowerCard({
 }): JSX.Element {
   const series = useMetricSeries(device?.id ?? null, 'power_w');
   const total = useDeviceTotal(device?.id ?? -1, device ? 'energy_kwh' : undefined);
+  const colors = useGraphColors();
   if (!device) return <UtilityPlaceholder icon={<BoltIcon className="h-5 w-5" />} title="Power" />;
   const current = device.latest.find((r) => r.metric === 'power_w');
   const today = device.latest.find((r) => r.metric === 'energy_kwh');
@@ -1033,7 +1022,7 @@ function PowerCard({
           <StatPair label="Today" value={today ? formatValue(today) : '—'} />
         </div>
         <div className="mt-3">
-          <BarSpark data={series} fill={COLOR_POWER} height={40} />
+          <BarSpark data={series} fill={colors.power} height={40} />
         </div>
         {total != null && (
           <p className="mt-3 text-xs text-zinc-500">
@@ -1057,6 +1046,7 @@ function WaterCard({
 }): JSX.Element {
   const series = useMetricSeries(device?.id ?? null, 'flow_lpm');
   const total = useDeviceTotal(device?.id ?? -1, device ? 'water_l' : undefined);
+  const colors = useGraphColors();
   if (!device) return <UtilityPlaceholder icon={<DropletIcon className="h-5 w-5" />} title="Water" />;
   const current = device.latest.find((r) => r.metric === 'flow_lpm');
   const today = device.latest.find((r) => r.metric === 'water_l');
@@ -1070,7 +1060,7 @@ function WaterCard({
           <StatPair label="Today" value={today ? formatValue(today) : '—'} />
         </div>
         <div className="mt-3">
-          <Sparkline data={series} stroke={COLOR_WATER} fill="rgba(59,130,246,0.10)" height={40} />
+          <Sparkline data={series} stroke={colors.water} fill={withAlpha(colors.water, 0.1)} height={40} />
         </div>
         {total != null && (
           <p className="mt-3 text-xs text-zinc-500">
@@ -1542,18 +1532,6 @@ function stateLook(value: number): StateLook {
 /** Short axis-tick label for an hvac_state value. */
 export function stateTick(value: number): string {
   return value <= -0.5 ? 'Cool' : value >= 0.5 ? 'Heat' : 'Idle';
-}
-
-/** Chart stroke per metric, matching the Overview sparkline palette. */
-export function metricColor(metric: string): string {
-  if (metric === 'pressure_bar') return COLOR_PRESSURE;
-  if (isGravityMetric(metric)) return COLOR_GRAVITY;
-  if (metric === 'power_w' || metric === 'energy_kwh') return COLOR_POWER;
-  if (metric === 'flow_lpm' || metric === 'water_l') return COLOR_WATER;
-  if (metric === 'temp_c') return COLOR_BEER; // temperatures are the warm amber/orange family
-  if (metric === 'setpoint_c') return COLOR_SETPOINT;
-  if (metric === 'hvac_state') return '#a78bfa';
-  return COLOR_WATER;
 }
 
 /**

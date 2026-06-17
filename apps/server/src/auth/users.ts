@@ -1,5 +1,5 @@
 import type { User } from '@checklist/shared';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { hashPassword, verifyPassword } from './password.js';
@@ -25,6 +25,43 @@ export function authenticate(username: string, password: string): User | null {
   if (!row) return null;
   if (!verifyPassword(password, row.passwordHash)) return null;
   return toPublic(row);
+}
+
+/** Verify a user's current password by id (for self-service account changes). */
+export function verifyUserPassword(id: number, password: string): boolean {
+  const row = db.select().from(users).where(eq(users.id, id)).get();
+  return !!row && verifyPassword(password, row.passwordHash);
+}
+
+/** Set a new password for a user. Returns the public user, or null if missing. */
+export function changeUserPassword(id: number, newPassword: string): User | null {
+  const row = db
+    .update(users)
+    .set({ passwordHash: hashPassword(newPassword), updatedAt: new Date().toISOString() })
+    .where(eq(users.id, id))
+    .returning()
+    .get();
+  return row ? toPublic(row) : null;
+}
+
+/**
+ * Rename a user. Returns the updated public user, null if the user is missing,
+ * or 'taken' if another account already uses that (case-insensitive) username.
+ */
+export function renameUser(id: number, username: string): User | 'taken' | null {
+  const clash = db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(sql`lower(${users.username})`, username.toLowerCase()), ne(users.id, id)))
+    .get();
+  if (clash) return 'taken';
+  const row = db
+    .update(users)
+    .set({ username, updatedAt: new Date().toISOString() })
+    .where(eq(users.id, id))
+    .returning()
+    .get();
+  return row ? toPublic(row) : null;
 }
 
 /** All usernames, for the CLI listing. */

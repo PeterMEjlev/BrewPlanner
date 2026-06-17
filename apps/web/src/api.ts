@@ -5,6 +5,7 @@ import type {
   ChecklistSummary,
   ChecklistWithSteps,
   DeviceStatus,
+  GraphColors,
   MetricTotal,
   NotificationSettings,
   Reading,
@@ -60,6 +61,16 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<AuthState>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  changeUsername: (username: string, currentPassword: string) =>
+    request<AuthState>('/auth/change-username', {
+      method: 'POST',
+      body: JSON.stringify({ username, currentPassword }),
+    }),
 
   // Checklists
   listChecklists: () => request<ChecklistSummary[]>('/checklists'),
@@ -183,4 +194,13 @@ export const api = {
     }),
   sendTestNotification: () =>
     request<{ sent: boolean }>('/notifications/test', { method: 'POST' }),
+
+  // Shared chart colour palette (edited on the desktop Settings page, read by
+  // every screen including the kiosk).
+  getGraphColors: () => request<GraphColors>('/graph-colors'),
+  updateGraphColors: (colors: GraphColors) =>
+    request<GraphColors>('/graph-colors', {
+      method: 'PUT',
+      body: JSON.stringify(colors),
+    }),
 };

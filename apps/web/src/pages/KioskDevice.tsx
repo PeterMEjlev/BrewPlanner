@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import { SetpointControl } from '../SetpointControl';
+import { metricColor, useGraphColors } from '../graphColors';
 import {
   RANGES,
   cumulativeMetricOf,
@@ -21,7 +22,6 @@ import {
   StateBadge,
   formatValue,
   isStateMetric,
-  metricColor,
   metricLabel,
   stateTick,
 } from './Dashboard';
@@ -40,6 +40,7 @@ export function KioskDevicePage(): JSX.Element {
   const deviceId = Number(id);
   const { device, metric, setMetric, rangeMs, setRangeMs, chartData, latest, longRange, refresh } =
     useDeviceData(deviceId, lockedMetric);
+  const colors = useGraphColors();
 
   // All-time consumption for energy/water meters (shown alongside the live value).
   const totalMetric = cumulativeMetricOf(device);
@@ -234,7 +235,7 @@ export function KioskDevicePage(): JSX.Element {
                 <Line
                   type={chartMetric && isStateMetric(chartMetric) ? 'stepAfter' : 'monotone'}
                   dataKey="value"
-                  stroke={chartMetric ? metricColor(chartMetric) : '#3b82f6'}
+                  stroke={chartMetric ? metricColor(chartMetric, colors) : '#3b82f6'}
                   strokeWidth={3}
                   dot={false}
                   isAnimationActive={false}

@@ -2,6 +2,7 @@ import {
   createChecklistSchema,
   createStepSchema,
   createTodoSchema,
+  graphColorsSchema,
   idParamSchema,
   notificationSettingsSchema,
   reorderStepsSchema,
@@ -229,6 +230,17 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(notificationSettingsSchema, req.body, reply);
     if (!body) return;
     return repo.setNotificationSettings(body);
+  });
+
+  // --- Graph colours ----------------------------------------------------
+  // The shared chart palette, edited from the desktop Settings page and read by
+  // every screen (desktop dashboard + Pi kiosk).
+  app.get('/graph-colors', async () => repo.getGraphColors());
+
+  app.put('/graph-colors', async (req, reply) => {
+    const body = parse(graphColorsSchema, req.body, reply);
+    if (!body) return;
+    return repo.setGraphColors(body);
   });
 
   // Send a test message so the operator can confirm delivery from the UI.

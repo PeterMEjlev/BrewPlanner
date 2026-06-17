@@ -17,17 +17,24 @@ export interface Settings {
   fermentStableDays: number;
   /** Max SG spread over that window still counted as "flat". */
   fermentThresholdSg: number;
+  /** How often (seconds) the desktop dashboard re-polls device status. */
+  dashboardRefreshSec: number;
 }
 
 /**
- * Defaults match the kiosk's previous hardcoded behaviour: pressure shown in PSI
- * and the classic "flat for ~2 days within 0.002 SG" fermentation check.
+ * Defaults match the kiosk's previous hardcoded behaviour: pressure shown in PSI,
+ * the classic "flat for ~2 days within 0.002 SG" fermentation check, and the 10s
+ * dashboard poll that was previously hardcoded.
  */
 export const DEFAULT_SETTINGS: Settings = {
   pressureUnit: 'psi',
   fermentStableDays: 2,
   fermentThresholdSg: 0.002,
+  dashboardRefreshSec: 10,
 };
+
+/** Selectable dashboard refresh cadences, in seconds (desktop Settings page). */
+export const REFRESH_SEC_OPTIONS = [5, 10, 30, 60] as const;
 
 // Tuning bounds + step sizes, shared by the steppers so clamping and the UI
 // agree. Days move in half-day clicks (1–7 days); the SG threshold in 0.001
@@ -83,6 +90,17 @@ export function setSetting<K extends keyof Settings>(key: K, value: Settings[K])
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
   } catch {
     // localStorage can throw (private mode, quota) — keep the in-memory value.
+  }
+  emit();
+}
+
+/** Restore every per-browser preference to its default and notify subscribers. */
+export function resetSettings(): void {
+  cache = DEFAULT_SETTINGS;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
+  } catch {
+    // Keep the in-memory defaults if persistence fails.
   }
   emit();
 }

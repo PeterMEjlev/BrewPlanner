@@ -1,8 +1,16 @@
 import type { AuthState, User } from '@checklist/shared';
-import { loginSchema } from '@checklist/shared';
+import { changePasswordSchema, changeUsernameSchema, loginSchema } from '@checklist/shared';
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { hashPassword } from './password.js';
-import { authenticate, countUsers, getUserById, upsertUser } from './users.js';
+import {
+  authenticate,
+  changeUserPassword,
+  countUsers,
+  getUserById,
+  renameUser,
+  upsertUser,
+  verifyUserPassword,
+} from './users.js';
 import { randomBytes } from 'node:crypto';
 
 export const SESSION_COOKIE = 'bp_session';
@@ -94,6 +102,45 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/logout', async (_req, reply) => {
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return reply.status(204).send();
+  });
+
+  // Self-service account changes. These need a real logged-in session: a
+  // trusted-local request with no session (e.g. the Pi kiosk on the LAN) has no
+  // "current user" to act on, so it's rejected with 401. The current password is
+  // re-verified each time so a borrowed session can't take over the account.
+  app.post('/change-password', async (req, reply) => {
+    const user = getSessionUser(req);
+    if (!user) return reply.status(401).send({ error: 'Sign in to change your password.' });
+    const result = changePasswordSchema.safeParse(req.body);
+    if (!result.success) {
+      return reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });
+    }
+    if (!verifyUserPassword(user.id, result.data.currentPassword)) {
+      return reply.status(403).send({ error: 'Current password is incorrect.' });
+    }
+    const updated = changeUserPassword(user.id, result.data.newPassword);
+    if (!updated) return reply.status(404).send({ error: 'Account no longer exists.' });
+    // Keep the session alive (same user id) and refresh the cookie's max-age.
+    setSessionCookie(reply, updated.id);
+    return { user: updated, isLocal: isLocalRequest(req) } satisfies AuthState;
+  });
+
+  app.post('/change-username', async (req, reply) => {
+    const user = getSessionUser(req);
+    if (!user) return reply.status(401).send({ error: 'Sign in to change your username.' });
+    const result = changeUsernameSchema.safeParse(req.body);
+    if (!result.success) {
+      return reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });
+    }
+    if (!verifyUserPassword(user.id, result.data.currentPassword)) {
+      return reply.status(403).send({ error: 'Current password is incorrect.' });
+    }
+    const updated = renameUser(user.id, result.data.username);
+    if (updated === 'taken') {
+      return reply.status(409).send({ error: 'That username is already taken.' });
+    }
+    if (!updated) return reply.status(404).send({ error: 'Account no longer exists.' });
+    return { user: updated, isLocal: isLocalRequest(req) } satisfies AuthState;
   });
 }
 

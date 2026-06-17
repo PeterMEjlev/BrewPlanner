@@ -10,6 +10,7 @@ import {
   useSettings,
   type PressureUnit,
 } from '../settings';
+import { homePath } from '../util';
 
 /** Tap-stepper bounds for the keg-age alert threshold (server-backed setting). */
 const KEG_ALERT_DAYS = { min: 7, max: 180, step: 1 } as const;
@@ -28,7 +29,7 @@ export function SettingsPage(): JSX.Element {
     <div className="touch-none-select flex h-full flex-col bg-black text-white">
       <header className="flex items-center gap-3 border-b border-zinc-800 px-6 py-4">
         <Link
-          to="/kiosk"
+          to={homePath()}
           className="shrink-0 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-2xl leading-none transition active:bg-zinc-800"
           aria-label="Home"
         >
