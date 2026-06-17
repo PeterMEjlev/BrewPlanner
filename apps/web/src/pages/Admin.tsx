@@ -4,18 +4,16 @@
   ChecklistWithSteps,
 } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { useAuth } from '../auth';
+import { DashboardShell } from '../components/DashboardShell';
 import { asMessage } from '../util';
 
 /**
- * Checklist admin: manage procedure checklists and their steps. The brewery
- * to-do list is a separate page ([TodosPage]); both are reached from the
- * dashboard so neither carries the other's chrome.
+ * Checklist admin: manage procedure checklists and their steps. Wrapped in the
+ * desktop [DashboardShell] so the nav rail (and sign-out) sit alongside the
+ * checklist list. The brewery to-do list is a separate shell page ([TodosPage]).
  */
 export function AdminPage() {
-  const { auth, refresh: refreshAuth } = useAuth();
   const [checklists, setChecklists] = useState<ChecklistSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selected, setSelected] = useState<ChecklistWithSteps | null>(null);
@@ -84,125 +82,103 @@ export function AdminPage() {
   }
 
   return (
-    <div className="flex h-full bg-zinc-950 text-zinc-100">
-      {/* Sidebar. On phones this becomes a full-width list and is hidden once a
-          checklist is selected so its steps get the whole screen; from `sm` up
-          it's the fixed side rail next to the detail pane. */}
-      <aside
-        className={`${
-          selectedId != null ? 'hidden sm:flex' : 'flex'
-        } w-full shrink-0 flex-col border-r border-zinc-800 bg-zinc-900 sm:w-72`}
-      >
-        {/* Back to the hub dashboard */}
-        <Link
-          to="/"
-          className="border-b border-zinc-800 px-4 py-2 text-sm text-zinc-500 hover:bg-zinc-800 hover:text-zinc-100"
+    <DashboardShell active="checklists">
+      <div className="flex h-screen bg-zinc-950 text-zinc-100">
+        {/* Checklist list. On phones this becomes a full-width list and is hidden
+            once a checklist is selected so its steps get the whole screen; from
+            `sm` up it's the fixed side rail next to the detail pane. */}
+        <aside
+          className={`${
+            selectedId != null ? 'hidden sm:flex' : 'flex'
+          } w-full shrink-0 flex-col border-r border-zinc-800 bg-zinc-900 sm:w-72`}
         >
-          ← Dashboard
-        </Link>
-        <div className="flex items-center justify-between border-b border-zinc-800 p-4">
-          <h1 className="text-lg font-bold">Checklists</h1>
-          <button
-            type="button"
-            onClick={() => void createChecklist()}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            + New
-          </button>
-        </div>
-        <nav className="flex-1 overflow-y-auto p-2">
-          {checklists.length === 0 ? (
-            <p className="p-3 text-sm text-zinc-500">No checklists yet.</p>
-          ) : (
-            checklists.map((c) => (
-              <button
-                type="button"
-                key={c.id}
-                onClick={() => setSelectedId(c.id)}
-                className={`mb-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm ${
-                  c.id === selectedId
-                    ? 'bg-blue-500/15 text-blue-300'
-                    : 'hover:bg-zinc-800'
-                }`}
-              >
-                <span className="truncate font-medium">{c.name}</span>
-                <span className="ml-2 flex shrink-0 items-center gap-2">
-                  {c.isActive && (
-                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-400">
-                      active
-                    </span>
-                  )}
-                  <span className="text-xs text-zinc-400">{c.stepCount}</span>
-                </span>
-              </button>
-            ))
-          )}
-        </nav>
-        <a
-          href="/display"
-          target="_blank"
-          rel="noreferrer"
-          className="border-t border-zinc-800 p-3 text-center text-sm text-blue-400 hover:underline"
-        >
-          Open display view ↗
-        </a>
-        {auth.user && (
-          <div className="flex items-center justify-between border-t border-zinc-800 px-3 py-2 text-sm">
-            <span className="truncate text-zinc-500">
-              Signed in as <span className="font-medium text-zinc-200">{auth.user.username}</span>
-            </span>
+          <div className="flex items-center justify-between border-b border-zinc-800 p-4">
+            <h1 className="text-lg font-bold">Checklists</h1>
             <button
               type="button"
-              onClick={async () => {
-                await api.logout();
-                await refreshAuth();
-              }}
-              className="shrink-0 rounded-md px-2 py-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-100"
+              onClick={() => void createChecklist()}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
             >
-              Sign out
+              + New
             </button>
           </div>
-        )}
-      </aside>
-
-      {/* Detail. Hidden on phones until a checklist is selected (the list owns
-          the screen until then); always visible from `sm` up. */}
-      <main
-        className={`${selectedId != null ? 'block' : 'hidden sm:block'} flex-1 overflow-y-auto`}
-      >
-        {/* Phone-only return to the checklist list. */}
-        {selectedId != null && (
-          <button
-            type="button"
-            onClick={() => setSelectedId(null)}
-            className="sticky top-0 z-10 flex w-full items-center gap-1 border-b border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-300 hover:text-zinc-100 sm:hidden"
+          <nav className="flex-1 overflow-y-auto p-2">
+            {checklists.length === 0 ? (
+              <p className="p-3 text-sm text-zinc-500">No checklists yet.</p>
+            ) : (
+              checklists.map((c) => (
+                <button
+                  type="button"
+                  key={c.id}
+                  onClick={() => setSelectedId(c.id)}
+                  className={`mb-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm ${
+                    c.id === selectedId
+                      ? 'bg-blue-500/15 text-blue-300'
+                      : 'hover:bg-zinc-800'
+                  }`}
+                >
+                  <span className="truncate font-medium">{c.name}</span>
+                  <span className="ml-2 flex shrink-0 items-center gap-2">
+                    {c.isActive && (
+                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-400">
+                        active
+                      </span>
+                    )}
+                    <span className="text-xs text-zinc-400">{c.stepCount}</span>
+                  </span>
+                </button>
+              ))
+            )}
+          </nav>
+          <a
+            href="/display"
+            target="_blank"
+            rel="noreferrer"
+            className="border-t border-zinc-800 p-3 text-center text-sm text-blue-400 hover:underline"
           >
-            ← Checklists
-          </button>
-        )}
-        {error && (
-          <div className="m-4 rounded-md border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
-            {error}
-          </div>
-        )}
-        {selected ? (
-          <ChecklistEditor
-            checklist={selected}
-            active={active}
-            onRun={run}
-            onDeleted={() => {
-              setSelectedId(null);
-              void refreshList();
-              void refreshActive();
-            }}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-zinc-400">
-            Select or create a checklist to begin.
-          </div>
-        )}
-      </main>
-    </div>
+            Open display view ↗
+          </a>
+        </aside>
+
+        {/* Detail. Hidden on phones until a checklist is selected (the list owns
+            the screen until then); always visible from `sm` up. */}
+        <main
+          className={`${selectedId != null ? 'block' : 'hidden sm:block'} flex-1 overflow-y-auto`}
+        >
+          {/* Phone-only return to the checklist list. */}
+          {selectedId != null && (
+            <button
+              type="button"
+              onClick={() => setSelectedId(null)}
+              className="sticky top-0 z-10 flex w-full items-center gap-1 border-b border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-300 hover:text-zinc-100 sm:hidden"
+            >
+              ← Checklists
+            </button>
+          )}
+          {error && (
+            <div className="m-4 rounded-md border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+              {error}
+            </div>
+          )}
+          {selected ? (
+            <ChecklistEditor
+              checklist={selected}
+              active={active}
+              onRun={run}
+              onDeleted={() => {
+                setSelectedId(null);
+                void refreshList();
+                void refreshActive();
+              }}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-zinc-400">
+              Select or create a checklist to begin.
+            </div>
+          )}
+        </main>
+      </div>
+    </DashboardShell>
   );
 }
 

@@ -1,48 +1,20 @@
 ﻿import type { Todo } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { useAuth } from '../auth';
+import { DashboardShell } from '../components/DashboardShell';
 import { asMessage } from '../util';
 
 /**
  * Standalone Brewery To-Do page. Deliberately separate from the checklist
- * admin (no checklist sidebar / "+ New") — reached from the dashboard's To-Do
- * tile. Shares the {@link TodoManager} list component with nothing else; the
- * checklist editor lives in its own page.
+ * admin (no checklist list / "+ New") — wrapped in the desktop [DashboardShell]
+ * with its own nav entry. Shares the {@link TodoManager} list component with
+ * nothing else; the checklist editor lives in its own page.
  */
 export function TodosPage() {
-  const { auth, refresh: refreshAuth } = useAuth();
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-900 px-6 py-3">
-        <Link
-          to="/"
-          className="rounded-lg px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-        >
-          ← Dashboard
-        </Link>
-        {auth.user && (
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-zinc-500">
-              Signed in as <span className="font-medium text-zinc-200">{auth.user.username}</span>
-            </span>
-            <button
-              type="button"
-              onClick={async () => {
-                await api.logout();
-                await refreshAuth();
-              }}
-              className="rounded-md px-2 py-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-100"
-            >
-              Sign out
-            </button>
-          </div>
-        )}
-      </header>
-
+    <DashboardShell active="todos">
       <main className="flex-1 overflow-y-auto">
         {error && (
           <div className="m-4 rounded-md border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
@@ -51,7 +23,7 @@ export function TodosPage() {
         )}
         <TodoManager onError={setError} />
       </main>
-    </div>
+    </DashboardShell>
   );
 }
 

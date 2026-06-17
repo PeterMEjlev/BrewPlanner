@@ -1,11 +1,12 @@
 import type { DeviceStatus, DeviceType, LatestReading, Reading, Recipe } from '@checklist/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import {
   BarSpark,
   Donut,
   type DonutSegment,
+  ForecastSparkline,
   MultiLineSparkline,
   RingGauge,
   Sparkline,
@@ -35,13 +36,26 @@ import {
   isUnknownContents,
   useKegs,
 } from '../kegs';
+import {
+  type GravityPoint,
+  estimateDoneTime,
+  fitGravityDecay,
+  forecastSeries,
+} from '../gravityForecast';
 import { SetpointControl } from '../SetpointControl';
 import { formatPressure, useSettings } from '../settings';
-import { useDeviceTotal, useMetricSeries } from '../useDeviceData';
+import { useDeviceTotal, useMetricSeries, useMetricSeriesT } from '../useDeviceData';
 import { relativeTime } from '../util';
 
 const KEG_POLL_MS = 60_000;
 const FERMENT_POLL_MS = 60_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** How much gravity history feeds the forecast fit (compressed into the left half). */
+const GRAVITY_HISTORY_MS = 14 * DAY_MS;
+/** How far the dashed forecast tail extends past "now". */
+const GRAVITY_FORECAST_MS = 2 * DAY_MS;
+/** Spacing of sampled points along the forecast curve. */
+const GRAVITY_FORECAST_STEP_MS = 2 * 60 * 60 * 1000;
 
 type IconComponent = (props: { className?: string }) => JSX.Element;
 
@@ -455,7 +469,7 @@ function FermenterCommandCenter({
   onRefresh: () => void;
   onOpen: OpenChart;
 }): JSX.Element {
-  const { pressureUnit } = useSettings();
+  const { pressureUnit, fermentStableDays, fermentThresholdSg } = useSettings();
   const colors = useGraphColors();
   const status = useFermentStatus(devices);
   const pressure = findReading(devices, 'pressure_bar');
@@ -466,16 +480,53 @@ function FermenterCommandCenter({
   const gravity = findReading(devices, 'gravity_sg');
   const controller = devices.find((d) => d.type === 'brew_controller' && !isBreweryTempDevice(d));
   const online = devices.filter((d) => d.online).length;
-  const gravitySeries = useMetricSeries(gravity?.deviceId ?? null, 'gravity_sg');
+  const gravityHistory = useMetricSeriesT(gravity?.deviceId ?? null, 'gravity_sg', GRAVITY_HISTORY_MS);
   const pressureSeries = useMetricSeries(pressure?.deviceId ?? null, 'pressure_bar');
   const tempSeries = useMetricSeries(beer?.deviceId ?? null, 'temp_c');
   const fridgeSeries = useMetricSeries(fridge?.deviceId ?? null, 'temp_c');
+
+  // Fit a decay curve to the gravity history and project it forward, so the
+  // gravity card can show a dashed forecast and an estimated finish (using the
+  // same stable-window rule as the live status). Falls back to a plain trend
+  // when there isn't enough data to fit confidently.
+  const gravityValues = useMemo(() => gravityHistory.map((p) => p.value), [gravityHistory]);
+  const gravityNow =
+    gravityHistory.length > 0 ? gravityHistory[gravityHistory.length - 1]!.t : Date.now();
+  const gravityFit = useMemo(() => fitGravityDecay(gravityHistory), [gravityHistory]);
+  const gravityForecast = useMemo<GravityPoint[] | null>(
+    () =>
+      gravityFit
+        ? forecastSeries(
+            gravityFit,
+            gravityNow,
+            gravityNow + GRAVITY_FORECAST_MS,
+            GRAVITY_FORECAST_STEP_MS,
+          )
+        : null,
+    [gravityFit, gravityNow],
+  );
+  const gravityDone = useMemo(
+    () =>
+      gravityFit ? estimateDoneTime(gravityFit, fermentStableDays, fermentThresholdSg, gravityNow) : null,
+    [gravityFit, fermentStableDays, fermentThresholdSg, gravityNow],
+  );
+  // The forecast chart shows one continuous, now-centred window: the recent
+  // history matching the forecast's span. Range labels track that visible
+  // window, not the full fetched history behind the fit.
+  const gravityVisible = useMemo(
+    () => gravityHistory.filter((p) => p.t >= gravityNow - GRAVITY_FORECAST_MS),
+    [gravityHistory, gravityNow],
+  );
 
   // Value ranges for the sparkline axis labels. The temperature chart shares one
   // scale across beer, fridge, and the setpoint reference line, so its range
   // spans all three — and only shows once at least one line is drawable.
   const pressureRange = minMax(pressureSeries);
-  const gravityRange = minMax(gravitySeries);
+  const gravityRange = minMax(
+    gravityForecast
+      ? [...gravityVisible.map((p) => p.value), ...gravityForecast.map((p) => p.value)]
+      : gravityValues,
+  );
   const tempDrawable = tempSeries.length >= 2 || fridgeSeries.length >= 2;
   const tempValues = [
     ...tempSeries,
@@ -660,12 +711,17 @@ function FermenterCommandCenter({
           icon={<FlaskIcon className="h-6 w-6" />}
           title="Gravity"
           headerRight={
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${status.shellClass}`}
-            >
-              <span className={`h-2 w-2 rounded-full ${status.dotClass}`} aria-hidden />
-              {status.label}
-            </span>
+            <div className="flex flex-col items-end gap-1.5">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${status.shellClass}`}
+              >
+                <span className={`h-2 w-2 rounded-full ${status.dotClass}`} aria-hidden />
+                {status.label}
+              </span>
+              {gravityForecast && gravityDone && (
+                <span className="text-sm font-semibold text-white">{gravityDoneLabel(gravityDone)}</span>
+              )}
+            </div>
           }
           onClick={
             gravity
@@ -679,13 +735,24 @@ function FermenterCommandCenter({
                 <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
               </div>
               <div className="mt-3 flex-1 min-h-[12rem] xl:min-h-0">
-                {gravitySeries.length > 1 ? (
+                {gravityValues.length > 1 ? (
                   <MiniChartFrame
                     max={gravityRange ? gravityRange.max.toFixed(3) : undefined}
                     min={gravityRange ? gravityRange.min.toFixed(3) : undefined}
-                    caption="Last 24h"
+                    caption={gravityCaption(gravityForecast != null)}
                   >
-                    <Sparkline data={gravitySeries} stroke={colors.gravity} fill={withAlpha(colors.gravity, 0.12)} grow />
+                    {gravityForecast ? (
+                      <ForecastSparkline
+                        history={gravityHistory}
+                        forecast={gravityForecast}
+                        now={gravityNow}
+                        stroke={colors.gravity}
+                        fill={withAlpha(colors.gravity, 0.12)}
+                        grow
+                      />
+                    ) : (
+                      <Sparkline data={gravityValues} stroke={colors.gravity} fill={withAlpha(colors.gravity, 0.12)} grow />
+                    )}
                   </MiniChartFrame>
                 ) : (
                   <div className="flex h-full items-center text-xs text-zinc-600">Collecting trend…</div>
@@ -722,7 +789,7 @@ function FermenterSubCard({
 }): JSX.Element {
   const base = 'flex flex-col rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 text-left';
   const head = (
-    <div className="flex items-center gap-2.5 text-white">
+    <div className="flex items-start gap-2.5 text-white">
       {icon}
       <h3 className="min-w-0 truncate text-base font-semibold tracking-tight text-white">{title}</h3>
       {headerRight && <div className="ml-auto shrink-0">{headerRight}</div>}
@@ -828,6 +895,18 @@ function minMax(data: number[]): { min: number; max: number } | null {
   return { min: Math.min(...data), max: Math.max(...data) };
 }
 
+/** Caption under the gravity sparkline — the time window shown. */
+function gravityCaption(hasForecast: boolean): string {
+  return hasForecast ? '2-day forecast' : 'Recent trend';
+}
+
+/** The predicted-finish line shown under the status pill (white, prominent). */
+function gravityDoneLabel(done: { t: number; alreadyDone: boolean }): string {
+  return done.alreadyDone
+    ? 'Est. complete now'
+    : `Est. done · ${new Date(done.t).toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+}
+
 /**
  * Wraps a fermenter sub-card sparkline with light axis context: the value range
  * (max top-right, min bottom-right) and the time window below — enough to read
@@ -850,18 +929,18 @@ function MiniChartFrame({
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0">{children}</div>
         {max != null && (
-          <span className="pointer-events-none absolute right-0 top-0 rounded bg-zinc-950/60 px-1 text-[10px] leading-none tabular-nums text-zinc-500">
+          <span className="pointer-events-none absolute right-0 top-0 rounded bg-zinc-950/60 px-1.5 py-0.5 text-sm font-semibold leading-none tabular-nums text-white">
             {max}
           </span>
         )}
         {min != null && (
-          <span className="pointer-events-none absolute bottom-0 right-0 rounded bg-zinc-950/60 px-1 text-[10px] leading-none tabular-nums text-zinc-500">
+          <span className="pointer-events-none absolute bottom-0 right-0 rounded bg-zinc-950/60 px-1.5 py-0.5 text-sm font-semibold leading-none tabular-nums text-white">
             {min}
           </span>
         )}
       </div>
       {caption != null && (
-        <div className="mt-1 text-[10px] leading-none text-zinc-600">{caption}</div>
+        <div className="mt-1 text-xs font-medium leading-none text-white">{caption}</div>
       )}
     </div>
   );
@@ -1115,7 +1194,7 @@ function KegInventoryPanel({
 
   return (
     <Link
-      to="/kiosk/kegs"
+      to="/kegs"
       className="block rounded-xl border border-zinc-800 bg-zinc-900 p-5 transition hover:border-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
     >
       <PanelHeading

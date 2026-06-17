@@ -61,16 +61,30 @@ const MOCK_FLEET: MockDevice[] = [
   {
     // Named "Fermenter" (not "Tilt") so the kiosk hub merges the Tilt's beer
     // temperature + gravity into the single fermenter card alongside the
-    // pressure sensor and fridge controller above.
+    // pressure sensor and fridge controller above. The gravity sits mid-late
+    // fermentation (see FERMENT_* below) so the dashboard's gravity forecast has
+    // a clear declining curve to fit and a finish a couple of days out.
     id: 6,
     name: 'Fermenter',
     type: 'hydrometer',
-    base: { gravity_sg: 1.048, temp_c: 18.9 },
+    base: { gravity_sg: 1.019, temp_c: 18.9 },
   },
 ];
 
 /** Cumulative totals only ever climb; gravity falls as sugar is consumed. */
 const CUMULATIVE = new Set(['energy_kwh', 'water_l']);
+
+/**
+ * Mock fermentation shape for the gravity history + forecast demo. A clean
+ * exponential approach toward terminal gravity {@link FERMENT_FG}, pitched
+ * {@link FERMENT_AGE_DAYS} ago so the dashboard's 14-day forecast window is all
+ * active fermentation — no flat lag plateau, which the forecast's curve fit
+ * can't model. Tuned so the gravity card fits FG≈1.010 and predicts "done"
+ * ~2 days out under the default 2-day / 0.002 SG stable-window rule.
+ */
+const FERMENT_FG = 1.01; // terminal gravity the curve approaches
+const FERMENT_K = 0.12; // attenuation rate, per day
+const FERMENT_AGE_DAYS = 14; // days since pitch at "now"
 
 /**
  * A small, smooth, time-based offset so a metric subtly drifts between polls
@@ -243,8 +257,14 @@ function historyValue(
     return base - 2.0 * 24 * spanDays * (1 - frac);
   }
   if (metric === 'gravity_sg') {
-    // Active fermentation: ~0.006 SG drop per day, declining toward `base`.
-    return base + 0.006 * spanDays * (1 - frac);
+    // Active fermentation: a strictly monotonic exponential approach to terminal
+    // gravity. Gravity only ever falls (sugar → alcohol) — never oscillates — so
+    // the curve decreases smoothly, anchored at the current reading (`base`) now
+    // and rising backward toward OG at pitch (then flat before pitch). This gives
+    // the gravity forecast a clean declining curve to fit (see FERMENT_*).
+    const daysAgo = spanDays * (1 - frac);
+    const sincePitch = Math.min(daysAgo, FERMENT_AGE_DAYS);
+    return FERMENT_FG + (base - FERMENT_FG) * Math.exp(FERMENT_K * sincePitch);
   }
 
   // Everything else: gentle noise around the base value.

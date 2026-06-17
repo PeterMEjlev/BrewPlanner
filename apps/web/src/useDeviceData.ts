@@ -141,6 +141,47 @@ export function useMetricSeries(
   return series;
 }
 
+/**
+ * Like {@link useMetricSeries} but keeps timestamps — `{ t, value }` points,
+ * oldest→newest — for views that need a real time axis (e.g. the gravity
+ * forecast fit). Pass `null` to disable; keeps the last series through a
+ * transient fetch error.
+ */
+export function useMetricSeriesT(
+  deviceId: number | null,
+  metric: string,
+  rangeMs = 24 * 60 * 60 * 1000,
+): { t: number; value: number }[] {
+  const [series, setSeries] = useState<{ t: number; value: number }[]>([]);
+
+  useEffect(() => {
+    if (deviceId == null) {
+      setSeries([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const since = new Date(Date.now() - rangeMs).toISOString();
+        const history = await api.getDeviceHistory(deviceId, { metric, since, limit: 2000 });
+        if (!cancelled) {
+          setSeries([...history].reverse().map((r) => ({ t: Date.parse(r.recordedAt), value: r.value })));
+        }
+      } catch {
+        // Keep the last known series through a transient history failure.
+      }
+    };
+    void load();
+    const t = setInterval(() => void load(), SERIES_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [deviceId, metric, rangeMs]);
+
+  return series;
+}
+
 /** Cumulative meter metrics whose lifetime total ("all-time consumption") we surface. */
 const CUMULATIVE_METRICS = new Set(['energy_kwh', 'water_l']);
 

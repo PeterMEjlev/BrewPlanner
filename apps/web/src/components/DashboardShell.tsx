@@ -11,11 +11,18 @@ import {
   KegIcon,
   MonitorIcon,
   SettingsIcon,
+  TodoIcon,
 } from './icons';
 import { relativeTime } from '../util';
 
 /** Which Overview-shell page is currently showing (drives nav highlight). */
-export type ShellPage = 'overview' | 'devices' | 'settings';
+export type ShellPage =
+  | 'overview'
+  | 'devices'
+  | 'settings'
+  | 'kegs'
+  | 'checklists'
+  | 'todos';
 
 type IconComponent = (props: { className?: string }) => JSX.Element;
 
@@ -43,10 +50,11 @@ type NavItem = RouteItem | SectionItem;
 const NAV: NavItem[] = [
   { kind: 'route', key: 'overview', label: 'Overview', Icon: HomeIcon, to: '/', page: 'overview' },
   { kind: 'section', key: 'fermenter', label: 'Fermenter', Icon: FermenterIcon, section: 'fermenter' },
-  { kind: 'route', key: 'kegs', label: 'Kegs', Icon: KegIcon, to: '/kiosk/kegs' },
+  { kind: 'route', key: 'kegs', label: 'Kegs', Icon: KegIcon, to: '/kegs', page: 'kegs' },
   { kind: 'section', key: 'alerts', label: 'Alerts', Icon: BellIcon, section: 'alerts' },
   { kind: 'route', key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
-  { kind: 'route', key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin' },
+  { kind: 'route', key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin', page: 'checklists' },
+  { kind: 'route', key: 'todos', label: 'To-Do', Icon: TodoIcon, to: '/todos', page: 'todos' },
   { kind: 'route', key: 'settings', label: 'Settings', Icon: SettingsIcon, to: '/settings', page: 'settings' },
 ];
 

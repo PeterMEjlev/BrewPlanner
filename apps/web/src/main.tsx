@@ -7,6 +7,7 @@ import { DashboardPage } from './pages/Dashboard';
 import { DevicesPage } from './pages/Devices';
 import { DisplayPage } from './pages/Display';
 import { KegsPage } from './pages/Kegs';
+import { KegsDesktopPage } from './pages/KegsDesktop';
 import { KioskHomePage } from './pages/KioskHome';
 import { KioskTodosPage } from './pages/KioskTodos';
 import { LoginPage } from './pages/Login';
@@ -79,6 +80,16 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <DevicesPage />
+      </RequireAuth>
+    ),
+  },
+  // Desktop (mouse/keyboard) keg inventory. The kiosk keeps its touch variant
+  // at /kiosk/kegs; the desktop sidebar's Kegs link points here.
+  {
+    path: '/kegs',
+    element: (
+      <RequireAuth>
+        <KegsDesktopPage />
       </RequireAuth>
     ),
   },
