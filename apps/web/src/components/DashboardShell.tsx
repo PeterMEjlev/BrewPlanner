@@ -1,12 +1,10 @@
-import { useCallback } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import {
   BellIcon,
   ChecklistIcon,
   ClockIcon,
-  FermenterIcon,
   HomeIcon,
   KegIcon,
   MonitorIcon,
@@ -19,6 +17,7 @@ import { relativeTime } from '../util';
 export type ShellPage =
   | 'overview'
   | 'devices'
+  | 'alerts'
   | 'settings'
   | 'kegs'
   | 'checklists'
@@ -26,36 +25,23 @@ export type ShellPage =
 
 type IconComponent = (props: { className?: string }) => JSX.Element;
 
-interface RouteItem {
-  kind: 'route';
+interface NavItem {
   key: string;
   label: string;
   Icon: IconComponent;
   to: string;
   /** Marks this item active when the page matches. */
-  page?: ShellPage;
+  page: ShellPage;
 }
-
-interface SectionItem {
-  kind: 'section';
-  key: string;
-  label: string;
-  Icon: IconComponent;
-  /** Element id to scroll to on the Overview. */
-  section: string;
-}
-
-type NavItem = RouteItem | SectionItem;
 
 const NAV: NavItem[] = [
-  { kind: 'route', key: 'overview', label: 'Overview', Icon: HomeIcon, to: '/', page: 'overview' },
-  { kind: 'section', key: 'fermenter', label: 'Fermenter', Icon: FermenterIcon, section: 'fermenter' },
-  { kind: 'route', key: 'kegs', label: 'Kegs', Icon: KegIcon, to: '/kegs', page: 'kegs' },
-  { kind: 'section', key: 'alerts', label: 'Alerts', Icon: BellIcon, section: 'alerts' },
-  { kind: 'route', key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
-  { kind: 'route', key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin', page: 'checklists' },
-  { kind: 'route', key: 'todos', label: 'To-Do', Icon: TodoIcon, to: '/todos', page: 'todos' },
-  { kind: 'route', key: 'settings', label: 'Settings', Icon: SettingsIcon, to: '/settings', page: 'settings' },
+  { key: 'overview', label: 'Overview', Icon: HomeIcon, to: '/', page: 'overview' },
+  { key: 'kegs', label: 'Kegs', Icon: KegIcon, to: '/kegs', page: 'kegs' },
+  { key: 'alerts', label: 'Alerts', Icon: BellIcon, to: '/alerts', page: 'alerts' },
+  { key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
+  { key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin', page: 'checklists' },
+  { key: 'todos', label: 'To-Do', Icon: TodoIcon, to: '/todos', page: 'todos' },
+  { key: 'settings', label: 'Settings', Icon: SettingsIcon, to: '/settings', page: 'settings' },
 ];
 
 /**
@@ -108,19 +94,6 @@ function Sidebar({
   lastUpdate?: string | null;
 }): JSX.Element {
   const { auth, refresh } = useAuth();
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  const goToSection = useCallback(
-    (id: string) => {
-      if (location.pathname === '/') {
-        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        navigate(`/#${id}`);
-      }
-    },
-    [location.pathname, navigate],
-  );
 
   return (
     <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/95 md:flex">
@@ -132,24 +105,12 @@ function Sidebar({
 
       <nav className="flex-1 space-y-1 px-3">
         {NAV.map((item) => {
-          const isActive = item.kind === 'route' && item.page === active;
+          const isActive = item.page === active;
           const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
-          const inner = (
-            <NavRow Icon={item.Icon} label={item.label} active={isActive} badge={badge} />
-          );
-          return item.kind === 'route' ? (
+          return (
             <Link key={item.key} to={item.to} className="block">
-              {inner}
+              <NavRow Icon={item.Icon} label={item.label} active={isActive} badge={badge} />
             </Link>
-          ) : (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => goToSection(item.section)}
-              className="block w-full"
-            >
-              {inner}
-            </button>
           );
         })}
       </nav>

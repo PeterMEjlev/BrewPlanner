@@ -44,7 +44,8 @@ import {
 } from '../gravityForecast';
 import { SetpointControl } from '../SetpointControl';
 import { formatPressure, useSettings } from '../settings';
-import { useDeviceTotal, useMetricSeries, useMetricSeriesT } from '../useDeviceData';
+import { ChartRangeProvider, useChartRange } from '../chartRange';
+import { RANGES, useDeviceTotal, useMetricSeries, useMetricSeriesT } from '../useDeviceData';
 import { relativeTime } from '../util';
 
 const KEG_POLL_MS = 60_000;
@@ -329,6 +330,7 @@ export function DashboardPage(): JSX.Element {
   const utilityTotal = [brewery, power, water].filter(Boolean).length;
 
   return (
+    <ChartRangeProvider>
     <DashboardShell active="overview" alertCount={alerts.length} lastUpdate={lastUpdate} fit>
       <main className="mx-auto max-w-[1580px] px-5 py-5 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
         {error && (
@@ -392,6 +394,7 @@ export function DashboardPage(): JSX.Element {
         />
       )}
     </DashboardShell>
+    </ChartRangeProvider>
   );
 }
 
@@ -481,9 +484,14 @@ function FermenterCommandCenter({
   const controller = devices.find((d) => d.type === 'brew_controller' && !isBreweryTempDevice(d));
   const online = devices.filter((d) => d.online).length;
   const gravityHistory = useMetricSeriesT(gravity?.deviceId ?? null, 'gravity_sg', GRAVITY_HISTORY_MS);
-  const pressureSeries = useMetricSeries(pressure?.deviceId ?? null, 'pressure_bar');
-  const tempSeries = useMetricSeries(beer?.deviceId ?? null, 'temp_c');
-  const fridgeSeries = useMetricSeries(fridge?.deviceId ?? null, 'temp_c');
+  // Each preview tracks the window picked in its own enlarged chart. The temp
+  // card shows beer + fridge together, so both share the window of the chart its
+  // combined view opens (the fridge device, or the beer device when no fridge).
+  const pressureRangeMs = useChartRange(pressure?.deviceId ?? null, 'pressure_bar');
+  const tempRangeMs = useChartRange((fridge ?? beer)?.deviceId ?? null, 'temp_c');
+  const pressureSeries = useMetricSeries(pressure?.deviceId ?? null, 'pressure_bar', pressureRangeMs);
+  const tempSeries = useMetricSeries(beer?.deviceId ?? null, 'temp_c', tempRangeMs);
+  const fridgeSeries = useMetricSeries(fridge?.deviceId ?? null, 'temp_c', tempRangeMs);
 
   // Fit a decay curve to the gravity history and project it forward, so the
   // gravity card can show a dashed forecast and an estimated finish (using the
@@ -612,7 +620,7 @@ function FermenterCommandCenter({
                 <MiniChartFrame
                   max={pressureRange ? formatPressure(pressureRange.max, pressureUnit).value : undefined}
                   min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
-                  caption={pressureRange ? 'Last 24h' : undefined}
+                  caption={pressureRange ? rangeCaption(pressureRangeMs) : undefined}
                 >
                   <Sparkline data={pressureSeries} stroke={colors.pressure} fill={withAlpha(colors.pressure, 0.1)} grow />
                 </MiniChartFrame>
@@ -690,7 +698,7 @@ function FermenterCommandCenter({
                   <MiniChartFrame
                     max={tempRange ? `${tempRange.max.toFixed(1)}°` : undefined}
                     min={tempRange ? `${tempRange.min.toFixed(1)}°` : undefined}
-                    caption={tempRange ? 'Last 24h' : undefined}
+                    caption={tempRange ? rangeCaption(tempRangeMs) : undefined}
                   >
                     <MultiLineSparkline
                       series={[
@@ -900,6 +908,11 @@ function gravityCaption(hasForecast: boolean): string {
   return hasForecast ? '2-day forecast' : 'Recent trend';
 }
 
+/** Caption for a windowed preview, e.g. "Last 24h" — tracks the chosen range. */
+function rangeCaption(rangeMs: number): string {
+  return `Last ${RANGES.find((r) => r.ms === rangeMs)?.label ?? '24h'}`;
+}
+
 /** The predicted-finish line shown under the status pill (white, prominent). */
 function gravityDoneLabel(done: { t: number; alreadyDone: boolean }): string {
   return done.alreadyDone
@@ -998,7 +1011,7 @@ function UtilityCardButton({
     <button
       type="button"
       onClick={onClick}
-      className="block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:rounded-xl"
+      className="block h-full w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:rounded-xl"
     >
       {children}
     </button>
@@ -1015,7 +1028,7 @@ function UtilityShell({
   children: React.ReactNode;
 }): JSX.Element {
   return (
-    <div className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+    <div className="flex h-full flex-col rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
       <div className="flex items-center gap-2 text-white">
         {icon}
         <h3 className="font-semibold text-white">{title}</h3>
@@ -1033,7 +1046,7 @@ function UtilityPlaceholder({
   title: string;
 }): JSX.Element {
   return (
-    <div className="flex flex-col rounded-xl border border-dashed border-zinc-800 bg-zinc-950/30 p-4">
+    <div className="flex h-full flex-col rounded-xl border border-dashed border-zinc-800 bg-zinc-950/30 p-4">
       <div className="flex items-center gap-2 text-zinc-300 opacity-70">
         {icon}
         <h3 className="font-semibold text-zinc-300">{title}</h3>
@@ -1050,17 +1063,18 @@ function BreweryTempCard({
   device: DeviceStatus | null;
   onOpen: OpenChart;
 }): JSX.Element {
-  const series = useMetricSeries(device?.id ?? null, 'temp_c');
+  const series = useMetricSeries(device?.id ?? null, 'temp_c', useChartRange(device?.id ?? null, 'temp_c'));
   const colors = useGraphColors();
   if (!device) {
-    return <UtilityPlaceholder icon={<ThermometerIcon className="h-5 w-5" />} title="Brewery (Controller)" />;
+    return <UtilityPlaceholder icon={<ThermometerIcon className="h-5 w-5" />} title="Temperature" />;
   }
   const temp = device.latest.find((r) => r.metric === 'temp_c');
+  const range = minMax(series);
   return (
     <UtilityCardButton
       onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Brewery ambient temperature' })}
     >
-      <UtilityShell icon={<ThermometerIcon className="h-5 w-5" />} title="Brewery (Controller)">
+      <UtilityShell icon={<ThermometerIcon className="h-5 w-5" />} title="Temperature">
         <p className="mt-3 text-xs font-medium uppercase tracking-wider text-zinc-500">
           Ambient Temp
         </p>
@@ -1073,6 +1087,14 @@ function BreweryTempCard({
         <div className="mt-3">
           <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} />
         </div>
+        {range && (
+          <p className="mt-3 text-xs text-zinc-500">
+            Min{' '}
+            <span className="font-semibold tabular-nums text-zinc-300">{range.min.toFixed(1)} °C</span>
+            {'  ·  Max '}
+            <span className="font-semibold tabular-nums text-zinc-300">{range.max.toFixed(1)} °C</span>
+          </p>
+        )}
       </UtilityShell>
     </UtilityCardButton>
   );
@@ -1085,7 +1107,7 @@ function PowerCard({
   device: DeviceStatus | null;
   onOpen: OpenChart;
 }): JSX.Element {
-  const series = useMetricSeries(device?.id ?? null, 'power_w');
+  const series = useMetricSeries(device?.id ?? null, 'power_w', useChartRange(device?.id ?? null, 'power_w'));
   const total = useDeviceTotal(device?.id ?? -1, device ? 'energy_kwh' : undefined);
   const colors = useGraphColors();
   if (!device) return <UtilityPlaceholder icon={<BoltIcon className="h-5 w-5" />} title="Power" />;
@@ -1123,7 +1145,7 @@ function WaterCard({
   device: DeviceStatus | null;
   onOpen: OpenChart;
 }): JSX.Element {
-  const series = useMetricSeries(device?.id ?? null, 'flow_lpm');
+  const series = useMetricSeries(device?.id ?? null, 'flow_lpm', useChartRange(device?.id ?? null, 'flow_lpm'));
   const total = useDeviceTotal(device?.id ?? -1, device ? 'water_l' : undefined);
   const colors = useGraphColors();
   if (!device) return <UtilityPlaceholder icon={<DropletIcon className="h-5 w-5" />} title="Water" />;

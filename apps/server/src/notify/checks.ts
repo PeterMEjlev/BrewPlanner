@@ -1,5 +1,6 @@
 import { KEG_SHEET_CSV_URL, type Keg, parseKegDate, parseKegs } from '@checklist/shared';
 import type { FastifyBaseLogger } from 'fastify';
+import { recordAlert } from '../alerts/repo.js';
 import { getRecentReadingsByMetric } from '../devices/repo.js';
 import { getNotificationSettings, getSetting, setSetting } from '../repo.js';
 import { sendTelegram } from './telegram.js';
@@ -73,6 +74,12 @@ async function checkOldKegs(thresholdDays: number, log: FastifyBaseLogger): Prom
     if (getSetting(marker)) continue;
 
     await sendTelegram(kegAlertMessage(keg, ageDays));
+    recordAlert({
+      source: 'keg_age',
+      severity: 'warning',
+      title: `Keg ${keg.number}: ${keg.contents} is ${ageDays} days old`,
+      detail: `Filled ${keg.date}. Time to drink it before it fades.`,
+    });
     setSetting(marker, new Date().toISOString());
     log.info(`Sent keg-age alert for keg ${keg.number} (${ageDays} days).`);
   }
@@ -128,6 +135,14 @@ async function checkFermentationDone(log: FastifyBaseLogger): Promise<void> {
       `for ${Math.round(STABLE_HOURS)}h.\n` +
       `Peaked at ${peak.value.toFixed(3)} — time to cold crash / keg.`,
   );
+  recordAlert({
+    source: 'ferment_done',
+    severity: 'info',
+    title: 'Fermentation complete',
+    detail:
+      `Gravity held at ${fg.toFixed(3)} SG (within ${STABLE_SG.toFixed(3)}) for ` +
+      `${Math.round(STABLE_HOURS)}h — time to cold crash / keg.`,
+  });
   setSetting(marker, new Date().toISOString());
   log.info('Sent fermentation-complete alert.');
 }

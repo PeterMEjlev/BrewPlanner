@@ -32,17 +32,41 @@ export interface DeviceDataState {
 }
 
 /**
+ * Lets a caller drive the range from outside the hook (keyed by the hook's
+ * active metric), so an opened chart and the matching dashboard preview share
+ * one remembered window. Omit it to keep the range as local hook state.
+ */
+export interface RangeControl {
+  get: (metric: string | null) => number;
+  set: (metric: string | null, ms: number) => void;
+}
+
+/**
  * Loads a device's live status and metric history, polling both. Shared so the
  * laptop ([Device]) and touch ([KioskDevice]) views stay in sync without
  * duplicating the fetch/poll logic. Pass `lockedMetric` to pin the view to a
- * single metric (e.g. the gravity page ignores the Tilt's beer temp).
+ * single metric (e.g. the gravity page ignores the Tilt's beer temp), and
+ * `rangeControl` to hoist the selected window into shared state.
  */
-export function useDeviceData(deviceId: number, lockedMetric?: string): DeviceDataState {
+export function useDeviceData(
+  deviceId: number,
+  lockedMetric?: string,
+  rangeControl?: RangeControl,
+): DeviceDataState {
   const [device, setDevice] = useState<DeviceStatus | null>(null);
   const [metric, setMetric] = useState<string | null>(lockedMetric ?? null);
-  const [rangeMs, setRangeMs] = useState<number>(DEFAULT_RANGE_MS);
+  const [internalRangeMs, setInternalRangeMs] = useState<number>(DEFAULT_RANGE_MS);
   const [history, setHistory] = useState<Reading[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const rangeMs = rangeControl ? rangeControl.get(metric) : internalRangeMs;
+  const setRangeMs = useCallback(
+    (ms: number): void => {
+      if (rangeControl) rangeControl.set(metric, ms);
+      else setInternalRangeMs(ms);
+    },
+    [rangeControl, metric],
+  );
 
   const loadDevice = useCallback(async () => {
     try {

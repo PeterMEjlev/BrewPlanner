@@ -5,6 +5,7 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
+import { evaluateDeviceAlerts } from './alerts/evaluate.js';
 import { authRoutes, seedAdminUser } from './auth/index.js';
 import { resolveSessionSecret } from './auth/secret.js';
 import { runMigrations } from './db/index.js';
@@ -78,11 +79,27 @@ async function main(): Promise<void> {
 
   try {
     await app.listen({ host: HOST, port: PORT });
+    startAlertScheduler(app);
     startNotificationScheduler(app);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
   }
+}
+
+/**
+ * Periodically fold live device state into the durable alert history (offline
+ * episodes; see alerts/evaluate.ts). Runs regardless of Telegram config so the
+ * Alerts page always has data. Override the cadence with ALERT_INTERVAL_SECONDS;
+ * the interval is unref'd so it never holds the process open on shutdown.
+ */
+function startAlertScheduler(app: FastifyInstance): void {
+  const intervalMs = Number(process.env.ALERT_INTERVAL_SECONDS ?? 60) * 1000;
+  const tick = () => evaluateDeviceAlerts(app.log);
+  setInterval(tick, intervalMs).unref();
+  // Give devices a moment to report after boot before judging them offline.
+  setTimeout(tick, 20_000).unref();
+  app.log.info(`Alert evaluation enabled (checking every ${intervalMs / 1000}s).`);
 }
 
 /**

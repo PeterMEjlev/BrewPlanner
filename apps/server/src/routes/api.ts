@@ -1,4 +1,5 @@
 import {
+  alertsQuerySchema,
   createChecklistSchema,
   createStepSchema,
   createTodoSchema,
@@ -15,6 +16,7 @@ import {
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { listAlerts } from '../alerts/repo.js';
 import { requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
 import * as telegram from '../notify/telegram.js';
@@ -186,6 +188,15 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/todos/clear-completed', async () => repo.clearCompletedTodos());
+
+  // --- Alerts -----------------------------------------------------------
+  // Recorded alert history (device offline episodes, keg-age and
+  // fermentation-complete events), newest first.
+  app.get('/alerts', async (req, reply) => {
+    const query = parse(alertsQuerySchema, req.query, reply);
+    if (!query) return;
+    return listAlerts(query.limit);
+  });
 
   // --- Brewer's Friend recipes -----------------------------------------
   // List the account's recipes (server-side proxy; the API key stays on the

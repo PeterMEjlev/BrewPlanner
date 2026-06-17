@@ -168,6 +168,31 @@ export const deviceCommands = sqliteTable(
   (t) => [index('device_commands_device_status_idx').on(t.deviceId, t.status)],
 );
 
+/**
+ * Recorded alert history. The dashboard's live "active alerts" feed is derived
+ * on the fly from device state, but this table keeps a durable log: device
+ * offline/online episodes plus the keg-age and fermentation-complete events the
+ * notifier raises. `resolvedAt` closes a self-clearing alert (a device coming
+ * back online); one-shot event alerts leave it null. `deviceId` is nullable and
+ * set-null on device delete so history outlives the device it referenced.
+ */
+export const alerts = sqliteTable(
+  'alerts',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    deviceId: integer('device_id').references(() => devices.id, { onDelete: 'set null' }),
+    source: text('source').notNull(),
+    severity: text('severity').notNull().default('warning'),
+    title: text('title').notNull(),
+    detail: text('detail').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+    resolvedAt: text('resolved_at'),
+  },
+  (t) => [index('alerts_created_idx').on(t.createdAt)],
+);
+
 /** Per-run check state for a single step. */
 export const runSteps = sqliteTable(
   'run_steps',

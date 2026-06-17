@@ -221,6 +221,44 @@ export interface DeviceCommand {
 export const SET_SETPOINT_COMMAND = 'set_setpoint';
 
 // ---------------------------------------------------------------------------
+// Alerts (server-recorded history)
+// ---------------------------------------------------------------------------
+
+/** Severity of an alert, most urgent first. Drives the badge/row colour. */
+export type AlertSeverity = 'critical' | 'warning' | 'info';
+
+/**
+ * What produced an alert. `device_offline` is raised when a previously-seen
+ * device stops reporting (and cleared when it returns); the others mirror the
+ * Telegram notification checks and are one-shot events.
+ */
+export type AlertSource = 'device_offline' | 'keg_age' | 'ferment_done';
+
+/**
+ * A recorded alert event, kept as history on the server — unlike the
+ * dashboard's live-derived "active alerts" feed. `resolvedAt` is set when a
+ * self-clearing condition ends (today only `device_offline`, when the device
+ * comes back online); event alerts (keg age, fermentation done) never resolve.
+ */
+export interface Alert {
+  id: number;
+  /** The device this concerns, or null for alerts not tied to one. */
+  deviceId: number | null;
+  source: AlertSource;
+  severity: AlertSeverity;
+  title: string;
+  detail: string;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+/** Query for `GET /api/alerts`: how many of the most recent alerts to return. */
+export const alertsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+export type AlertsQuery = z.infer<typeof alertsQuerySchema>;
+
+// ---------------------------------------------------------------------------
 // Keg inventory (shared Google Sheet)
 // ---------------------------------------------------------------------------
 

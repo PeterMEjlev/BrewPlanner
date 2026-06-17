@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -9,6 +9,7 @@ import {
   YAxis,
 } from 'recharts';
 import { SetpointControl } from '../SetpointControl';
+import { useChartRangeStore } from '../chartRange';
 import { metricColor, useGraphColors } from '../graphColors';
 import {
   StateBadge,
@@ -44,6 +45,21 @@ export default function MetricChart({
   initialMetric?: string;
   chartHeight?: number;
 }): JSX.Element {
+  // When rendered inside the dashboard's range provider, the selected window is
+  // shared with the matching sparkline preview (keyed by device+metric); on the
+  // standalone device page there's no provider, so the chart keeps local state.
+  const rangeStore = useChartRangeStore();
+  const rangeControl = useMemo(
+    () =>
+      rangeStore
+        ? {
+            get: (m: string | null) => rangeStore.getRange(deviceId, m),
+            set: (m: string | null, ms: number) => rangeStore.setRange(deviceId, m, ms),
+          }
+        : undefined,
+    [rangeStore, deviceId],
+  );
+
   const {
     device,
     metric,
@@ -55,7 +71,7 @@ export default function MetricChart({
     longRange,
     refresh,
     error,
-  } = useDeviceData(deviceId, initialMetric);
+  } = useDeviceData(deviceId, initialMetric, rangeControl);
 
   const colors = useGraphColors();
   const totalMetric = cumulativeMetricOf(device);
@@ -64,9 +80,14 @@ export default function MetricChart({
   const supportsSetpoint = device?.type === 'brew_controller';
 
   const breweryTempOnly = !!device && isBreweryTempDevice(device);
+  // A hydrometer's beer temp duplicates the fermenter's Temp & Control card, so
+  // the gravity chart drops the Temp metric and shows gravity alone.
+  const gravityOnly = device?.type === 'hydrometer';
   const metricOptions = breweryTempOnly
     ? device.latest.filter((r) => r.metric === 'temp_c')
-    : (device?.latest ?? []);
+    : gravityOnly
+      ? device!.latest.filter((r) => r.metric !== 'temp_c')
+      : (device?.latest ?? []);
   const hasMetricSelector = !breweryTempOnly && metricOptions.length > 1;
   const latestForDisplay = breweryTempOnly
     ? device?.latest.find((r) => r.metric === 'temp_c')
@@ -78,6 +99,13 @@ export default function MetricChart({
       setMetric('temp_c');
     }
   }, [breweryTempOnly, metric, setMetric]);
+
+  // Never leave the gravity chart parked on the (now hidden) Temp metric.
+  useEffect(() => {
+    if (gravityOnly && metric === 'temp_c') {
+      setMetric('gravity_sg');
+    }
+  }, [gravityOnly, metric, setMetric]);
 
   return (
     <div>

@@ -1,6 +1,7 @@
 import type {
   ActiveRecipe,
   ActiveState,
+  Alert,
   AuthState,
   ChecklistSummary,
   ChecklistWithSteps,
@@ -194,6 +195,11 @@ export const api = {
     }),
   sendTestNotification: () =>
     request<{ sent: boolean }>('/notifications/test', { method: 'POST' }),
+
+  // Recorded alert history (device offline episodes, keg-age and
+  // fermentation-complete events), newest first.
+  listAlerts: (limit?: number) =>
+    request<Alert[]>(`/alerts${limit ? `?limit=${limit}` : ''}`),
 
   // Shared chart colour palette (edited on the desktop Settings page, read by
   // every screen including the kiosk).

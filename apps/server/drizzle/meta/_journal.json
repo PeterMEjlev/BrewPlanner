@@ -57,6 +57,13 @@
       "when": 1781425531468,
       "tag": "0007_right_bushwacker",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1781693142346,
+      "tag": "0008_faithful_hardball",
+      "breakpoints": true
     }
   ]
 }
