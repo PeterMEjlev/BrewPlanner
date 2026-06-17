@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { listAlerts } from '../alerts/repo.js';
 import { requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
+import { fetchKegs } from '../kegs.js';
 import * as telegram from '../notify/telegram.js';
 import * as repo from '../repo.js';
 
@@ -230,6 +231,20 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/recipe', async (_req, reply) => {
     repo.clearActiveRecipe();
     return reply.status(204).send();
+  });
+
+  // --- Keg inventory ----------------------------------------------------
+  // The keg inventory from the shared Google Sheet, parsed to JSON. The web app
+  // pulls the CSV straight from the browser, but headless clients that can't
+  // parse CSV (the Garmin watch app) read it here. 502 if the sheet is
+  // unreachable.
+  app.get('/kegs', async (req, reply) => {
+    try {
+      return await fetchKegs();
+    } catch (err) {
+      req.log.error(err, 'Keg sheet fetch failed');
+      return reply.status(502).send({ error: 'Could not reach the keg inventory sheet' });
+    }
   });
 
   // --- Notifications ----------------------------------------------------

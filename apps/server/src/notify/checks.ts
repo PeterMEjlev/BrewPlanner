@@ -1,7 +1,8 @@
-import { KEG_SHEET_CSV_URL, type Keg, parseKegDate, parseKegs } from '@checklist/shared';
+import { type Keg, parseKegDate } from '@checklist/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import { recordAlert } from '../alerts/repo.js';
 import { getRecentReadingsByMetric } from '../devices/repo.js';
+import { fetchKegs } from '../kegs.js';
 import { getNotificationSettings, getSetting, setSetting } from '../repo.js';
 import { sendTelegram } from './telegram.js';
 
@@ -57,9 +58,7 @@ export async function runNotificationChecks(log: FastifyBaseLogger): Promise<voi
 
 /** Alert once per keg-fill when a beer keg has been stored `thresholdDays`+. */
 async function checkOldKegs(thresholdDays: number, log: FastifyBaseLogger): Promise<void> {
-  const res = await fetch(KEG_SHEET_CSV_URL);
-  if (!res.ok) throw new Error(`Keg sheet fetch failed: ${res.status} ${res.statusText}`);
-  const kegs = parseKegs(await res.text());
+  const kegs = await fetchKegs();
 
   const now = Date.now();
   for (const keg of kegs) {
