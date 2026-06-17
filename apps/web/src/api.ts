@@ -15,15 +15,6 @@ import type {
   Todo,
 } from '@checklist/shared';
 
-import {
-  USE_MOCK_DEVICES,
-  mockGetDevice,
-  mockGetDeviceHistory,
-  mockGetDeviceTotal,
-  mockListDevices,
-  mockSetSetpoint,
-} from './mockDevices';
-
 const BASE = '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -135,21 +126,14 @@ export const api = {
     request<Todo[]>('/todos/clear-completed', { method: 'POST' }),
 
   // Telemetry devices (fermentation pressure, brew controller, …)
-  // While USE_MOCK_DEVICES is on, these serve design-time mock data instead of
-  // hitting the hub (see mockDevices.ts).
-  listDevices: () =>
-    USE_MOCK_DEVICES
-      ? Promise.resolve(mockListDevices())
-      : request<DeviceStatus[]>('/devices'),
-  getDevice: (id: number) =>
-    USE_MOCK_DEVICES
-      ? Promise.resolve(mockGetDevice(id))
-      : request<DeviceStatus>(`/devices/${id}`),
+  // The server serves real sensor data when available, otherwise mock fallback
+  // data, so every client sees the same telemetry contract.
+  listDevices: () => request<DeviceStatus[]>('/devices'),
+  getDevice: (id: number) => request<DeviceStatus>(`/devices/${id}`),
   getDeviceHistory: (
     id: number,
     opts: { metric?: string; since?: string; limit?: number } = {},
   ) => {
-    if (USE_MOCK_DEVICES) return Promise.resolve(mockGetDeviceHistory(id, opts));
     const params = new URLSearchParams();
     if (opts.metric) params.set('metric', opts.metric);
     if (opts.since) params.set('since', opts.since);
@@ -158,19 +142,15 @@ export const api = {
     return request<Reading[]>(`/devices/${id}/history${qs ? `?${qs}` : ''}`);
   },
   getDeviceTotal: (id: number, metric: string) =>
-    USE_MOCK_DEVICES
-      ? Promise.resolve(mockGetDeviceTotal(id, metric))
-      : request<MetricTotal>(`/devices/${id}/total?metric=${encodeURIComponent(metric)}`),
+    request<MetricTotal>(`/devices/${id}/total?metric=${encodeURIComponent(metric)}`),
   // Queue a new target setpoint (°C) for a brew controller. The change is
   // applied asynchronously by the device's agent; the response echoes the
   // now-pending target (surfaced on the device's status as pendingSetpointC).
   setDeviceSetpoint: (id: number, value: number) =>
-    USE_MOCK_DEVICES
-      ? Promise.resolve(mockSetSetpoint(id, value))
-      : request<{ pendingSetpointC: number }>(`/devices/${id}/setpoint`, {
-          method: 'POST',
-          body: JSON.stringify({ value }),
-        }),
+    request<{ pendingSetpointC: number }>(`/devices/${id}/setpoint`, {
+      method: 'POST',
+      body: JSON.stringify({ value }),
+    }),
 
   // Brewer's Friend recipes. listRecipes proxies the user's account via the
   // server (the API key stays server-side); the active recipe is the one shown

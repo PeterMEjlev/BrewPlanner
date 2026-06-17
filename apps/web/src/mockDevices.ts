@@ -1,17 +1,14 @@
 import type { DeviceStatus, LatestReading, Reading } from '@checklist/shared';
 
 /**
- * Design-time mock telemetry. While the real satellites are still being built,
+ * Legacy browser-side mock telemetry; the server owns live/mock fallback now.
  * this fills the dashboard's "Sensors & equipment" section with realistic,
  * live-looking device tiles (instead of the dimmed "Planned" placeholders) so
  * the layout can be designed against representative data — values, units,
  * online badges, and metric charts on the detail page all render as they will
  * in production.
- *
- * Flip {@link USE_MOCK_DEVICES} to false (or delete this module and its imports
- * in api.ts) once real devices are pushing to the hub.
  */
-export const USE_MOCK_DEVICES = true;
+export const USE_MOCK_DEVICES = false;
 
 /**
  * The mock fleet — one entry per planned sensor plus the fermentation pressure

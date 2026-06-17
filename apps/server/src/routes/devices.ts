@@ -10,6 +10,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { requireAuth } from '../auth/index.js';
 import { requireDevice } from '../devices/auth.js';
+import * as deviceFallback from '../devices/fallback.js';
 import * as devices from '../devices/repo.js';
 
 /** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
@@ -49,12 +50,12 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
 export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', requireAuth);
 
-  app.get('/', async () => devices.listDeviceStatus());
+  app.get('/', async () => deviceFallback.listDeviceStatus());
 
   app.get('/:id', async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
-    const status = devices.getDeviceStatus(params.id);
+    const status = deviceFallback.getDeviceStatus(params.id);
     if (!status) return reply.status(404).send({ error: 'Device not found' });
     return status;
   });
@@ -62,24 +63,22 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   app.get('/:id/history', async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
-    if (!devices.getDevice(params.id)) {
-      return reply.status(404).send({ error: 'Device not found' });
-    }
     const query = parse(historyQuerySchema, req.query, reply);
     if (!query) return;
-    return devices.getHistory(params.id, query);
+    const history = deviceFallback.getHistory(params.id, query);
+    if (!history) return reply.status(404).send({ error: 'Device not found' });
+    return history;
   });
 
   // All-time total for a cumulative metric (e.g. total energy / water used).
   app.get('/:id/total', async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
-    if (!devices.getDevice(params.id)) {
-      return reply.status(404).send({ error: 'Device not found' });
-    }
     const query = parse(metricTotalQuerySchema, req.query, reply);
     if (!query) return;
-    return { metric: query.metric, total: devices.getMetricTotal(params.id, query.metric) };
+    const total = deviceFallback.getMetricTotal(params.id, query.metric);
+    if (total == null) return reply.status(404).send({ error: 'Device not found' });
+    return { metric: query.metric, total };
   });
 
   // Queue a new target setpoint for a brew controller. The change isn't applied
@@ -89,14 +88,16 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   app.post('/:id/setpoint', async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
-    const device = devices.getDevice(params.id);
+    const device = deviceFallback.getDeviceStatus(params.id);
     if (!device) return reply.status(404).send({ error: 'Device not found' });
     if (device.type !== 'brew_controller') {
       return reply.status(400).send({ error: 'Device does not support a setpoint' });
     }
     const body = parse(setSetpointSchema, req.body, reply);
     if (!body) return;
-    devices.queueSetpoint(params.id, body.value);
+    if (!deviceFallback.queueSetpoint(params.id, body.value)) {
+      return reply.status(400).send({ error: 'Device does not support a setpoint' });
+    }
     return { pendingSetpointC: body.value };
   });
 }
