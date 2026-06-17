@@ -202,7 +202,7 @@ function ChecklistEditor({
   const steps = checklist.steps;
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="w-full max-w-3xl p-6">
       {/* Name + actions */}
       <div className="flex flex-wrap items-center gap-3">
         <input

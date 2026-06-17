@@ -36,10 +36,47 @@ import { asMessage } from '../util';
  * tuning) match the kiosk's localStorage store, so editing them here only
  * affects this browser; notifications and colours are server-shared.
  */
+type SettingsCategoryId = 'dashboard' | 'colours' | 'notifications' | 'account' | 'maintenance';
+
+const SETTINGS_CATEGORIES: {
+  id: SettingsCategoryId;
+  label: string;
+  description: string;
+}[] = [
+  {
+    id: 'dashboard',
+    label: 'Dashboard',
+    description: 'Local display and fermentation tuning',
+  },
+  {
+    id: 'colours',
+    label: 'Colours',
+    description: 'Shared graph and keg palettes',
+  },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    description: 'Server-side Telegram alerts',
+  },
+  {
+    id: 'account',
+    label: 'Account',
+    description: 'Username and password',
+  },
+  {
+    id: 'maintenance',
+    label: 'Maintenance',
+    description: 'Restore default preferences',
+  },
+];
+
 export function SettingsDesktopPage(): JSX.Element {
+  const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>('dashboard');
+  const active = SETTINGS_CATEGORIES.find((category) => category.id === activeCategory)!;
+
   return (
     <DashboardShell active="settings">
-      <main className="mx-auto max-w-3xl px-5 py-6">
+      <main className="w-full max-w-6xl px-5 py-6">
         <div className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight text-zinc-50">Settings</h1>
           <p className="mt-0.5 text-sm text-zinc-500">
@@ -47,18 +84,88 @@ export function SettingsDesktopPage(): JSX.Element {
           </p>
         </div>
 
-        <div className="space-y-5">
-          <DisplaySection />
-          <FermentationSection />
-          <GraphColorsSection />
-          <KegContentColorsSection />
-          <NotificationsSection />
-          <AccountSection />
-          <ResetSection />
+        <div className="grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
+          <aside className="lg:sticky lg:top-6 lg:self-start">
+            <nav
+              aria-label="Settings categories"
+              role="tablist"
+              className="flex gap-2 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900 p-2 lg:flex-col lg:overflow-visible"
+            >
+              {SETTINGS_CATEGORIES.map((category) => {
+                const selected = category.id === activeCategory;
+
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    aria-controls={`settings-panel-${category.id}`}
+                    aria-selected={selected}
+                    onClick={() => setActiveCategory(category.id)}
+                    role="tab"
+                    className={`min-w-44 rounded-lg border px-3 py-2 text-left transition lg:min-w-0 ${
+                      selected
+                        ? 'border-blue-500/60 bg-blue-500/10 text-zinc-50'
+                        : 'border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-950 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span className="block text-sm font-semibold">{category.label}</span>
+                    <span className="mt-0.5 block text-xs leading-snug text-zinc-500">
+                      {category.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+          </aside>
+
+          <section aria-labelledby="settings-category-title" className="min-w-0">
+            <div className="mb-4">
+              <h2 id="settings-category-title" className="text-lg font-semibold text-zinc-50">
+                {active.label}
+              </h2>
+              <p className="mt-0.5 text-sm text-zinc-500">{active.description}</p>
+            </div>
+            {SETTINGS_CATEGORIES.map((category) => (
+              <div
+                key={category.id}
+                id={`settings-panel-${category.id}`}
+                role="tabpanel"
+                hidden={category.id !== activeCategory}
+                className="space-y-5"
+              >
+                {renderSettingsCategory(category.id)}
+              </div>
+            ))}
+          </section>
         </div>
       </main>
     </DashboardShell>
   );
+}
+
+function renderSettingsCategory(category: SettingsCategoryId): React.ReactNode {
+  switch (category) {
+    case 'dashboard':
+      return (
+        <>
+          <DisplaySection />
+          <FermentationSection />
+        </>
+      );
+    case 'colours':
+      return (
+        <>
+          <GraphColorsSection />
+          <KegContentColorsSection />
+        </>
+      );
+    case 'notifications':
+      return <NotificationsSection />;
+    case 'account':
+      return <AccountSection />;
+    case 'maintenance':
+      return <ResetSection />;
+  }
 }
 
 // --- Shared layout primitives ----------------------------------------------
@@ -340,6 +447,13 @@ const KEG_CONTENT_COLOR_FIELDS: { key: keyof KegContentColors; label: string }[]
   { key: '???', label: 'Empty / unknown' },
 ];
 
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const BARE_HEX_COLOR_RE = /^[0-9a-fA-F]{6}$/;
+
+function isHexColor(value: string): boolean {
+  return HEX_COLOR_RE.test(value);
+}
+
 function KegContentColorsSection(): JSX.Element {
   const live = useKegContentColors();
   const [draft, setDraft] = useState<KegContentColors>(live);
@@ -354,8 +468,15 @@ function KegContentColorsSection(): JSX.Element {
   const dirty = KEG_CONTENT_COLOR_FIELDS.some(
     (f) => draft[f.key].toLowerCase() !== live[f.key].toLowerCase(),
   );
+  const hasInvalidHex = KEG_CONTENT_COLOR_FIELDS.some((f) => !isHexColor(draft[f.key]));
 
   const save = async (): Promise<void> => {
+    if (hasInvalidHex) {
+      setError('Use #rrggbb hex values before saving.');
+      setStatus('error');
+      return;
+    }
+
     setStatus('saving');
     setError(null);
     try {
@@ -388,30 +509,64 @@ function KegContentColorsSection(): JSX.Element {
       hint="The beer/type palette used by the keg inventory and the Garmin API endpoint."
     >
       <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-        {KEG_CONTENT_COLOR_FIELDS.map((f) => (
-          <Row key={f.key} label={f.label}>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs uppercase tabular-nums text-zinc-500">
-                {draft[f.key]}
-              </span>
-              <input
-                type="color"
-                aria-label={`${f.label} colour`}
-                value={draft[f.key]}
-                onChange={(e) => {
-                  setStatus('idle');
-                  setTouched(true);
-                  setDraft((d) => ({ ...d, [f.key]: e.target.value }));
-                }}
-                className="h-8 w-12 cursor-pointer rounded-md border border-zinc-700 bg-transparent"
-              />
-            </div>
-          </Row>
-        ))}
+        {KEG_CONTENT_COLOR_FIELDS.map((f) => {
+          const value = draft[f.key];
+          const valid = isHexColor(value);
+
+          return (
+            <Row key={f.key} label={f.label}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  aria-label={`${f.label} hex colour`}
+                  aria-invalid={!valid}
+                  autoComplete="off"
+                  inputMode="text"
+                  maxLength={7}
+                  pattern="#[0-9a-fA-F]{6}"
+                  spellCheck={false}
+                  value={value}
+                  onBlur={() => {
+                    if (!BARE_HEX_COLOR_RE.test(value)) return;
+                    setDraft((d) => ({ ...d, [f.key]: `#${value}` }));
+                  }}
+                  onChange={(e) => {
+                    setStatus('idle');
+                    setError(null);
+                    setTouched(true);
+                    setDraft((d) => ({ ...d, [f.key]: e.target.value.trim() }));
+                  }}
+                  className={`h-8 w-24 rounded-md border bg-zinc-950 px-2 font-mono text-xs uppercase tabular-nums outline-none transition focus:ring-2 focus:ring-amber-500/30 ${
+                    valid
+                      ? 'border-zinc-700 text-zinc-300 focus:border-amber-500'
+                      : 'border-red-500 text-red-300 focus:border-red-400'
+                  }`}
+                />
+                <input
+                  type="color"
+                  aria-label={`${f.label} colour`}
+                  value={valid ? value : live[f.key]}
+                  onChange={(e) => {
+                    setStatus('idle');
+                    setError(null);
+                    setTouched(true);
+                    setDraft((d) => ({ ...d, [f.key]: e.target.value }));
+                  }}
+                  className="h-8 w-12 cursor-pointer rounded-md border border-zinc-700 bg-transparent"
+                />
+              </div>
+            </Row>
+          );
+        })}
       </div>
 
       <div className="mt-4 flex items-center gap-3 border-t border-zinc-800 pt-4">
-        <button type="button" className={btnPrimary} onClick={() => void save()} disabled={!dirty || status === 'saving'}>
+        <button
+          type="button"
+          className={btnPrimary}
+          onClick={() => void save()}
+          disabled={!dirty || hasInvalidHex || status === 'saving'}
+        >
           {status === 'saving' ? 'Savingâ€¦' : 'Save colours'}
         </button>
         <button

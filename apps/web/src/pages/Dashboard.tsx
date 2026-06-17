@@ -332,7 +332,7 @@ export function DashboardPage(): JSX.Element {
   return (
     <ChartRangeProvider>
     <DashboardShell active="overview" alertCount={alerts.length} lastUpdate={lastUpdate} fit>
-      <main className="mx-auto max-w-[1580px] px-5 py-5 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
+      <main className="w-full max-w-[1580px] px-5 py-5 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
         {error && (
           <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}

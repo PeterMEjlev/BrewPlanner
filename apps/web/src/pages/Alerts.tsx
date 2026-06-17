@@ -70,7 +70,7 @@ export function AlertsPage(): JSX.Element {
 
   return (
     <DashboardShell active="alerts" alertCount={activeCount}>
-      <main className="mx-auto max-w-[1100px] px-5 py-5">
+      <main className="w-full max-w-[1100px] px-5 py-5">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <BellIcon className="h-7 w-7 text-white" />

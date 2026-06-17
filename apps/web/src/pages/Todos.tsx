@@ -53,7 +53,7 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
   const hasCompleted = todos.some((t) => t.done);
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="w-full max-w-3xl p-6">
       <h2 className="text-xl font-semibold">Brewery To-Do</h2>
       <p className="mt-1 text-sm text-zinc-500">
         A standalone task list, separate from procedure checklists. Add and edit tasks

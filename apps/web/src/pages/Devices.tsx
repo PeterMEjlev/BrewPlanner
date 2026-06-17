@@ -61,7 +61,7 @@ export function DevicesPage(): JSX.Element {
 
   return (
     <DashboardShell active="devices" alertCount={offline} lastUpdate={lastUpdate}>
-      <main className="mx-auto max-w-[1580px] px-5 py-5">
+      <main className="w-full max-w-[1580px] px-5 py-5">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-zinc-50">Devices</h1>

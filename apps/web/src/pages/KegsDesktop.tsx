@@ -44,7 +44,7 @@ export function KegsDesktopPage(): JSX.Element {
 
   return (
     <DashboardShell active="kegs">
-      <main className="mx-auto max-w-[1580px] px-5 py-5">
+      <main className="w-full max-w-[1580px] px-5 py-5">
         <div className="mb-5 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold tracking-tight text-zinc-50">Kegs</h1>
