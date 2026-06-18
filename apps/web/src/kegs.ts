@@ -1,20 +1,31 @@
 import {
+  KEG_CONTENT_OPTIONS,
   KEG_SHEET_VIEW_URL,
   getContentColor,
   type Keg,
+  matchContentOption,
   parseKegDate,
 } from '@checklist/shared';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
 
 /**
  * Keg inventory lives in a shared Google Sheet — the same one the brew-system
  * app reads (see brew-system-v3 KegStatusPage). The server reads that sheet,
  * applies the shared keg-content colour settings, and returns JSON; this module
- * keeps the web-only concerns (sorting and the polling hook).
+ * keeps the web-only concerns (sorting, the polling hook, and the desktop
+ * editor's helpers).
  */
 export type { Keg };
-export { getContentColor };
+export { getContentColor, KEG_CONTENT_OPTIONS, matchContentOption };
+
+/** Today as DD/MM/YYYY — the sheet's date format, for the editor's "Today" button. */
+export function todayDDMMYYYY(): string {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
 /** Human-facing sheet URL for "open in a new tab" links. */
 export const SHEETS_VIEW_URL = KEG_SHEET_VIEW_URL;
 
@@ -37,6 +48,13 @@ export interface UseKegs {
   kegs: Keg[];
   loading: boolean;
   error: string | null;
+  /**
+   * Merge just-edited kegs (matched by number) into local state, so a save shows
+   * immediately without waiting for the next poll. The published CSV can lag a
+   * fresh write by a minute or two, so this optimistic update — not a refetch —
+   * is what keeps the grid in sync right after an edit.
+   */
+  applyLocalUpdates: (updated: Keg[]) => void;
 }
 
 /** Fetch the keg inventory on mount, optionally re-polling every `pollMs`. */
@@ -67,7 +85,12 @@ export function useKegs(pollMs?: number): UseKegs {
     };
   }, [pollMs]);
 
-  return { kegs, loading, error };
+  const applyLocalUpdates = useCallback((updated: Keg[]) => {
+    const byNumber = new Map(updated.map((k) => [k.number, k]));
+    setKegs((prev) => prev.map((k) => byNumber.get(k.number) ?? k));
+  }, []);
+
+  return { kegs, loading, error, applyLocalUpdates };
 }
 
 // --- Sorting ----------------------------------------------------------------

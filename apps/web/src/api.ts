@@ -202,4 +202,15 @@ export const api = {
 
   // Keg inventory, enriched server-side with the saved content colours.
   getKegs: () => request<Keg[]>('/kegs'),
+  // Write one keg's editable fields back to the shared sheet (desktop only). The
+  // server proxies a Google Apps Script write; 204 on success. Volume is left
+  // untouched (it's not sent).
+  updateKeg: (
+    number: string,
+    fields: { contents: string; date: string; note: string; abv: string },
+  ) =>
+    request<void>(`/kegs/${encodeURIComponent(number)}`, {
+      method: 'PUT',
+      body: JSON.stringify(fields),
+    }),
 };

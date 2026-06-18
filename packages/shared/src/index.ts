@@ -297,6 +297,37 @@ export type KegContent = keyof typeof DEFAULT_KEG_CONTENT_COLORS;
 export type KegContentColors = Record<KegContent, string>;
 export const KEG_CONTENT_COLORS: KegContentColors = DEFAULT_KEG_CONTENT_COLORS;
 
+/**
+ * The selectable keg-content values, in display order, for the desktop editor's
+ * dropdown. Derived from the colour palette so the two never drift — every
+ * option has a colour and vice versa.
+ */
+export const KEG_CONTENT_OPTIONS = Object.keys(DEFAULT_KEG_CONTENT_COLORS) as KegContent[];
+
+/**
+ * Best-effort map of a recipe's name/style onto one of the known content
+ * options, so linking a Brewer's Friend recipe can pre-fill the contents field
+ * (e.g. "Galaxy NEIPA" → "NEIPA", "My Tropical Gose" → "Sour"). Returns null
+ * when nothing matches, leaving the caller to fall back to the recipe name.
+ * Order matters: more specific terms are checked before generic ones.
+ */
+export function matchContentOption(recipeName: string, recipeStyle = ''): KegContent | null {
+  for (const text of [recipeName, recipeStyle]) {
+    if (!text) continue;
+    const t = text.toLowerCase();
+    if (t.includes('neipa') || t.includes('hazy')) return 'NEIPA';
+    if (t.includes('sipa') || t.includes('session ipa')) return 'SIPA';
+    if (t.includes('brown ale')) return 'Brown Ale';
+    if (t.includes('ipa')) return 'IPA';
+    if (t.includes('wiessbeer') || t.includes('weiss') || t.includes('hefeweizen') || t.includes('wheat'))
+      return 'Wiessbeer';
+    if (t.includes('sour') || t.includes('gose') || t.includes('berliner')) return 'Sour';
+    if (t.includes('pilsner') || t.includes('pils') || t.includes('lager')) return 'Pilsner';
+    if (t.includes('stout') || t.includes('porter')) return 'Stout';
+  }
+  return null;
+}
+
 /** Colour for a keg's contents, or null when the content is unrecognised. */
 export function getContentColor(
   contents: string,
@@ -625,6 +656,28 @@ const kegContentColorShape = Object.fromEntries(
 /** Body for `PUT /api/keg-content-colors`. The whole palette is sent each save. */
 export const kegContentColorsSchema = z.object(kegContentColorShape);
 export type KegContentColorsInput = z.infer<typeof kegContentColorsSchema>;
+
+// --- Keg inventory edits (write-back to the shared sheet) -------------------
+
+/** Path param for `PUT /api/kegs/:number` — the keg number whose row to update. */
+export const kegNumberParamSchema = z.object({
+  number: z.string().trim().min(1).max(20),
+});
+
+/**
+ * Body for `PUT /api/kegs/:number` — the editable keg fields written back to the
+ * shared sheet. Volume is intentionally omitted: it's a fixed physical property
+ * of the keg, so the writer leaves that cell untouched. A blank date/note/abv
+ * clears that cell; the desktop editor pre-fills existing values so a bulk
+ * "assign content" can keep them. Contents is the one always-required field.
+ */
+export const updateKegSchema = z.object({
+  contents: z.string().trim().min(1, 'Contents is required').max(100),
+  date: z.string().trim().max(40),
+  note: z.string().trim().max(200),
+  abv: z.string().trim().max(20),
+});
+export type UpdateKegInput = z.infer<typeof updateKegSchema>;
 
 /** Body for `PUT /api/graph-colors`. The whole palette is sent each save. */
 export const graphColorsSchema = z.object({

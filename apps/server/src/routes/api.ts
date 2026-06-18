@@ -6,12 +6,14 @@ import {
   graphColorsSchema,
   idParamSchema,
   kegContentColorsSchema,
+  kegNumberParamSchema,
   notificationSettingsSchema,
   reorderStepsSchema,
   reorderTodosSchema,
   setActiveRecipeSchema,
   stepIdParamSchema,
   updateChecklistSchema,
+  updateKegSchema,
   updateStepSchema,
   updateTodoSchema,
 } from '@checklist/shared';
@@ -20,7 +22,7 @@ import { z } from 'zod';
 import { listAlerts } from '../alerts/repo.js';
 import { requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
-import { fetchKegs } from '../kegs.js';
+import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
 import * as telegram from '../notify/telegram.js';
 import * as repo from '../repo.js';
 
@@ -245,6 +247,29 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       req.log.error(err, 'Keg sheet fetch failed');
       return reply.status(502).send({ error: 'Could not reach the keg inventory sheet' });
+    }
+  });
+
+  // Write one keg's editable fields back to the sheet (desktop dashboard only —
+  // the Pi kiosk's keg screen stays read-only). Routes through a Google Apps
+  // Script web app whose URL is server-side (KEG_SHEET_WRITE_URL): 503 when that
+  // isn't configured, 502 if the write fails. Returns 204 on success; the client
+  // optimistically updates its own copy (the published CSV can lag a fresh edit).
+  app.put('/kegs/:number', async (req, reply) => {
+    const params = parse(kegNumberParamSchema, req.params, reply);
+    if (!params) return;
+    const body = parse(updateKegSchema, req.body, reply);
+    if (!body) return;
+    try {
+      await updateKeg(params.number, body);
+      return reply.status(204).send();
+    } catch (err) {
+      if (err instanceof KegWriteNotConfiguredError) {
+        return reply.status(503).send({ error: err.message });
+      }
+      req.log.error(err, 'Keg sheet update failed');
+      const detail = err instanceof Error ? err.message : 'Keg update failed';
+      return reply.status(502).send({ error: detail });
     }
   });
 
