@@ -750,7 +750,8 @@ function FermenterCommandCenter({
                   <MiniChartFrame
                     max={gravityRange ? gravityRange.max.toFixed(3) : undefined}
                     min={gravityRange ? gravityRange.min.toFixed(3) : undefined}
-                    caption={gravityCaption(gravityForecast != null)}
+                    caption={gravityForecast != null ? 'Last 48h' : 'Recent trend'}
+                    captionRight={gravityForecast != null ? '2-day forecast' : undefined}
                   >
                     {gravityForecast ? (
                       <ForecastSparkline
@@ -906,11 +907,6 @@ function minMax(data: number[]): { min: number; max: number } | null {
   return { min: Math.min(...data), max: Math.max(...data) };
 }
 
-/** Caption under the gravity sparkline — the time window shown. */
-function gravityCaption(hasForecast: boolean): string {
-  return hasForecast ? '2-day forecast' : 'Recent trend';
-}
-
 /** Caption for a windowed preview, e.g. "Last 24h" — tracks the chosen range. */
 function rangeCaption(rangeMs: number): string {
   return `Last ${RANGES.find((r) => r.ms === rangeMs)?.label ?? '24h'}`;
@@ -934,11 +930,14 @@ function MiniChartFrame({
   max,
   min,
   caption,
+  captionRight,
 }: {
   children: React.ReactNode;
   max?: string;
   min?: string;
   caption?: string;
+  /** Optional second caption pinned to the right — e.g. a forecast-tail label. */
+  captionRight?: string;
 }): JSX.Element {
   return (
     <div className="flex h-full flex-col">
@@ -955,8 +954,11 @@ function MiniChartFrame({
           </span>
         )}
       </div>
-      {caption != null && (
-        <div className="mt-1 text-xs font-medium leading-none text-white">{caption}</div>
+      {(caption != null || captionRight != null) && (
+        <div className="mt-1 flex items-baseline justify-between gap-2 text-xs font-medium leading-none text-white">
+          <span>{caption}</span>
+          {captionRight != null && <span>{captionRight}</span>}
+        </div>
       )}
     </div>
   );
