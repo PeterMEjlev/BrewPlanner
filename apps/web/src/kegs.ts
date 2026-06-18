@@ -35,9 +35,13 @@ export function hexToRgb(hex: string): string {
   return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
 }
 
-/** An empty/unassigned keg is marked "???" in the sheet. */
+/**
+ * An empty/unassigned keg is marked "???" in the sheet — but a blank cell means
+ * the same thing, so treat an empty (or whitespace-only) value as unknown too.
+ */
 export function isUnknownContents(contents: string): boolean {
-  return contents.trim() === '???';
+  const c = contents.trim();
+  return c === '' || c === '???';
 }
 
 export async function fetchKegs(): Promise<Keg[]> {
