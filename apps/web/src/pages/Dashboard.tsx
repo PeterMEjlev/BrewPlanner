@@ -12,6 +12,7 @@ import {
   Sparkline,
 } from '../components/charts';
 import { DashboardShell } from '../components/DashboardShell';
+import { FitScale } from '../components/FitScale';
 import { useGraphColors, withAlpha } from '../graphColors';
 import {
   BellIcon,
@@ -332,7 +333,8 @@ export function DashboardPage(): JSX.Element {
   return (
     <ChartRangeProvider>
     <DashboardShell active="overview" alertCount={alerts.length} lastUpdate={lastUpdate} fit>
-      <main className="w-full max-w-[1580px] px-5 py-5 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
+      <FitScale className="w-full max-w-[1580px]">
+      <main className="w-full px-5 py-5 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
         {error && (
           <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}
@@ -384,6 +386,7 @@ export function DashboardPage(): JSX.Element {
           </aside>
         </div>
       </main>
+      </FitScale>
 
       {chart && (
         <MetricModal
@@ -1321,18 +1324,8 @@ function OperationsPanel(): JSX.Element {
     <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
       <PanelHeading title="Operations" icon={<WrenchIcon className="h-5 w-5" />} />
       <div className="mt-3 grid gap-2">
-        <AppLink
-          to="/admin"
-          icon={<ChecklistIcon className="h-5 w-5" />}
-          title="Brew Checklist"
-          subtitle="Procedures and runs"
-        />
-        <AppLink
-          to="/todos"
-          icon={<TodoIcon className="h-5 w-5" />}
-          title="Brewery To-Do"
-          subtitle="Ad-hoc task list"
-        />
+        <AppLink to="/admin" icon={<ChecklistIcon className="h-5 w-5" />} title="Brew Checklist" />
+        <AppLink to="/todos" icon={<TodoIcon className="h-5 w-5" />} title="Brewery To-Do" />
       </div>
     </section>
   );
@@ -1347,19 +1340,19 @@ function AppLink({
   to: string;
   icon: React.ReactNode;
   title: string;
-  subtitle: string;
+  subtitle?: string;
 }): JSX.Element {
   return (
     <Link
       to={to}
-      className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2.5 transition hover:border-zinc-700 hover:bg-zinc-800/60"
+      className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2 transition hover:border-zinc-700 hover:bg-zinc-800/60"
     >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-white">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-white">
         {icon}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate font-semibold text-zinc-100">{title}</span>
-        <span className="block truncate text-sm text-zinc-500">{subtitle}</span>
+        {subtitle && <span className="block truncate text-sm text-zinc-500">{subtitle}</span>}
       </span>
       <span className="text-zinc-600" aria-hidden>
         ›
@@ -1494,7 +1487,11 @@ function AlertsPanel({ alerts, loading }: { alerts: Alert[]; loading: boolean })
   return (
     <section
       id="alerts"
-      className="scroll-mt-5 rounded-xl border border-zinc-800 bg-zinc-900 p-5 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+      // Floor (instead of min-h-0) so the panel can't silently collapse to
+      // nothing on short screens: it keeps a real height, which lets the column
+      // genuinely overflow and the dashboard's fit-scaler shrink everything to
+      // fit. On roomy screens flex-1 still grows it to fill the slack.
+      className="scroll-mt-5 rounded-xl border border-zinc-800 bg-zinc-900 p-5 xl:flex xl:min-h-[7rem] xl:flex-1 xl:flex-col"
     >
       <PanelHeading
         title="Alerts"

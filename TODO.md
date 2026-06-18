@@ -7,6 +7,8 @@
   - Temperature of brewery (another Inkbird 308)
   - Gravity of beer/wort fermentation (Tilt gravity sensor.) Tilt broadcasts BLE/iBeacon data.
 
+- ## Improve phone layout for dashboard (make a phone specific layout? (so we have rpi (kiosk, desktop and phone specific layouts)))?
+
 - ## Enable Keg inventory editing: 
   On the Raspberry Pi (production — the real deployment):
   
@@ -22,4 +24,6 @@
 
 - ## Incorporate the readings from the TILT hydrometer to log to brewersfriend. "The Tilt wireless hydrometer operates on bluetooth. Log readings from the phone app or using a Raspberry pi with this Cloud URL. Turn on Tilt integration in your brew session under the Fermentation tab to start collecting temperature and gravity readings. 
   Cloud URL: https://log.brewersfriend.com/tilt/5a2c07e701f38d2c83ff2289df53f598c927129f" 
+
+
 
