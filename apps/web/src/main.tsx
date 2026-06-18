@@ -4,6 +4,7 @@ import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom'
 import { RequireAuth } from './auth';
 import { AdminPage } from './pages/Admin';
 import { AlertsPage } from './pages/Alerts';
+import { BrewSystemPage } from './pages/BrewSystem';
 import { DashboardPage } from './pages/Dashboard';
 import { DevicesPage } from './pages/Devices';
 import { DisplayPage } from './pages/Display';
@@ -89,6 +90,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <AlertsPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/brew-system',
+    element: (
+      <RequireAuth>
+        <BrewSystemPage />
       </RequireAuth>
     ),
   },

@@ -9,6 +9,7 @@ import {
   KegIcon,
   MonitorIcon,
   SettingsIcon,
+  SlidersIcon,
   TodoIcon,
 } from './icons';
 import { relativeTime } from '../util';
@@ -17,6 +18,7 @@ import { relativeTime } from '../util';
 export type ShellPage =
   | 'overview'
   | 'devices'
+  | 'brewSystem'
   | 'alerts'
   | 'settings'
   | 'kegs'
@@ -39,6 +41,7 @@ const NAV: NavItem[] = [
   { key: 'kegs', label: 'Kegs', Icon: KegIcon, to: '/kegs', page: 'kegs' },
   { key: 'alerts', label: 'Alerts', Icon: BellIcon, to: '/alerts', page: 'alerts' },
   { key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
+  { key: 'brewSystem', label: 'Brew System', Icon: SlidersIcon, to: '/brew-system', page: 'brewSystem' },
   { key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin', page: 'checklists' },
   { key: 'todos', label: 'To-Do', Icon: TodoIcon, to: '/todos', page: 'todos' },
   { key: 'settings', label: 'Settings', Icon: SettingsIcon, to: '/settings', page: 'settings' },

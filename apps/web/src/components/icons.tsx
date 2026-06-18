@@ -117,6 +117,18 @@ export function BellIcon(props: IconProps): JSX.Element {
   );
 }
 
+/** A control panel: sliders for the brew-system controls. */
+export function SlidersIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h8M16 18h4" />
+      <circle cx="16" cy="6" r="2" />
+      <circle cx="8" cy="12" r="2" />
+      <circle cx="14" cy="18" r="2" />
+    </Svg>
+  );
+}
+
 export function MonitorIcon(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>
