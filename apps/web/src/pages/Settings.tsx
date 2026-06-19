@@ -5,6 +5,8 @@ import { api } from '../api';
 import {
   FERMENT_DAYS,
   FERMENT_SG,
+  KEG_OLD_DAYS,
+  KEG_WARN_DAYS,
   clampStep,
   setSetting,
   useSettings,
@@ -85,6 +87,41 @@ export function SettingsPage(): JSX.Element {
               }
               canDecrease={settings.fermentThresholdSg > FERMENT_SG.min}
               canIncrease={settings.fermentThresholdSg < FERMENT_SG.max}
+            />
+          </div>
+        </SettingCard>
+
+        {/* Keg freshness indicator ----------------------------------------- */}
+        <SettingCard
+          title="Keg freshness"
+          hint="Shade a filled keg's date on the Keg Status page once it's been stored this long — amber first, then red."
+        >
+          <div className="flex flex-col gap-5">
+            <Stepper
+              label="Amber after"
+              value={settings.kegWarnDays}
+              format={(v) => `${v} ${v === 1 ? 'day' : 'days'}`}
+              onStep={(dir) =>
+                setSetting(
+                  'kegWarnDays',
+                  clampStep(settings.kegWarnDays + dir * KEG_WARN_DAYS.step, KEG_WARN_DAYS),
+                )
+              }
+              canDecrease={settings.kegWarnDays > KEG_WARN_DAYS.min}
+              canIncrease={settings.kegWarnDays < KEG_WARN_DAYS.max}
+            />
+            <Stepper
+              label="Red after"
+              value={settings.kegOldDays}
+              format={(v) => `${v} ${v === 1 ? 'day' : 'days'}`}
+              onStep={(dir) =>
+                setSetting(
+                  'kegOldDays',
+                  clampStep(settings.kegOldDays + dir * KEG_OLD_DAYS.step, KEG_OLD_DAYS),
+                )
+              }
+              canDecrease={settings.kegOldDays > KEG_OLD_DAYS.min}
+              canIncrease={settings.kegOldDays < KEG_OLD_DAYS.max}
             />
           </div>
         </SettingCard>

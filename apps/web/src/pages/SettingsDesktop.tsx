@@ -21,6 +21,8 @@ import {
   DASHBOARD_ZOOM,
   FERMENT_DAYS,
   FERMENT_SG,
+  KEG_OLD_DAYS,
+  KEG_WARN_DAYS,
   REFRESH_SEC_OPTIONS,
   clampStep,
   resetSettings,
@@ -164,6 +166,7 @@ function renderSettingsCategory(category: SettingsCategoryId): React.ReactNode {
         <>
           <DisplaySection />
           <FermentationSection />
+          <KegFreshnessSection />
         </>
       );
     case 'colours':
@@ -381,6 +384,49 @@ function FermentationSection(): JSX.Element {
             onChange={(e) => {
               const n = Number(e.target.value);
               if (Number.isFinite(n)) setSetting('fermentThresholdSg', clampStep(n, FERMENT_SG));
+            }}
+          />
+        </Row>
+      </div>
+    </Card>
+  );
+}
+
+// --- Keg freshness indicator -----------------------------------------------
+
+function KegFreshnessSection(): JSX.Element {
+  const { kegWarnDays, kegOldDays } = useSettings();
+  return (
+    <Card
+      title="Keg freshness indicator"
+      hint="Shade a filled keg's date on the Kegs page once it's been stored this long — amber past the first mark, red past the second. A local cue, separate from the Telegram keg-age alert."
+    >
+      <div className="divide-y divide-zinc-800/70">
+        <Row label="Amber after (days)" hint="Worth keeping an eye on (≈2 months by default).">
+          <input
+            type="number"
+            className={`${inputClass} w-28 text-right tabular-nums`}
+            min={KEG_WARN_DAYS.min}
+            max={KEG_WARN_DAYS.max}
+            step={KEG_WARN_DAYS.step}
+            value={kegWarnDays}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n)) setSetting('kegWarnDays', clampStep(n, KEG_WARN_DAYS));
+            }}
+          />
+        </Row>
+        <Row label="Red after (days)" hint="Likely past its best (≈6 months by default).">
+          <input
+            type="number"
+            className={`${inputClass} w-28 text-right tabular-nums`}
+            min={KEG_OLD_DAYS.min}
+            max={KEG_OLD_DAYS.max}
+            step={KEG_OLD_DAYS.step}
+            value={kegOldDays}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n)) setSetting('kegOldDays', clampStep(n, KEG_OLD_DAYS));
             }}
           />
         </Row>

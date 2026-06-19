@@ -48,6 +48,73 @@ export async function fetchKegs(): Promise<Keg[]> {
   return api.getKegs();
 }
 
+// --- Freshness indicator ----------------------------------------------------
+
+/**
+ * How long a keg has been filled, bucketed for the card's date indicator:
+ * 'fresh' (no flag), 'warning' (amber) once past the warn threshold, 'old' (red)
+ * once past the older one. Mirrors the brew sheet's yellow/red date-cell shading.
+ */
+export type KegAgeStatus = 'fresh' | 'warning' | 'old';
+
+/** Day thresholds for {@link describeKegAge}, sourced from local Settings. */
+export interface KegAgeThresholds {
+  warnDays: number;
+  oldDays: number;
+}
+
+/** Whole days since a keg's fill date, or null when undated/unparseable. */
+export function kegAgeDays(date: string): number | null {
+  const filled = parseKegDate(date);
+  if (!filled) return null;
+  return Math.floor((Date.now() - filled) / 86_400_000);
+}
+
+/** Presentation bundle for a keg's date, given the freshness thresholds. */
+export interface KegAgeIndicator {
+  status: KegAgeStatus;
+  /** Tailwind classes for the date chip when flagged; '' when fresh (plain text). */
+  chipClass: string;
+  /** Leading glyph for the chip; '' when fresh. */
+  icon: string;
+  /** Tooltip explaining the flag; undefined when fresh. */
+  title: string | undefined;
+}
+
+const FRESH_INDICATOR: KegAgeIndicator = { status: 'fresh', chipClass: '', icon: '', title: undefined };
+
+/**
+ * Classify a keg's age and bundle the date chip's styling + tooltip. Only filled
+ * kegs (known contents) with a parseable fill date are flagged; empty/undated
+ * kegs stay 'fresh'. The 'old' bucket wins over 'warning' even if the thresholds
+ * are mis-ordered, so the more urgent red always takes precedence.
+ */
+export function describeKegAge(keg: Keg, { warnDays, oldDays }: KegAgeThresholds): KegAgeIndicator {
+  if (isUnknownContents(keg.contents)) return FRESH_INDICATOR;
+  const ageDays = kegAgeDays(keg.date);
+  if (ageDays === null) return FRESH_INDICATOR;
+
+  if (ageDays >= oldDays) {
+    return {
+      status: 'old',
+      chipClass:
+        'rounded-md bg-red-500/20 px-1.5 py-0.5 text-red-300 ring-1 ring-inset ring-red-500/50',
+      icon: '⚠',
+      title: `Filled ${ageDays} days ago — over ${oldDays}, likely past its best`,
+    };
+  }
+  if (ageDays >= warnDays) {
+    return {
+      status: 'warning',
+      chipClass:
+        'rounded-md bg-amber-500/15 px-1.5 py-0.5 text-amber-300 ring-1 ring-inset ring-amber-500/40',
+      icon: '⏳',
+      title: `Filled ${ageDays} days ago — over ${warnDays}, keep an eye on it`,
+    };
+  }
+  return FRESH_INDICATOR;
+}
+
 export interface UseKegs {
   kegs: Keg[];
   loading: boolean;

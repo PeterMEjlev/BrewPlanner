@@ -25,6 +25,15 @@ export interface Settings {
    * (the dashboard then scrolls if it no longer fits one screen).
    */
   dashboardZoom: number;
+  /**
+   * Keg-freshness indicator thresholds (days). A filled keg's date chip turns
+   * amber once it's been stored at least `kegWarnDays`, then red past
+   * `kegOldDays` — mirroring the brew sheet's yellow/red date highlight. Kept
+   * local (not server) like the other display thresholds: a purely visual cue,
+   * separate from the server-side keg-age Telegram alert (`kegAlertDays`).
+   */
+  kegWarnDays: number;
+  kegOldDays: number;
 }
 
 /**
@@ -38,6 +47,10 @@ export const DEFAULT_SETTINGS: Settings = {
   fermentThresholdSg: 0.002,
   dashboardRefreshSec: 10,
   dashboardZoom: 1,
+  // ~2 months / ~6 months — the points at which a stored keg looks worth
+  // watching, then likely past its best.
+  kegWarnDays: 60,
+  kegOldDays: 180,
 };
 
 /** Selectable dashboard refresh cadences, in seconds (desktop Settings page). */
@@ -52,6 +65,12 @@ export const FERMENT_SG = { min: 0.001, max: 0.01, step: 0.001 } as const;
 // Dashboard zoom range: half size up to double, in 10% clicks. The upper bound
 // matches the "enlarge at most 2×" guidance for large monitors.
 export const DASHBOARD_ZOOM = { min: 0.5, max: 2, step: 0.1 } as const;
+
+// Keg-freshness thresholds move in 5-day clicks — fine enough to land on a "this
+// many months" feel without making the touch steppers tedious. The amber mark
+// tops out a year out; the red mark can be pushed to two years for slow lagers.
+export const KEG_WARN_DAYS = { min: 5, max: 365, step: 5 } as const;
+export const KEG_OLD_DAYS = { min: 5, max: 730, step: 5 } as const;
 
 const STORAGE_KEY = 'brewplanner.settings';
 const BAR_TO_PSI = 14.5038;

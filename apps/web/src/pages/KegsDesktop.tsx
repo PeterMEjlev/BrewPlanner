@@ -9,7 +9,9 @@ import {
   SHEETS_VIEW_URL,
   SORT_OPTIONS,
   type Keg,
+  type KegAgeIndicator,
   type SortKey,
+  describeKegAge,
   getContentColor,
   hexToRgb,
   isUnknownContents,
@@ -18,6 +20,7 @@ import {
   todayDDMMYYYY,
   useKegs,
 } from '../kegs';
+import { useSettings } from '../settings';
 import { asMessage } from '../util';
 
 /** Re-pull the sheet every minute so a fill/empty done elsewhere shows up. */
@@ -46,6 +49,7 @@ function toggleInSet(set: Set<string>, value: string): Set<string> {
 export function KegsDesktopPage(): JSX.Element {
   const { kegs, loading, error, applyLocalUpdates } = useKegs(POLL_MS);
   const colors = useKegContentColors();
+  const { kegWarnDays, kegOldDays } = useSettings();
   const { auth } = useAuth();
   // Guests are read-only: they can browse and sort kegs, but can't edit content,
   // multi-select, or open the source sheet. The kiosk/LAN and admins get the
@@ -66,6 +70,7 @@ export function KegsDesktopPage(): JSX.Element {
 
   const filled = kegs.filter((k) => !isUnknownContents(k.contents)).length;
   const sorted = sortKegs(kegs, sortKey, sortAsc);
+  const ageThresholds = { warnDays: kegWarnDays, oldDays: kegOldDays };
   const selectedKegs = kegs.filter((k) => selected.has(k.number));
   // We're "selecting" whenever something is selected, or the user pressed the
   // Select button to start an empty selection. Drives the checkboxes/bulk bar.
@@ -237,6 +242,7 @@ export function KegsDesktopPage(): JSX.Element {
                 <KegCard
                   key={keg.number}
                   keg={keg}
+                  age={describeKegAge(keg, ageThresholds)}
                   colors={colors}
                   selectMode={selecting}
                   selected={selected.has(keg.number)}
@@ -297,6 +303,7 @@ export function KegsDesktopPage(): JSX.Element {
  */
 function KegCard({
   keg,
+  age,
   colors,
   selectMode,
   selected,
@@ -304,6 +311,7 @@ function KegCard({
   onActivate,
 }: {
   keg: Keg;
+  age: KegAgeIndicator;
   colors: Record<KegContent, string>;
   selectMode: boolean;
   selected: boolean;
@@ -392,7 +400,15 @@ function KegCard({
       >
         {keg.contents}
       </span>
-      {keg.date && <span className="mt-1 text-sm text-zinc-400">{keg.date}</span>}
+      {keg.date && (
+        <span
+          className={`mt-1 inline-flex w-fit items-center gap-1 text-sm ${age.chipClass || 'text-zinc-400'}`}
+          title={age.title}
+        >
+          {age.icon && <span aria-hidden>{age.icon}</span>}
+          {keg.date}
+        </span>
+      )}
       {keg.note && <span className="mt-1 text-sm italic text-zinc-400">{keg.note}</span>}
       {keg.abv && <span className="mt-auto pt-2 text-sm text-zinc-400">{keg.abv} ABV</span>}
     </div>

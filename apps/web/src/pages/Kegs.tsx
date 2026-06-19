@@ -3,13 +3,16 @@ import { Link } from 'react-router-dom';
 import {
   SORT_OPTIONS,
   type Keg,
+  type KegAgeIndicator,
   type SortKey,
+  describeKegAge,
   getContentColor,
   hexToRgb,
   isUnknownContents,
   sortKegs,
   useKegs,
 } from '../kegs';
+import { useSettings } from '../settings';
 import { homePath } from '../util';
 
 /** Re-pull the sheet every minute so a fill/empty done elsewhere shows up. */
@@ -27,11 +30,13 @@ const TINT_BASE = '#1e293b';
  */
 export function KegsPage(): JSX.Element {
   const { kegs, loading, error } = useKegs(POLL_MS);
+  const { kegWarnDays, kegOldDays } = useSettings();
   const [sortKey, setSortKey] = useState<SortKey>('number');
   const [sortAsc, setSortAsc] = useState(true);
 
   const filled = kegs.filter((k) => !isUnknownContents(k.contents)).length;
   const sorted = sortKegs(kegs, sortKey, sortAsc);
+  const ageThresholds = { warnDays: kegWarnDays, oldDays: kegOldDays };
 
   function handleSort(key: SortKey): void {
     if (key === sortKey) {
@@ -96,7 +101,9 @@ export function KegsPage(): JSX.Element {
         >
           {loading
             ? Array.from({ length: 12 }, (_, i) => <KegSkeleton key={i} />)
-            : sorted.map((keg) => <KegCard key={keg.number} keg={keg} />)}
+            : sorted.map((keg) => (
+                <KegCard key={keg.number} keg={keg} age={describeKegAge(keg, ageThresholds)} />
+              ))}
         </div>
         {!loading && !error && kegs.length === 0 && (
           <p className="mt-10 text-center text-xl text-zinc-400">No kegs found.</p>
@@ -111,7 +118,7 @@ export function KegsPage(): JSX.Element {
  * note and ABV. Empty ("???") kegs dim and the colour cues fall away to grey,
  * matching the brew-system app's card.
  */
-function KegCard({ keg }: { keg: Keg }): JSX.Element {
+function KegCard({ keg, age }: { keg: Keg; age: KegAgeIndicator }): JSX.Element {
   const color = keg.color ?? getContentColor(keg.contents);
   const unknown = isUnknownContents(keg.contents);
   // Stout is near-black, so it reads better as a heavier tint with a muted label.
@@ -146,7 +153,15 @@ function KegCard({ keg }: { keg: Keg }): JSX.Element {
       >
         {keg.contents}
       </span>
-      {keg.date && <span className="mt-1 text-sm text-zinc-400">{keg.date}</span>}
+      {keg.date && (
+        <span
+          className={`mt-1 inline-flex w-fit items-center gap-1 text-sm ${age.chipClass || 'text-zinc-400'}`}
+          title={age.title}
+        >
+          {age.icon && <span aria-hidden>{age.icon}</span>}
+          {keg.date}
+        </span>
+      )}
       {keg.note && <span className="mt-1 text-sm italic text-zinc-400">{keg.note}</span>}
       {keg.abv && <span className="mt-auto pt-2 text-sm text-zinc-400">{keg.abv} ABV</span>}
     </div>
