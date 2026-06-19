@@ -282,7 +282,7 @@ export function DashboardPage(): JSX.Element {
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chart, setChart] = useState<ChartTarget | null>(null);
-  const { dashboardRefreshSec } = useSettings();
+  const { dashboardRefreshSec, dashboardZoom } = useSettings();
   const { auth } = useAuth();
   const controllable = canControl(auth);
   const { kegs, loading: kegsLoading, error: kegsError } = useKegs(KEG_POLL_MS);
@@ -336,7 +336,7 @@ export function DashboardPage(): JSX.Element {
   return (
     <ChartRangeProvider>
     <DashboardShell active="overview" alertCount={alerts.length} lastUpdate={lastUpdate} fit>
-      <FitScale className="w-full max-w-[1580px]">
+      <FitScale zoom={dashboardZoom} className="w-full max-w-[1580px]">
       <main className="w-full px-5 py-5 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
         {error && (
           <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">

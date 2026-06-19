@@ -19,6 +19,12 @@ export interface Settings {
   fermentThresholdSg: number;
   /** How often (seconds) the desktop dashboard re-polls device status. */
   dashboardRefreshSec: number;
+  /**
+   * User zoom multiplier for the desktop Overview. 1 keeps the previous
+   * auto-fit-only behaviour; below 1 shrinks everything, above 1 enlarges it
+   * (the dashboard then scrolls if it no longer fits one screen).
+   */
+  dashboardZoom: number;
 }
 
 /**
@@ -31,6 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fermentStableDays: 2,
   fermentThresholdSg: 0.002,
   dashboardRefreshSec: 10,
+  dashboardZoom: 1,
 };
 
 /** Selectable dashboard refresh cadences, in seconds (desktop Settings page). */
@@ -41,6 +48,10 @@ export const REFRESH_SEC_OPTIONS = [5, 10, 30, 60] as const;
 // clicks (0.001–0.010), the granularity a Tilt actually resolves.
 export const FERMENT_DAYS = { min: 0.5, max: 7, step: 0.5 } as const;
 export const FERMENT_SG = { min: 0.001, max: 0.01, step: 0.001 } as const;
+
+// Dashboard zoom range: half size up to double, in 10% clicks. The upper bound
+// matches the "enlarge at most 2×" guidance for large monitors.
+export const DASHBOARD_ZOOM = { min: 0.5, max: 2, step: 0.1 } as const;
 
 const STORAGE_KEY = 'brewplanner.settings';
 const BAR_TO_PSI = 14.5038;

@@ -14,15 +14,22 @@ const FIT_QUERY = '(min-width: 1280px)';
  * `minScale` still overflows, it falls back to scrolling rather than clipping.
  * Below `xl` it's a transparent pass-through.
  *
+ * `zoom` is the user's manual size preference (1 = the auto-fit behaviour
+ * above). It multiplies the computed fit, so values below 1 shrink everything
+ * and values above 1 enlarge it past one screen — at which point the content
+ * scrolls instead of being clipped.
+ *
  * `className` styles the (unscaled) visual box — put width/centering caps there;
  * the child is expected to be a flex item that fills the column (`xl:flex-1`).
  */
 export function FitScale({
   minScale = 0.7,
+  zoom = 1,
   className,
   children,
 }: {
   minScale?: number;
+  zoom?: number;
   className?: string;
   children: React.ReactNode;
 }): JSX.Element {
@@ -58,7 +65,11 @@ export function FitScale({
       // scaled.
       content.style.minHeight = `${avail}px`;
       const natural = content.scrollHeight;
-      const next = Math.round(Math.min(1, Math.max(minScale, avail / natural)) * 1000) / 1000;
+      // Auto-fit as before (never above 1), then apply the user's zoom on top.
+      // Zoom > 1 can push the scale above 1, enlarging past one screen; the
+      // overflow then scrolls rather than clipping.
+      const fit = Math.min(1, Math.max(minScale, avail / natural));
+      const next = Math.round(fit * zoom * 1000) / 1000;
       const visual = natural * next;
       setScale((prev) => (Math.abs(prev - next) < 0.002 ? prev : next));
       setSizerHeight((prev) => (prev != null && Math.abs(prev - visual) < 0.5 ? prev : visual));
@@ -77,7 +88,7 @@ export function FitScale({
       ro.disconnect();
       cancelAnimationFrame(raf);
     };
-  }, [enabled, minScale]);
+  }, [enabled, minScale, zoom]);
 
   if (!enabled) {
     return <div className={className}>{children}</div>;
@@ -96,7 +107,10 @@ export function FitScale({
           ref={contentRef}
           className="flex min-h-0 flex-col"
           style={
-            scale < 1
+            // Transform whenever the scale isn't exactly 1 — that includes
+            // zoom-in (scale > 1), where the pre-transform box is drawn narrower
+            // (100/scale%) so it lands back at full width once scaled up.
+            Math.abs(scale - 1) > 0.001
               ? { transform: `scale(${scale})`, transformOrigin: 'top left', width: `${100 / scale}%` }
               : undefined
           }

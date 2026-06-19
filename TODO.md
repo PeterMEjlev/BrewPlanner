@@ -27,4 +27,6 @@
 
 - ## Implement Brew System control. 
 
+- ## Add support for larger monitor screens. currently for a large monitor the fermenter card is stretched a lot vertically in order to make the dashboard fill out the monitor. Prioritize enlarging the entire dashboard (and not just the fermenter card graphs). Enlarge the entire dashboard a maximum if 2 times. if this still doesnt fill out the screen, then some unused space is acceptable. Avoid stretching the graphs on the main dashboard more than 1.5 in any given direction (unless both directions are enlarged). this is to avoid stretched out graphs. 
 
+- ## Add a zoom setting in the settings allowing the user to zoom the size of the entire dashboard to their liking

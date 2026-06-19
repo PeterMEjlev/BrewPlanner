@@ -18,6 +18,7 @@ import {
   useKegContentColors,
 } from '../kegContentColors';
 import {
+  DASHBOARD_ZOOM,
   FERMENT_DAYS,
   FERMENT_SG,
   REFRESH_SEC_OPTIONS,
@@ -266,7 +267,7 @@ const btnGhost =
 // --- Display ---------------------------------------------------------------
 
 function DisplaySection(): JSX.Element {
-  const { pressureUnit, dashboardRefreshSec } = useSettings();
+  const { pressureUnit, dashboardRefreshSec, dashboardZoom } = useSettings();
   return (
     <Card title="Display" hint="Applies to this browser only — the kiosk and other computers keep their own.">
       <div className="divide-y divide-zinc-800/70">
@@ -287,8 +288,61 @@ function DisplaySection(): JSX.Element {
             onChange={(v) => setSetting('dashboardRefreshSec', v)}
           />
         </Row>
+        <Row label="Dashboard zoom" hint="Scale the whole Overview up or down. It scrolls if it no longer fits.">
+          <Stepper
+            value={dashboardZoom}
+            format={(v) => `${Math.round(v * 100)}%`}
+            bounds={DASHBOARD_ZOOM}
+            onChange={(v) => setSetting('dashboardZoom', v)}
+            ariaLabel="Dashboard zoom"
+          />
+        </Row>
       </div>
     </Card>
+  );
+}
+
+/** Compact −/value/+ stepper for a clamped numeric setting (mouse-friendly). */
+function Stepper({
+  value,
+  format,
+  bounds,
+  onChange,
+  ariaLabel,
+}: {
+  value: number;
+  format: (value: number) => string;
+  bounds: { min: number; max: number; step: number };
+  onChange: (value: number) => void;
+  ariaLabel: string;
+}): JSX.Element {
+  const stepBtn =
+    'flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-700 text-lg font-semibold leading-none text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-40';
+  const step = (dir: -1 | 1): void => onChange(clampStep(value + dir * bounds.step, bounds));
+  return (
+    <div className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        aria-label={`Decrease ${ariaLabel}`}
+        className={stepBtn}
+        disabled={value <= bounds.min}
+        onClick={() => step(-1)}
+      >
+        −
+      </button>
+      <span className="w-14 text-center text-sm font-semibold tabular-nums text-zinc-100">
+        {format(value)}
+      </span>
+      <button
+        type="button"
+        aria-label={`Increase ${ariaLabel}`}
+        className={stepBtn}
+        disabled={value >= bounds.max}
+        onClick={() => step(1)}
+      >
+        +
+      </button>
+    </div>
   );
 }
 
