@@ -1,13 +1,27 @@
 import type { AuthState, User } from '@checklist/shared';
-import { changePasswordSchema, changeUsernameSchema, loginSchema } from '@checklist/shared';
+import {
+  adminSetPasswordSchema,
+  changePasswordSchema,
+  changeUsernameSchema,
+  createUserSchema,
+  idParamSchema,
+  loginSchema,
+  setUserRoleSchema,
+} from '@checklist/shared';
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { hashPassword } from './password.js';
 import {
   authenticate,
   changeUserPassword,
+  countAdmins,
   countUsers,
+  createUser,
+  deleteUserById,
   getUserById,
+  listUsers,
   renameUser,
+  setUserRole,
   upsertUser,
   verifyUserPassword,
 } from './users.js';
@@ -105,6 +119,35 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Pro
   await reply.status(401).send({ error: 'Authentication required' });
 }
 
+/**
+ * preHandler guard for admin-only actions: device control (setpoints), keg
+ * edits, settings, and account management. Trusted-local requests (the Pi kiosk
+ * on the LAN) pass as admin-equivalent so the physical appliance keeps full
+ * control without a login; a logged-in admin passes; a logged-in guest is
+ * refused with 403; anyone unauthenticated gets 401. The read-only watch bearer
+ * token is deliberately NOT accepted here — it grants viewing, never control.
+ */
+export async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (isLocalRequest(req)) return;
+  const user = getSessionUser(req);
+  if (user?.role === 'admin') return;
+  if (user) {
+    await reply.status(403).send({ error: 'Admin privileges required' });
+    return;
+  }
+  await reply.status(401).send({ error: 'Authentication required' });
+}
+
+/** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
+function parseBody<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T | null {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });
+    return null;
+  }
+  return result.data;
+}
+
 /** Auth endpoints, registered under /api/auth (intentionally unguarded). */
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.get('/me', async (req): Promise<AuthState> => {
@@ -164,6 +207,71 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     if (!updated) return reply.status(404).send({ error: 'Account no longer exists.' });
     return { user: updated, isLocal: isLocalRequest(req) } satisfies AuthState;
+  });
+}
+
+/**
+ * Account administration (admin-only), mounted under /api/accounts. An admin can
+ * list every account, create or delete one, change a role, or reset a password.
+ * Guarded by requireAdmin (so trusted-local and admins pass; guests get 403).
+ * The last-admin guards refuse any delete/demote that would leave no admins, so
+ * an operator can never lock everyone out of account management.
+ */
+export async function accountAdminRoutes(app: FastifyInstance): Promise<void> {
+  app.addHook('preHandler', requireAdmin);
+
+  // Every account with its role (never the password hash).
+  app.get('/', async () => listUsers());
+
+  // Create a new login account.
+  app.post('/', async (req, reply) => {
+    const body = parseBody(createUserSchema, req.body, reply);
+    if (!body) return;
+    const created = createUser(body.username, body.password, body.role);
+    if (created === 'taken') {
+      return reply.status(409).send({ error: 'That username is already taken.' });
+    }
+    return reply.status(201).send(created);
+  });
+
+  // Change an account's privilege (admin <-> guest).
+  app.patch('/:id/role', async (req, reply) => {
+    const params = parseBody(idParamSchema, req.params, reply);
+    if (!params) return;
+    const body = parseBody(setUserRoleSchema, req.body, reply);
+    if (!body) return;
+    const target = getUserById(params.id);
+    if (!target) return reply.status(404).send({ error: 'Account not found.' });
+    if (target.role === 'admin' && body.role !== 'admin' && countAdmins() <= 1) {
+      return reply.status(409).send({ error: 'Cannot demote the last admin account.' });
+    }
+    const updated = setUserRole(params.id, body.role);
+    if (!updated) return reply.status(404).send({ error: 'Account not found.' });
+    return updated;
+  });
+
+  // Reset an account's password (no current-password check — admin privilege).
+  app.post('/:id/password', async (req, reply) => {
+    const params = parseBody(idParamSchema, req.params, reply);
+    if (!params) return;
+    const body = parseBody(adminSetPasswordSchema, req.body, reply);
+    if (!body) return;
+    const updated = changeUserPassword(params.id, body.newPassword);
+    if (!updated) return reply.status(404).send({ error: 'Account not found.' });
+    return updated;
+  });
+
+  // Delete an account.
+  app.delete('/:id', async (req, reply) => {
+    const params = parseBody(idParamSchema, req.params, reply);
+    if (!params) return;
+    const target = getUserById(params.id);
+    if (!target) return reply.status(404).send({ error: 'Account not found.' });
+    if (target.role === 'admin' && countAdmins() <= 1) {
+      return reply.status(409).send({ error: 'Cannot delete the last admin account.' });
+    }
+    deleteUserById(params.id);
+    return reply.status(204).send();
   });
 }
 

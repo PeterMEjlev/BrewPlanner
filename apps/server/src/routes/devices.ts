@@ -8,7 +8,7 @@ import {
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { requireAuth } from '../auth/index.js';
+import { requireAdmin, requireAuth } from '../auth/index.js';
 import { requireDevice } from '../devices/auth.js';
 import * as deviceFallback from '../devices/fallback.js';
 import * as devices from '../devices/repo.js';
@@ -84,8 +84,9 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   // Queue a new target setpoint for a brew controller. The change isn't applied
   // here — it's stored for the device's agent to pull and write to the hardware
   // (see commandRoutes); the response echoes the now-pending target so the UI
-  // can show it immediately.
-  app.post('/:id/setpoint', async (req, reply) => {
+  // can show it immediately. Admin-or-local only: a read-only guest can't change
+  // a setpoint (the kiosk on the LAN still can, without a login).
+  app.post('/:id/setpoint', { preHandler: requireAdmin }, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
     const device = deviceFallback.getDeviceStatus(params.id);

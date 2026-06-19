@@ -6,7 +6,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import { evaluateDeviceAlerts } from './alerts/evaluate.js';
-import { authRoutes, seedAdminUser } from './auth/index.js';
+import { accountAdminRoutes, authRoutes, seedAdminUser } from './auth/index.js';
 import { resolveSessionSecret } from './auth/secret.js';
 import { runMigrations } from './db/index.js';
 import { runNotificationChecks } from './notify/checks.js';
@@ -51,6 +51,10 @@ async function main(): Promise<void> {
   );
 
   await app.register(apiRoutes, { prefix: '/api' });
+
+  // Account administration (admin-only): list/create/delete accounts, change a
+  // role, reset a password. Guarded internally by requireAdmin.
+  await app.register(accountAdminRoutes, { prefix: '/api/accounts' });
 
   // Telemetry: satellites push to /api/ingest and pull queued commands from
   // /api/commands (both device-key auth); the dashboard reads device

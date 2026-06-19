@@ -140,15 +140,23 @@ while the Pi's own touchscreen keeps working with no login.
 
 - **Sessions** are signed, httpOnly cookies (`@fastify/cookie`). Passwords are
   hashed with scrypt (Node built-in — nothing to compile on the Pi). Accounts
-  live in a real `users` table; the app ships with a single admin but can grow
-  to multiple users/roles without rework.
+  live in a real `users` table.
+- **Roles**: each account is an **admin** or a **guest**. Admins can do
+  everything (control devices, edit kegs, manage settings and other accounts);
+  guests are read-only — they can view the dashboard and graphs but can't change
+  anything, open the keg sheet, or see the Brew System page. Admins manage every
+  account from **Settings → Accounts** (add/remove, switch role, reset password).
+  The server enforces this on every mutating endpoint, not just in the UI.
 - **Trusted-local bypass**: requests that hit the server directly on
-  loopback/LAN *without* Cloudflare headers (the kiosk, LAN PCs) skip the login.
-  Requests arriving through the Cloudflare tunnel require a session. Force a
-  login everywhere with `TRUST_LOCAL=false`.
+  loopback/LAN *without* Cloudflare headers (the kiosk, LAN PCs) skip the login
+  and are treated as admin-equivalent, so the physical touchscreen keeps full
+  control. Requests arriving through the Cloudflare tunnel require a session.
+  Force a login everywhere with `TRUST_LOCAL=false`.
 - **First boot** seeds an `admin` user from `ADMIN_USERNAME` / `ADMIN_PASSWORD`,
-  or generates a one-off password and logs it. Reset any time with
-  `npm run user -- <username> <password>`.
+  or generates a one-off password and logs it. Reset a password or create an
+  account from the CLI with
+  `npm run user -- <username> <password> [admin|guest]` (role defaults to
+  `admin`; `npm run user -- list` shows each account's role).
 
 In **local development** everything runs on localhost, which is trusted-local,
 so `npm run dev` needs no login — the `/login` page only matters for remote

@@ -4,8 +4,10 @@ import {
   type GraphColors,
   type KegContentColors,
   type NotificationSettings,
+  type User,
+  type UserRole,
 } from '@checklist/shared';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
@@ -36,7 +38,13 @@ import { asMessage } from '../util';
  * tuning) match the kiosk's localStorage store, so editing them here only
  * affects this browser; notifications and colours are server-shared.
  */
-type SettingsCategoryId = 'dashboard' | 'colours' | 'notifications' | 'account' | 'maintenance';
+type SettingsCategoryId =
+  | 'dashboard'
+  | 'colours'
+  | 'notifications'
+  | 'account'
+  | 'accounts'
+  | 'maintenance';
 
 const SETTINGS_CATEGORIES: {
   id: SettingsCategoryId;
@@ -61,7 +69,12 @@ const SETTINGS_CATEGORIES: {
   {
     id: 'account',
     label: 'Account',
-    description: 'Username and password',
+    description: 'Your username and password',
+  },
+  {
+    id: 'accounts',
+    label: 'Accounts',
+    description: 'Add, remove, and set privileges',
   },
   {
     id: 'maintenance',
@@ -163,6 +176,8 @@ function renderSettingsCategory(category: SettingsCategoryId): React.ReactNode {
       return <NotificationsSection />;
     case 'account':
       return <AccountSection />;
+    case 'accounts':
+      return <AccountsSection />;
     case 'maintenance':
       return <ResetSection />;
   }
@@ -882,6 +897,234 @@ function PasswordForm({ onChanged }: { onChanged: () => Promise<void> }): JSX.El
 function cleanError(err: unknown): string {
   const msg = asMessage(err);
   return msg.replace(/^\d{3}:\s*/, '');
+}
+
+// --- Accounts (admin: manage every login account) --------------------------
+
+const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'guest', label: 'Guest' },
+];
+
+/**
+ * Admin-only roster of every login account. Only reachable here because the
+ * Settings route is gated to controllers (admins + the local kiosk). Lets an
+ * admin add or remove accounts, flip a role, or reset a password. The server
+ * refuses to remove or demote the last admin; the UI additionally blocks acting
+ * on your own row so you can't accidentally lock or demote yourself.
+ */
+function AccountsSection(): JSX.Element {
+  const { auth } = useAuth();
+  const [accounts, setAccounts] = useState<User[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setAccounts(await api.listAccounts());
+      setError(null);
+    } catch (e) {
+      setError(cleanError(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const act = async (id: number, fn: () => Promise<unknown>): Promise<void> => {
+    setBusyId(id);
+    setError(null);
+    try {
+      await fn();
+      await load();
+    } catch (e) {
+      setError(cleanError(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const changeRole = (u: User, role: UserRole): void => {
+    if (role === u.role) return;
+    void act(u.id, () => api.setAccountRole(u.id, role));
+  };
+
+  const resetPassword = (u: User): void => {
+    const pw = window.prompt(`New password for "${u.username}" (at least 8 characters):`);
+    if (pw == null) return; // cancelled
+    if (pw.length < 8) {
+      setError('New password must be at least 8 characters.');
+      return;
+    }
+    void act(u.id, () => api.setAccountPassword(u.id, pw));
+  };
+
+  const remove = (u: User): void => {
+    if (!window.confirm(`Delete account "${u.username}"? This cannot be undone.`)) return;
+    void act(u.id, () => api.deleteAccount(u.id));
+  };
+
+  return (
+    <Card
+      title="Accounts"
+      hint="Every login account and its privilege. Admins can do everything; guests can view the dashboard and graphs but can't change anything or open the Brew System page."
+    >
+      <CreateAccountForm onCreated={load} onError={setError} />
+
+      <div className="mt-6 border-t border-zinc-800 pt-4">
+        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+        {!accounts ? (
+          <p className="text-sm text-zinc-500">Loading…</p>
+        ) : accounts.length === 0 ? (
+          <p className="text-sm text-zinc-500">No accounts.</p>
+        ) : (
+          <ul className="divide-y divide-zinc-800/70">
+            {accounts.map((u) => {
+              const isSelf = auth.user?.id === u.id;
+              const busy = busyId === u.id;
+              return (
+                <li key={u.id} className="flex flex-wrap items-center gap-3 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-zinc-100">
+                      {u.username}
+                      {isSelf && <span className="ml-2 text-xs text-zinc-500">(you)</span>}
+                    </div>
+                    <div className="text-xs text-zinc-500">
+                      Added {new Date(u.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <select
+                    aria-label={`Role for ${u.username}`}
+                    value={u.role}
+                    disabled={busy || isSelf}
+                    onChange={(e) => changeRole(u, e.target.value as UserRole)}
+                    className={`${inputClass} py-1 disabled:opacity-60`}
+                  >
+                    {ROLE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => resetPassword(u)}
+                    disabled={busy}
+                    className={btnGhost}
+                  >
+                    Reset password
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(u)}
+                    disabled={busy || isSelf}
+                    title={isSelf ? "You can't delete your own account here." : undefined}
+                    className="rounded-lg border border-red-500/40 px-3.5 py-1.5 text-sm font-medium text-red-400 transition hover:bg-red-500/10 disabled:opacity-40"
+                  >
+                    Delete
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function CreateAccountForm({
+  onCreated,
+  onError,
+}: {
+  onCreated: () => Promise<void>;
+  onError: (msg: string | null) => void;
+}): JSX.Element {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<UserRole>('guest');
+  const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    onError(null);
+    setOk(null);
+    if (!username.trim()) {
+      onError('Username is required.');
+      return;
+    }
+    if (password.length < 8) {
+      onError('Password must be at least 8 characters.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const name = username.trim();
+      await api.createAccount(name, password, role);
+      await onCreated();
+      setUsername('');
+      setPassword('');
+      setRole('guest');
+      setOk(`Account “${name}” created.`);
+    } catch (err) {
+      onError(cleanError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <h3 className="text-sm font-semibold text-zinc-200">Add account</h3>
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+        <label className="block">
+          <span className="mb-1 block text-xs text-zinc-500">Username</span>
+          <input
+            className={`${inputClass} w-full`}
+            value={username}
+            autoComplete="off"
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-zinc-500">Password</span>
+          <input
+            type="password"
+            className={`${inputClass} w-full`}
+            value={password}
+            autoComplete="new-password"
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-zinc-500">Role</span>
+          <select
+            className={`${inputClass} w-full`}
+            value={role}
+            onChange={(e) => setRole(e.target.value as UserRole)}
+          >
+            {ROLE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          className={btnPrimary}
+          disabled={busy || !username.trim() || password.length < 8}
+        >
+          {busy ? 'Adding…' : 'Add account'}
+        </button>
+        {ok && <span className="text-sm text-emerald-400">{ok}</span>}
+      </div>
+    </form>
+  );
 }
 
 // --- Reset -----------------------------------------------------------------

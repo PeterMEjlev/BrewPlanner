@@ -5,6 +5,7 @@
 } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { asMessage } from '../util';
 
@@ -19,6 +20,10 @@ export function AdminPage() {
   const [selected, setSelected] = useState<ChecklistWithSteps | null>(null);
   const [active, setActive] = useState<ActiveState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { auth } = useAuth();
+  // Guests can view checklists and the active run, but every editing control is
+  // hidden; the kiosk/LAN and admins get the full editor.
+  const controllable = canControl(auth);
 
   const refreshList = useCallback(async () => {
     const list = await api.listChecklists();
@@ -94,13 +99,15 @@ export function AdminPage() {
         >
           <div className="flex items-center justify-between border-b border-zinc-800 p-4">
             <h1 className="text-lg font-bold">Checklists</h1>
-            <button
-              type="button"
-              onClick={() => void createChecklist()}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              + New
-            </button>
+            {controllable && (
+              <button
+                type="button"
+                onClick={() => void createChecklist()}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                + New
+              </button>
+            )}
           </div>
           <nav className="flex-1 overflow-y-auto p-2">
             {checklists.length === 0 ? (
@@ -164,6 +171,7 @@ export function AdminPage() {
             <ChecklistEditor
               checklist={selected}
               active={active}
+              controllable={controllable}
               onRun={run}
               onDeleted={() => {
                 setSelectedId(null);
@@ -185,11 +193,13 @@ export function AdminPage() {
 function ChecklistEditor({
   checklist,
   active,
+  controllable,
   onRun,
   onDeleted,
 }: {
   checklist: ChecklistWithSteps;
   active: ActiveState | null;
+  controllable: boolean;
   onRun: (action: () => Promise<unknown>) => Promise<void>;
   onDeleted: () => void;
 }) {
@@ -207,38 +217,43 @@ function ChecklistEditor({
       <div className="flex flex-wrap items-center gap-3">
         <input
           value={name}
+          readOnly={!controllable}
           onChange={(e) => setName(e.target.value)}
           onBlur={() => {
-            if (name.trim() && name.trim() !== checklist.name) {
+            if (controllable && name.trim() && name.trim() !== checklist.name) {
               void onRun(() => api.renameChecklist(checklist.id, name.trim()));
             }
           }}
-          className="flex-1 rounded-md border border-zinc-700 px-3 py-2 text-xl font-semibold focus:border-blue-500 focus:outline-none"
+          className="flex-1 rounded-md border border-zinc-700 px-3 py-2 text-xl font-semibold focus:border-blue-500 focus:outline-none read-only:border-transparent read-only:focus:border-transparent"
         />
         {isActive ? (
           <span className="rounded-md bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-400">
             Active
           </span>
         ) : (
+          controllable && (
+            <button
+              type="button"
+              onClick={() => void onRun(() => api.activateChecklist(checklist.id))}
+              className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+            >
+              Set active
+            </button>
+          )
+        )}
+        {controllable && (
           <button
             type="button"
-            onClick={() => void onRun(() => api.activateChecklist(checklist.id))}
-            className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+            onClick={() => {
+              if (window.confirm(`Delete checklist "${checklist.name}"? This cannot be undone.`)) {
+                void api.deleteChecklist(checklist.id).then(onDeleted);
+              }
+            }}
+            className="rounded-md border border-red-500/40 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/10"
           >
-            Set active
+            Delete
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => {
-            if (window.confirm(`Delete checklist "${checklist.name}"? This cannot be undone.`)) {
-              void api.deleteChecklist(checklist.id).then(onDeleted);
-            }
-          }}
-          className="rounded-md border border-red-500/40 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/10"
-        >
-          Delete
-        </button>
       </div>
 
       {/* Active progress */}
@@ -251,17 +266,19 @@ function ChecklistEditor({
             </span>{' '}
             complete
           </span>
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm('Reset progress for the active run?')) {
-                void onRun(() => api.resetRun());
-              }
-            }}
-            className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
-          >
-            Reset progress
-          </button>
+          {controllable && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm('Reset progress for the active run?')) {
+                  void onRun(() => api.resetRun());
+                }
+              }}
+              className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm font-medium hover:bg-zinc-800"
+            >
+              Reset progress
+            </button>
+          )}
         </div>
       )}
 
@@ -278,6 +295,7 @@ function ChecklistEditor({
             required={step.required}
             isFirst={index === 0}
             isLast={index === steps.length - 1}
+            controllable={controllable}
             onSave={(fields) => onRun(() => api.updateStep(step.id, fields))}
             onDelete={() => onRun(() => api.deleteStep(step.id))}
             onMove={(dir) => {
@@ -293,28 +311,30 @@ function ChecklistEditor({
       </ul>
 
       {/* Add step */}
-      <form
-        className="mt-4 flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const text = newStep.trim();
-          if (!text) return;
-          void onRun(() => api.addStep(checklist.id, text)).then(() => setNewStep(''));
-        }}
-      >
-        <input
-          value={newStep}
-          onChange={(e) => setNewStep(e.target.value)}
-          placeholder="Add a step…"
-          className="flex-1 rounded-md border border-zinc-700 px-3 py-2 focus:border-blue-500 focus:outline-none"
-        />
-        <button
-          type="submit"
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+      {controllable && (
+        <form
+          className="mt-4 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const text = newStep.trim();
+            if (!text) return;
+            void onRun(() => api.addStep(checklist.id, text)).then(() => setNewStep(''));
+          }}
         >
-          Add
-        </button>
-      </form>
+          <input
+            value={newStep}
+            onChange={(e) => setNewStep(e.target.value)}
+            placeholder="Add a step…"
+            className="flex-1 rounded-md border border-zinc-700 px-3 py-2 focus:border-blue-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Add
+          </button>
+        </form>
+      )}
     </div>
   );
 }
@@ -325,6 +345,7 @@ function StepRow({
   required,
   isFirst,
   isLast,
+  controllable,
   onSave,
   onDelete,
   onMove,
@@ -334,6 +355,7 @@ function StepRow({
   required: boolean;
   isFirst: boolean;
   isLast: boolean;
+  controllable: boolean;
   onSave: (fields: {
     text?: string;
     required?: boolean;
@@ -349,33 +371,36 @@ function StepRow({
 
   return (
     <li className="flex gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2">
-      <div className="flex flex-col pt-1">
-        <button
-          type="button"
-          disabled={isFirst}
-          onClick={() => void onMove(-1)}
-          className="px-1 text-zinc-500 disabled:opacity-30 hover:text-zinc-100"
-          aria-label="Move up"
-        >
-          ▲
-        </button>
-        <button
-          type="button"
-          disabled={isLast}
-          onClick={() => void onMove(1)}
-          className="px-1 text-zinc-500 disabled:opacity-30 hover:text-zinc-100"
-          aria-label="Move down"
-        >
-          ▼
-        </button>
-      </div>
+      {controllable && (
+        <div className="flex flex-col pt-1">
+          <button
+            type="button"
+            disabled={isFirst}
+            onClick={() => void onMove(-1)}
+            className="px-1 text-zinc-500 disabled:opacity-30 hover:text-zinc-100"
+            aria-label="Move up"
+          >
+            ▲
+          </button>
+          <button
+            type="button"
+            disabled={isLast}
+            onClick={() => void onMove(1)}
+            className="px-1 text-zinc-500 disabled:opacity-30 hover:text-zinc-100"
+            aria-label="Move down"
+          >
+            ▼
+          </button>
+        </div>
+      )}
       <div className="flex flex-1 flex-col gap-1">
         <div className="flex items-center gap-2">
           <input
             value={value}
+            readOnly={!controllable}
             onChange={(e) => setValue(e.target.value)}
             onBlur={() => {
-              if (value.trim() && value.trim() !== text) void onSave({ text: value.trim() });
+              if (controllable && value.trim() && value.trim() !== text) void onSave({ text: value.trim() });
             }}
             className="flex-1 rounded border border-transparent px-2 py-1 focus:border-blue-500 focus:outline-none"
           />
@@ -383,29 +408,35 @@ function StepRow({
             <input
               type="checkbox"
               checked={required}
+              disabled={!controllable}
               onChange={(e) => void onSave({ required: e.target.checked })}
             />
             required
           </label>
-          <button
-            type="button"
-            onClick={() => void onDelete()}
-            className="shrink-0 rounded px-2 py-1 text-sm text-red-400 hover:bg-red-500/10"
-            aria-label="Delete step"
-          >
-            ✕
-          </button>
+          {controllable && (
+            <button
+              type="button"
+              onClick={() => void onDelete()}
+              className="shrink-0 rounded px-2 py-1 text-sm text-red-400 hover:bg-red-500/10"
+              aria-label="Delete step"
+            >
+              ✕
+            </button>
+          )}
         </div>
-        <textarea
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          onBlur={() => {
-            if (desc !== (description ?? '')) void onSave({ description: desc });
-          }}
-          rows={desc ? 2 : 1}
-          placeholder="Add a description (optional)…"
-          className="resize-y rounded border border-transparent px-2 py-1 text-sm text-zinc-300 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none"
-        />
+        {(controllable || desc) && (
+          <textarea
+            value={desc}
+            readOnly={!controllable}
+            onChange={(e) => setDesc(e.target.value)}
+            onBlur={() => {
+              if (controllable && desc !== (description ?? '')) void onSave({ description: desc });
+            }}
+            rows={desc ? 2 : 1}
+            placeholder="Add a description (optional)…"
+            className="resize-y rounded border border-transparent px-2 py-1 text-sm text-zinc-300 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none"
+          />
+        )}
       </div>
     </li>
   );

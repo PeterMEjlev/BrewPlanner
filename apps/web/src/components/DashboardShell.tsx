@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { useAuth } from '../auth';
+import { canControl, useAuth } from '../auth';
 import {
   BellIcon,
   ChecklistIcon,
@@ -98,6 +98,13 @@ function Sidebar({
 }): JSX.Element {
   const { auth, refresh } = useAuth();
 
+  // Guests are read-only and can't open the Brew System or Settings pages, so
+  // drop those rails entirely; the kiosk/LAN and admins see the full nav.
+  const controllable = canControl(auth);
+  const navItems = controllable
+    ? NAV
+    : NAV.filter((item) => item.page !== 'brewSystem' && item.page !== 'settings');
+
   return (
     <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/95 md:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -107,7 +114,7 @@ function Sidebar({
       </div>
 
       <nav className="flex-1 space-y-1 px-3">
-        {NAV.map((item) => {
+        {navItems.map((item) => {
           const isActive = item.page === active;
           const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
           return (

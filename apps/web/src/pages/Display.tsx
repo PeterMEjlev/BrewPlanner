@@ -10,6 +10,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import { canControl, useAuth } from '../auth';
 import { DescriptionModal, InfoButton, useTouchSensors } from '../components/touch';
 
 /** Poll interval so a second device / the admin page stays roughly in sync. */
@@ -25,6 +26,10 @@ export function DisplayPage() {
   const [info, setInfo] = useState<{ title: string; description: string } | null>(null);
   const pendingToggles = useRef(new Set<number>());
   const pendingReorder = useRef(false);
+  const { auth } = useAuth();
+  // Guests can watch the run but can't tick steps, reorder, reset, or switch
+  // checklists; the kiosk/LAN and admins keep full control.
+  const controllable = canControl(auth);
 
   const sensors = useTouchSensors();
 
@@ -60,6 +65,7 @@ export function DisplayPage() {
   }, [load]);
 
   async function toggle(stepId: number) {
+    if (!controllable) return; // read-only guests can't tick steps
     pendingToggles.current.add(stepId);
     try {
       setState(await api.toggleStep(stepId));
@@ -81,6 +87,7 @@ export function DisplayPage() {
   }
 
   async function handleDragEnd(event: DragEndEvent) {
+    if (!controllable) return; // read-only guests can't reorder
     const { active, over } = event;
     if (!state?.checklist || !over || active.id === over.id) return;
     const current = state.steps;
@@ -133,13 +140,15 @@ export function DisplayPage() {
         ) : (
           <>
             <p className="text-4xl font-semibold text-zinc-200">No active checklist</p>
-            <button
-              type="button"
-              onClick={() => setPickerOpen(true)}
-              className="mt-6 rounded-xl bg-blue-600 px-8 py-4 text-2xl font-semibold text-white active:bg-blue-500"
-            >
-              Choose a checklist
-            </button>
+            {controllable && (
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                className="mt-6 rounded-xl bg-blue-600 px-8 py-4 text-2xl font-semibold text-white active:bg-blue-500"
+              >
+                Choose a checklist
+              </button>
+            )}
           </>
         )}
         <Link to="/kiosk" className="mt-8 text-xl text-zinc-400 underline active:text-zinc-200">
@@ -173,20 +182,26 @@ export function DisplayPage() {
           >
             ⌂
           </Link>
-          <button
-            type="button"
-            onClick={() => setPickerOpen(true)}
-            className="flex min-w-0 items-center gap-3 text-left active:opacity-70"
-          >
+          {controllable ? (
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="flex min-w-0 items-center gap-3 text-left active:opacity-70"
+            >
+              <h1 className="min-w-0 truncate py-1 text-3xl font-bold leading-normal sm:text-4xl">
+                {checklist.name}
+              </h1>
+              {checklists.length > 1 && (
+                <span className="shrink-0 text-2xl text-zinc-400" aria-hidden>
+                  ▾
+                </span>
+              )}
+            </button>
+          ) : (
             <h1 className="min-w-0 truncate py-1 text-3xl font-bold leading-normal sm:text-4xl">
               {checklist.name}
             </h1>
-            {checklists.length > 1 && (
-              <span className="shrink-0 text-2xl text-zinc-400" aria-hidden>
-                ▾
-              </span>
-            )}
-          </button>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-3">
           <div
@@ -196,13 +211,15 @@ export function DisplayPage() {
           >
             {progress.completed} / {progress.total}
           </div>
-          <button
-            type="button"
-            onClick={() => setConfirmReset(true)}
-            className="rounded-xl bg-amber-600 px-6 py-3 text-xl font-semibold text-white active:bg-amber-500"
-          >
-            Reset
-          </button>
+          {controllable && (
+            <button
+              type="button"
+              onClick={() => setConfirmReset(true)}
+              className="rounded-xl bg-amber-600 px-6 py-3 text-xl font-semibold text-white active:bg-amber-500"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </header>
 
@@ -234,6 +251,7 @@ export function DisplayPage() {
                   <SortableStep
                     key={step.id}
                     step={step}
+                    controllable={controllable}
                     onToggle={() => void toggle(step.id)}
                     onInfo={() =>
                       setInfo({ title: step.text, description: step.description ?? '' })
@@ -291,15 +309,17 @@ export function DisplayPage() {
 
 function SortableStep({
   step,
+  controllable,
   onToggle,
   onInfo,
 }: {
   step: DisplayStep;
+  controllable: boolean;
   onToggle: () => void;
   onInfo: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: step.id });
+    useSortable({ id: step.id, disabled: !controllable });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -311,8 +331,9 @@ function SortableStep({
       <button
         type="button"
         onClick={onToggle}
-        {...attributes}
-        {...listeners}
+        disabled={!controllable}
+        {...(controllable ? attributes : {})}
+        {...(controllable ? listeners : {})}
         className={`flex w-full touch-manipulation items-center gap-5 rounded-2xl border-2 py-6 pl-6 text-left transition active:scale-[0.99] ${
           step.description ? 'pr-24' : 'pr-6'
         } ${

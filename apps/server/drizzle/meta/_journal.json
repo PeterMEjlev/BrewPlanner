@@ -64,6 +64,13 @@
       "when": 1781693142346,
       "tag": "0008_faithful_hardball",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1781860082473,
+      "tag": "0009_rich_lockheed",
+      "breakpoints": true
     }
   ]
 }

@@ -20,7 +20,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { listAlerts } from '../alerts/repo.js';
-import { requireAuth } from '../auth/index.js';
+import { requireAdmin, requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
 import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
 import * as telegram from '../notify/telegram.js';
@@ -36,6 +36,15 @@ function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T |
   return result.data;
 }
 
+/**
+ * Route options that add the admin-or-local guard on top of the plugin-wide
+ * requireAuth hook. Applied to every mutating route below so a logged-in guest
+ * (read-only) is refused with 403 while the kiosk/LAN and admins pass. GET
+ * routes omit it — guests may view everything (except the Brew System page,
+ * which is gated in the web app).
+ */
+const adminOnly = { preHandler: requireAdmin };
+
 export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // Every route below requires authentication, except when the request is
   // trusted-local (the Pi's own kiosk on the LAN). Auth endpoints live in a
@@ -45,7 +54,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // --- Checklists -------------------------------------------------------
   app.get('/checklists', async () => repo.listChecklists());
 
-  app.post('/checklists', async (req, reply) => {
+  app.post('/checklists', adminOnly, async (req, reply) => {
     const body = parse(createChecklistSchema, req.body, reply);
     if (!body) return;
     return reply.status(201).send(repo.createChecklist(body.name));
@@ -59,7 +68,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return checklist;
   });
 
-  app.patch('/checklists/:id', async (req, reply) => {
+  app.patch('/checklists/:id', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
     const body = parse(updateChecklistSchema, req.body, reply);
@@ -69,7 +78,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return updated;
   });
 
-  app.delete('/checklists/:id', async (req, reply) => {
+  app.delete('/checklists/:id', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
     if (!repo.deleteChecklist(params.id)) {
@@ -78,7 +87,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return reply.status(204).send();
   });
 
-  app.post('/checklists/:id/activate', async (req, reply) => {
+  app.post('/checklists/:id/activate', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
     const activated = repo.activateChecklist(params.id);
@@ -87,7 +96,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // --- Steps ------------------------------------------------------------
-  app.post('/checklists/:id/steps', async (req, reply) => {
+  app.post('/checklists/:id/steps', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
     const body = parse(createStepSchema, req.body, reply);
@@ -97,7 +106,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return reply.status(201).send(step);
   });
 
-  app.patch('/steps/:id', async (req, reply) => {
+  app.patch('/steps/:id', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
     const body = parse(updateStepSchema, req.body, reply);
@@ -107,14 +116,14 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return updated;
   });
 
-  app.delete('/steps/:id', async (req, reply) => {
+  app.delete('/steps/:id', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
     if (!repo.deleteStep(params.id)) return reply.status(404).send({ error: 'Step not found' });
     return reply.status(204).send();
   });
 
-  app.post('/checklists/:id/reorder-steps', async (req, reply) => {
+  app.post('/checklists/:id/reorder-steps', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
     const body = parse(reorderStepsSchema, req.body, reply);
@@ -131,19 +140,19 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // --- Active checklist / run / progress -------------------------------
   app.get('/active', async () => repo.getActiveState());
 
-  app.post('/runs/start', async (_req, reply) => {
+  app.post('/runs/start', adminOnly, async (_req, reply) => {
     const state = repo.startRun();
     if (!state) return reply.status(409).send({ error: 'No active checklist' });
     return state;
   });
 
-  app.post('/runs/reset', async (_req, reply) => {
+  app.post('/runs/reset', adminOnly, async (_req, reply) => {
     const state = repo.resetRun();
     if (!state) return reply.status(409).send({ error: 'No active checklist' });
     return state;
   });
 
-  app.post('/runs/current/steps/:stepId/toggle', async (req: FastifyRequest, reply) => {
+  app.post('/runs/current/steps/:stepId/toggle', adminOnly, async (req: FastifyRequest, reply) => {
     const params = parse(stepIdParamSchema, req.params, reply);
     if (!params) return;
     const state = repo.toggleStep(params.stepId);
@@ -158,13 +167,13 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // --- Brewery to-do list ----------------------------------------------
   app.get('/todos', async () => repo.listTodos());
 
-  app.post('/todos', async (req, reply) => {
+  app.post('/todos', adminOnly, async (req, reply) => {
     const body = parse(createTodoSchema, req.body, reply);
     if (!body) return;
     return reply.status(201).send(repo.createTodo(body.text));
   });
 
-  app.patch('/todos/:id', async (req, reply) => {
+  app.patch('/todos/:id', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
     const body = parse(updateTodoSchema, req.body, reply);
@@ -174,14 +183,14 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return updated;
   });
 
-  app.delete('/todos/:id', async (req, reply) => {
+  app.delete('/todos/:id', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
     if (!repo.deleteTodo(params.id)) return reply.status(404).send({ error: 'To-do not found' });
     return reply.status(204).send();
   });
 
-  app.post('/todos/reorder', async (req, reply) => {
+  app.post('/todos/reorder', adminOnly, async (req, reply) => {
     const body = parse(reorderTodosSchema, req.body, reply);
     if (!body) return;
     const result = repo.reorderTodos(body.todoIds);
@@ -191,7 +200,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return result;
   });
 
-  app.post('/todos/clear-completed', async () => repo.clearCompletedTodos());
+  app.post('/todos/clear-completed', adminOnly, async () => repo.clearCompletedTodos());
 
   // --- Alerts -----------------------------------------------------------
   // Recorded alert history (device offline episodes, keg-age and
@@ -220,7 +229,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // The single "currently in the fermenter" recipe shown on the kiosk card.
   app.get('/recipe', async () => ({ recipe: repo.getActiveRecipe() }));
 
-  app.put('/recipe', async (req, reply) => {
+  app.put('/recipe', adminOnly, async (req, reply) => {
     const body = parse(setActiveRecipeSchema, req.body, reply);
     if (!body) return;
     const recipe = repo.setActiveRecipe({
@@ -231,7 +240,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return { recipe };
   });
 
-  app.delete('/recipe', async (_req, reply) => {
+  app.delete('/recipe', adminOnly, async (_req, reply) => {
     repo.clearActiveRecipe();
     return reply.status(204).send();
   });
@@ -255,7 +264,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // Script web app whose URL is server-side (KEG_SHEET_WRITE_URL): 503 when that
   // isn't configured, 502 if the write fails. Returns 204 on success; the client
   // optimistically updates its own copy (the published CSV can lag a fresh edit).
-  app.put('/kegs/:number', async (req, reply) => {
+  app.put('/kegs/:number', adminOnly, async (req, reply) => {
     const params = parse(kegNumberParamSchema, req.params, reply);
     if (!params) return;
     const body = parse(updateKegSchema, req.body, reply);
@@ -278,7 +287,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // background scheduler reads these; Telegram credentials stay in env vars.
   app.get('/notifications/settings', async () => repo.getNotificationSettings());
 
-  app.put('/notifications/settings', async (req, reply) => {
+  app.put('/notifications/settings', adminOnly, async (req, reply) => {
     const body = parse(notificationSettingsSchema, req.body, reply);
     if (!body) return;
     return repo.setNotificationSettings(body);
@@ -289,7 +298,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // every screen (desktop dashboard + Pi kiosk).
   app.get('/graph-colors', async () => repo.getGraphColors());
 
-  app.put('/graph-colors', async (req, reply) => {
+  app.put('/graph-colors', adminOnly, async (req, reply) => {
     const body = parse(graphColorsSchema, req.body, reply);
     if (!body) return;
     return repo.setGraphColors(body);
@@ -300,7 +309,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // web inventory views.
   app.get('/keg-content-colors', async () => repo.getKegContentColors());
 
-  app.put('/keg-content-colors', async (req, reply) => {
+  app.put('/keg-content-colors', adminOnly, async (req, reply) => {
     const body = parse(kegContentColorsSchema, req.body, reply);
     if (!body) return;
     return repo.setKegContentColors(body);
@@ -308,7 +317,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   // Send a test message so the operator can confirm delivery from the UI.
   // 503 when the server has no Telegram credentials; 502 if the send fails.
-  app.post('/notifications/test', async (req, reply) => {
+  app.post('/notifications/test', adminOnly, async (req, reply) => {
     if (!telegram.isConfigured()) {
       return reply
         .status(503)

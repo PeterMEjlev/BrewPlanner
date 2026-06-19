@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
+import { canControl, useAuth } from './auth';
 
 /** Stepper bounds (°C) and increment. A 1° step suits both fermenter and brewery. */
 const MIN_C = 0;
@@ -45,6 +46,13 @@ export function SetpointControl({
   onApplied,
   variant = 'kiosk',
 }: Props): JSX.Element {
+  // Guests (and any non-controlling session) get a read-only view: the current
+  // target is shown, but the steppers / input / Apply are dropped. The kiosk on
+  // the LAN and admins keep the full control. Hooks below still run for everyone
+  // so the read-only branch can reuse the same derived display values.
+  const { auth } = useAuth();
+  const readOnly = !canControl(auth);
+
   const kiosk = variant === 'kiosk';
   const header = variant === 'header';
   const inline = variant === 'inline';
@@ -136,6 +144,47 @@ export function SetpointControl({
       : `rounded-2xl border bg-zinc-800/60 ${
           kiosk ? 'border-zinc-700 p-4 sm:p-5' : 'border-zinc-800 p-4'
         }`;
+
+  // Read-only: the label + the current/target value, no controls. Reuses the
+  // same `applying`/`displayValue` derivations as the interactive view.
+  if (readOnly) {
+    return (
+      <div className={shellClass}>
+        <div
+          className={`flex items-center ${
+            header ? 'gap-3' : inline ? 'justify-between gap-3' : 'flex-wrap justify-between gap-3'
+          }`}
+        >
+          <div className={header ? 'min-w-[5.75rem]' : undefined}>
+            <div className={`font-medium uppercase tracking-wider text-zinc-400 ${labelText}`}>
+              Setpoint
+            </div>
+            <div className={`mt-0.5 ${kiosk ? 'text-sm' : 'text-xs'} text-zinc-500`}>
+              {applying ? (
+                <span className="text-amber-400">Setting to {target.toFixed(0)}°C…</span>
+              ) : setpointC != null ? (
+                <>Current {setpointC.toFixed(0)}°C</>
+              ) : (
+                'No setpoint reported yet'
+              )}
+            </div>
+          </div>
+          <span
+            className={`flex items-baseline justify-center font-bold tabular-nums tracking-tight ${valueText}`}
+          >
+            <span className="min-w-[3.5ch] text-center">{displayValue}</span>
+            <span
+              className={`ml-0.5 font-medium text-zinc-500 ${
+                kiosk ? 'text-xl' : inline ? 'text-sm' : 'text-base'
+              }`}
+            >
+              °C
+            </span>
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={shellClass}>

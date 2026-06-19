@@ -8,14 +8,17 @@ import { index, integer, real, sqliteTable, text, unique } from 'drizzle-orm/sql
  */
 
 /**
- * Login accounts. The appliance ships with a single admin account, but this is
- * a real table so more users (and later, roles) can be added without rework.
- * `passwordHash` is a scrypt hash — see auth/password.ts.
+ * Login accounts. `passwordHash` is a scrypt hash — see auth/password.ts.
+ * `role` gates privilege: an `admin` can do everything (control devices, edit
+ * kegs, manage settings and other accounts); a `guest` is read-only — it can
+ * view the dashboard and graphs but cannot change anything. Defaults to `admin`
+ * so the seeded first account (and any pre-roles row) keeps full access.
  */
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  role: text('role').notNull().default('admin'),
   createdAt: text('created_at')
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

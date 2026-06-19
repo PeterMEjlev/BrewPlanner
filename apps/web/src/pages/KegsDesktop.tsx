@@ -1,6 +1,7 @@
 import type { KegContent, Recipe } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { useKegContentColors } from '../kegContentColors';
 import {
@@ -45,6 +46,11 @@ function toggleInSet(set: Set<string>, value: string): Set<string> {
 export function KegsDesktopPage(): JSX.Element {
   const { kegs, loading, error, applyLocalUpdates } = useKegs(POLL_MS);
   const colors = useKegContentColors();
+  const { auth } = useAuth();
+  // Guests are read-only: they can browse and sort kegs, but can't edit content,
+  // multi-select, or open the source sheet. The kiosk/LAN and admins get the
+  // full editor.
+  const controllable = canControl(auth);
   const [sortKey, setSortKey] = useState<SortKey>('number');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -99,6 +105,7 @@ export function KegsDesktopPage(): JSX.Element {
   // re-extend from the same starting point. Range is computed over `sorted` so it
   // follows what the user actually sees, not the underlying keg numbers.
   function handleActivate(keg: Keg, e: React.MouseEvent | React.KeyboardEvent): void {
+    if (!controllable) return; // read-only guests can't edit or select
     const additive = e.ctrlKey || e.metaKey;
 
     if (e.shiftKey) {
@@ -159,38 +166,42 @@ export function KegsDesktopPage(): JSX.Element {
               ) : selecting ? (
                 `${selected.size} selected — Ctrl-click to toggle, Shift-click for a range`
               ) : (
-                `Current inventory — ${filled} of ${kegs.length} kegs filled · click to edit, Ctrl/Shift-click to select`
+                `Current inventory — ${filled} of ${kegs.length} kegs filled${
+                  controllable ? ' · click to edit, Ctrl/Shift-click to select' : ''
+                }`
               )}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {selecting ? (
-              <button
-                type="button"
-                onClick={exitSelect}
-                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
+          {controllable && (
+            <div className="flex shrink-0 items-center gap-2">
+              {selecting ? (
+                <button
+                  type="button"
+                  onClick={exitSelect}
+                  className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setSelectMode(true)}
+                  disabled={loading || kegs.length === 0}
+                  className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  Select
+                </button>
+              )}
+              <a
+                href={SHEETS_VIEW_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
               >
-                Cancel
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setSelectMode(true)}
-                disabled={loading || kegs.length === 0}
-                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50"
-              >
-                Select
-              </button>
-            )}
-            <a
-              href={SHEETS_VIEW_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
-            >
-              Inventory sheet ↗
-            </a>
-          </div>
+                Inventory sheet ↗
+              </a>
+            </div>
+          )}
         </div>
 
         {/* Sort bar — the active key gets the coral pill, with a direction arrow. */}
@@ -229,6 +240,7 @@ export function KegsDesktopPage(): JSX.Element {
                   colors={colors}
                   selectMode={selecting}
                   selected={selected.has(keg.number)}
+                  interactive={controllable}
                   onActivate={handleActivate}
                 />
               ))}
@@ -288,12 +300,15 @@ function KegCard({
   colors,
   selectMode,
   selected,
+  interactive,
   onActivate,
 }: {
   keg: Keg;
   colors: Record<KegContent, string>;
   selectMode: boolean;
   selected: boolean;
+  /** Whether the card responds to clicks (edit/select). False for read-only guests. */
+  interactive: boolean;
   onActivate: (keg: Keg, e: React.MouseEvent | React.KeyboardEvent) => void;
 }): JSX.Element {
   const color = getContentColor(keg.contents, colors) ?? keg.color;
@@ -309,26 +324,36 @@ function KegCard({
     : {};
   const labelColor = isStout ? '#A68B6B' : (color ?? undefined);
 
+  // Read-only guests get a plain card with no button semantics, hover, or focus
+  // affordances; editors get the full click-to-edit / select behaviour.
+  const interactiveProps = interactive
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        'aria-pressed': selectMode ? selected : undefined,
+        // Shift-click range-selects; suppress the browser's native text selection
+        // (the card is a button, not selectable text) so a range click stays clean.
+        onMouseDown: (e: React.MouseEvent) => {
+          if (e.shiftKey) e.preventDefault();
+        },
+        onClick: (e: React.MouseEvent) => onActivate(keg, e),
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onActivate(keg, e);
+          }
+        },
+      }
+    : {};
+
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-pressed={selectMode ? selected : undefined}
-      // Shift-click range-selects; suppress the browser's native text selection
-      // (the card is a button, not selectable text) so a range click stays clean.
-      onMouseDown={(e) => {
-        if (e.shiftKey) e.preventDefault();
-      }}
-      onClick={(e) => onActivate(keg, e)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onActivate(keg, e);
-        }
-      }}
-      className={`relative flex min-h-[7rem] cursor-pointer select-none flex-col rounded-xl border bg-zinc-900 p-4 outline-none transition hover:border-zinc-600 focus-visible:ring-2 focus-visible:ring-blue-500 ${
-        selected ? 'border-blue-500 ring-2 ring-blue-500/60' : 'border-zinc-800'
-      } ${unknown && !selected ? 'opacity-50' : ''}`}
+      {...interactiveProps}
+      className={`relative flex min-h-[7rem] select-none flex-col rounded-xl border bg-zinc-900 p-4 outline-none transition ${
+        interactive ? 'cursor-pointer hover:border-zinc-600 focus-visible:ring-2 focus-visible:ring-blue-500' : ''
+      } ${selected ? 'border-blue-500 ring-2 ring-blue-500/60' : 'border-zinc-800'} ${
+        unknown && !selected ? 'opacity-50' : ''
+      }`}
       style={cardStyle}
     >
       {selectMode && (

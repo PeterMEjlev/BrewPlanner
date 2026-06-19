@@ -96,7 +96,7 @@ const router = createBrowserRouter([
   {
     path: '/brew-system',
     element: (
-      <RequireAuth>
+      <RequireAuth control>
         <BrewSystemPage />
       </RequireAuth>
     ),
@@ -116,7 +116,7 @@ const router = createBrowserRouter([
   {
     path: '/settings',
     element: (
-      <RequireAuth>
+      <RequireAuth control>
         <SettingsDesktopPage />
       </RequireAuth>
     ),
@@ -169,7 +169,7 @@ const router = createBrowserRouter([
   {
     path: '/kiosk/settings',
     element: (
-      <RequireAuth>
+      <RequireAuth control>
         <SettingsPage />
       </RequireAuth>
     ),

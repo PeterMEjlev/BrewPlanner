@@ -2,6 +2,7 @@ import type { DeviceStatus, DeviceType, LatestReading, Reading, Recipe } from '@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import { canControl, useAuth } from '../auth';
 import {
   BarSpark,
   Donut,
@@ -282,6 +283,8 @@ export function DashboardPage(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [chart, setChart] = useState<ChartTarget | null>(null);
   const { dashboardRefreshSec } = useSettings();
+  const { auth } = useAuth();
+  const controllable = canControl(auth);
   const { kegs, loading: kegsLoading, error: kegsError } = useKegs(KEG_POLL_MS);
   const openChart = useCallback((target: ChartTarget) => setChart(target), []);
 
@@ -359,6 +362,7 @@ export function DashboardPage(): JSX.Element {
                       name={group[0]!.name}
                       devices={group}
                       recipe={recipe}
+                      controllable={controllable}
                       onRefresh={load}
                       onOpen={openChart}
                     />
@@ -379,7 +383,12 @@ export function DashboardPage(): JSX.Element {
           </div>
 
           <aside className="space-y-5 xl:flex xl:min-h-0 xl:flex-col">
-            <KegInventoryPanel kegs={kegs} loading={kegsLoading} error={kegsError} />
+            <KegInventoryPanel
+              kegs={kegs}
+              loading={kegsLoading}
+              error={kegsError}
+              controllable={controllable}
+            />
             <OperationsPanel />
             <DeviceFleetPanel devices={deviceList} loading={devices === null} />
             <AlertsPanel alerts={alerts} loading={devices === null} />
@@ -466,12 +475,15 @@ function FermenterCommandCenter({
   name,
   devices,
   recipe,
+  controllable,
   onRefresh,
   onOpen,
 }: {
   name: string;
   devices: DeviceStatus[];
   recipe: Recipe | null;
+  /** Admin/local: can change the recipe. Guests see the recipe but can't edit it. */
+  controllable: boolean;
   onRefresh: () => void;
   onOpen: OpenChart;
 }): JSX.Element {
@@ -559,15 +571,22 @@ function FermenterCommandCenter({
               {name}
             </h2>
             {recipe ? (
-              <Link
-                to="/kiosk/recipes"
-                className="block truncate text-sm text-zinc-500 transition hover:text-white"
-                title="Change recipe"
-              >
-                {recipe.name}
-                {recipe.style ? ` (${recipe.style})` : ''}
-              </Link>
-            ) : (
+              controllable ? (
+                <Link
+                  to="/kiosk/recipes"
+                  className="block truncate text-sm text-zinc-500 transition hover:text-white"
+                  title="Change recipe"
+                >
+                  {recipe.name}
+                  {recipe.style ? ` (${recipe.style})` : ''}
+                </Link>
+              ) : (
+                <span className="block truncate text-sm text-zinc-500">
+                  {recipe.name}
+                  {recipe.style ? ` (${recipe.style})` : ''}
+                </span>
+              )
+            ) : controllable ? (
               <Link
                 to="/kiosk/recipes"
                 className="mt-1 inline-flex items-center gap-1 rounded-lg border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-white/20"
@@ -577,6 +596,8 @@ function FermenterCommandCenter({
                 </span>
                 Link Recipe
               </Link>
+            ) : (
+              <span className="block truncate text-sm text-zinc-600">No recipe linked</span>
             )}
           </div>
         </div>
@@ -1200,10 +1221,13 @@ function KegInventoryPanel({
   kegs,
   loading,
   error,
+  controllable,
 }: {
   kegs: Keg[];
   loading: boolean;
   error: string | null;
+  /** Admin/local: may open the source Google Sheet. Hidden for read-only guests. */
+  controllable: boolean;
 }): JSX.Element {
   const filled = kegs.filter((k) => !isUnknownContents(k.contents)).length;
   const total = kegs.length;
@@ -1231,18 +1255,20 @@ function KegInventoryPanel({
         title="Keg Inventory"
         icon={<KegIcon className="h-5 w-5" />}
         right={
-          <button
-            type="button"
-            onClick={(e) => {
-              // Don't let the click bubble to the card's link — open the sheet instead.
-              e.preventDefault();
-              e.stopPropagation();
-              window.open(SHEETS_VIEW_URL, '_blank', 'noopener,noreferrer');
-            }}
-            className="text-xs text-zinc-500 transition hover:text-white"
-          >
-            Inventory sheet ↗
-          </button>
+          controllable ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                // Don't let the click bubble to the card's link — open the sheet instead.
+                e.preventDefault();
+                e.stopPropagation();
+                window.open(SHEETS_VIEW_URL, '_blank', 'noopener,noreferrer');
+              }}
+              className="text-xs text-zinc-500 transition hover:text-white"
+            >
+              Inventory sheet ↗
+            </button>
+          ) : undefined
         }
       />
 

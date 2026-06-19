@@ -15,6 +15,8 @@ import type {
   Recipe,
   Step,
   Todo,
+  User,
+  UserRole,
 } from '@checklist/shared';
 
 const BASE = '/api';
@@ -213,4 +215,25 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(fields),
     }),
+
+  // Account administration (admin-only; the server guards these with
+  // requireAdmin). Lets an admin list every account and add/remove one, change a
+  // role, or reset a password from the desktop Settings page.
+  listAccounts: () => request<User[]>('/accounts'),
+  createAccount: (username: string, password: string, role: UserRole) =>
+    request<User>('/accounts', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, role }),
+    }),
+  setAccountRole: (id: number, role: UserRole) =>
+    request<User>(`/accounts/${id}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+  setAccountPassword: (id: number, newPassword: string) =>
+    request<User>(`/accounts/${id}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    }),
+  deleteAccount: (id: number) => request<void>(`/accounts/${id}`, { method: 'DELETE' }),
 };

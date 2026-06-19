@@ -20,12 +20,33 @@ export function useAuth(): AuthContextValue {
 }
 
 /**
+ * Whether this session may *control* things — change device setpoints, edit
+ * kegs, pick recipes, manage settings and accounts — as opposed to only viewing.
+ * True for the trusted-local kiosk/LAN (which has no user but full control) and
+ * for an admin account; false for a logged-in guest. The single switch every
+ * write affordance in the UI checks; the server enforces the same rule.
+ */
+export function canControl(auth: AuthState): boolean {
+  return auth.isLocal || auth.user?.role === 'admin';
+}
+
+/**
  * Gate that protects a page. It asks the server who we are: trusted-local
  * requests (the Pi's kiosk on the LAN) and logged-in sessions pass through;
  * everyone else is redirected to /login. The resolved state is provided to
  * children via useAuth() so they can show the user / a logout button.
+ *
+ * Pass `control` for pages only an admin (or the local kiosk) may see — the Brew
+ * System page and Settings. A logged-in guest who reaches one is bounced to the
+ * dashboard rather than shown a page they can't use.
  */
-export function RequireAuth({ children }: { children: ReactNode }): JSX.Element {
+export function RequireAuth({
+  children,
+  control = false,
+}: {
+  children: ReactNode;
+  control?: boolean;
+}): JSX.Element {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [failed, setFailed] = useState(false);
   const location = useLocation();
@@ -56,6 +77,11 @@ export function RequireAuth({ children }: { children: ReactNode }): JSX.Element 
 
   if (!auth.user && !auth.isLocal) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  // Admin-only page reached by a guest: send them back to the dashboard.
+  if (control && !canControl(auth)) {
+    return <Navigate to="/" replace />;
   }
 
   return <AuthContext.Provider value={{ auth, refresh }}>{children}</AuthContext.Provider>;

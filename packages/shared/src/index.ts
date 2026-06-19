@@ -70,12 +70,22 @@ export interface Todo {
 }
 
 /**
+ * Account privilege. `admin` can do everything (control devices, edit kegs,
+ * manage settings and other accounts); `guest` is read-only — it can view the
+ * dashboard and graphs but cannot change anything, and cannot open the Brew
+ * System page. Trusted-local requests (the Pi kiosk on the LAN) are treated as
+ * admin-equivalent regardless of role; see `AuthState.isLocal`.
+ */
+export type UserRole = 'admin' | 'guest';
+
+/**
  * An authenticated user. The password hash never leaves the server, so the
  * shape exposed to the client is intentionally just the public fields.
  */
 export interface User {
   id: number;
   username: string;
+  role: UserRole;
   createdAt: string;
 }
 
@@ -710,6 +720,34 @@ export const changeUsernameSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required').max(500),
 });
 export type ChangeUsernameInput = z.infer<typeof changeUsernameSchema>;
+
+// --- Account administration (admin-only: manage other accounts) -------------
+
+export const userRoleSchema = z.enum(['admin', 'guest']);
+
+/**
+ * Body for `POST /api/accounts` — an admin creates a new login account. The
+ * password floor mirrors the self-service change-password rule (8 chars); this
+ * is a single-brewery appliance, not a policy engine.
+ */
+export const createUserSchema = z.object({
+  username: z.string().trim().min(1, 'Username is required').max(200),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(500),
+  role: userRoleSchema,
+});
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+/** Body for `PATCH /api/accounts/:id/role` — change an account's privilege. */
+export const setUserRoleSchema = z.object({
+  role: userRoleSchema,
+});
+export type SetUserRoleInput = z.infer<typeof setUserRoleSchema>;
+
+/** Body for `POST /api/accounts/:id/password` — an admin resets an account's password. */
+export const adminSetPasswordSchema = z.object({
+  newPassword: z.string().min(8, 'New password must be at least 8 characters').max(500),
+});
+export type AdminSetPasswordInput = z.infer<typeof adminSetPasswordSchema>;
 
 // ---------------------------------------------------------------------------
 // Path param helpers

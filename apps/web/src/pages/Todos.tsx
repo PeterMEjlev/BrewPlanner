@@ -1,6 +1,7 @@
 ﻿import type { Todo } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { asMessage } from '../util';
 
@@ -30,6 +31,9 @@ export function TodosPage() {
 function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [text, setText] = useState('');
+  const { auth } = useAuth();
+  // Guests can read the list but can't add, tick off, edit, or remove tasks.
+  const controllable = canControl(auth);
 
   const refresh = useCallback(async () => {
     setTodos(await api.listTodos());
@@ -61,34 +65,36 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
       </p>
 
       {/* Add task */}
-      <form
-        className="mt-5 flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const value = text.trim();
-          if (!value) return;
-          void run(() => api.createTodo(value)).then(() => setText(''));
-        }}
-      >
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Add a brewery task…"
-          className="flex-1 rounded-md border border-zinc-700 px-3 py-2 focus:border-blue-500 focus:outline-none"
-        />
-        <button
-          type="submit"
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+      {controllable && (
+        <form
+          className="mt-5 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const value = text.trim();
+            if (!value) return;
+            void run(() => api.createTodo(value)).then(() => setText(''));
+          }}
         >
-          Add
-        </button>
-      </form>
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Add a brewery task…"
+            className="flex-1 rounded-md border border-zinc-700 px-3 py-2 focus:border-blue-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Add
+          </button>
+        </form>
+      )}
 
       <div className="mt-6 mb-2 flex items-center justify-between">
         <span className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
           Tasks ({openCount} open)
         </span>
-        {hasCompleted && (
+        {controllable && hasCompleted && (
           <button
             type="button"
             onClick={() => {
@@ -108,6 +114,7 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
           <TodoRow
             key={t.id}
             todo={t}
+            controllable={controllable}
             onToggle={() => void run(() => api.updateTodo(t.id, { done: !t.done }))}
             onSave={(fields) => void run(() => api.updateTodo(t.id, fields))}
             onDelete={() => void run(() => api.deleteTodo(t.id))}
@@ -121,11 +128,13 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
 
 function TodoRow({
   todo,
+  controllable,
   onToggle,
   onSave,
   onDelete,
 }: {
   todo: Todo;
+  controllable: boolean;
   onToggle: () => void;
   onSave: (fields: { text?: string; description?: string | null }) => void;
   onDelete: () => void;
@@ -140,6 +149,7 @@ function TodoRow({
       <input
         type="checkbox"
         checked={todo.done}
+        disabled={!controllable}
         onChange={onToggle}
         className="mt-1.5 h-5 w-5 shrink-0"
         aria-label={todo.done ? 'Mark not done' : 'Mark done'}
@@ -148,33 +158,39 @@ function TodoRow({
         <div className="flex items-center gap-2">
           <input
             value={value}
+            readOnly={!controllable}
             onChange={(e) => setValue(e.target.value)}
             onBlur={() => {
-              if (value.trim() && value.trim() !== todo.text) onSave({ text: value.trim() });
+              if (controllable && value.trim() && value.trim() !== todo.text) onSave({ text: value.trim() });
             }}
             className={`flex-1 rounded border border-transparent px-2 py-1 focus:border-blue-500 focus:outline-none ${
               todo.done ? 'text-zinc-400 line-through' : ''
             }`}
           />
-          <button
-            type="button"
-            onClick={onDelete}
-            className="shrink-0 rounded px-2 py-1 text-sm text-red-400 hover:bg-red-500/10"
-            aria-label="Delete task"
-          >
-            ✕
-          </button>
+          {controllable && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="shrink-0 rounded px-2 py-1 text-sm text-red-400 hover:bg-red-500/10"
+              aria-label="Delete task"
+            >
+              ✕
+            </button>
+          )}
         </div>
-        <textarea
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          onBlur={() => {
-            if (desc !== (todo.description ?? '')) onSave({ description: desc });
-          }}
-          rows={desc ? 2 : 1}
-          placeholder="Add a description (optional)…"
-          className="resize-y rounded border border-transparent px-2 py-1 text-sm text-zinc-300 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none"
-        />
+        {(controllable || desc) && (
+          <textarea
+            value={desc}
+            readOnly={!controllable}
+            onChange={(e) => setDesc(e.target.value)}
+            onBlur={() => {
+              if (controllable && desc !== (todo.description ?? '')) onSave({ description: desc });
+            }}
+            rows={desc ? 2 : 1}
+            placeholder="Add a description (optional)…"
+            className="resize-y rounded border border-transparent px-2 py-1 text-sm text-zinc-300 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none"
+          />
+        )}
       </div>
     </li>
   );
