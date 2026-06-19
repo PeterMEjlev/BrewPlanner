@@ -41,9 +41,17 @@ export function getUserById(id: number): User | null {
   return row ? toPublic(row) : null;
 }
 
-/** Verify a username/password pair, returning the public user on success. */
+/**
+ * Verify a username/password pair, returning the public user on success.
+ * The username match is case-insensitive (creation already forbids
+ * case-insensitive duplicates, so the lookup is unambiguous).
+ */
 export function authenticate(username: string, password: string): User | null {
-  const row = db.select().from(users).where(eq(users.username, username)).get();
+  const row = db
+    .select()
+    .from(users)
+    .where(eq(sql`lower(${users.username})`, username.toLowerCase()))
+    .get();
   if (!row) return null;
   if (!verifyPassword(password, row.passwordHash)) return null;
   return toPublic(row);
