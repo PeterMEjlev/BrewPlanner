@@ -8,6 +8,7 @@ import { BrewSystemPage } from './pages/BrewSystem';
 import { DashboardPage } from './pages/Dashboard';
 import { DevicesPage } from './pages/Devices';
 import { DisplayPage } from './pages/Display';
+import { HistoryPage } from './pages/History';
 import { KegsPage } from './pages/Kegs';
 import { KegsDesktopPage } from './pages/KegsDesktop';
 import { KioskHomePage } from './pages/KioskHome';
@@ -90,6 +91,16 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <AlertsPage />
+      </RequireAuth>
+    ),
+  },
+  // Change history (audit log). Admin-only, like Settings — a guest who reaches
+  // it directly is bounced to the dashboard.
+  {
+    path: '/history',
+    element: (
+      <RequireAuth control>
+        <HistoryPage />
       </RequireAuth>
     ),
   },

@@ -220,6 +220,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 export async function accountAdminRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', requireAdmin);
 
+  // Record account changes (create/delete, role change, password reset) into
+  // the change history. Imported lazily to avoid an import cycle (the audit hook
+  // imports getSessionUser/isLocalRequest from this module).
+  const { registerAuditHook } = await import('../audit/hook.js');
+  registerAuditHook(app);
+
   // Every account with its role (never the password hash).
   app.get('/', async () => listUsers());
 

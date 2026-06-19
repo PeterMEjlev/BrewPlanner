@@ -196,6 +196,33 @@ export const alerts = sqliteTable(
   (t) => [index('alerts_created_idx').on(t.createdAt)],
 );
 
+/**
+ * Audit log of admin changes. The centralized audit hook (see audit/hook.ts)
+ * appends one row per successful mutating request: who made it, a human-readable
+ * summary of the change, and the raw method/path for reference. `username` is a
+ * snapshot taken at write time so an entry still reads sensibly after the account
+ * is renamed or deleted; `userId` is nullable and set-null on delete so the link
+ * survives the account it pointed at. Trusted-local kiosk/LAN changes (which have
+ * no user) are recorded against the username "Local kiosk". Read newest-first by
+ * the History page; indexed by time for that listing.
+ */
+export const auditLog = sqliteTable(
+  'audit_log',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+    username: text('username').notNull(),
+    action: text('action').notNull(),
+    entity: text('entity'),
+    method: text('method').notNull(),
+    path: text('path').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+  },
+  (t) => [index('audit_log_created_idx').on(t.createdAt)],
+);
+
 /** Per-run check state for a single step. */
 export const runSteps = sqliteTable(
   'run_steps',

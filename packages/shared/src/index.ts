@@ -269,6 +269,37 @@ export const alertsQuerySchema = z.object({
 export type AlertsQuery = z.infer<typeof alertsQuerySchema>;
 
 // ---------------------------------------------------------------------------
+// Change history (server-recorded audit log)
+// ---------------------------------------------------------------------------
+
+/**
+ * One recorded change to server state — every successful admin mutation is
+ * logged by the audit hook and surfaced on the History page, newest first.
+ * `username` is a snapshot taken when the change happened, so the entry still
+ * reads sensibly after the account is renamed or deleted (`userId` then becomes
+ * null but the name stays). Trusted-local kiosk/LAN changes, which have no
+ * logged-in user, are attributed to "Local kiosk". `action` is the
+ * human-readable summary; `entity` is a coarse category (e.g. "Checklist",
+ * "Keg", "Account") for the row's chip; `method`/`path` are kept for reference.
+ */
+export interface AuditEntry {
+  id: number;
+  userId: number | null;
+  username: string;
+  action: string;
+  entity: string | null;
+  method: string;
+  path: string;
+  createdAt: string;
+}
+
+/** Query for `GET /api/history`: how many of the most recent entries to return. */
+export const auditQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+});
+export type AuditQuery = z.infer<typeof auditQuerySchema>;
+
+// ---------------------------------------------------------------------------
 // Keg inventory (shared Google Sheet)
 // ---------------------------------------------------------------------------
 

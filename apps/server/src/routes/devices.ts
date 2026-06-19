@@ -8,6 +8,7 @@ import {
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
 import { requireDevice } from '../devices/auth.js';
 import * as deviceFallback from '../devices/fallback.js';
@@ -49,6 +50,9 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
  */
 export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', requireAuth);
+
+  // Record setpoint changes (the one mutation here) into the change history.
+  registerAuditHook(app);
 
   app.get('/', async () => deviceFallback.listDeviceStatus());
 

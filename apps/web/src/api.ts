@@ -2,6 +2,7 @@ import type {
   ActiveRecipe,
   ActiveState,
   Alert,
+  AuditEntry,
   AuthState,
   ChecklistSummary,
   ChecklistWithSteps,
@@ -184,6 +185,10 @@ export const api = {
   // fermentation-complete events), newest first.
   listAlerts: (limit?: number) =>
     request<Alert[]>(`/alerts${limit ? `?limit=${limit}` : ''}`),
+
+  // Change history: the audit log of admin changes, newest first (admin-only).
+  listAudit: (limit?: number) =>
+    request<AuditEntry[]>(`/history${limit ? `?limit=${limit}` : ''}`),
 
   // Shared chart colour palette (edited on the desktop Settings page, read by
   // every screen including the kiosk).

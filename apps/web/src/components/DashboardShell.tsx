@@ -5,6 +5,7 @@ import {
   BellIcon,
   ChecklistIcon,
   ClockIcon,
+  HistoryIcon,
   HomeIcon,
   KegIcon,
   MonitorIcon,
@@ -23,7 +24,8 @@ export type ShellPage =
   | 'settings'
   | 'kegs'
   | 'checklists'
-  | 'todos';
+  | 'todos'
+  | 'history';
 
 type IconComponent = (props: { className?: string }) => JSX.Element;
 
@@ -44,6 +46,7 @@ const NAV: NavItem[] = [
   { key: 'brewSystem', label: 'Brew System', Icon: SlidersIcon, to: '/brew-system', page: 'brewSystem' },
   { key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin', page: 'checklists' },
   { key: 'todos', label: 'To-Do', Icon: TodoIcon, to: '/todos', page: 'todos' },
+  { key: 'history', label: 'History', Icon: HistoryIcon, to: '/history', page: 'history' },
   { key: 'settings', label: 'Settings', Icon: SettingsIcon, to: '/settings', page: 'settings' },
 ];
 
@@ -98,12 +101,16 @@ function Sidebar({
 }): JSX.Element {
   const { auth, refresh } = useAuth();
 
-  // Guests are read-only and can't open the Brew System or Settings pages, so
-  // drop those rails entirely; the kiosk/LAN and admins see the full nav.
+  // Guests are read-only and can't open the Brew System, Settings or History
+  // pages (History reveals who changed what, so it stays admin-only), so drop
+  // those rails entirely; the kiosk/LAN and admins see the full nav.
   const controllable = canControl(auth);
   const navItems = controllable
     ? NAV
-    : NAV.filter((item) => item.page !== 'brewSystem' && item.page !== 'settings');
+    : NAV.filter(
+        (item) =>
+          item.page !== 'brewSystem' && item.page !== 'settings' && item.page !== 'history',
+      );
 
   return (
     <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/95 md:flex">

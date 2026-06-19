@@ -1,5 +1,6 @@
 import {
   alertsQuerySchema,
+  auditQuerySchema,
   createChecklistSchema,
   createStepSchema,
   createTodoSchema,
@@ -20,6 +21,8 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { listAlerts } from '../alerts/repo.js';
+import { listAudit } from '../audit/repo.js';
+import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
 import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
@@ -50,6 +53,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // trusted-local (the Pi's own kiosk on the LAN). Auth endpoints live in a
   // separate plugin (/api/auth) and are deliberately not affected by this.
   app.addHook('preHandler', requireAuth);
+
+  // Record every successful admin mutation below into the change history.
+  registerAuditHook(app);
 
   // --- Checklists -------------------------------------------------------
   app.get('/checklists', async () => repo.listChecklists());
@@ -209,6 +215,15 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const query = parse(alertsQuerySchema, req.query, reply);
     if (!query) return;
     return listAlerts(query.limit);
+  });
+
+  // --- Change history ---------------------------------------------------
+  // The audit log of admin changes, newest first. Admin-only: it reveals who
+  // did what, so a read-only guest can't open it (the web app hides the tab too).
+  app.get('/history', adminOnly, async (req, reply) => {
+    const query = parse(auditQuerySchema, req.query, reply);
+    if (!query) return;
+    return listAudit(query.limit);
   });
 
   // --- Brewer's Friend recipes -----------------------------------------
