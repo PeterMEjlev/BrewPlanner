@@ -8,7 +8,7 @@ import {
   type UserRole,
 } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, type SystemUpdateStatus } from '../api';
 import { useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { resetGraphColors, saveGraphColors, useGraphColors } from '../graphColors';
@@ -183,7 +183,12 @@ function renderSettingsCategory(category: SettingsCategoryId): React.ReactNode {
     case 'accounts':
       return <AccountsSection />;
     case 'maintenance':
-      return <ResetSection />;
+      return (
+        <>
+          <SoftwareUpdateSection />
+          <ResetSection />
+        </>
+      );
   }
 }
 
@@ -1276,6 +1281,130 @@ function CreateAccountForm({
         {ok && <span className="text-sm text-emerald-400">{ok}</span>}
       </div>
     </form>
+  );
+}
+
+// --- Software update (remote deploy) ---------------------------------------
+
+/** One-line status pill for the current/last deploy. */
+function UpdateStatusBadge({
+  status,
+  restarting,
+}: {
+  status: SystemUpdateStatus | null;
+  restarting: boolean;
+}): JSX.Element | null {
+  if (restarting) return <span className="text-sm text-amber-400">Server restarting…</span>;
+  if (!status || status.state === 'idle') return null;
+  if (status.state === 'running') return <span className="text-sm text-blue-400">Update in progress…</span>;
+  if (status.state === 'ok') {
+    return (
+      <span className="text-sm text-emerald-400">
+        Updated
+        {status.finishedAt ? ` ${new Date(status.finishedAt).toLocaleString()}` : ''}
+        {status.commit ? ` (${status.commit})` : ''}.
+      </span>
+    );
+  }
+  return <span className="text-sm text-red-400">Update failed.</span>;
+}
+
+/**
+ * Trigger a remote deploy (git pull + rebuild + restart on the Pi) and watch it.
+ * The server restarts itself partway through, so polling tolerates the brief
+ * window where it's unreachable, then confirms success once it's back.
+ */
+function SoftwareUpdateSection(): JSX.Element {
+  const [status, setStatus] = useState<SystemUpdateStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+
+  const refresh = useCallback(async (): Promise<void> => {
+    try {
+      setStatus(await api.getUpdateStatus());
+      setRestarting(false);
+    } catch {
+      // The server bounces mid-deploy; a failed poll just means it's briefly
+      // unreachable. Keep the last status and show "restarting" rather than error.
+      setRestarting(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  // While a deploy runs, poll for progress (tolerating the restart blip).
+  useEffect(() => {
+    if (status?.state !== 'running') return;
+    const id = window.setInterval(() => void refresh(), 2500);
+    return () => window.clearInterval(id);
+  }, [status?.state, refresh]);
+
+  const running = status?.state === 'running';
+
+  const start = async (): Promise<void> => {
+    if (
+      !window.confirm(
+        'Deploy the latest pushed commit to the Pi?\n\n' +
+          'It will pull from GitHub, rebuild, run migrations, and restart — the ' +
+          'dashboard will be briefly unavailable while it restarts. Make sure you ' +
+          'have committed and pushed your changes first.',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await api.triggerUpdate());
+      setRestarting(false);
+    } catch (e) {
+      setError(cleanError(e));
+      void refresh(); // pick up the server-recorded failure detail, if any
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card
+      title="Software update"
+      hint="Pull the latest pushed code onto the Pi, rebuild, and restart — no SSH needed. Commit and push your changes first; the Pi deploys from GitHub."
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className={btnPrimary}
+            onClick={() => void start()}
+            disabled={busy || running}
+          >
+            {busy ? 'Starting…' : running ? 'Updating…' : 'Update now'}
+          </button>
+          <UpdateStatusBadge status={status} restarting={restarting} />
+        </div>
+
+        {status?.repoCommit && status.repoCommit !== 'unknown' && (
+          <p className="text-xs text-zinc-500">
+            Version on the Pi: <span className="font-mono text-zinc-300">{status.repoCommit}</span>
+            {status.commitSubject ? ` — ${status.commitSubject}` : ''}
+          </p>
+        )}
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        {status?.state === 'failed' && status.error && (
+          <p className="text-sm text-red-400">{status.error}</p>
+        )}
+
+        {status?.log ? (
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-400">
+            {status.log.trimEnd()}
+          </pre>
+        ) : null}
+      </div>
+    </Card>
   );
 }
 

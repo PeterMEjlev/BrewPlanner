@@ -1,0 +1,28 @@
+# BrewPlanner remote-deploy privileges
+# ---------------------------------------------------------------------------
+# Lets the `brewplanner` service account trigger and run a software update
+# WITHOUT a password prompt, so the dashboard's "Update" button works (the
+# server process can't type a sudo password).
+#
+# Install it safely (validates syntax; a typo here can lock you out of sudo):
+#
+#   sudo cp deploy/brewplanner-deploy.sudoers /etc/sudoers.d/brewplanner-deploy
+#   sudo chmod 0440 /etc/sudoers.d/brewplanner-deploy
+#   sudo visudo -cf /etc/sudoers.d/brewplanner-deploy   # must print "parsed OK"
+#
+# NOTE: if `brewplanner` already has passwordless sudo (run `sudo -n true` as
+# that user — no error means yes), you can SKIP this file entirely.
+#
+# Adjust paths if your repo isn't at /home/brewplanner/checklist, or if these
+# binaries live elsewhere (check with `command -v systemctl cp`). On Raspberry
+# Pi OS they are under /usr/bin.
+
+Cmnd_Alias BREWPLANNER_DEPLOY = \
+    /usr/bin/systemctl start --no-block brewplanner-update.service, \
+    /usr/bin/systemctl restart checklist-server.service, \
+    /usr/bin/systemctl restart checklist-kiosk.service, \
+    /usr/bin/systemctl daemon-reload, \
+    /usr/bin/cp /home/brewplanner/checklist/deploy/checklist-server.service /etc/systemd/system/, \
+    /usr/bin/cp /home/brewplanner/checklist/deploy/checklist-kiosk.service /etc/systemd/system/
+
+brewplanner ALL=(root) NOPASSWD: BREWPLANNER_DEPLOY

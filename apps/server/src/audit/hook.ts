@@ -205,6 +205,9 @@ const RULES: Rule[] = [
   { method: 'PUT', re: /^\/api\/graph-colors$/, build: () => ({ entity: 'Settings', action: 'Updated graph colours' }) },
   { method: 'PUT', re: /^\/api\/keg-content-colors$/, build: () => ({ entity: 'Settings', action: 'Updated keg colours' }) },
 
+  // --- System ---------------------------------------------------------------
+  { method: 'POST', re: /^\/api\/system\/update$/, build: () => ({ entity: 'System', action: 'Triggered a software update' }) },
+
   // --- Devices (referred to by their fleet display name) --------------------
   {
     method: 'POST',

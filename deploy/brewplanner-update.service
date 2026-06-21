@@ -1,0 +1,21 @@
+[Unit]
+Description=BrewPlanner one-shot updater (git pull, build, migrate, restart)
+# We deliberately do NOT bind this to checklist-server: update.sh restarts that
+# service, and running in our own unit means this script survives that restart
+# and runs to completion (writing its final ok/failed status).
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=brewplanner
+WorkingDirectory=/home/brewplanner/checklist
+# Match the server's DB location so `npm run db:migrate` hits the real database
+# and the status/log files land in the same data dir the server reads.
+Environment=DATABASE_PATH=/home/brewplanner/checklist/data/checklist.sqlite
+# Optional overrides/secrets, same file the server uses ("-" = ok if absent).
+EnvironmentFile=-/etc/brewplanner.env
+ExecStart=/home/brewplanner/checklist/deploy/update.sh
+
+# Triggered on demand by the dashboard (sudo systemctl start --no-block …);
+# not enabled, so there is no [Install] section.

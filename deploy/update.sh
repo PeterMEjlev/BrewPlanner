@@ -19,6 +19,52 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$REPO_DIR"
 
+# --- Progress reporting ------------------------------------------------------
+# The dashboard's "Update" button launches this script via a one-shot systemd
+# unit, then polls a status file + log to show progress and to confirm the
+# deploy AFTER the server restarts itself below. These live in the data dir,
+# which sits outside the build tree and survives rebuilds (same dir as the DB).
+DATA_DIR="$(dirname "${DATABASE_PATH:-$REPO_DIR/data/checklist.sqlite}")"
+mkdir -p "$DATA_DIR"
+STATUS_FILE="$DATA_DIR/update-status.json"
+LOG_FILE="$DATA_DIR/last-update.log"
+STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# Mirror all output to the log file (truncated each run) as well as the journal.
+exec > >(tee "$LOG_FILE") 2>&1
+
+# Minimal JSON string escaping: backslashes, double quotes, control chars.
+json_escape() { printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\000-\037'; }
+
+write_status() {
+  # $1 = state (running|ok|failed); $2 = optional error message.
+  local state="$1" err finished commit subject
+  err="$(json_escape "${2:-}")"
+  finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  commit="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  subject="$(json_escape "$(git --no-pager log -1 --pretty=%s 2>/dev/null || true)")"
+  if [ "$state" = "running" ]; then
+    printf '{"state":"running","startedAt":"%s"}\n' "$STARTED_AT" > "$STATUS_FILE"
+  else
+    printf '{"state":"%s","startedAt":"%s","finishedAt":"%s","commit":"%s","commitSubject":"%s","error":"%s"}\n' \
+      "$state" "$STARTED_AT" "$finished" "$commit" "$subject" "$err" > "$STATUS_FILE"
+  fi
+}
+
+# On any exit, record success/failure for the dashboard. `set -e` makes a failed
+# step jump straight here with a non-zero code.
+on_exit() {
+  local code=$?
+  if [ "$code" -eq 0 ]; then
+    write_status ok
+  else
+    write_status failed "update.sh exited with code $code — see the log."
+  fi
+}
+trap on_exit EXIT
+
+write_status running
+
 echo "==> BrewPlanner update in: $REPO_DIR"
 
 echo "==> git pull (fast-forward only)"

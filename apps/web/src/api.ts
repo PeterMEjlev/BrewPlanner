@@ -22,6 +22,21 @@ import type {
 
 const BASE = '/api';
 
+/** Progress of a remote software update (the Settings "Update" button). */
+export interface SystemUpdateStatus {
+  state: 'idle' | 'running' | 'ok' | 'failed';
+  startedAt?: string;
+  finishedAt?: string;
+  /** Short hash the deploy ended on. */
+  commit?: string;
+  commitSubject?: string;
+  error?: string;
+  /** Tail of the last run's combined output. */
+  log: string;
+  /** The repo's current HEAD short hash (the version that will run after restart). */
+  repoCommit: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Only send a JSON content-type when there's actually a body — Fastify
   // rejects an empty body that declares `Content-Type: application/json`.
@@ -241,4 +256,11 @@ export const api = {
       body: JSON.stringify({ newPassword }),
     }),
   deleteAccount: (id: number) => request<void>(`/accounts/${id}`, { method: 'DELETE' }),
+
+  // Software update (admin-only). triggerUpdate starts a remote deploy (git pull
+  // + rebuild + restart) on the Pi and returns immediately; poll getUpdateStatus
+  // for progress. The server briefly restarts itself mid-deploy, so callers
+  // should tolerate transient request failures while polling.
+  triggerUpdate: () => request<SystemUpdateStatus>('/system/update', { method: 'POST' }),
+  getUpdateStatus: () => request<SystemUpdateStatus>('/system/update/status'),
 };

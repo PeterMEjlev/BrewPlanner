@@ -99,6 +99,47 @@ directly with no login.
 
 ---
 
+## 6. Deploying updates remotely (the dashboard button)
+
+Once the tunnel is up, you can deploy new versions from anywhere — no SSH —
+using **Settings → Maintenance → Software update → Update now**. The button pulls
+the latest pushed commit, rebuilds, migrates, and restarts the services on the
+Pi. It's admin-only and only reachable through the authenticated tunnel.
+
+It works by starting a **one-shot systemd unit** (`brewplanner-update.service`)
+that runs `deploy/update.sh` independently of `checklist-server`, so the update
+survives the server restarting itself. The script writes a status file + log
+into the data dir that the dashboard polls to show progress.
+
+**One-time install on the Pi** (do this while you can still reach it — e.g. on
+your LAN — so the button works after the Pi moves). The button can't install
+itself, so the very first deploy is manual:
+
+```bash
+cd /home/brewplanner/checklist
+git pull                                              # get the commit with the unit + script
+
+sudo cp deploy/brewplanner-update.service /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# Does the service account already have passwordless sudo?
+sudo -n true 2>/dev/null && echo "yes — skip the sudoers file" || echo "no — install the sudoers file"
+# If it said "no":
+sudo cp deploy/brewplanner-deploy.sudoers /etc/sudoers.d/brewplanner-deploy
+sudo chmod 0440 /etc/sudoers.d/brewplanner-deploy
+sudo visudo -cf /etc/sudoers.d/brewplanner-deploy     # must print "parsed OK"
+
+deploy/update.sh                                       # build + restart once, with the new code
+```
+
+After that, the workflow from either computer is: **commit and `git push`**, then
+open the dashboard and click **Update now**. The dashboard goes unavailable for a
+few seconds while the server restarts, then confirms the new version.
+
+> Heads-up: the button deploys whatever is on the repo's remote `main`. It's
+> gated to admins behind the tunnel login (add Cloudflare Access for a second
+> factor), but treat that login like SSH access.
+
 ## Hardening (optional but recommended)
 
 - **Cloudflare Access** — put an extra identity layer (email one-time PIN,
