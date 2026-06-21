@@ -4,40 +4,46 @@ import { useLayoutEffect, useRef, useState } from 'react';
 const FIT_QUERY = '(min-width: 1280px)';
 
 /**
- * Uniformly scales its content down so the Overview keeps its "one screen"
- * promise on shorter monitors. Above the `xl` breakpoint (where the dashboard
- * locks to a single viewport height) it measures the content's natural height
- * against the space it's been given: when the content is too tall it applies a
- * `transform: scale()`, shrinking everything evenly down to `minScale`. The
- * content is stretched to fill the height first, so on roomy screens nothing
- * changes (scale stays 1 and flex children grow exactly as before). If even
- * `minScale` still overflows, it falls back to scrolling rather than clipping.
- * Below `xl` it's a transparent pass-through.
+ * Uniformly scales the Overview so it fills the monitor as one piece, keeping its
+ * "one screen" promise without distorting anything. Above the `xl` breakpoint it
+ * measures the content's natural size at a fixed design width (`maxWidth`) and
+ * applies a single `transform: scale()`:
  *
- * `zoom` is the user's manual size preference (1 = the auto-fit behaviour
- * above). It multiplies the computed fit, so values below 1 shrink everything
- * and values above 1 enlarge it past one screen — at which point the content
- * scrolls instead of being clipped.
+ *  - On a roomy/large monitor it *enlarges* the whole dashboard to fill the space
+ *    (capped at `maxScale`, default 2×). Because the scale is uniform, text,
+ *    cards and graphs all grow together — graphs are never stretched in just one
+ *    direction. Once the cap is hit, any remaining space is left empty rather
+ *    than over-stretching the layout.
+ *  - On a short monitor it *shrinks* evenly down to `minScale`, falling back to
+ *    scrolling rather than clipping if even that overflows.
  *
- * `className` styles the (unscaled) visual box — put width/centering caps there;
- * the child is expected to be a flex item that fills the column (`xl:flex-1`).
+ * The scaled content is centred in the viewport, so leftover space splits evenly
+ * around it. Below `xl` it's a transparent pass-through (capped at `maxWidth`).
+ *
+ * `zoom` is the user's manual size preference (1 = the auto-fit above). It
+ * multiplies the computed fit, so values below 1 shrink everything and values
+ * above 1 enlarge it past one screen — at which point the content scrolls.
  */
 export function FitScale({
   minScale = 0.7,
+  maxScale = 2,
+  maxWidth = 1580,
   zoom = 1,
-  className,
   children,
 }: {
   minScale?: number;
+  /** Cap on auto-enlargement for big monitors (1 = never enlarge). */
+  maxScale?: number;
+  /** The design width the dashboard is laid out at before scaling. */
+  maxWidth?: number;
   zoom?: number;
-  className?: string;
   children: React.ReactNode;
 }): JSX.Element {
   const outerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [enabled, setEnabled] = useState(() => window.matchMedia(FIT_QUERY).matches);
   const [scale, setScale] = useState(1);
-  const [sizerHeight, setSizerHeight] = useState<number | null>(null);
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const [scroll, setScroll] = useState(false);
 
   // Scaling only applies to the locked one-screen layout at `xl` and up.
@@ -56,24 +62,33 @@ export function FitScale({
 
     let raf = 0;
     const measure = (): void => {
-      const avail = outer.clientHeight;
-      if (avail <= 0) return;
-      // Stretch to fill the available height before measuring, so flex children
-      // grow to fill roomy screens; `scrollHeight` then reports the true natural
-      // height when (and only when) the content is genuinely taller than `avail`.
-      // Transforms don't affect `scrollHeight`, so this read stays accurate while
-      // scaled.
-      content.style.minHeight = `${avail}px`;
-      const natural = content.scrollHeight;
-      // Auto-fit as before (never above 1), then apply the user's zoom on top.
-      // Zoom > 1 can push the scale above 1, enlarging past one screen; the
-      // overflow then scrolls rather than clipping.
-      const fit = Math.min(1, Math.max(minScale, avail / natural));
-      const next = Math.round(fit * zoom * 1000) / 1000;
-      const visual = natural * next;
+      const availH = outer.clientHeight;
+      const availW = outer.clientWidth;
+      if (availH <= 0 || availW <= 0) return;
+      // Lay the content out at its fixed design width (never wider than the
+      // viewport) with no transform, so `scrollHeight` reports the true natural
+      // height. Transforms don't affect `scrollHeight`, but width does, so we pin
+      // the width while measuring; this read stays accurate while scaled.
+      const baseW = Math.min(availW, maxWidth);
+      content.style.width = `${baseW}px`;
+      const naturalH = content.scrollHeight;
+      if (naturalH <= 0) return;
+      // Uniform "contain" fit: the largest scale that fits both axes, clamped to
+      // [minScale, maxScale]. ≥1 enlarges to fill a big monitor (capped, so any
+      // slack is left as empty space); <1 shrinks to keep one screen. The user's
+      // zoom multiplies on top — pushing past one screen then scrolls.
+      const contain = Math.min(availW / baseW, availH / naturalH);
+      const auto = Math.min(maxScale, Math.max(minScale, contain));
+      const next = Math.round(auto * zoom * 1000) / 1000;
+      const visualW = baseW * next;
+      const visualH = naturalH * next;
       setScale((prev) => (Math.abs(prev - next) < 0.002 ? prev : next));
-      setSizerHeight((prev) => (prev != null && Math.abs(prev - visual) < 0.5 ? prev : visual));
-      setScroll(visual > avail + 0.5);
+      setBox((prev) =>
+        prev && Math.abs(prev.w - visualW) < 0.5 && Math.abs(prev.h - visualH) < 0.5
+          ? prev
+          : { w: visualW, h: visualH },
+      );
+      setScroll(visualH > availH + 0.5);
     };
 
     const schedule = (): void => {
@@ -88,32 +103,40 @@ export function FitScale({
       ro.disconnect();
       cancelAnimationFrame(raf);
     };
-  }, [enabled, minScale, zoom]);
+  }, [enabled, minScale, maxScale, maxWidth, zoom]);
 
   if (!enabled) {
-    return <div className={className}>{children}</div>;
+    return (
+      <div className="w-full" style={{ maxWidth }}>
+        {children}
+      </div>
+    );
   }
 
+  // The pre-transform width that, scaled, lands back at the measured visual box.
+  const baseW = box ? box.w / scale : undefined;
+  const scaled = Math.abs(scale - 1) > 0.001;
+
   return (
-    // overflow-x is always clipped: when scaled, the content's pre-transform box
-    // is wider than the viewport (it's drawn at 100/scale% then shrunk back), and
-    // that invisible excess must not spawn a horizontal scrollbar.
+    // overflow-x is always clipped: the centred sizer can never exceed the
+    // viewport width by construction, but guards against sub-pixel rounding.
     <div
       ref={outerRef}
-      className={`h-full overflow-x-hidden ${scroll ? 'overflow-y-auto' : 'overflow-y-hidden'}`}
+      className={`flex h-full justify-center overflow-x-hidden ${
+        scroll ? 'items-start overflow-y-auto' : 'items-center overflow-y-hidden'
+      }`}
     >
-      <div className={className} style={{ height: sizerHeight ?? undefined }}>
+      {/* Reserves the scaled footprint so flexbox can centre it; the transformed
+          content fills it exactly (baseW·scale × naturalH·scale). */}
+      <div style={box ? { width: box.w, height: box.h } : undefined}>
         <div
           ref={contentRef}
           className="flex min-h-0 flex-col"
-          style={
-            // Transform whenever the scale isn't exactly 1 — that includes
-            // zoom-in (scale > 1), where the pre-transform box is drawn narrower
-            // (100/scale%) so it lands back at full width once scaled up.
-            Math.abs(scale - 1) > 0.001
-              ? { transform: `scale(${scale})`, transformOrigin: 'top left', width: `${100 / scale}%` }
-              : undefined
-          }
+          style={{
+            width: baseW,
+            transform: scaled ? `scale(${scale})` : undefined,
+            transformOrigin: 'top left',
+          }}
         >
           {children}
         </div>

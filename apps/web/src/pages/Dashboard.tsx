@@ -336,17 +336,17 @@ export function DashboardPage(): JSX.Element {
   return (
     <ChartRangeProvider>
     <DashboardShell active="overview" alertCount={alerts.length} lastUpdate={lastUpdate} fit>
-      <FitScale zoom={dashboardZoom} className="w-full max-w-[1580px]">
-      <main className="w-full px-5 py-5 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
+      <FitScale zoom={dashboardZoom}>
+      <main className="w-full px-5 py-5">
         {error && (
           <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}
           </div>
         )}
 
-        <div className="grid gap-5 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_23rem] xl:grid-rows-[minmax(0,1fr)]">
-          <div className="min-w-0 space-y-5 xl:flex xl:min-h-0 xl:flex-col">
-            <section id="fermenter" className="scroll-mt-5 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem] xl:items-start">
+          <div className="min-w-0 space-y-5">
+            <section id="fermenter" className="scroll-mt-5">
               {devices === null ? (
                 <LoadingPanel label="Loading fermenter…" />
               ) : stationGroups.length === 0 ? (
@@ -355,7 +355,7 @@ export function DashboardPage(): JSX.Element {
                   body="Register pressure, controller, or hydrometer devices with the same fermenter name and they will group here."
                 />
               ) : (
-                <div className="space-y-5 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
+                <div className="space-y-5">
                   {stationGroups.map((group) => (
                     <FermenterCommandCenter
                       key={group[0]!.name}
@@ -382,7 +382,7 @@ export function DashboardPage(): JSX.Element {
             />
           </div>
 
-          <aside className="space-y-5 xl:flex xl:min-h-0 xl:flex-col">
+          <aside className="space-y-5">
             <KegInventoryPanel
               kegs={kegs}
               loading={kegsLoading}
@@ -562,8 +562,8 @@ function FermenterCommandCenter({
       : null;
 
   return (
-    <article className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
-      <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 px-5 py-4 xl:shrink-0">
+    <article className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+      <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 px-5 py-4">
         <div className="flex min-w-0 shrink-0 items-center gap-3">
           <FermenterIcon className="h-11 w-11 shrink-0 text-white" strokeWidth={2.6} />
           <div className="min-w-0">
@@ -625,7 +625,7 @@ function FermenterCommandCenter({
         </div>
       </div>
 
-      <div className="grid gap-4 p-5 md:grid-cols-3 xl:min-h-0 xl:flex-1 xl:grid-rows-[minmax(0,1fr)]">
+      <div className="grid gap-4 p-5 md:grid-cols-3">
         <FermenterSubCard
           icon={<GaugeIcon className="h-6 w-6" />}
           title="Pressure"
@@ -640,7 +640,7 @@ function FermenterCommandCenter({
               <div className="mt-3">
                 <BigValue {...formatPressure(pressure.reading.value, pressureUnit)} />
               </div>
-              <div className="mt-3 flex-1 min-h-[12rem] xl:min-h-0">
+              <div className="mt-3 flex-1 min-h-[12rem]">
                 <MiniChartFrame
                   max={pressureRange ? formatPressure(pressureRange.max, pressureUnit).value : undefined}
                   min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
@@ -707,7 +707,7 @@ function FermenterCommandCenter({
                 {fridge && <LegendSwatch color={colors.fridgeTemp} label="Fridge" dashed />}
                 {setpoint && <LegendSwatch color={colors.setpoint} label="Target" dotted />}
               </div>
-              <div className="mt-2 flex-1 min-h-[12rem] xl:min-h-0">
+              <div className="mt-2 flex-1 min-h-[12rem]">
                 <button
                   type="button"
                   onClick={() =>
@@ -766,7 +766,7 @@ function FermenterCommandCenter({
               <div className="mt-3">
                 <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
               </div>
-              <div className="mt-3 flex-1 min-h-[12rem] xl:min-h-0">
+              <div className="mt-3 flex-1 min-h-[12rem]">
                 {gravityValues.length > 1 ? (
                   <MiniChartFrame
                     max={gravityRange ? gravityRange.max.toFixed(3) : undefined}
@@ -1515,11 +1515,7 @@ function AlertsPanel({ alerts, loading }: { alerts: Alert[]; loading: boolean })
   return (
     <section
       id="alerts"
-      // Floor (instead of min-h-0) so the panel can't silently collapse to
-      // nothing on short screens: it keeps a real height, which lets the column
-      // genuinely overflow and the dashboard's fit-scaler shrink everything to
-      // fit. On roomy screens flex-1 still grows it to fill the slack.
-      className="scroll-mt-5 rounded-xl border border-zinc-800 bg-zinc-900 p-5 xl:flex xl:min-h-[7rem] xl:flex-1 xl:flex-col"
+      className="scroll-mt-5 rounded-xl border border-zinc-800 bg-zinc-900 p-5"
     >
       <PanelHeading
         title="Alerts"
@@ -1540,7 +1536,7 @@ function AlertsPanel({ alerts, loading }: { alerts: Alert[]; loading: boolean })
           No active alerts
         </p>
       ) : (
-        <ul className="mt-3 space-y-2 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-1">
+        <ul className="mt-3 space-y-2">
           {alerts.map((a) => (
             <li
               key={a.id}
