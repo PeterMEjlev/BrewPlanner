@@ -17,7 +17,7 @@ import {
   GaugeIcon,
   KegIcon,
   MonitorIcon,
-  SettingsIcon,
+  MusicIcon,
   ThermometerIcon,
   TodoIcon,
 } from '../components/icons';
@@ -324,15 +324,15 @@ export function KioskHomePage(): JSX.Element {
           </main>
 
           <div className="grid shrink-0 grid-cols-2 gap-3">
-            {/* Left column: a gear settings button pinned to the far edge, then
+            {/* Left column: a brewery-speaker button pinned to the far edge, then
                 the combined checklist | to-do card (which gives up the width). */}
             <div className="flex gap-3">
               <Link
-                to="/kiosk/settings"
-                aria-label="Settings"
+                to="/kiosk/music"
+                aria-label="Brewery speaker"
                 className="flex h-[4.5rem] w-[4.5rem] shrink-0 touch-manipulation items-center justify-center rounded-3xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition active:scale-[0.98] active:bg-zinc-800"
               >
-                <SettingsIcon className="h-8 w-8" />
+                <MusicIcon className="h-8 w-8" />
               </Link>
 
               {/* Checklist + To-Do share one card: the left half opens the
