@@ -7,7 +7,7 @@
   - Temperature of brewery (another Inkbird 308)
   - Gravity of beer/wort fermentation (Tilt gravity sensor.) Tilt broadcasts BLE/iBeacon data.
 
-- ## Improve phone layout for dashboard (make a phone specific layout? (so we have rpi (kiosk, desktop and phone specific layouts)))?
+
 
 - ## Enable Keg inventory editing: 
   On the Raspberry Pi (production — the real deployment):

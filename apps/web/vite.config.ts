@@ -7,6 +7,10 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   plugins: [react()],
   server: {
+    // Bind on all interfaces (0.0.0.0) so other devices on the LAN/hotspot —
+    // e.g. a phone testing the mobile layout — can reach the dev server by the
+    // laptop's IP. Without this Vite only listens on localhost.
+    host: true,
     port: 5173,
     proxy: {
       '/api': 'http://localhost:3000',

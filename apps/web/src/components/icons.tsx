@@ -189,6 +189,26 @@ export function SettingsIcon(props: IconProps): JSX.Element {
   );
 }
 
+/** Three dots — the phone bottom-bar "More" overflow tab. */
+export function MoreIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+/** An X / close mark for dismissing the phone "More" sheet. */
+export function CloseIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </Svg>
+  );
+}
+
 // --- Fermenter command-centre section icons ---------------------------------
 
 /** A dial pressure gauge / speedometer with a needle. */

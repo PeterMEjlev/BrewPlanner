@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
@@ -5,10 +6,12 @@ import {
   BellIcon,
   ChecklistIcon,
   ClockIcon,
+  CloseIcon,
   HistoryIcon,
   HomeIcon,
   KegIcon,
   MonitorIcon,
+  MoreIcon,
   SettingsIcon,
   SlidersIcon,
   TodoIcon,
@@ -51,6 +54,22 @@ const NAV: NavItem[] = [
 ];
 
 /**
+ * The four destinations that get their own tab in the phone bottom bar; the rest
+ * fold into a "More" sheet. These mirror the top of the desktop sidebar, the
+ * spots a brewer reaches for most when glancing at their phone.
+ */
+const BOTTOM_BAR_PAGES: ShellPage[] = ['overview', 'kegs', 'alerts', 'devices'];
+
+/** Drop the nav rails a read-only guest may not open (matches the sidebar). */
+function visibleNav(controllable: boolean): NavItem[] {
+  if (controllable) return NAV;
+  return NAV.filter(
+    (item) =>
+      item.page !== 'brewSystem' && item.page !== 'settings' && item.page !== 'history',
+  );
+}
+
+/**
  * The persistent desktop chrome: a left nav rail plus the page content. Used by
  * the Overview and the Devices list. Section items (Fermenter, Alerts) scroll to
  * a region of the Overview, navigating there first if we're on another page.
@@ -83,9 +102,16 @@ export function DashboardShell({
       }`}
     >
       <Sidebar active={active} alertCount={alertCount} lastUpdate={lastUpdate} />
-      <div className={`min-w-0 flex-1 ${fit ? 'xl:h-screen xl:overflow-hidden' : ''}`}>
+      {/* Below `md` the sidebar is hidden, so leave room for the fixed bottom bar
+          (it would otherwise cover the last cards of a scrolling page). */}
+      <div
+        className={`min-w-0 flex-1 pb-16 md:pb-0 ${
+          fit ? 'xl:h-screen xl:overflow-hidden' : ''
+        }`}
+      >
         {children}
       </div>
+      <BottomNav active={active} alertCount={alertCount} lastUpdate={lastUpdate} />
     </div>
   );
 }
@@ -104,13 +130,7 @@ function Sidebar({
   // Guests are read-only and can't open the Brew System, Settings or History
   // pages (History reveals who changed what, so it stays admin-only), so drop
   // those rails entirely; the kiosk/LAN and admins see the full nav.
-  const controllable = canControl(auth);
-  const navItems = controllable
-    ? NAV
-    : NAV.filter(
-        (item) =>
-          item.page !== 'brewSystem' && item.page !== 'settings' && item.page !== 'history',
-      );
+  const navItems = visibleNav(canControl(auth));
 
   return (
     <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/95 md:flex">
@@ -160,6 +180,153 @@ function Sidebar({
         )}
       </div>
     </aside>
+  );
+}
+
+/**
+ * The phone-only navigation: a fixed bottom tab bar (hidden at `md`+, where the
+ * sidebar takes over). The four primary destinations get a tab each; everything
+ * else — plus the last-update stamp and sign-out that live in the sidebar
+ * footer — folds into a slide-up "More" sheet.
+ */
+function BottomNav({
+  active,
+  alertCount,
+  lastUpdate,
+}: {
+  active: ShellPage;
+  alertCount: number;
+  lastUpdate?: string | null;
+}): JSX.Element {
+  const { auth, refresh } = useAuth();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const nav = visibleNav(canControl(auth));
+
+  const tabs = BOTTOM_BAR_PAGES.map((page) => nav.find((item) => item.page === page)).filter(
+    (item): item is NavItem => item != null,
+  );
+  const moreItems = nav.filter((item) => !BOTTOM_BAR_PAGES.includes(item.page));
+  // Highlight "More" while one of its pages is open, so the active section is
+  // never left without a lit tab.
+  const moreActive = moreItems.some((item) => item.page === active);
+
+  // A tab navigation should dismiss the sheet; so should leaving for `md`+.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const close = (): void => setMoreOpen(false);
+    mq.addEventListener('change', close);
+    return () => mq.removeEventListener('change', close);
+  }, [moreOpen]);
+
+  return (
+    <>
+      {moreOpen && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          onClick={() => setMoreOpen(false)}
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+        />
+      )}
+
+      {moreOpen && (
+        <div className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl border-t border-zinc-800 bg-zinc-950 pb-[env(safe-area-inset-bottom)] md:hidden">
+          <div className="flex items-center justify-between px-5 pb-2 pt-4">
+            <span className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
+              More
+            </span>
+            <button
+              type="button"
+              onClick={() => setMoreOpen(false)}
+              aria-label="Close menu"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+            >
+              <CloseIcon className="h-5 w-5" />
+            </button>
+          </div>
+
+          <nav className="space-y-1 px-3 pb-2">
+            {moreItems.map((item) => (
+              <Link key={item.key} to={item.to} className="block" onClick={() => setMoreOpen(false)}>
+                <NavRow Icon={item.Icon} label={item.label} active={item.page === active} />
+              </Link>
+            ))}
+          </nav>
+
+          <div className="space-y-3 border-t border-zinc-800 px-5 py-4 text-sm">
+            <div className="flex items-center gap-2 text-zinc-500">
+              <ClockIcon className="h-4 w-4" />
+              <div className="leading-tight">
+                <div className="text-zinc-300">{lastUpdate ? relativeTime(lastUpdate) : '—'}</div>
+                <div className="text-xs">Last update</div>
+              </div>
+            </div>
+            {auth.user && (
+              <div className="flex items-center justify-between gap-2 text-zinc-500">
+                <span className="truncate text-zinc-400">{auth.user.username}</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setMoreOpen(false);
+                    await api.logout();
+                    await refresh();
+                  }}
+                  className="rounded-lg px-2 py-1 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+        {tabs.map((item) => {
+          const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
+          return (
+            <Link key={item.key} to={item.to} className="min-w-0 flex-1">
+              <BottomTab Icon={item.Icon} label={item.label} active={item.page === active} badge={badge} />
+            </Link>
+          );
+        })}
+        <button type="button" onClick={() => setMoreOpen((v) => !v)} className="min-w-0 flex-1">
+          <BottomTab Icon={MoreIcon} label="More" active={moreActive || moreOpen} />
+        </button>
+      </nav>
+    </>
+  );
+}
+
+/** One tab in the phone bottom bar: stacked icon + label, lit white when active. */
+function BottomTab({
+  Icon,
+  label,
+  active,
+  badge,
+}: {
+  Icon: IconComponent;
+  label: string;
+  active: boolean;
+  badge?: number;
+}): JSX.Element {
+  return (
+    <span
+      className={`relative flex flex-col items-center gap-1 px-1 py-2 text-[11px] font-medium transition ${
+        active ? 'text-white' : 'text-zinc-400'
+      }`}
+    >
+      <span className="relative">
+        <Icon className="h-6 w-6" />
+        {badge != null && (
+          <span className="absolute -right-2 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-zinc-950">
+            {badge}
+          </span>
+        )}
+      </span>
+      <span className="max-w-full truncate">{label}</span>
+    </span>
   );
 }
 
