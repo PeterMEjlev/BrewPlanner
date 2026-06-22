@@ -154,7 +154,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return { user: getSessionUser(req), isLocal: isLocalRequest(req) };
   });
 
-  app.post('/login', async (req, reply) => {
+  // Throttle login attempts per client IP (see the rate-limit registration in
+  // index.ts for how the key is derived behind the Cloudflare tunnel). 10/min is
+  // generous for a human fat-fingering a password but blunts online guessing; on
+  // exceed the plugin replies 429 before this handler runs.
+  app.post('/login', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
     const result = loginSchema.safeParse(req.body);
     if (!result.success) {
       return reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });

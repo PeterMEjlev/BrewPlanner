@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fastifyCookie from '@fastify/cookie';
+import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
@@ -31,6 +32,20 @@ async function main(): Promise<void> {
   // Signed session cookies. The secret signs the session cookie; a stable
   // value keeps sessions valid across restarts. See auth/secret.ts.
   await app.register(fastifyCookie, { secret: resolveSessionSecret(app.log) });
+
+  // Brute-force protection. Registered with `global: false` so it only applies
+  // to routes that opt in via `config.rateLimit` (today: the login endpoint) —
+  // it must NOT throttle the dashboard's frequent /me polling or device ingest.
+  // Behind the Cloudflare tunnel every remote request reaches us from localhost,
+  // so `req.ip` is useless for keying; key on the real client IP that Cloudflare
+  // forwards in `cf-connecting-ip`, falling back to `req.ip` for LAN/loopback.
+  await app.register(fastifyRateLimit, {
+    global: false,
+    keyGenerator: (req) => {
+      const cf = req.headers['cf-connecting-ip'];
+      return (Array.isArray(cf) ? cf[0] : cf) || req.ip;
+    },
+  });
 
   // Auth endpoints (login/logout/me) live outside the guarded /api routes.
   await app.register(authRoutes, { prefix: '/api/auth' });
