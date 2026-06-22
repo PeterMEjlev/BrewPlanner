@@ -115,9 +115,12 @@ function Sidebar({
   return (
     <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/95 md:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
-        <span className="text-3xl font-bold uppercase tracking-tight text-white">
+        <Link
+          to="/"
+          className="text-3xl font-bold uppercase tracking-tight text-white transition hover:text-zinc-300"
+        >
           Konfus
-        </span>
+        </Link>
       </div>
 
       <nav className="flex-1 space-y-1 px-3">

@@ -1,4 +1,11 @@
-import { DEFAULT_NOTIFICATION_SETTINGS, type NotificationSettings } from '@checklist/shared';
+import {
+  DEFAULT_DEVICE_DATA_SOURCES,
+  DEFAULT_NOTIFICATION_SETTINGS,
+  SENSOR_CATALOG,
+  type DeviceDataSource,
+  type DeviceDataSources,
+  type NotificationSettings,
+} from '@checklist/shared';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -126,6 +133,9 @@ export function SettingsPage(): JSX.Element {
           </div>
         </SettingCard>
 
+        {/* Sensor data sources (server-backed) ----------------------------- */}
+        <DataSourcesCard />
+
         {/* Telegram notifications (server-backed) -------------------------- */}
         <NotificationSettingsCard />
       </main>
@@ -234,6 +244,65 @@ function NotificationSettingsCard(): JSX.Element {
               {test === 'sending' ? 'Sending…' : 'Send test'}
             </button>
           </div>
+        </div>
+      )}
+    </SettingCard>
+  );
+}
+
+/**
+ * Per-sensor mock/real data source picker. Like the notification card these are
+ * stored on the server (shared across screens), so a fetch-on-mount + save-on-tap
+ * over the API rather than localStorage. A sensor set to Actual but not reporting
+ * shows greyed out ("not connected") on the home hub and Device Fleet.
+ */
+function DataSourcesCard(): JSX.Element {
+  const [sources, setSources] = useState<DeviceDataSources | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getDeviceSources()
+      .then((s) => !cancelled && setSources(s))
+      .catch(() => !cancelled && setSources(DEFAULT_DEVICE_DATA_SOURCES));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const update = (key: string, value: DeviceDataSource): void => {
+    setSources((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, [key]: value };
+      void api.updateDeviceSources(next).catch(() => {});
+      return next;
+    });
+  };
+
+  return (
+    <SettingCard
+      title="Sensor data"
+      hint="Show demo (mock) data or the real reading from each sensor. A sensor set to Actual but not connected shows greyed out."
+    >
+      {!sources ? (
+        <p className="text-zinc-500">Loading…</p>
+      ) : (
+        <div className="flex flex-col gap-5">
+          {SENSOR_CATALOG.map((s) => (
+            <div key={s.key} className="flex items-center justify-between gap-4">
+              <span className="min-w-0 flex-1 text-lg text-zinc-300">{s.label}</span>
+              <div className="w-60 shrink-0">
+                <SegmentedToggle<DeviceDataSource>
+                  value={sources[s.key] ?? 'mock'}
+                  options={[
+                    { value: 'mock', label: 'Mock' },
+                    { value: 'real', label: 'Actual' },
+                  ]}
+                  onChange={(v) => update(s.key, v)}
+                />
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </SettingCard>

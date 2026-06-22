@@ -448,12 +448,27 @@ function StationTile({
 
   const fridgeColor = state ? hvacColor(state.reading.value) : '';
 
+  // Mock sensors always read "online", so an offline backing device means that
+  // sensor is pinned to live ("Actual") data but isn't connected — show a greyed
+  // "Not connected" column instead of silently dropping it. Beer temp + gravity
+  // share the Tilt; fridge temp + setpoint share the Inkbird controller.
+  const pressureDevice = devices.find((d) => d.type === 'pressure_sensor');
+  const hydrometerDevice = devices.find((d) => d.type === 'hydrometer');
+  const controllerDevice = devices.find(
+    (d) => d.type === 'brew_controller' && !isBreweryTempDevice(d),
+  );
+  const pressureOffline = !!pressureDevice && !pressureDevice.online;
+  const hydrometerOffline = !!hydrometerDevice && !hydrometerDevice.online;
+  const controllerOffline = !!controllerDevice && !controllerDevice.online;
+
   // Collect the present columns, then interleave straight divider lines between
   // them in the render. Drawing each divider as its own element — rather than a
   // left border on the column — keeps it perfectly straight even though the
   // linked columns have rounded corners for their tap highlight.
   const columns: JSX.Element[] = [];
-  if (pressure) {
+  if (pressureOffline) {
+    columns.push(<NotConnectedColumn key="pressure" label="Pressure" />);
+  } else if (pressure) {
     const p = formatPressure(pressure.reading.value, pressureUnit);
     columns.push(
       <MetricColumn key="pressure" deviceId={pressure.deviceId} label="Pressure">
@@ -461,25 +476,35 @@ function StationTile({
       </MetricColumn>,
     );
   }
-  if (beer || fridge) {
+  if (beer || fridge || hydrometerOffline || controllerOffline) {
     // The whole Temperature column opens the combined chart (beer + fridge on
-    // one graph), so the inner rows are plain readings, not their own links.
+    // one graph), so the inner rows are plain readings, not their own links. An
+    // offline backing sensor shows "Not connected" in place of its row.
     const tempParams = new URLSearchParams();
     if (beer) tempParams.set('beer', String(beer.deviceId));
     if (fridge) tempParams.set('fridge', String(fridge.deviceId));
+    const beerCell = hydrometerOffline ? (
+      <TempNotConnected label="Beer" />
+    ) : beer ? (
+      <TempRow label="Beer" value={beer.reading.value.toFixed(1)} />
+    ) : null;
+    const fridgeCell = controllerOffline ? (
+      <TempNotConnected label="Fridge" />
+    ) : fridge ? (
+      <TempRow label="Fridge" value={fridge.reading.value.toFixed(1)} valueClass={fridgeColor} />
+    ) : null;
     columns.push(
-      <MetricColumn key="temp" label="Temperature" wide to={`/kiosk/temperature?${tempParams}`}>
+      <MetricColumn
+        key="temp"
+        label="Temperature"
+        wide
+        to={beer || fridge ? `/kiosk/temperature?${tempParams}` : undefined}
+      >
         <div className="flex w-full flex-col items-center gap-3 py-1">
-          {beer && <TempRow label="Beer" value={beer.reading.value.toFixed(1)} />}
-          {beer && fridge && <hr className="w-3/4 border-zinc-800" />}
-          {fridge && (
-            <TempRow
-              label="Fridge"
-              value={fridge.reading.value.toFixed(1)}
-              valueClass={fridgeColor}
-            />
-          )}
-          {setpoint && (
+          {beerCell}
+          {beerCell && fridgeCell && <hr className="w-3/4 border-zinc-800" />}
+          {fridgeCell}
+          {setpoint && !controllerOffline && (
             <span className="mt-1 text-sm text-zinc-500">
               Set: {setpoint.reading.value.toFixed(1)}°C
             </span>
@@ -488,7 +513,9 @@ function StationTile({
       </MetricColumn>,
     );
   }
-  if (gravity) {
+  if (hydrometerOffline) {
+    columns.push(<NotConnectedColumn key="gravity" label="Gravity" />);
+  } else if (gravity) {
     // Lock the device page to gravity — the Tilt also reports beer temp, but that
     // now lives on the combined Temperature chart, so this view is gravity-only.
     columns.push(
@@ -619,6 +646,32 @@ function TempRow({
   );
 }
 
+/**
+ * A fermenter column whose sensor is set to live data but isn't connected — the
+ * label with a greyed "Not connected" pill, so the brewer sees why it's blank
+ * (no device) rather than a missing reading. Not a link (nothing to chart yet).
+ */
+function NotConnectedColumn({ label }: { label: string }): JSX.Element {
+  return (
+    <MetricColumn label={label}>
+      <span className="inline-flex items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-base font-medium text-zinc-400">
+        <span className="h-2.5 w-2.5 rounded-full bg-zinc-600" aria-hidden />
+        Not connected
+      </span>
+    </MetricColumn>
+  );
+}
+
+/** A not-connected stand-in for one temperature row (Beer / Fridge). */
+function TempNotConnected({ label }: { label: string }): JSX.Element {
+  return (
+    <div className="flex items-baseline justify-center gap-2.5">
+      <span className="w-14 shrink-0 text-right text-base text-zinc-500">{label}</span>
+      <span className="text-lg font-medium text-zinc-500">Not connected</span>
+    </div>
+  );
+}
+
 /** Big number with a unit underneath (pressure, gravity). */
 function BigValue({ value, unit }: { value: string; unit: string }): JSX.Element {
   return (
@@ -674,7 +727,7 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
           device name above already says what the value is. */}
       <div className="flex min-h-0 flex-1 items-center">
         {metrics.length === 0 ? (
-          <span className="text-base text-zinc-500">No readings</span>
+          <span className="text-base text-zinc-500">{device.online ? 'No readings' : 'Not connected'}</span>
         ) : (
           metrics.map((m, i) => (
             <div

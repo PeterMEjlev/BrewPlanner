@@ -78,6 +78,13 @@
       "when": 1781883813492,
       "tag": "0010_loud_korath",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1782128784705,
+      "tag": "0011_far_hawkeye",
+      "breakpoints": true
     }
   ]
 }

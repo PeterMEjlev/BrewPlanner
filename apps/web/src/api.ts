@@ -6,6 +6,7 @@ import type {
   AuthState,
   ChecklistSummary,
   ChecklistWithSteps,
+  DeviceDataSources,
   DeviceStatus,
   GraphColors,
   Keg,
@@ -172,6 +173,15 @@ export const api = {
       body: JSON.stringify({ value }),
     }),
 
+  // Per-sensor mock/real data source choice (server-shared, edited from the
+  // Settings page). The whole map is sent on each save, like the colour palettes.
+  getDeviceSources: () => request<DeviceDataSources>('/device-sources'),
+  updateDeviceSources: (sources: DeviceDataSources) =>
+    request<DeviceDataSources>('/device-sources', {
+      method: 'PUT',
+      body: JSON.stringify(sources),
+    }),
+
   // Brewer's Friend recipes. listRecipes proxies the user's account via the
   // server (the API key stays server-side); the active recipe is the one shown
   // on the kiosk fermenter card.
@@ -200,6 +210,9 @@ export const api = {
   // fermentation-complete events), newest first.
   listAlerts: (limit?: number) =>
     request<Alert[]>(`/alerts${limit ? `?limit=${limit}` : ''}`),
+
+  // Dismiss an alert (clicked away on the dashboard); removes it from every feed.
+  dismissAlert: (id: number) => request<void>(`/alerts/${id}`, { method: 'DELETE' }),
 
   // Change history: the audit log of admin changes, newest first (admin-only).
   listAudit: (limit?: number) =>

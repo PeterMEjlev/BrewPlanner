@@ -1,4 +1,12 @@
-import type { DeviceStatus, DeviceType, LatestReading, Reading, Recipe } from '@checklist/shared';
+import type {
+  Alert,
+  AlertSeverity,
+  DeviceStatus,
+  DeviceType,
+  LatestReading,
+  Reading,
+  Recipe,
+} from '@checklist/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -232,33 +240,17 @@ function hvacColor(value: number): string {
   return 'text-zinc-300';
 }
 
-// --- Derived alerts ---------------------------------------------------------
-
-interface Alert {
-  id: string;
-  severity: 'critical' | 'warning';
-  title: string;
-  detail: string;
-}
+// --- Alerts -----------------------------------------------------------------
 
 /**
- * There is no alerts backend yet, so the Alerts feed is derived live from
- * device state: any offline sensor is a critical alert. The count drives the
- * sidebar badge.
+ * An alert is "active" while its condition still holds: a `device_offline` alert
+ * until the device reports again, and event alerts (keg age, fermentation done)
+ * until they're dismissed. Dismissed alerts are dropped server-side, so they
+ * never reach the dashboard. The active set drives the card and the sidebar
+ * badge, and matches the Alerts page so the counts agree.
  */
-function deriveAlerts(devices: DeviceStatus[]): Alert[] {
-  const alerts: Alert[] = [];
-  for (const d of devices) {
-    if (!d.online) {
-      alerts.push({
-        id: `offline-${d.id}`,
-        severity: 'critical',
-        title: `${d.name} offline`,
-        detail: `${TYPE_LABEL[d.type]} sensor hasn't reported recently.`,
-      });
-    }
-  }
-  return alerts;
+function isActiveAlert(a: Alert): boolean {
+  return a.resolvedAt == null;
 }
 
 /** A metric the user clicked to enlarge in the chart overlay. */
@@ -280,6 +272,7 @@ type OpenChart = (target: ChartTarget) => void;
 export function DashboardPage(): JSX.Element {
   const [devices, setDevices] = useState<DeviceStatus[] | null>(null);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [chart, setChart] = useState<ChartTarget | null>(null);
   const { dashboardRefreshSec, dashboardZoom } = useSettings();
@@ -290,17 +283,34 @@ export function DashboardPage(): JSX.Element {
 
   const load = useCallback(async () => {
     try {
-      const [d, r] = await Promise.all([
+      const [d, r, a] = await Promise.all([
         api.listDevices(),
         api.getActiveRecipe().catch(() => null),
+        api.listAlerts().catch(() => [] as Alert[]),
       ]);
       setDevices(d);
       setRecipe(r);
+      setAlerts(a);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load devices');
     }
   }, []);
+
+  // Dismiss an alert from the card: drop it immediately, then tell the server.
+  // The server marks it dismissed so it stays gone (and a still-offline device
+  // won't re-raise it); on failure we reload to restore the true state.
+  const dismissAlert = useCallback(
+    async (id: number) => {
+      setAlerts((prev) => prev.filter((a) => a.id !== id));
+      try {
+        await api.dismissAlert(id);
+      } catch {
+        void load();
+      }
+    },
+    [load],
+  );
 
   useEffect(() => {
     void load();
@@ -324,7 +334,7 @@ export function DashboardPage(): JSX.Element {
     .filter(isStationGroup)
     .sort((a, b) => groupRank(a) - groupRank(b) || a[0]!.name.localeCompare(b[0]!.name));
 
-  const alerts = deriveAlerts(deviceList);
+  const activeAlerts = alerts.filter(isActiveAlert);
   const lastUpdate = latestDeviceTimestamp(deviceList);
 
   const brewery = deviceList.find(isBreweryTempDevice) ?? null;
@@ -335,7 +345,7 @@ export function DashboardPage(): JSX.Element {
 
   return (
     <ChartRangeProvider>
-    <DashboardShell active="overview" alertCount={alerts.length} lastUpdate={lastUpdate} fit>
+    <DashboardShell active="overview" alertCount={activeAlerts.length} lastUpdate={lastUpdate} fit>
       <FitScale zoom={dashboardZoom}>
       <main className="w-full px-5 py-5">
         {error && (
@@ -391,7 +401,11 @@ export function DashboardPage(): JSX.Element {
             />
             <OperationsPanel />
             <DeviceFleetPanel devices={deviceList} loading={devices === null} />
-            <AlertsPanel alerts={alerts} loading={devices === null} />
+            <AlertsPanel
+              alerts={activeAlerts}
+              loading={devices === null}
+              onDismiss={controllable ? dismissAlert : undefined}
+            />
           </aside>
         </div>
       </main>
@@ -497,6 +511,15 @@ function FermenterCommandCenter({
   const state = findReading(devices, 'hvac_state', 'brew_controller');
   const gravity = findReading(devices, 'gravity_sg');
   const controller = devices.find((d) => d.type === 'brew_controller' && !isBreweryTempDevice(d));
+  const pressureDevice = devices.find((d) => d.type === 'pressure_sensor');
+  const hydrometerDevice = devices.find((d) => d.type === 'hydrometer');
+  // A sensor pinned to real data that isn't reporting comes back offline (mock
+  // sensors always read "online"), so an offline backing device means that metric's
+  // panel greys out as "not connected". Beer temp + gravity share the Tilt; fridge
+  // temp + setpoint + state share the Inkbird controller.
+  const pressureOffline = !!pressureDevice && !pressureDevice.online;
+  const hydrometerOffline = !!hydrometerDevice && !hydrometerDevice.online;
+  const controllerOffline = !!controller && !controller.online;
   const online = devices.filter((d) => d.online).length;
   const gravityHistory = useMetricSeriesT(gravity?.deviceId ?? null, 'gravity_sg', GRAVITY_HISTORY_MS);
   // Each preview tracks the window picked in its own enlarged chart. The temp
@@ -601,7 +624,7 @@ function FermenterCommandCenter({
             )}
           </div>
         </div>
-        {controller && (
+        {controller && !controllerOffline && (
           <div className="min-w-0 flex-1">
             <SetpointControl
               deviceId={controller.id}
@@ -629,13 +652,16 @@ function FermenterCommandCenter({
         <FermenterSubCard
           icon={<GaugeIcon className="h-6 w-6" />}
           title="Pressure"
+          dimmed={pressureOffline}
           onClick={
-            pressure
+            pressure && !pressureOffline
               ? () => onOpen({ deviceId: pressure.deviceId, metric: 'pressure_bar', title: `${name} · Pressure` })
               : undefined
           }
         >
-          {pressure ? (
+          {pressureOffline ? (
+            <NotConnected label="Pressure sensor not connected" />
+          ) : pressure ? (
             <>
               <div className="mt-3">
                 <BigValue {...formatPressure(pressure.reading.value, pressureUnit)} />
@@ -659,7 +685,9 @@ function FermenterCommandCenter({
           <div className="mt-3 grid grid-cols-2 gap-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Beer</p>
-              {beer ? (
+              {hydrometerOffline ? (
+                <NotConnected label="Tilt not connected" compact />
+              ) : beer ? (
                 <MetricButton
                   onClick={() => onOpen({ deviceId: beer.deviceId, metric: 'temp_c', title: `${name} · Beer temperature` })}
                 >
@@ -671,7 +699,9 @@ function FermenterCommandCenter({
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Fridge</p>
-              {fridge ? (
+              {controllerOffline ? (
+                <NotConnected label="Controller not connected" compact />
+              ) : fridge ? (
                 <MetricButton
                   onClick={() => onOpen({ deviceId: fridge.deviceId, metric: 'temp_c', title: `${name} · Fridge temperature` })}
                 >
@@ -688,6 +718,8 @@ function FermenterCommandCenter({
           <div className="mt-3 flex flex-wrap items-center gap-3">
             {state ? (
               <StateBadge value={state.reading.value} />
+            ) : controllerOffline ? (
+              <span className="text-sm text-zinc-500">Controller not connected</span>
             ) : (
               <span className="text-sm text-zinc-500">No controller state</span>
             )}
@@ -755,13 +787,16 @@ function FermenterCommandCenter({
               )}
             </div>
           }
+          dimmed={hydrometerOffline}
           onClick={
-            gravity
+            gravity && !hydrometerOffline
               ? () => onOpen({ deviceId: gravity.deviceId, metric: 'gravity_sg', title: `${name} · Gravity` })
               : undefined
           }
         >
-          {gravity ? (
+          {hydrometerOffline ? (
+            <NotConnected label="Tilt hydrometer not connected" />
+          ) : gravity ? (
             <>
               <div className="mt-3">
                 <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
@@ -811,6 +846,7 @@ function FermenterSubCard({
   title,
   onClick,
   headerRight,
+  dimmed,
   children,
 }: {
   icon: React.ReactNode;
@@ -818,9 +854,13 @@ function FermenterSubCard({
   onClick?: () => void;
   /** Optional element pinned to the top-right of the card head (e.g. a status pill). */
   headerRight?: React.ReactNode;
+  /** Fade the card when its sensor is set to live data but isn't connected. */
+  dimmed?: boolean;
   children: React.ReactNode;
 }): JSX.Element {
-  const base = 'flex flex-col rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 text-left';
+  const base = `flex flex-col rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 text-left${
+    dimmed ? ' opacity-60' : ''
+  }`;
   const head = (
     <div className="flex items-start gap-2.5 text-white">
       {icon}
@@ -920,6 +960,23 @@ function TemperatureValue({
 
 function MissingMetric({ label, compact }: { label: string; compact?: boolean }): JSX.Element {
   return <p className={`${compact ? 'mt-2' : 'mt-4'} text-sm text-zinc-600`}>{label}</p>;
+}
+
+/**
+ * Shown in place of a reading when its sensor is set to live ("Actual") data but
+ * isn't reporting — a greyed "not connected" pill plus an explanation, so the
+ * blank tile clearly reads as "no device connected" rather than a glitch.
+ */
+function NotConnected({ label, compact }: { label?: string; compact?: boolean }): JSX.Element {
+  return (
+    <div className={`${compact ? 'mt-2' : 'mt-3 flex-1'} flex flex-col items-start gap-1.5`}>
+      <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/40 px-2 py-0.5 text-xs font-medium text-zinc-400">
+        <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" aria-hidden />
+        Not connected
+      </span>
+      {label && <span className="text-xs text-zinc-600">{label}</span>}
+    </div>
+  );
 }
 
 /** Min/max of a series, or null when there aren't enough points to draw a line. */
@@ -1067,9 +1124,12 @@ function UtilityShell({
 function UtilityPlaceholder({
   icon,
   title,
+  note = 'Not connected yet',
 }: {
   icon: React.ReactNode;
   title: string;
+  /** Why there's no data — "not connected yet" vs. a registered sensor gone offline. */
+  note?: string;
 }): JSX.Element {
   return (
     <div className="flex h-full flex-col rounded-xl border border-dashed border-zinc-800 bg-zinc-950/30 p-4">
@@ -1077,9 +1137,21 @@ function UtilityPlaceholder({
         {icon}
         <h3 className="font-semibold text-zinc-300">{title}</h3>
       </div>
-      <p className="mt-6 text-sm text-zinc-600">Not connected yet</p>
+      <div className="mt-6 flex items-center gap-1.5 text-sm text-zinc-600">
+        <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" aria-hidden />
+        {note}
+      </div>
     </div>
   );
+}
+
+/**
+ * Wording for a utility tile with no live data: a sensor pinned to real that has
+ * never reported reads "not connected yet"; one that reported before but has gone
+ * quiet reads "offline".
+ */
+function notConnectedNote(device: DeviceStatus | null): string {
+  return device?.lastSeenAt ? 'Offline — not reporting' : 'Not connected yet';
 }
 
 function BreweryTempCard({
@@ -1091,8 +1163,14 @@ function BreweryTempCard({
 }): JSX.Element {
   const series = useMetricSeries(device?.id ?? null, 'temp_c', useChartRange(device?.id ?? null, 'temp_c'));
   const colors = useGraphColors();
-  if (!device) {
-    return <UtilityPlaceholder icon={<ThermometerIcon className="h-5 w-5" />} title="Temperature" />;
+  if (!device || !device.online) {
+    return (
+      <UtilityPlaceholder
+        icon={<ThermometerIcon className="h-5 w-5" />}
+        title="Temperature"
+        note={notConnectedNote(device)}
+      />
+    );
   }
   const temp = device.latest.find((r) => r.metric === 'temp_c');
   const range = minMax(series);
@@ -1136,7 +1214,10 @@ function PowerCard({
   const series = useMetricSeries(device?.id ?? null, 'power_w', useChartRange(device?.id ?? null, 'power_w'));
   const total = useDeviceTotal(device?.id ?? -1, device ? 'energy_kwh' : undefined);
   const colors = useGraphColors();
-  if (!device) return <UtilityPlaceholder icon={<BoltIcon className="h-5 w-5" />} title="Power" />;
+  if (!device || !device.online)
+    return (
+      <UtilityPlaceholder icon={<BoltIcon className="h-5 w-5" />} title="Power" note={notConnectedNote(device)} />
+    );
   const current = device.latest.find((r) => r.metric === 'power_w');
   const today = device.latest.find((r) => r.metric === 'energy_kwh');
   return (
@@ -1174,7 +1255,10 @@ function WaterCard({
   const series = useMetricSeries(device?.id ?? null, 'flow_lpm', useChartRange(device?.id ?? null, 'flow_lpm'));
   const total = useDeviceTotal(device?.id ?? -1, device ? 'water_l' : undefined);
   const colors = useGraphColors();
-  if (!device) return <UtilityPlaceholder icon={<DropletIcon className="h-5 w-5" />} title="Water" />;
+  if (!device || !device.online)
+    return (
+      <UtilityPlaceholder icon={<DropletIcon className="h-5 w-5" />} title="Water" note={notConnectedNote(device)} />
+    );
   const current = device.latest.find((r) => r.metric === 'flow_lpm');
   const today = device.latest.find((r) => r.metric === 'water_l');
   return (
@@ -1348,12 +1432,26 @@ function contentCounts(kegs: Keg[]): { contents: string; count: number; color: s
 // --- Operations -------------------------------------------------------------
 
 function OperationsPanel(): JSX.Element {
+  const [openTodos, setOpenTodos] = useState<number | null>(null);
+
+  useEffect(() => {
+    void api
+      .listTodos()
+      .then((todos) => setOpenTodos(todos.filter((t) => !t.done).length))
+      .catch(() => setOpenTodos(null));
+  }, []);
+
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
       <PanelHeading title="Operations" icon={<WrenchIcon className="h-5 w-5" />} />
       <div className="mt-3 grid gap-2">
         <AppLink to="/admin" icon={<ChecklistIcon className="h-5 w-5" />} title="Brew Checklist" />
-        <AppLink to="/todos" icon={<TodoIcon className="h-5 w-5" />} title="Brewery To-Do" />
+        <AppLink
+          to="/todos"
+          icon={<TodoIcon className="h-5 w-5" />}
+          title="Brewery To-Do"
+          badge={openTodos ?? undefined}
+        />
       </div>
     </section>
   );
@@ -1364,11 +1462,14 @@ function AppLink({
   icon,
   title,
   subtitle,
+  badge,
 }: {
   to: string;
   icon: React.ReactNode;
   title: string;
   subtitle?: string;
+  /** Optional count shown in the otherwise-empty space before the chevron. */
+  badge?: number;
 }): JSX.Element {
   return (
     <Link
@@ -1382,6 +1483,11 @@ function AppLink({
         <span className="block truncate font-semibold text-zinc-100">{title}</span>
         {subtitle && <span className="block truncate text-sm text-zinc-500">{subtitle}</span>}
       </span>
+      {badge != null && badge > 0 && (
+        <span className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-zinc-800 px-2 text-sm font-semibold text-zinc-200">
+          {badge}
+        </span>
+      )}
       <span className="text-zinc-600" aria-hidden>
         ›
       </span>
@@ -1486,7 +1592,10 @@ function DeviceFleetPanel({
           {groups.map((g) => {
             const Icon = TYPE_ICON[g.type];
             return (
-              <li key={g.key} className="flex items-center gap-2.5 text-sm">
+              <li
+                key={g.key}
+                className={`flex items-center gap-2.5 text-sm${g.online === 0 ? ' opacity-60' : ''}`}
+              >
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-zinc-300">
                   <Icon className="h-4 w-4" />
                 </span>
@@ -1511,7 +1620,23 @@ function DeviceFleetPanel({
 
 // --- Alerts -----------------------------------------------------------------
 
-function AlertsPanel({ alerts, loading }: { alerts: Alert[]; loading: boolean }): JSX.Element {
+/** Per-severity row tint + title colour for an alert card entry. */
+const ALERT_LOOK: Record<AlertSeverity, { row: string; title: string }> = {
+  critical: { row: 'border-red-500/30 bg-red-500/10', title: 'text-red-300' },
+  warning: { row: 'border-amber-500/30 bg-amber-500/10', title: 'text-amber-200' },
+  info: { row: 'border-sky-500/30 bg-sky-500/10', title: 'text-sky-200' },
+};
+
+function AlertsPanel({
+  alerts,
+  loading,
+  onDismiss,
+}: {
+  alerts: Alert[];
+  loading: boolean;
+  /** When given, each alert becomes a button that dismisses it on click. */
+  onDismiss?: (id: number) => void;
+}): JSX.Element {
   return (
     <section
       id="alerts"
@@ -1538,27 +1663,54 @@ function AlertsPanel({ alerts, loading }: { alerts: Alert[]; loading: boolean })
       ) : (
         <ul className="mt-3 space-y-2">
           {alerts.map((a) => (
-            <li
-              key={a.id}
-              className={`rounded-lg border px-3 py-2 text-sm ${
-                a.severity === 'critical'
-                  ? 'border-red-500/30 bg-red-500/10'
-                  : 'border-amber-500/30 bg-amber-500/10'
-              }`}
-            >
-              <p
-                className={`font-semibold ${
-                  a.severity === 'critical' ? 'text-red-300' : 'text-amber-200'
-                }`}
-              >
-                {a.title}
-              </p>
-              <p className="mt-0.5 text-zinc-400">{a.detail}</p>
+            <li key={a.id}>
+              <AlertItem alert={a} onDismiss={onDismiss} />
             </li>
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * One alert row. When `onDismiss` is given (admin/local users) the whole row is
+ * a button that clears the alert on click, with an ✕ affordance; otherwise it's
+ * a static panel (read-only guests).
+ */
+function AlertItem({
+  alert,
+  onDismiss,
+}: {
+  alert: Alert;
+  onDismiss?: (id: number) => void;
+}): JSX.Element {
+  const look = ALERT_LOOK[alert.severity];
+  const body = (
+    <>
+      <p className={`font-semibold ${look.title}`}>{alert.title}</p>
+      <p className="mt-0.5 text-zinc-400">{alert.detail}</p>
+    </>
+  );
+  if (!onDismiss) {
+    return <div className={`rounded-lg border px-3 py-2 text-sm ${look.row}`}>{body}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onDismiss(alert.id)}
+      title="Dismiss alert"
+      aria-label={`Dismiss alert: ${alert.title}`}
+      className={`group relative block w-full rounded-lg border px-3 py-2 pr-9 text-left text-sm transition hover:brightness-125 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ${look.row}`}
+    >
+      {body}
+      <span
+        aria-hidden
+        className="absolute right-2.5 top-2 text-zinc-500 transition group-hover:text-zinc-200"
+      >
+        ✕
+      </span>
+    </button>
   );
 }
 

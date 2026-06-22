@@ -3,6 +3,7 @@ import type {
   Checklist,
   ChecklistSummary,
   ChecklistWithSteps,
+  DeviceDataSources,
   DisplayStep,
   GraphColors,
   KegContentColors,
@@ -12,6 +13,7 @@ import type {
   Todo,
 } from '@checklist/shared';
 import {
+  DEFAULT_DEVICE_DATA_SOURCES,
   DEFAULT_GRAPH_COLORS,
   DEFAULT_KEG_CONTENT_COLORS,
   DEFAULT_NOTIFICATION_SETTINGS,
@@ -347,6 +349,7 @@ const ACTIVE_RECIPE_KEY = 'active_recipe';
 const NOTIFY_SETTINGS_KEY = 'notify_settings';
 const GRAPH_COLORS_KEY = 'graph_colors';
 const KEG_CONTENT_COLORS_KEY = 'keg_content_colors';
+const DEVICE_SOURCES_KEY = 'device_sources';
 
 /** Upsert a key-value setting (exported for the notification dedup markers). */
 export function setSetting(key: string, value: string): void {
@@ -421,6 +424,30 @@ export function getKegContentColors(): KegContentColors {
 export function setKegContentColors(c: KegContentColors): KegContentColors {
   setSetting(KEG_CONTENT_COLORS_KEY, JSON.stringify(c));
   return c;
+}
+
+/**
+ * Per-sensor mock/real choices, merged over the all-mock defaults so an older or
+ * partial stored blob still yields every known sensor key. Read by the device
+ * fallback layer (which sensor shows synthesized mock data vs. its real agent's
+ * readings) and edited from the Settings page; shared across every screen.
+ */
+export function getDeviceDataSources(): DeviceDataSources {
+  const raw = getSetting(DEVICE_SOURCES_KEY);
+  if (!raw) return DEFAULT_DEVICE_DATA_SOURCES;
+  try {
+    // Defaults first so every known sensor key is present; the stored blob (a
+    // full or partial map) overrides. Cast as a full map — not Partial — so the
+    // merged index signature stays `DeviceDataSource` (no `| undefined`).
+    return { ...DEFAULT_DEVICE_DATA_SOURCES, ...(JSON.parse(raw) as DeviceDataSources) };
+  } catch {
+    return DEFAULT_DEVICE_DATA_SOURCES;
+  }
+}
+
+export function setDeviceDataSources(s: DeviceDataSources): DeviceDataSources {
+  setSetting(DEVICE_SOURCES_KEY, JSON.stringify(s));
+  return s;
 }
 
 /** The recipe currently in the fermenter, or null if none has been chosen. */

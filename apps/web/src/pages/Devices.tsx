@@ -138,7 +138,9 @@ function DeviceCard({ device }: { device: DeviceStatus }): JSX.Element {
           ))}
         </div>
       ) : (
-        <p className="mt-4 flex-1 text-sm text-zinc-500">No readings yet.</p>
+        <p className="mt-4 flex-1 text-sm text-zinc-500">
+          {device.online ? 'No readings yet.' : 'No device connected.'}
+        </p>
       )}
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 pt-2.5 text-xs text-zinc-500">

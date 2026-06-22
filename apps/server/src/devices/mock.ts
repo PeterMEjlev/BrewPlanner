@@ -5,6 +5,12 @@ const MOCK_DEVICE_AGE_DAYS = 21;
 
 export interface MockProfile {
   id: number;
+  /**
+   * The {@link SensorCatalogEntry} key this profile maps to — the key under which
+   * the operator's mock/real choice is stored. Keeps the per-sensor source toggle
+   * in sync with the fleet without depending on (name, type) string matching.
+   */
+  key: string;
   name: string;
   type: DeviceType;
   base: Record<string, number>;
@@ -13,36 +19,42 @@ export interface MockProfile {
 export const MOCK_PROFILES: readonly MockProfile[] = [
   {
     id: 1,
+    key: 'fermenter_pressure',
     name: 'Fermenter',
     type: 'pressure_sensor',
     base: { pressure_bar: 1.18 },
   },
   {
     id: 2,
+    key: 'fermenter_controller',
     name: 'Fermenter',
     type: 'brew_controller',
     base: { temp_c: 18.4, setpoint_c: 18.0, hvac_state: -1 },
   },
   {
     id: 3,
+    key: 'brewery_temp',
     name: 'Brewery',
     type: 'brew_controller',
     base: { temp_c: 21.3, setpoint_c: 20.0, hvac_state: 0 },
   },
   {
     id: 4,
+    key: 'power',
     name: 'Power',
     type: 'power_meter',
     base: { power_w: 1850, energy_kwh: 142.6 },
   },
   {
     id: 5,
+    key: 'water',
     name: 'Water',
     type: 'water_meter',
     base: { flow_lpm: 3.4, water_l: 318.5 },
   },
   {
     id: 6,
+    key: 'fermenter_gravity',
     name: 'Fermenter',
     type: 'hydrometer',
     base: { gravity_sg: 1.019, temp_c: 18.9 },

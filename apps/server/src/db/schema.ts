@@ -176,8 +176,11 @@ export const deviceCommands = sqliteTable(
  * on the fly from device state, but this table keeps a durable log: device
  * offline/online episodes plus the keg-age and fermentation-complete events the
  * notifier raises. `resolvedAt` closes a self-clearing alert (a device coming
- * back online); one-shot event alerts leave it null. `deviceId` is nullable and
- * set-null on device delete so history outlives the device it referenced.
+ * back online); one-shot event alerts leave it null. `dismissedAt` is set when a
+ * user clicks an alert away on the dashboard: dismissed alerts drop out of every
+ * feed (card, badge and history) but stay in the table so a still-offline device
+ * doesn't re-raise the same alert. `deviceId` is nullable and set-null on device
+ * delete so history outlives the device it referenced.
  */
 export const alerts = sqliteTable(
   'alerts',
@@ -192,6 +195,7 @@ export const alerts = sqliteTable(
       .notNull()
       .default(sql`(CURRENT_TIMESTAMP)`),
     resolvedAt: text('resolved_at'),
+    dismissedAt: text('dismissed_at'),
   },
   (t) => [index('alerts_created_idx').on(t.createdAt)],
 );

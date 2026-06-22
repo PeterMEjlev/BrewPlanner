@@ -35,9 +35,13 @@ const SOURCE_LABEL: Record<AlertSource, string> = {
   ferment_done: 'Fermentation',
 };
 
-/** An offline alert with no resolution is still ongoing. */
+/**
+ * An alert is active until its condition clears: an offline alert until the
+ * device reports again, and one-shot events (keg age, fermentation done) until
+ * dismissed. Mirrors the dashboard so both badges agree on the count.
+ */
 function isActive(a: Alert): boolean {
-  return a.source === 'device_offline' && a.resolvedAt == null;
+  return a.resolvedAt == null;
 }
 
 /**

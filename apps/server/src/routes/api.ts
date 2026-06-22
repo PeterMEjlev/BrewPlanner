@@ -4,6 +4,7 @@ import {
   createChecklistSchema,
   createStepSchema,
   createTodoSchema,
+  deviceDataSourcesSchema,
   graphColorsSchema,
   idParamSchema,
   kegContentColorsSchema,
@@ -20,7 +21,7 @@ import {
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { listAlerts } from '../alerts/repo.js';
+import { dismissAlert, listAlerts } from '../alerts/repo.js';
 import { listAudit } from '../audit/repo.js';
 import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
@@ -218,6 +219,15 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return listAlerts(query.limit);
   });
 
+  // Dismiss an alert (clicked away on the dashboard). It drops out of every feed
+  // but stays in the table so a still-offline device doesn't re-raise it.
+  app.delete('/alerts/:id', adminOnly, async (req, reply) => {
+    const params = parse(idParamSchema, req.params, reply);
+    if (!params) return;
+    if (!dismissAlert(params.id)) return reply.status(404).send({ error: 'Alert not found' });
+    return reply.status(204).send();
+  });
+
   // --- Change history ---------------------------------------------------
   // The audit log of admin changes, newest first. Admin-only: it reveals who
   // did what, so a read-only guest can't open it (the web app hides the tab too).
@@ -318,6 +328,18 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(graphColorsSchema, req.body, reply);
     if (!body) return;
     return repo.setGraphColors(body);
+  });
+
+  // --- Device data sources (mock vs. real) -----------------------------
+  // Per-sensor choice of synthesized mock telemetry vs. the real agent's
+  // readings, consulted by the device fallback layer. Shared across screens; a
+  // sensor pinned to real that isn't reporting shows as "not connected".
+  app.get('/device-sources', async () => repo.getDeviceDataSources());
+
+  app.put('/device-sources', adminOnly, async (req, reply) => {
+    const body = parse(deviceDataSourcesSchema, req.body, reply);
+    if (!body) return;
+    return repo.setDeviceDataSources(body);
   });
 
   // --- Keg content colours ---------------------------------------------

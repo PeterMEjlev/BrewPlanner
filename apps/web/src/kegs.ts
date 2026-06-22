@@ -128,10 +128,20 @@ export interface UseKegs {
   applyLocalUpdates: (updated: Keg[]) => void;
 }
 
+/**
+ * Module-level cache of the last successful keg fetch, kept alive across hook
+ * unmounts so leaving and returning to the dashboard renders the inventory
+ * instantly instead of flashing the loading state and refetching from scratch.
+ * The hook still refreshes in the background to pick up changes.
+ */
+let cachedKegs: Keg[] | null = null;
+
 /** Fetch the keg inventory on mount, optionally re-polling every `pollMs`. */
 export function useKegs(pollMs?: number): UseKegs {
-  const [kegs, setKegs] = useState<Keg[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [kegs, setKegs] = useState<Keg[]>(() => cachedKegs ?? []);
+  // Only show the loading state on the very first fetch (no cache yet); a
+  // background refresh on a remount shouldn't blank out the existing data.
+  const [loading, setLoading] = useState(cachedKegs === null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -140,6 +150,7 @@ export function useKegs(pollMs?: number): UseKegs {
       try {
         const data = await fetchKegs();
         if (cancelled) return;
+        cachedKegs = data;
         setKegs(data);
         setError(null);
       } catch (e) {
@@ -158,7 +169,11 @@ export function useKegs(pollMs?: number): UseKegs {
 
   const applyLocalUpdates = useCallback((updated: Keg[]) => {
     const byNumber = new Map(updated.map((k) => [k.number, k]));
-    setKegs((prev) => prev.map((k) => byNumber.get(k.number) ?? k));
+    setKegs((prev) => {
+      const merged = prev.map((k) => byNumber.get(k.number) ?? k);
+      cachedKegs = merged;
+      return merged;
+    });
   }, []);
 
   return { kegs, loading, error, applyLocalUpdates };

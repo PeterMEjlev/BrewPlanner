@@ -21,6 +21,7 @@ function toPublic(row: typeof alerts.$inferSelect): Alert {
     detail: row.detail,
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
+    dismissedAt: row.dismissedAt,
   };
 }
 
@@ -46,15 +47,35 @@ export function recordAlert(input: {
   return toPublic(row);
 }
 
-/** The most recent alerts, newest first (capped; default 200). */
+/**
+ * The most recent alerts, newest first (capped; default 200). Dismissed alerts
+ * are excluded — a user who clicks one away on the dashboard wants it gone from
+ * the history page too.
+ */
 export function listAlerts(limit = 200): Alert[] {
   return db
     .select()
     .from(alerts)
+    .where(isNull(alerts.dismissedAt))
     .orderBy(desc(alerts.createdAt), desc(alerts.id))
     .limit(limit)
     .all()
     .map(toPublic);
+}
+
+/**
+ * Mark an alert dismissed (user clicked it away). It then drops out of every
+ * feed but stays in the table, so {@link openOfflineAlert}'s dedup still sees it
+ * and a device that's still offline doesn't immediately re-raise the same alert.
+ * Returns false when no such (not-already-dismissed) alert exists.
+ */
+export function dismissAlert(id: number): boolean {
+  const res = db
+    .update(alerts)
+    .set({ dismissedAt: nowIso() })
+    .where(and(eq(alerts.id, id), isNull(alerts.dismissedAt)))
+    .run();
+  return res.changes > 0;
 }
 
 /**

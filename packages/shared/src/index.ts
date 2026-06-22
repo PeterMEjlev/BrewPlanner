@@ -231,6 +231,72 @@ export interface DeviceCommand {
 export const SET_SETPOINT_COMMAND = 'set_setpoint';
 
 // ---------------------------------------------------------------------------
+// Device data sources (mock vs. real sensor data)
+// ---------------------------------------------------------------------------
+
+/**
+ * For each planned sensor, whether the dashboard shows synthesized **mock**
+ * telemetry — the demo data the app ships with, so every tile looks alive before
+ * any hardware exists — or the **real** readings pushed by that sensor's agent.
+ * A sensor set to `real` that isn't reporting renders as "not connected" (greyed
+ * out) instead of silently falling back to mock. The choice is stored on the hub
+ * and shared across every screen (see {@link DeviceDataSources}).
+ */
+export type DeviceDataSource = 'mock' | 'real';
+
+/**
+ * One planned sensor the operator can flip between mock and real. `key` is the
+ * stable id used as the map key in {@link DeviceDataSources}; `type` lets the UI
+ * pick an icon. The catalog mirrors the server's mock-profile fleet (one entry
+ * per planned sensor); the two Inkbird controllers are split by role — the
+ * fermenter's fridge controller vs. the brewery's ambient thermometer.
+ */
+export interface SensorCatalogEntry {
+  key: string;
+  label: string;
+  /** A short note shown under the label in Settings. */
+  hint: string;
+  type: DeviceType;
+}
+
+export const SENSOR_CATALOG: readonly SensorCatalogEntry[] = [
+  {
+    key: 'fermenter_pressure',
+    label: 'Fermenter pressure',
+    hint: 'Fermentation pressure sensor',
+    type: 'pressure_sensor',
+  },
+  {
+    key: 'fermenter_controller',
+    label: 'Fermenter controller',
+    hint: 'Inkbird fridge/heater — temperature, setpoint, cooling/heating',
+    type: 'brew_controller',
+  },
+  {
+    key: 'brewery_temp',
+    label: 'Brewery temperature',
+    hint: 'Ambient Inkbird thermometer',
+    type: 'brew_controller',
+  },
+  { key: 'power', label: 'Power meter', hint: 'Mains electricity — power and energy', type: 'power_meter' },
+  { key: 'water', label: 'Water meter', hint: 'Water flow and usage', type: 'water_meter' },
+  {
+    key: 'fermenter_gravity',
+    label: 'Fermenter gravity',
+    hint: 'Tilt hydrometer — gravity and beer temperature',
+    type: 'hydrometer',
+  },
+];
+
+/** Per-sensor source choice, keyed by {@link SensorCatalogEntry.key}. */
+export type DeviceDataSources = Record<string, DeviceDataSource>;
+
+/** Every planned sensor defaults to mock, preserving the ships-with demo data. */
+export const DEFAULT_DEVICE_DATA_SOURCES: DeviceDataSources = Object.fromEntries(
+  SENSOR_CATALOG.map((s) => [s.key, 'mock' as DeviceDataSource]),
+);
+
+// ---------------------------------------------------------------------------
 // Alerts (server-recorded history)
 // ---------------------------------------------------------------------------
 
@@ -249,6 +315,8 @@ export type AlertSource = 'device_offline' | 'keg_age' | 'ferment_done';
  * dashboard's live-derived "active alerts" feed. `resolvedAt` is set when a
  * self-clearing condition ends (today only `device_offline`, when the device
  * comes back online); event alerts (keg age, fermentation done) never resolve.
+ * `dismissedAt` is set when a user clicks the alert away on the dashboard, which
+ * removes it from every feed (the server omits dismissed alerts from listings).
  */
 export interface Alert {
   id: number;
@@ -260,6 +328,7 @@ export interface Alert {
   detail: string;
   createdAt: string;
   resolvedAt: string | null;
+  dismissedAt: string | null;
 }
 
 /** Query for `GET /api/alerts`: how many of the most recent alerts to return. */
@@ -654,6 +723,18 @@ export const ackCommandsSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1).max(100),
 });
 export type AckCommandsInput = z.infer<typeof ackCommandsSchema>;
+
+// --- Device data sources (mock vs. real) ------------------------------------
+
+/**
+ * Body for `PUT /api/device-sources`. Like the colour palettes, the whole map is
+ * sent each save (last-write-wins) with every known sensor key present; the
+ * server merges any older/partial stored blob over the defaults on read.
+ */
+export const deviceDataSourcesSchema = z.object(
+  Object.fromEntries(SENSOR_CATALOG.map((s) => [s.key, z.enum(['mock', 'real'])])),
+) as unknown as z.ZodType<DeviceDataSources>;
+export type DeviceDataSourcesInput = z.infer<typeof deviceDataSourcesSchema>;
 
 // --- Brewer's Friend recipe selection --------------------------------------
 

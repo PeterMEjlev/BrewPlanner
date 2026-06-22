@@ -1,6 +1,10 @@
 import {
+  DEFAULT_DEVICE_DATA_SOURCES,
   DEFAULT_GRAPH_COLORS,
   DEFAULT_NOTIFICATION_SETTINGS,
+  SENSOR_CATALOG,
+  type DeviceDataSource,
+  type DeviceDataSources,
   type GraphColors,
   type KegContentColors,
   type NotificationSettings,
@@ -43,6 +47,7 @@ import { asMessage } from '../util';
  */
 type SettingsCategoryId =
   | 'dashboard'
+  | 'sensors'
   | 'colours'
   | 'notifications'
   | 'account'
@@ -58,6 +63,11 @@ const SETTINGS_CATEGORIES: {
     id: 'dashboard',
     label: 'Dashboard',
     description: 'Local display and fermentation tuning',
+  },
+  {
+    id: 'sensors',
+    label: 'Sensors',
+    description: 'Mock or live data per sensor',
   },
   {
     id: 'colours',
@@ -169,6 +179,8 @@ function renderSettingsCategory(category: SettingsCategoryId): React.ReactNode {
           <KegFreshnessSection />
         </>
       );
+    case 'sensors':
+      return <DataSourcesSection />;
     case 'colours':
       return (
         <>
@@ -391,6 +403,65 @@ function Stepper({
         +
       </button>
     </div>
+  );
+}
+
+// --- Sensor data sources (server-shared) -----------------------------------
+
+/**
+ * Per-sensor choice of mock (demo) vs. actual (live agent) data. Server-backed
+ * and shared across screens, so flipping a sensor to Actual here also changes
+ * what the Pi kiosk shows. Each toggle saves immediately (last-write-wins), like
+ * the notification settings. A sensor set to Actual that isn't reporting renders
+ * as a greyed "not connected" tile on the dashboard and Device Fleet.
+ */
+function DataSourcesSection(): JSX.Element {
+  const [sources, setSources] = useState<DeviceDataSources | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getDeviceSources()
+      .then((s) => !cancelled && setSources(s))
+      .catch(() => !cancelled && setSources(DEFAULT_DEVICE_DATA_SOURCES));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const update = (key: string, value: DeviceDataSource): void => {
+    setSources((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, [key]: value };
+      void api.updateDeviceSources(next).catch(() => {});
+      return next;
+    });
+  };
+
+  return (
+    <Card
+      title="Sensor data"
+      hint="Show demo (mock) data or the real reading from each sensor. A sensor set to Actual but not connected greys out on the dashboard and Device Fleet."
+    >
+      {!sources ? (
+        <p className="text-sm text-zinc-500">Loading…</p>
+      ) : (
+        <div className="divide-y divide-zinc-800/70">
+          {SENSOR_CATALOG.map((s) => (
+            <Row key={s.key} label={s.label} hint={s.hint}>
+              <Segmented<DeviceDataSource>
+                value={sources[s.key] ?? 'mock'}
+                options={[
+                  { value: 'mock', label: 'Mock' },
+                  { value: 'real', label: 'Actual' },
+                ]}
+                onChange={(v) => update(s.key, v)}
+              />
+            </Row>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
