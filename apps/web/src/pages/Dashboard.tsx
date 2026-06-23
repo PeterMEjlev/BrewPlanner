@@ -30,6 +30,7 @@ import {
   GaugeIcon,
   HutIcon,
   KegIcon,
+  PauseIcon,
   ThermometerIcon,
   TodoIcon,
   WrenchIcon,
@@ -1683,16 +1684,21 @@ export function isStateMetric(metric: string): boolean {
 
 interface StateLook {
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   cls: string;
 }
 
-function stateLook(value: number): StateLook {
+function stateLook(value: number, size: 'sm' | 'lg'): StateLook {
   if (value <= -0.5)
     return { label: 'Cooling', icon: '❄️', cls: 'bg-sky-500/15 text-sky-300 ring-sky-500/40' };
   if (value >= 0.5)
     return { label: 'Heating', icon: '🔥', cls: 'bg-amber-500/15 text-amber-400 ring-amber-500/40' };
-  return { label: 'Idle', icon: '⏸️', cls: 'bg-zinc-800/60 text-zinc-400 ring-zinc-700/60' };
+  const pauseSize = size === 'lg' ? 'h-6 w-6' : 'h-4 w-4';
+  return {
+    label: 'Idle',
+    icon: <PauseIcon className={`${pauseSize} text-zinc-200`} />,
+    cls: 'bg-zinc-800/60 text-zinc-400 ring-zinc-700/60',
+  };
 }
 
 /** Short axis-tick label for an hvac_state value. */
@@ -1711,7 +1717,7 @@ export function StateBadge({
   value: number;
   size?: 'sm' | 'lg';
 }): JSX.Element {
-  const look = stateLook(value);
+  const look = stateLook(value, size);
   const sizing = size === 'lg' ? 'gap-2 px-4 py-2 text-2xl' : 'gap-1.5 px-2.5 py-1 text-sm';
   return (
     <span

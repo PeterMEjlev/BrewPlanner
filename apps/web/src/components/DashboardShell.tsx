@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
+import { isUnknownContents } from '../kegs';
 import {
   BellIcon,
   ChecklistIcon,
@@ -69,19 +70,31 @@ interface FleetStatus {
 }
 
 /**
+ * Module-level caches of the last polled nav counts, kept alive across shell
+ * remounts. The shell remounts on every page navigation, so without these the
+ * badges would flash empty and refetch each time you switch pages; seeding the
+ * hooks' state from the cache keeps the last known count on screen while the
+ * background refresh runs.
+ */
+let cachedFleet: FleetStatus | null = null;
+let cachedKegStatus: KegStatus | null = null;
+let cachedTodoCount: number | null = null;
+
+/**
  * Poll the device fleet so the Devices nav item can show an online/total count
  * and a health dot. Lives in the shell (not a page) because the nav is global,
  * so the badge stays accurate on every screen.
  */
 function useFleetStatus(): FleetStatus | null {
-  const [fleet, setFleet] = useState<FleetStatus | null>(null);
+  const [fleet, setFleet] = useState<FleetStatus | null>(cachedFleet);
   useEffect(() => {
     let cancelled = false;
     const load = async (): Promise<void> => {
       try {
         const devices = await api.listDevices();
         if (!cancelled) {
-          setFleet({ online: devices.filter((d) => d.online).length, total: devices.length });
+          cachedFleet = { online: devices.filter((d) => d.online).length, total: devices.length };
+          setFleet(cachedFleet);
         }
       } catch {
         // Keep the last known counts through a transient failure.
@@ -113,6 +126,153 @@ function FleetBadge({ online, total }: FleetStatus): JSX.Element {
       {online}/{total}
     </span>
   );
+}
+
+interface KegStatus {
+  filled: number;
+  total: number;
+}
+
+/**
+ * Poll the keg inventory so the Kegs nav item can show a filled/total count.
+ * Mirrors {@link useFleetStatus}: lives in the shell so the badge is accurate on
+ * every page, and keeps the last counts through a transient fetch failure.
+ */
+function useKegStatus(): KegStatus | null {
+  const [kegs, setKegs] = useState<KegStatus | null>(cachedKegStatus);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const data = await api.getKegs();
+        if (!cancelled) {
+          cachedKegStatus = {
+            filled: data.filter((k) => !isUnknownContents(k.contents)).length,
+            total: data.length,
+          };
+          setKegs(cachedKegStatus);
+        }
+      } catch {
+        // Keep the last known counts through a transient failure.
+      }
+    };
+    void load();
+    const id = setInterval(() => void load(), FLEET_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+  return kegs;
+}
+
+/**
+ * Poll the to-do list so the To-Do nav item can show how many tasks are still
+ * open (not ticked off), matching the count shown on the To-Do page itself.
+ */
+function useOpenTodoCount(): number | null {
+  const [count, setCount] = useState<number | null>(cachedTodoCount);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const todos = await api.listTodos();
+        if (!cancelled) {
+          cachedTodoCount = todos.filter((t) => !t.done).length;
+          setCount(cachedTodoCount);
+        }
+      } catch {
+        // Keep the last known count through a transient failure.
+      }
+    };
+    void load();
+    const id = setInterval(() => void load(), FLEET_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+  return count;
+}
+
+/** Filled/total keg count, for the Kegs nav item. */
+function KegBadge({ filled, total }: KegStatus): JSX.Element {
+  return (
+    <span className="text-xs font-semibold tabular-nums text-zinc-400">
+      {filled}/{total}
+    </span>
+  );
+}
+
+/** A neutral pill with a count, for the To-Do nav item. */
+function CountBadge({ count }: { count: number }): JSX.Element {
+  return (
+    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-800 px-1.5 text-xs font-semibold tabular-nums text-zinc-400">
+      {count}
+    </span>
+  );
+}
+
+/**
+ * Whether a global keyboard shortcut should stand down: another handler already
+ * claimed the key, the user is typing in a field, or a modal/dialog is open (it
+ * owns its own keys and closes itself first).
+ */
+function keyShortcutBlocked(e: KeyboardEvent): boolean {
+  if (e.defaultPrevented) return true;
+  const el = document.activeElement as HTMLElement | null;
+  if (
+    el &&
+    (el.tagName === 'INPUT' ||
+      el.tagName === 'TEXTAREA' ||
+      el.tagName === 'SELECT' ||
+      el.isContentEditable)
+  )
+    return true;
+  return document.querySelector('[role="dialog"]') != null;
+}
+
+/**
+ * Pressing Escape on any subpage jumps back to the main dashboard (Overview).
+ * Skipped on Overview itself, while typing in a field, and while a dialog is open
+ * or another handler has claimed the key (e.g. the keg grid's select mode) — those
+ * close/cancel first, so a second Escape then leaves the page.
+ */
+function useEscapeToOverview(active: ShellPage): void {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (active === 'overview') return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || keyShortcutBlocked(e)) return;
+      navigate('/');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, navigate]);
+}
+
+/**
+ * Up/Down arrows step through the sidebar's nav items in order, so the whole app
+ * is reachable from the keyboard. Wraps top-to-bottom, follows the same guest
+ * filtering as the sidebar, and stands down while typing or with a dialog open.
+ */
+function useArrowPageNav(active: ShellPage): void {
+  const navigate = useNavigate();
+  const { auth } = useAuth();
+  const items = visibleNav(canControl(auth));
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || keyShortcutBlocked(e)) return;
+      const current = items.findIndex((item) => item.page === active);
+      if (current === -1) return;
+      const delta = e.key === 'ArrowDown' ? 1 : -1;
+      const next = items[(current + delta + items.length) % items.length];
+      e.preventDefault();
+      navigate(next.to);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, items, navigate]);
 }
 
 /** Drop the nav rails a read-only guest may not open (matches the sidebar). */
@@ -151,13 +311,24 @@ export function DashboardShell({
   children: React.ReactNode;
 }): JSX.Element {
   const fleet = useFleetStatus();
+  const kegs = useKegStatus();
+  const openTodos = useOpenTodoCount();
+  useEscapeToOverview(active);
+  useArrowPageNav(active);
   return (
     <div
       className={`flex min-h-screen bg-zinc-950 text-zinc-100 ${
         fit ? 'xl:h-screen xl:overflow-hidden' : ''
       }`}
     >
-      <Sidebar active={active} alertCount={alertCount} fleet={fleet} lastUpdate={lastUpdate} />
+      <Sidebar
+        active={active}
+        alertCount={alertCount}
+        fleet={fleet}
+        kegs={kegs}
+        openTodos={openTodos}
+        lastUpdate={lastUpdate}
+      />
       {/* Below `md` the sidebar is hidden, so leave room for the fixed bottom bar
           (it would otherwise cover the last cards of a scrolling page). */}
       <div
@@ -176,11 +347,15 @@ function Sidebar({
   active,
   alertCount,
   fleet,
+  kegs,
+  openTodos,
   lastUpdate,
 }: {
   active: ShellPage;
   alertCount: number;
   fleet: FleetStatus | null;
+  kegs: KegStatus | null;
+  openTodos: number | null;
   lastUpdate?: string | null;
 }): JSX.Element {
   const { auth, refresh } = useAuth();
@@ -205,10 +380,13 @@ function Sidebar({
         {navItems.map((item) => {
           const isActive = item.page === active;
           const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
-          const accessory =
-            item.key === 'devices' && fleet ? (
-              <FleetBadge online={fleet.online} total={fleet.total} />
-            ) : undefined;
+          let accessory: React.ReactNode = undefined;
+          if (item.key === 'devices' && fleet)
+            accessory = <FleetBadge online={fleet.online} total={fleet.total} />;
+          else if (item.key === 'kegs' && kegs)
+            accessory = <KegBadge filled={kegs.filled} total={kegs.total} />;
+          else if (item.key === 'todos' && openTodos != null && openTodos > 0)
+            accessory = <CountBadge count={openTodos} />;
           return (
             <Link key={item.key} to={item.to} className="block">
               <NavRow

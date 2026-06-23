@@ -91,14 +91,19 @@ export function KegsDesktopPage(): JSX.Element {
     setAnchor(null);
   }, []);
 
-  // Escape deselects while selecting but no modal is open (modals handle their own Escape).
+  // Escape deselects while selecting but no modal is open (modals handle their own
+  // Escape). Runs in the capture phase and claims the key (preventDefault) so the
+  // shell's "Escape → dashboard" shortcut steps aside while a selection is active.
   useEffect(() => {
     if (!selecting) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !editingKeg && !bulkEditing) exitSelect();
+      if (e.key === 'Escape' && !editingKeg && !bulkEditing) {
+        e.preventDefault();
+        exitSelect();
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [selecting, editingKeg, bulkEditing, exitSelect]);
 
   // Windows-Explorer-style selection over the keg grid:
