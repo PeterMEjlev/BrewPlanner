@@ -127,6 +127,22 @@ export function useDeviceData(
 const SERIES_POLL_MS = 60_000;
 
 /**
+ * Module-level caches of the last successful series fetch, keyed by
+ * device+metric+range and kept alive across hook unmounts. Like the keg and
+ * dashboard caches, this lets the Overview's sparklines repaint instantly with
+ * their last data when you navigate back, instead of flashing empty and
+ * refetching from scratch — the hooks still refresh in the background. Cleared
+ * on a full browser reload.
+ */
+const seriesCache = new Map<string, number[]>();
+const seriesTCache = new Map<string, { t: number; value: number }[]>();
+const totalCache = new Map<string, number>();
+
+function seriesKey(deviceId: number, metric: string, rangeMs: number): string {
+  return `${deviceId}:${metric}:${rangeMs}`;
+}
+
+/**
  * A bare metric history as a list of values (oldest→newest), for the Overview's
  * inline sparklines. Lighter than {@link useDeviceData}: no metric/range state,
  * a small point cap, and a slow poll. Pass `null` to disable (returns []) and
@@ -137,19 +153,30 @@ export function useMetricSeries(
   metric: string,
   rangeMs = 24 * 60 * 60 * 1000,
 ): number[] {
-  const [series, setSeries] = useState<number[]>([]);
+  const [series, setSeries] = useState<number[]>(() =>
+    deviceId == null ? [] : seriesCache.get(seriesKey(deviceId, metric, rangeMs)) ?? [],
+  );
 
   useEffect(() => {
     if (deviceId == null) {
       setSeries([]);
       return;
     }
+    const key = seriesKey(deviceId, metric, rangeMs);
+    // Re-seed from cache when the key changes mid-mount (e.g. range switch), so
+    // the preview shows the last data for the new window without a blank frame.
+    const cached = seriesCache.get(key);
+    if (cached) setSeries(cached);
     let cancelled = false;
     const load = async () => {
       try {
         const since = new Date(Date.now() - rangeMs).toISOString();
         const history = await api.getDeviceHistory(deviceId, { metric, since, limit: 200 });
-        if (!cancelled) setSeries([...history].reverse().map((r) => r.value));
+        if (!cancelled) {
+          const values = [...history].reverse().map((r) => r.value);
+          seriesCache.set(key, values);
+          setSeries(values);
+        }
       } catch {
         // Keep the last known series through a transient history failure.
       }
@@ -176,20 +203,27 @@ export function useMetricSeriesT(
   metric: string,
   rangeMs = 24 * 60 * 60 * 1000,
 ): { t: number; value: number }[] {
-  const [series, setSeries] = useState<{ t: number; value: number }[]>([]);
+  const [series, setSeries] = useState<{ t: number; value: number }[]>(() =>
+    deviceId == null ? [] : seriesTCache.get(seriesKey(deviceId, metric, rangeMs)) ?? [],
+  );
 
   useEffect(() => {
     if (deviceId == null) {
       setSeries([]);
       return;
     }
+    const key = seriesKey(deviceId, metric, rangeMs);
+    const cached = seriesTCache.get(key);
+    if (cached) setSeries(cached);
     let cancelled = false;
     const load = async () => {
       try {
         const since = new Date(Date.now() - rangeMs).toISOString();
         const history = await api.getDeviceHistory(deviceId, { metric, since, limit: 2000 });
         if (!cancelled) {
-          setSeries([...history].reverse().map((r) => ({ t: Date.parse(r.recordedAt), value: r.value })));
+          const points = [...history].reverse().map((r) => ({ t: Date.parse(r.recordedAt), value: r.value }));
+          seriesTCache.set(key, points);
+          setSeries(points);
         }
       } catch {
         // Keep the last known series through a transient history failure.
@@ -227,18 +261,26 @@ const TOTAL_POLL_MS = 60_000;
  * the first value lands and keeps the last value through a transient error.
  */
 export function useDeviceTotal(deviceId: number, metric: string | undefined): number | null {
-  const [total, setTotal] = useState<number | null>(null);
+  const [total, setTotal] = useState<number | null>(() =>
+    metric ? totalCache.get(`${deviceId}:${metric}`) ?? null : null,
+  );
 
   useEffect(() => {
     if (!metric) {
       setTotal(null);
       return;
     }
+    const key = `${deviceId}:${metric}`;
+    const cached = totalCache.get(key);
+    if (cached != null) setTotal(cached);
     let cancelled = false;
     const load = async () => {
       try {
         const res = await api.getDeviceTotal(deviceId, metric);
-        if (!cancelled) setTotal(res.total);
+        if (!cancelled) {
+          totalCache.set(key, res.total);
+          setTotal(res.total);
+        }
       } catch {
         // Keep the last known total on a transient fetch error.
       }

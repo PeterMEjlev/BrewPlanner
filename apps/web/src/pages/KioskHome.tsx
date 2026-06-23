@@ -244,7 +244,7 @@ function isKegsTempDevice(device: DeviceStatus): boolean {
  */
 function hvacColor(value: number): string {
   if (value < 0) return 'text-sky-300';
-  if (value > 0) return 'text-amber-300';
+  if (value > 0) return 'text-orange-400';
   return '';
 }
 

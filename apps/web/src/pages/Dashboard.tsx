@@ -131,19 +131,30 @@ interface FermentStatus {
   shellClass: string;
 }
 
+/**
+ * Last computed "fermentation complete" verdict per gravity device, kept across
+ * remounts so the status pill returns to the overview reading the same as it
+ * left — no Fermenting→Complete flicker while the background check re-runs.
+ */
+const fermentDoneCache = new Map<number, boolean>();
+
 function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
   const { fermentStableDays, fermentThresholdSg } = useSettings();
   const windowMs = fermentStableDays * 24 * 60 * 60 * 1000;
   const lookbackMs = windowMs + 12 * 60 * 60 * 1000;
   const gravityDeviceId = devices.find((d) => d.latest.some((r) => r.metric === 'gravity_sg'))?.id;
   const anyOnline = devices.some((d) => d.online);
-  const [done, setDone] = useState<boolean | null>(null);
+  const [done, setDone] = useState<boolean | null>(() =>
+    gravityDeviceId == null ? null : fermentDoneCache.get(gravityDeviceId) ?? null,
+  );
 
   useEffect(() => {
     if (gravityDeviceId == null) {
       setDone(null);
       return;
     }
+    const cached = fermentDoneCache.get(gravityDeviceId);
+    if (cached != null) setDone(cached);
     let cancelled = false;
     const check = async () => {
       try {
@@ -153,7 +164,11 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
           since,
           limit: 2000,
         });
-        if (!cancelled) setDone(fermentationDone(history, windowMs, fermentThresholdSg));
+        if (!cancelled) {
+          const verdict = fermentationDone(history, windowMs, fermentThresholdSg);
+          fermentDoneCache.set(gravityDeviceId, verdict);
+          setDone(verdict);
+        }
       } catch {
         // Keep the last known verdict through transient history failures.
       }
@@ -217,8 +232,10 @@ function findReading(
 }
 
 function hvacColor(value: number): string {
+  // Heating uses orange (not amber) so the value tint doesn't read as the amber
+  // "Fermenting" status; cooling stays blue, idle plain.
   if (value < 0) return 'text-sky-300';
-  if (value > 0) return 'text-amber-300';
+  if (value > 0) return 'text-orange-400';
   return 'text-zinc-300';
 }
 
@@ -246,15 +263,31 @@ interface ChartTarget {
 type OpenChart = (target: ChartTarget) => void;
 
 /**
+ * Module-level snapshot of the last successful dashboard load, kept alive across
+ * route changes (and thus DashboardPage unmounts) so returning to the overview
+ * from another page renders instantly from memory instead of flashing the
+ * loading skeletons and refetching from scratch. Mirrors the keg inventory's
+ * cache (see [useKegs]). The page still kicks off a background refresh on mount
+ * and on its poll interval, so the cached view is only ever a moment stale. A
+ * full browser reload clears it — "once per session" means once per page load.
+ */
+interface DashboardSnapshot {
+  devices: DeviceStatus[];
+  recipe: Recipe | null;
+  alerts: Alert[];
+}
+let cachedDashboard: DashboardSnapshot | null = null;
+
+/**
  * The hub landing page at `/`. A desktop "command centre": the fermenter and
  * utilities live in the main column, with keg inventory, operations, the device
  * fleet and a derived alerts feed in the right rail. A persistent sidebar
  * ([DashboardShell]) wraps it.
  */
 export function DashboardPage(): JSX.Element {
-  const [devices, setDevices] = useState<DeviceStatus[] | null>(null);
-  const [recipe, setRecipe] = useState<Recipe | null>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [devices, setDevices] = useState<DeviceStatus[] | null>(() => cachedDashboard?.devices ?? null);
+  const [recipe, setRecipe] = useState<Recipe | null>(() => cachedDashboard?.recipe ?? null);
+  const [alerts, setAlerts] = useState<Alert[]>(() => cachedDashboard?.alerts ?? []);
   const [error, setError] = useState<string | null>(null);
   const [chart, setChart] = useState<ChartTarget | null>(null);
   const { dashboardRefreshSec, dashboardZoom } = useSettings();
@@ -274,6 +307,7 @@ export function DashboardPage(): JSX.Element {
       setRecipe(r);
       setAlerts(a);
       setError(null);
+      cachedDashboard = { devices: d, recipe: r, alerts: a };
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load devices');
     }
