@@ -1,6 +1,5 @@
 import type {
   Alert,
-  AlertSeverity,
   DeviceStatus,
   DeviceType,
   LatestReading,
@@ -17,14 +16,12 @@ import {
   type DonutSegment,
   ForecastSparkline,
   MultiLineSparkline,
-  RingGauge,
   Sparkline,
 } from '../components/charts';
 import { DashboardShell } from '../components/DashboardShell';
 import { FitScale } from '../components/FitScale';
 import { useGraphColors, withAlpha } from '../graphColors';
 import {
-  BellIcon,
   BoltIcon,
   ChecklistIcon,
   DropletIcon,
@@ -33,7 +30,6 @@ import {
   GaugeIcon,
   HutIcon,
   KegIcon,
-  MonitorIcon,
   ThermometerIcon,
   TodoIcon,
   WrenchIcon,
@@ -68,38 +64,24 @@ const GRAVITY_FORECAST_MS = 2 * DAY_MS;
 /** Spacing of sampled points along the forecast curve. */
 const GRAVITY_FORECAST_STEP_MS = 2 * 60 * 60 * 1000;
 
-type IconComponent = (props: { className?: string }) => JSX.Element;
-
-/** Device-type → the dashboard's monochrome line icon, for the fleet list. */
-const TYPE_ICON: Record<DeviceType, IconComponent> = {
-  pressure_sensor: GaugeIcon,
-  brew_controller: ThermometerIcon,
-  power_meter: BoltIcon,
-  water_meter: DropletIcon,
-  hydrometer: FlaskIcon,
-  other: MonitorIcon,
-};
-
-const TYPE_LABEL: Record<DeviceType, string> = {
-  pressure_sensor: 'Pressure',
-  // The brew controller is an Inkbird and the hydrometer is a Tilt — label them
-  // by the device brand the brewer recognises.
-  brew_controller: 'Inkbird',
-  power_meter: 'Power',
-  water_meter: 'Water',
-  hydrometer: 'Tilt',
-  other: 'Sensor',
-};
-
 function isBreweryTempDevice(device: DeviceStatus): boolean {
   return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
+}
+
+/**
+ * The Inkbird on the filled-keg fridge. It's a brew_controller but not part of a
+ * fermenter station — it gets its own home in the dashboard later, so for now we
+ * keep it out of the fermenter cards (it still appears in the Devices fleet).
+ */
+function isKegsTempDevice(device: DeviceStatus): boolean {
+  return device.type === 'brew_controller' && /keg/i.test(device.name);
 }
 
 function isFermenterDevice(device: DeviceStatus): boolean {
   return (
     device.type === 'pressure_sensor' ||
     device.type === 'hydrometer' ||
-    (device.type === 'brew_controller' && !isBreweryTempDevice(device))
+    (device.type === 'brew_controller' && !isBreweryTempDevice(device) && !isKegsTempDevice(device))
   );
 }
 
@@ -297,21 +279,6 @@ export function DashboardPage(): JSX.Element {
     }
   }, []);
 
-  // Dismiss an alert from the card: drop it immediately, then tell the server.
-  // The server marks it dismissed so it stays gone (and a still-offline device
-  // won't re-raise it); on failure we reload to restore the true state.
-  const dismissAlert = useCallback(
-    async (id: number) => {
-      setAlerts((prev) => prev.filter((a) => a.id !== id));
-      try {
-        await api.dismissAlert(id);
-      } catch {
-        void load();
-      }
-    },
-    [load],
-  );
-
   useEffect(() => {
     void load();
     const id = setInterval(() => void load(), dashboardRefreshSec * 1000);
@@ -338,6 +305,7 @@ export function DashboardPage(): JSX.Element {
   const lastUpdate = latestDeviceTimestamp(deviceList);
 
   const brewery = deviceList.find(isBreweryTempDevice) ?? null;
+  const kegFridge = deviceList.find(isKegsTempDevice) ?? null;
   const power = deviceList.find((d) => d.type === 'power_meter') ?? null;
   const water = deviceList.find((d) => d.type === 'water_meter') ?? null;
   const utilityOnline = [brewery, power, water].filter((d) => d?.online).length;
@@ -400,12 +368,7 @@ export function DashboardPage(): JSX.Element {
               controllable={controllable}
             />
             <OperationsPanel />
-            <DeviceFleetPanel devices={deviceList} loading={devices === null} />
-            <AlertsPanel
-              alerts={activeAlerts}
-              loading={devices === null}
-              onDismiss={controllable ? dismissAlert : undefined}
-            />
+            <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={load} />
           </aside>
         </div>
       </main>
@@ -510,7 +473,9 @@ function FermenterCommandCenter({
   const setpoint = findReading(devices, 'setpoint_c', 'brew_controller');
   const state = findReading(devices, 'hvac_state', 'brew_controller');
   const gravity = findReading(devices, 'gravity_sg');
-  const controller = devices.find((d) => d.type === 'brew_controller' && !isBreweryTempDevice(d));
+  const controller = devices.find(
+    (d) => d.type === 'brew_controller' && !isBreweryTempDevice(d) && !isKegsTempDevice(d),
+  );
   const pressureDevice = devices.find((d) => d.type === 'pressure_sensor');
   const hydrometerDevice = devices.find((d) => d.type === 'hydrometer');
   // A sensor pinned to real data that isn't reporting comes back offline (mock
@@ -1173,6 +1138,7 @@ function BreweryTempCard({
     );
   }
   const temp = device.latest.find((r) => r.metric === 'temp_c');
+  const setpoint = device.latest.find((r) => r.metric === 'setpoint_c');
   const range = minMax(series);
   return (
     <UtilityCardButton
@@ -1188,6 +1154,14 @@ function BreweryTempCard({
           </span>
           <span className="text-sm font-medium text-zinc-500">°C</span>
         </div>
+        {setpoint && (
+          <p className="mt-2 text-sm text-zinc-400">
+            Target{' '}
+            <span className="font-semibold tabular-nums text-zinc-200">
+              {setpoint.value.toFixed(1)} °C
+            </span>
+          </p>
+        )}
         <div className="mt-3">
           <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} />
         </div>
@@ -1495,222 +1469,94 @@ function AppLink({
   );
 }
 
-// --- Device fleet -----------------------------------------------------------
-
-interface FleetGroup {
-  key: string;
-  type: DeviceType;
-  name: string;
-  count: number;
-  online: number;
-}
+// --- Keg fridge -------------------------------------------------------------
 
 /**
- * Top-down order of the Device Fleet list: pressure, fermenter temperature,
- * gravity, brewery temperature, power, water. The two Inkbirds share the
- * `brew_controller` type, so they're split by name (brewery/ambient sorts after
- * the fermenter controller and after gravity).
+ * Compact rail card for the filled-keg fridge Inkbird: its temperature, the
+ * cooling/heating state with the current target, a temp sparkline, and an inline
+ * setpoint control. Separate from the fermenter station cards — this fridge holds
+ * the finished beer, not an active ferment. Greys out when the controller is offline.
  */
-function fleetRank(group: FleetGroup): number {
-  switch (group.type) {
-    case 'pressure_sensor':
-      return 0;
-    case 'brew_controller':
-      return /brewery|ambient/i.test(group.name) ? 3 : 1;
-    case 'hydrometer':
-      return 2;
-    case 'power_meter':
-      return 4;
-    case 'water_meter':
-      return 5;
-    default:
-      return 6;
-  }
-}
-
-function fleetGroups(devices: DeviceStatus[]): FleetGroup[] {
-  const map = new Map<string, FleetGroup>();
-  for (const d of devices) {
-    const key = `${d.type}|${d.name}`;
-    const g = map.get(key);
-    if (g) {
-      g.count += 1;
-      if (d.online) g.online += 1;
-    } else {
-      map.set(key, { key, type: d.type, name: d.name, count: 1, online: d.online ? 1 : 0 });
-    }
-  }
-  return [...map.values()].sort(
-    (a, b) => fleetRank(a) - fleetRank(b) || a.name.localeCompare(b.name),
-  );
-}
-
-function DeviceFleetPanel({
-  devices,
+function KegFridgeCard({
+  device,
   loading,
+  onOpen,
+  onRefresh,
 }: {
-  devices: DeviceStatus[];
+  device: DeviceStatus | null;
   loading: boolean;
+  onOpen: OpenChart;
+  onRefresh: () => void;
 }): JSX.Element {
-  const online = devices.filter((d) => d.online).length;
-  const total = devices.length;
-  const allUp = total > 0 && online === total;
-  const groups = fleetGroups(devices);
+  const colors = useGraphColors();
+  const series = useMetricSeries(device?.id ?? null, 'temp_c', useChartRange(device?.id ?? null, 'temp_c'));
+  const temp = device?.latest.find((r) => r.metric === 'temp_c');
+  const setpoint = device?.latest.find((r) => r.metric === 'setpoint_c');
+  const state = device?.latest.find((r) => r.metric === 'hvac_state');
+  const offline = !device || !device.online;
+  const range = minMax(series);
 
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-      <PanelHeading
-        title="Device Fleet"
-        icon={<MonitorIcon className="h-5 w-5" />}
-        right={
-          <Link to="/devices" className="text-xs text-zinc-500 transition hover:text-white">
-            All devices ↗
-          </Link>
-        }
-      />
-      <div className="mt-4 flex items-center gap-5">
-        <div className="relative shrink-0">
-          <RingGauge
-            value={online}
-            max={total}
-            size={120}
-            color={allUp ? '#22c55e' : '#f59e0b'}
-          />
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="text-2xl font-semibold tabular-nums text-zinc-50">
-              {loading ? '—' : online}
-            </span>
-            <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-              of {loading ? '—' : total} online
-            </span>
-          </div>
-        </div>
-        <ul className="min-w-0 flex-1 space-y-1.5">
-          {groups.length === 0 && (
-            <li className="text-sm text-zinc-600">{loading ? 'Loading fleet…' : 'No devices'}</li>
-          )}
-          {groups.map((g) => {
-            const Icon = TYPE_ICON[g.type];
-            return (
-              <li
-                key={g.key}
-                className={`flex items-center gap-2.5 text-sm${g.online === 0 ? ' opacity-60' : ''}`}
-              >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-zinc-300">
-                  <Icon className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1 truncate text-zinc-300">
-                  {TYPE_LABEL[g.type]} <span className="text-zinc-500">({g.name})</span>
-                </span>
-                {g.count > 1 && <span className="tabular-nums text-zinc-500">{g.count}</span>}
-                <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${
-                    g.online === g.count ? 'bg-emerald-400' : g.online === 0 ? 'bg-zinc-600' : 'bg-amber-400'
-                  }`}
-                  aria-hidden
-                />
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-// --- Alerts -----------------------------------------------------------------
-
-/** Per-severity row tint + title colour for an alert card entry. */
-const ALERT_LOOK: Record<AlertSeverity, { row: string; title: string }> = {
-  critical: { row: 'border-red-500/30 bg-red-500/10', title: 'text-red-300' },
-  warning: { row: 'border-amber-500/30 bg-amber-500/10', title: 'text-amber-200' },
-  info: { row: 'border-sky-500/30 bg-sky-500/10', title: 'text-sky-200' },
-};
-
-function AlertsPanel({
-  alerts,
-  loading,
-  onDismiss,
-}: {
-  alerts: Alert[];
-  loading: boolean;
-  /** When given, each alert becomes a button that dismisses it on click. */
-  onDismiss?: (id: number) => void;
-}): JSX.Element {
-  return (
-    <section
-      id="alerts"
-      className="scroll-mt-5 rounded-xl border border-zinc-800 bg-zinc-900 p-5"
-    >
-      <PanelHeading
-        title="Alerts"
-        icon={<BellIcon className="h-5 w-5" />}
-        right={
-          alerts.length > 0 ? (
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-zinc-950">
-              {alerts.length}
-            </span>
-          ) : undefined
-        }
-      />
-      {loading ? (
-        <p className="mt-3 text-sm text-zinc-500">Loading…</p>
-      ) : alerts.length === 0 ? (
-        <p className="mt-3 flex items-center gap-2 text-sm text-zinc-500">
-          <span className="h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
-          No active alerts
+      <PanelHeading title="Keg Fridge" icon={<ThermometerIcon className="h-5 w-5" />} />
+      {offline ? (
+        <p className="mt-4 flex items-center gap-1.5 text-sm text-zinc-600">
+          <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" aria-hidden />
+          {loading ? 'Loading…' : notConnectedNote(device)}
         </p>
       ) : (
-        <ul className="mt-3 space-y-2">
-          {alerts.map((a) => (
-            <li key={a.id}>
-              <AlertItem alert={a} onDismiss={onDismiss} />
-            </li>
-          ))}
-        </ul>
+        <>
+          <button
+            type="button"
+            onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Keg fridge temperature' })}
+            className="mt-4 block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500"
+          >
+            <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Fridge</p>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-3xl font-semibold tabular-nums text-zinc-50">
+                {temp ? temp.value.toFixed(1) : '—'}
+              </span>
+              <span className="text-sm font-medium text-zinc-500">°C</span>
+            </div>
+          </button>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {state && <StateBadge value={state.value} />}
+            {setpoint && (
+              <span className="text-sm text-zinc-400">
+                Target{' '}
+                <span className="font-semibold tabular-nums text-zinc-200">
+                  {setpoint.value.toFixed(1)} °C
+                </span>
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Keg fridge temperature' })}
+            className="mt-3 block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500"
+          >
+            <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} />
+            {range && (
+              <p className="mt-3 text-xs text-zinc-500">
+                Min{' '}
+                <span className="font-semibold tabular-nums text-zinc-300">{range.min.toFixed(1)} °C</span>
+                {'  ·  Max '}
+                <span className="font-semibold tabular-nums text-zinc-300">{range.max.toFixed(1)} °C</span>
+              </p>
+            )}
+          </button>
+          <div className="mt-3">
+            <SetpointControl
+              deviceId={device.id}
+              setpointC={setpoint?.value ?? null}
+              pendingC={device.pendingSetpointC ?? null}
+              onApplied={onRefresh}
+              variant="inline"
+            />
+          </div>
+        </>
       )}
     </section>
-  );
-}
-
-/**
- * One alert row. When `onDismiss` is given (admin/local users) the whole row is
- * a button that clears the alert on click, with an ✕ affordance; otherwise it's
- * a static panel (read-only guests).
- */
-function AlertItem({
-  alert,
-  onDismiss,
-}: {
-  alert: Alert;
-  onDismiss?: (id: number) => void;
-}): JSX.Element {
-  const look = ALERT_LOOK[alert.severity];
-  const body = (
-    <>
-      <p className={`font-semibold ${look.title}`}>{alert.title}</p>
-      <p className="mt-0.5 text-zinc-400">{alert.detail}</p>
-    </>
-  );
-  if (!onDismiss) {
-    return <div className={`rounded-lg border px-3 py-2 text-sm ${look.row}`}>{body}</div>;
-  }
-  return (
-    <button
-      type="button"
-      onClick={() => onDismiss(alert.id)}
-      title="Dismiss alert"
-      aria-label={`Dismiss alert: ${alert.title}`}
-      className={`group relative block w-full rounded-lg border px-3 py-2 pr-9 text-left text-sm transition hover:brightness-125 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ${look.row}`}
-    >
-      {body}
-      <span
-        aria-hidden
-        className="absolute right-2.5 top-2 text-zinc-500 transition group-hover:text-zinc-200"
-      >
-        ✕
-      </span>
-    </button>
   );
 }
 

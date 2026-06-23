@@ -248,8 +248,9 @@ export type DeviceDataSource = 'mock' | 'real';
  * One planned sensor the operator can flip between mock and real. `key` is the
  * stable id used as the map key in {@link DeviceDataSources}; `type` lets the UI
  * pick an icon. The catalog mirrors the server's mock-profile fleet (one entry
- * per planned sensor); the two Inkbird controllers are split by role — the
- * fermenter's fridge controller vs. the brewery's ambient thermometer.
+ * per planned sensor); the three Inkbird controllers are split by role — the
+ * fermenter's fridge controller, the filled-keg fridge controller, and the
+ * brewery's ambient thermometer.
  */
 export interface SensorCatalogEntry {
   key: string;
@@ -270,6 +271,12 @@ export const SENSOR_CATALOG: readonly SensorCatalogEntry[] = [
     key: 'fermenter_controller',
     label: 'Fermenter controller',
     hint: 'Inkbird fridge/heater — temperature, setpoint, cooling/heating',
+    type: 'brew_controller',
+  },
+  {
+    key: 'kegs_controller',
+    label: 'Kegs controller',
+    hint: 'Inkbird fridge/heater for the filled-keg fridge — temperature, setpoint, cooling/heating',
     type: 'brew_controller',
   },
   {

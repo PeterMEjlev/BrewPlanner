@@ -2,6 +2,7 @@
 import ReactDOM from 'react-dom/client';
 import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { RequireAuth } from './auth';
+import { KioskFrame } from './components/KioskFrame';
 import { AdminPage } from './pages/Admin';
 import { AlertsPage } from './pages/Alerts';
 import { BrewSystemPage } from './pages/BrewSystem';
@@ -58,7 +59,9 @@ const router = createBrowserRouter([
     path: '/display',
     element: (
       <RequireAuth>
-        <DisplayPage />
+        <KioskFrame>
+          <DisplayPage />
+        </KioskFrame>
       </RequireAuth>
     ),
   },
@@ -149,7 +152,9 @@ const router = createBrowserRouter([
     path: '/kiosk',
     element: (
       <RequireAuth>
-        <KioskHomePage />
+        <KioskFrame>
+          <KioskHomePage />
+        </KioskFrame>
       </RequireAuth>
     ),
   },
@@ -157,7 +162,9 @@ const router = createBrowserRouter([
     path: '/kiosk/todos',
     element: (
       <RequireAuth>
-        <KioskTodosPage />
+        <KioskFrame>
+          <KioskTodosPage />
+        </KioskFrame>
       </RequireAuth>
     ),
   },
@@ -165,7 +172,9 @@ const router = createBrowserRouter([
     path: '/kiosk/recipes',
     element: (
       <RequireAuth>
-        <RecipesPage />
+        <KioskFrame>
+          <RecipesPage />
+        </KioskFrame>
       </RequireAuth>
     ),
   },
@@ -173,7 +182,9 @@ const router = createBrowserRouter([
     path: '/kiosk/kegs',
     element: (
       <RequireAuth>
-        <KegsPage />
+        <KioskFrame>
+          <KegsPage />
+        </KioskFrame>
       </RequireAuth>
     ),
   },
@@ -181,7 +192,9 @@ const router = createBrowserRouter([
     path: '/kiosk/settings',
     element: (
       <RequireAuth control>
-        <SettingsPage />
+        <KioskFrame>
+          <SettingsPage />
+        </KioskFrame>
       </RequireAuth>
     ),
   },
@@ -189,15 +202,17 @@ const router = createBrowserRouter([
     path: '/kiosk/temperature',
     element: (
       <RequireAuth>
-        <Suspense
-          fallback={
-            <div className="flex h-full items-center justify-center bg-zinc-900 text-xl text-zinc-400">
-              Loading chart…
-            </div>
-          }
-        >
-          <TemperaturePage />
-        </Suspense>
+        <KioskFrame>
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center bg-zinc-900 text-xl text-zinc-400">
+                Loading chart…
+              </div>
+            }
+          >
+            <TemperaturePage />
+          </Suspense>
+        </KioskFrame>
       </RequireAuth>
     ),
   },
@@ -205,15 +220,17 @@ const router = createBrowserRouter([
     path: '/kiosk/devices/:id',
     element: (
       <RequireAuth>
-        <Suspense
-          fallback={
-            <div className="flex h-full items-center justify-center bg-zinc-900 text-xl text-zinc-400">
-              Loading chart…
-            </div>
-          }
-        >
-          <KioskDevicePage />
-        </Suspense>
+        <KioskFrame>
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center bg-zinc-900 text-xl text-zinc-400">
+                Loading chart…
+              </div>
+            }
+          >
+            <KioskDevicePage />
+          </Suspense>
+        </KioskFrame>
       </RequireAuth>
     ),
   },

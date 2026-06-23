@@ -14,6 +14,13 @@ export interface MockProfile {
   name: string;
   type: DeviceType;
   base: Record<string, number>;
+  /**
+   * A controller whose cooling relay is unused (only heats) — e.g. the brewery
+   * freeze-safety Inkbird, which warms the room if it drops near freezing but has
+   * nothing wired to its cooling socket. Its hvac_state is heating or idle, never
+   * cooling, even when the temperature sits above the setpoint.
+   */
+  heatOnly?: boolean;
 }
 
 export const MOCK_PROFILES: readonly MockProfile[] = [
@@ -32,11 +39,24 @@ export const MOCK_PROFILES: readonly MockProfile[] = [
     base: { temp_c: 18.4, setpoint_c: 18.0, hvac_state: -1 },
   },
   {
+    // Heat-only freeze-safety Inkbird: warms the brewery if it drops toward
+    // freezing, otherwise idle. Sits well above its low setpoint day-to-day, so
+    // it reads idle — never cooling (nothing is wired to its cooling socket).
     id: 3,
     key: 'brewery_temp',
     name: 'Brewery',
     type: 'brew_controller',
-    base: { temp_c: 21.3, setpoint_c: 20.0, hvac_state: 0 },
+    base: { temp_c: 21.3, setpoint_c: 6.0, hvac_state: 0 },
+    heatOnly: true,
+  },
+  {
+    // Inkbird in the second fridge that holds the filled kegs — kept at cold
+    // serving temperature, so it sits actively cooling against a low setpoint.
+    id: 7,
+    key: 'kegs_controller',
+    name: 'Kegs',
+    type: 'brew_controller',
+    base: { temp_c: 4.1, setpoint_c: 3.5, hvac_state: -1 },
   },
   {
     id: 4,
@@ -62,6 +82,27 @@ export const MOCK_PROFILES: readonly MockProfile[] = [
 ];
 
 const CUMULATIVE = new Set(['energy_kwh', 'water_l']);
+
+// Deadband (°C) around the setpoint within which the controller sits idle,
+// mirroring the Inkbird agent's logic (deploy/agents/inkbird-agent/agent.py).
+const HVAC_DEADBAND_C = 0.3;
+
+/**
+ * Relay state a controller would drive given the current temp vs its setpoint:
+ * cooling (-1) when too warm, heating (+1) when too cold, idle (0) inside the
+ * deadband. The real agent reports this straight from the hardware relay
+ * (Tuya DPS 115); the mock has to infer it so it stays consistent when the
+ * operator moves the setpoint above or below the current temperature.
+ *
+ * `heatOnly` controllers never cool: above the setpoint they idle rather than
+ * report cooling (see {@link MockProfile.heatOnly}).
+ */
+function hvacStateFor(tempC: number, setpointC: number, heatOnly = false): number {
+  if (tempC < setpointC - HVAC_DEADBAND_C) return 1; // heating
+  if (heatOnly) return 0; // cooling relay unused — idle whenever not heating
+  if (tempC > setpointC + HVAC_DEADBAND_C) return -1; // cooling
+  return 0; // idle
+}
 
 const FERMENT_FG = 1.01;
 const FERMENT_K = 0.12;
@@ -104,10 +145,10 @@ export function findProfileForDevice(device: Pick<Device, 'name' | 'type'>): Moc
   if (exact) return exact;
 
   if (device.type === 'brew_controller') {
-    return profileByKind(
-      'brew_controller',
-      name.includes('brewery') || name.includes('ambient') ? 'Brewery' : 'Fermenter',
-    );
+    if (name.includes('brewery') || name.includes('ambient'))
+      return profileByKind('brew_controller', 'Brewery');
+    if (name.includes('keg')) return profileByKind('brew_controller', 'Kegs');
+    return profileByKind('brew_controller', 'Fermenter');
   }
   if (device.type === 'pressure_sensor') return profileByKind('pressure_sensor', 'Fermenter');
   if (device.type === 'hydrometer') return profileByKind('hydrometer', 'Fermenter');
@@ -159,7 +200,7 @@ export function mockHistory(
       id: i + 1,
       deviceId,
       metric,
-      value: historyValue(metric, base, frac, spanDays, t),
+      value: historyValue(metric, base, frac, spanDays, t, profile, deviceId),
       recordedAt: new Date(t).toISOString(),
     });
   }
@@ -219,9 +260,24 @@ function effectiveSetpoint(deviceId: number, base: number): number {
 function latestReadings(profile: MockProfile, deviceId: number, nowIso: string): LatestReading[] {
   return Object.entries(profile.base).map(([metric, base]) => ({
     metric,
-    value: metric === 'setpoint_c' ? effectiveSetpoint(deviceId, base) : currentValue(metric, base),
+    value: latestValue(profile, deviceId, metric, base),
     recordedAt: nowIso,
   }));
+}
+
+function latestValue(
+  profile: MockProfile,
+  deviceId: number,
+  metric: string,
+  base: number,
+): number {
+  if (metric === 'setpoint_c') return effectiveSetpoint(deviceId, base);
+  if (metric === 'hvac_state') {
+    const temp = currentValue('temp_c', profile.base.temp_c ?? 0);
+    const setpoint = effectiveSetpoint(deviceId, profile.base.setpoint_c ?? temp);
+    return hvacStateFor(temp, setpoint, profile.heatOnly);
+  }
+  return currentValue(metric, base);
 }
 
 function historyValue(
@@ -230,11 +286,17 @@ function historyValue(
   frac: number,
   spanDays: number,
   t: number,
+  profile: MockProfile,
+  deviceId: number,
 ): number {
   if (metric === 'setpoint_c') return base;
 
   if (metric === 'hvac_state') {
-    return Math.sin(t / (45 * 60 * 1000)) < -0.2 ? -1 : 0;
+    // Derive the relay state from the temp series vs the (effective) setpoint at
+    // this instant, so cooling/heating tracks where the operator set the target.
+    const temp = historyValue('temp_c', profile.base.temp_c ?? 0, frac, spanDays, t, profile, deviceId);
+    const setpoint = effectiveSetpoint(deviceId, profile.base.setpoint_c ?? temp);
+    return hvacStateFor(temp, setpoint, profile.heatOnly);
   }
 
   if (metric === 'energy_kwh') {

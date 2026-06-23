@@ -60,6 +60,61 @@ const NAV: NavItem[] = [
  */
 const BOTTOM_BAR_PAGES: ShellPage[] = ['overview', 'kegs', 'alerts', 'devices'];
 
+/** How often the nav re-checks the fleet's online/total counts. */
+const FLEET_POLL_MS = 15_000;
+
+interface FleetStatus {
+  online: number;
+  total: number;
+}
+
+/**
+ * Poll the device fleet so the Devices nav item can show an online/total count
+ * and a health dot. Lives in the shell (not a page) because the nav is global,
+ * so the badge stays accurate on every screen.
+ */
+function useFleetStatus(): FleetStatus | null {
+  const [fleet, setFleet] = useState<FleetStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const devices = await api.listDevices();
+        if (!cancelled) {
+          setFleet({ online: devices.filter((d) => d.online).length, total: devices.length });
+        }
+      } catch {
+        // Keep the last known counts through a transient failure.
+      }
+    };
+    void load();
+    const id = setInterval(() => void load(), FLEET_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+  return fleet;
+}
+
+/** Dot colour for the fleet's health: green all up, amber some down, red all down. */
+function fleetDotColor({ online, total }: FleetStatus): string {
+  if (total === 0) return 'bg-zinc-500';
+  if (online === total) return 'bg-emerald-400';
+  if (online === 0) return 'bg-red-500';
+  return 'bg-amber-400';
+}
+
+/** Online/total device count with a health dot, for the Devices nav item. */
+function FleetBadge({ online, total }: FleetStatus): JSX.Element {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold tabular-nums text-zinc-400">
+      <span className={`h-2 w-2 rounded-full ${fleetDotColor({ online, total })}`} aria-hidden />
+      {online}/{total}
+    </span>
+  );
+}
+
 /** Drop the nav rails a read-only guest may not open (matches the sidebar). */
 function visibleNav(controllable: boolean): NavItem[] {
   if (controllable) return NAV;
@@ -95,13 +150,14 @@ export function DashboardShell({
   fit?: boolean;
   children: React.ReactNode;
 }): JSX.Element {
+  const fleet = useFleetStatus();
   return (
     <div
       className={`flex min-h-screen bg-zinc-950 text-zinc-100 ${
         fit ? 'xl:h-screen xl:overflow-hidden' : ''
       }`}
     >
-      <Sidebar active={active} alertCount={alertCount} lastUpdate={lastUpdate} />
+      <Sidebar active={active} alertCount={alertCount} fleet={fleet} lastUpdate={lastUpdate} />
       {/* Below `md` the sidebar is hidden, so leave room for the fixed bottom bar
           (it would otherwise cover the last cards of a scrolling page). */}
       <div
@@ -111,7 +167,7 @@ export function DashboardShell({
       >
         {children}
       </div>
-      <BottomNav active={active} alertCount={alertCount} lastUpdate={lastUpdate} />
+      <BottomNav active={active} alertCount={alertCount} fleet={fleet} lastUpdate={lastUpdate} />
     </div>
   );
 }
@@ -119,10 +175,12 @@ export function DashboardShell({
 function Sidebar({
   active,
   alertCount,
+  fleet,
   lastUpdate,
 }: {
   active: ShellPage;
   alertCount: number;
+  fleet: FleetStatus | null;
   lastUpdate?: string | null;
 }): JSX.Element {
   const { auth, refresh } = useAuth();
@@ -147,9 +205,19 @@ function Sidebar({
         {navItems.map((item) => {
           const isActive = item.page === active;
           const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
+          const accessory =
+            item.key === 'devices' && fleet ? (
+              <FleetBadge online={fleet.online} total={fleet.total} />
+            ) : undefined;
           return (
             <Link key={item.key} to={item.to} className="block">
-              <NavRow Icon={item.Icon} label={item.label} active={isActive} badge={badge} />
+              <NavRow
+                Icon={item.Icon}
+                label={item.label}
+                active={isActive}
+                badge={badge}
+                accessory={accessory}
+              />
             </Link>
           );
         })}
@@ -192,10 +260,12 @@ function Sidebar({
 function BottomNav({
   active,
   alertCount,
+  fleet,
   lastUpdate,
 }: {
   active: ShellPage;
   alertCount: number;
+  fleet: FleetStatus | null;
   lastUpdate?: string | null;
 }): JSX.Element {
   const { auth, refresh } = useAuth();
@@ -285,9 +355,16 @@ function BottomNav({
       <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         {tabs.map((item) => {
           const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
+          const dot = item.key === 'devices' && fleet ? fleetDotColor(fleet) : undefined;
           return (
             <Link key={item.key} to={item.to} className="min-w-0 flex-1">
-              <BottomTab Icon={item.Icon} label={item.label} active={item.page === active} badge={badge} />
+              <BottomTab
+                Icon={item.Icon}
+                label={item.label}
+                active={item.page === active}
+                badge={badge}
+                dot={dot}
+              />
             </Link>
           );
         })}
@@ -305,11 +382,14 @@ function BottomTab({
   label,
   active,
   badge,
+  dot,
 }: {
   Icon: IconComponent;
   label: string;
   active: boolean;
   badge?: number;
+  /** A small status dot on the icon (e.g. fleet health), as a bg-* colour class. */
+  dot?: string;
 }): JSX.Element {
   return (
     <span
@@ -324,6 +404,12 @@ function BottomTab({
             {badge}
           </span>
         )}
+        {dot != null && (
+          <span
+            className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full ring-2 ring-zinc-950 ${dot}`}
+            aria-hidden
+          />
+        )}
       </span>
       <span className="max-w-full truncate">{label}</span>
     </span>
@@ -335,11 +421,14 @@ function NavRow({
   label,
   active,
   badge,
+  accessory,
 }: {
   Icon: (props: { className?: string }) => JSX.Element;
   label: string;
   active: boolean;
   badge?: number;
+  /** A custom right-hand element (e.g. the fleet count); takes priority over `badge`. */
+  accessory?: React.ReactNode;
 }): JSX.Element {
   return (
     <span
@@ -351,11 +440,12 @@ function NavRow({
     >
       <Icon className="h-5 w-5 shrink-0" />
       <span className="flex-1 text-left">{label}</span>
-      {badge != null && (
-        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-zinc-950">
-          {badge}
-        </span>
-      )}
+      {accessory ??
+        (badge != null && (
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-zinc-950">
+            {badge}
+          </span>
+        ))}
     </span>
   );
 }

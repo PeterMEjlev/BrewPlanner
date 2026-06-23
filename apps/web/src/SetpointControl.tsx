@@ -4,7 +4,7 @@ import { canControl, useAuth } from './auth';
 
 /** Stepper bounds (°C) and increment. A 1° step suits both fermenter and brewery. */
 const MIN_C = 0;
-const MAX_C = 40;
+const MAX_C = 35;
 const STEP_C = 1;
 /** Fallback target when a controller hasn't reported a setpoint yet. */
 const FALLBACK_C = 18;

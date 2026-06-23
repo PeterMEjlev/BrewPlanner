@@ -24,14 +24,52 @@ const TYPE_ICON: Record<DeviceType, string> = {
   other: '📡',
 };
 
+/** Generic kind shown as a secondary subtitle next to the location name. */
 const TYPE_LABEL: Record<DeviceType, string> = {
   pressure_sensor: 'Pressure',
-  brew_controller: 'Inkbird',
-  power_meter: 'Power',
-  water_meter: 'Water',
-  hydrometer: 'Tilt',
+  brew_controller: 'Controller',
+  power_meter: 'Power meter',
+  water_meter: 'Water meter',
+  hydrometer: 'Hydrometer',
   other: 'Sensor',
 };
+
+/**
+ * Hardware make/model per device type. The hub doesn't store per-device brand
+ * info, so this mirrors the actual kit documented in SENSORS.md / the agent
+ * READMEs. Brand is null for the generic wired sensors, where the model name
+ * alone is the most useful label.
+ */
+interface DeviceModel {
+  brand: string | null;
+  model: string;
+  /** How the device reaches the hub/satellite. */
+  connectivity: string;
+}
+
+const DEVICE_MODEL: Record<DeviceType, DeviceModel> = {
+  brew_controller: { brand: 'Inkbird', model: 'ITC-308-WIFI', connectivity: 'Wi-Fi · Tuya' },
+  hydrometer: { brand: 'Tilt', model: 'Hydrometer', connectivity: 'Bluetooth LE' },
+  pressure_sensor: { brand: null, model: 'Fermentation pressure sensor', connectivity: 'Wired' },
+  power_meter: { brand: null, model: 'Mains energy meter', connectivity: 'Wired' },
+  water_meter: { brand: null, model: 'Water flow meter', connectivity: 'Wired' },
+  other: { brand: null, model: 'Generic sensor', connectivity: '—' },
+};
+
+/** "Brand Model" when a brand is known, else just the model name. */
+function deviceTitle(type: DeviceType): string {
+  const m = DEVICE_MODEL[type];
+  return m.brand ? `${m.brand} ${m.model}` : m.model;
+}
+
+/** Short absolute date a device was first registered, e.g. "2 Jun 2026". */
+function formatRegistered(createdAt: string): string {
+  return new Date(createdAt).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 /** A flat list of every registered device, linking to each detail/chart page. */
 export function DevicesPage(): JSX.Element {
@@ -124,8 +162,12 @@ function DeviceCard({ device }: { device: DeviceStatus }): JSX.Element {
             {TYPE_ICON[device.type]}
           </span>
           <div className="min-w-0">
-            <h3 className="truncate font-semibold text-zinc-100">{device.name}</h3>
-            <p className="text-xs uppercase tracking-wider text-zinc-500">{TYPE_LABEL[device.type]}</p>
+            <h3 className="truncate font-semibold text-zinc-100">{deviceTitle(device.type)}</h3>
+            <p className="mt-0.5 truncate text-xs text-zinc-500">
+              <span className="font-medium text-zinc-400">{device.name}</span>
+              <span className="text-zinc-600"> · </span>
+              {TYPE_LABEL[device.type]}
+            </p>
           </div>
         </div>
         <StatusBadge online={device.online} />
@@ -143,10 +185,19 @@ function DeviceCard({ device }: { device: DeviceStatus }): JSX.Element {
         </p>
       )}
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 pt-2.5 text-xs text-zinc-500">
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <Chip label={DEVICE_MODEL[device.type].connectivity} accent />
+        {device.latest.map((r) => (
+          <Chip key={r.metric} label={metricLabel(r.metric)} />
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-zinc-800 pt-2.5 text-xs text-zinc-500">
         <span>{device.lastSeenAt ? `Updated ${relativeTime(device.lastSeenAt)}` : 'Never reported'}</span>
+        <span className="text-zinc-600">ID {device.id}</span>
+        <span>Registered {formatRegistered(device.createdAt)}</span>
         {totalMetric && total != null && (
-          <span>
+          <span className="ml-auto">
             All-time{' '}
             <span className="font-semibold tabular-nums text-zinc-300">
               {formatValue({ metric: totalMetric, value: total, recordedAt: '' })}
@@ -180,6 +231,21 @@ function MetricReading({ reading }: { reading: LatestReading }): JSX.Element {
         {unit && <span className="text-sm font-medium text-zinc-500">{unit}</span>}
       </div>
     </div>
+  );
+}
+
+/** A small pill for a device spec — accent for connectivity, muted for metrics. */
+function Chip({ label, accent = false }: { label: string; accent?: boolean }): JSX.Element {
+  return (
+    <span
+      className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
+        accent
+          ? 'bg-sky-500/10 text-sky-300 ring-sky-500/20'
+          : 'bg-zinc-800/70 text-zinc-400 ring-zinc-700/50'
+      }`}
+    >
+      {label}
+    </span>
   );
 }
 

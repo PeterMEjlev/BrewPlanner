@@ -41,6 +41,8 @@ interface DemoSpec {
 const NOW_S = Date.now() / 1000;
 const DAY_START_S = NOW_S - HOURS * 3600; // start of the backfilled window
 const inkbirdTemp = (t: number): number => 18 + 0.6 * Math.sin((t - NOW_S) / 1200 + Math.PI / 2);
+// The filled-keg fridge is a third Inkbird 308, held at cold serving temperature.
+const kegsTemp = (t: number): number => 3.5 + 0.5 * Math.sin((t - NOW_S) / 1400 + Math.PI / 2);
 // The brewery ambient thermometer is "another Inkbird 308" (reused
 // brew_controller), kept a touch warmer and slower than the fermenter fridge.
 const ambientTemp = (t: number): number => 20 + 1.2 * Math.sin((t - NOW_S) / 1500);
@@ -69,19 +71,33 @@ const SPECS: DemoSpec[] = [
     },
   },
   {
+    // Reused brew_controller; the name contains "Keg" so findProfileForDevice
+    // maps it to the kegs-fridge profile and the dashboard keeps it off the
+    // fermenter station cards.
+    name: 'Demo Kegs Controller',
+    type: 'brew_controller',
+    metrics: {
+      temp_c: (t) => round(kegsTemp(t)),
+      setpoint_c: () => 3.5,
+      hvac_state: (t) => {
+        const temp = kegsTemp(t);
+        if (temp > 3.5 + 0.3) return -1;
+        if (temp < 3.5 - 0.3) return 1;
+        return 0;
+      },
+    },
+  },
+  {
     // Reused brew_controller; the name matters — the dashboard's "Brewery
     // Temperature" placeholder hides once an ambient/brewery controller exists.
+    // Heat-only freeze safety: heats below its low setpoint, otherwise idle —
+    // never cooling (nothing wired to the cooling socket).
     name: 'Demo Brewery Ambient',
     type: 'brew_controller',
     metrics: {
       temp_c: (t) => round(ambientTemp(t)),
-      setpoint_c: () => 20,
-      hvac_state: (t) => {
-        const temp = ambientTemp(t);
-        if (temp > 20 + 0.4) return -1;
-        if (temp < 20 - 0.4) return 1;
-        return 0;
-      },
+      setpoint_c: () => 6,
+      hvac_state: (t) => (ambientTemp(t) < 6 - 0.4 ? 1 : 0),
     },
   },
   {

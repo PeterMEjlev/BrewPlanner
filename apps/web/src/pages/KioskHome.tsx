@@ -232,6 +232,11 @@ function isBreweryTempDevice(device: DeviceStatus): boolean {
   return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
 }
 
+/** The filled-keg fridge Inkbird — gets its own compact temp card in the rail. */
+function isKegsTempDevice(device: DeviceStatus): boolean {
+  return device.type === 'brew_controller' && /keg/i.test(device.name);
+}
+
 /**
  * Tint for the fridge temperature from the controller's hvac_state: blue while
  * cooling, orange while heating, and plain white when idle — the colour is the
@@ -247,9 +252,8 @@ function hvacColor(value: number): string {
  * Touch-first hub home for the Pi's 7" screen. Everything is visible at a glance
  * with no scrolling: the fermenter the brewer watches fills the left as a large
  * hero card (merging its pressure / fridge / beer / gravity sensors) with the
- * Checklists and To-Do shortcuts beneath it, while a right-hand rail carries a
- * live clock and the remaining sensor + utility cards (brewery temp, power,
- * water).
+ * Checklists and To-Do shortcuts beneath it, while a right-hand rail carries the
+ * remaining sensor + utility cards (brewery temp, keg fridge, power, water).
  */
 export function KioskHomePage(): JSX.Element {
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
@@ -277,8 +281,8 @@ export function KioskHomePage(): JSX.Element {
   }, [load]);
 
   // The fermenter (a multi-device "station") is the hero on the left; every
-  // other sensor — lone watched sensors and the utility meters — lines up in
-  // the right rail, ordered most-watched first.
+  // other sensor — lone watched sensors (brewery + keg-fridge temps) and the
+  // utility meters — lines up in the right rail, ordered most-watched first.
   const primary = devices.filter((d) => !SECONDARY_TYPES.has(d.type));
   const secondary = devices
     .filter((d) => SECONDARY_TYPES.has(d.type))
@@ -400,17 +404,14 @@ function ActionButton({
   return (
     <Link
       to={to}
-      className="flex h-[4.5rem] touch-manipulation items-center gap-3.5 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-5 transition active:scale-[0.98] active:bg-zinc-800"
+      className="flex h-[4.5rem] touch-manipulation items-center gap-3 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-5 text-white transition active:scale-[0.98] active:bg-zinc-800"
     >
-      <span
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black text-zinc-300"
-        aria-hidden
-      >
+      <span className="shrink-0 text-white" aria-hidden>
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xl font-bold leading-tight">{title}</div>
-        <div className="truncate text-sm text-zinc-400">{subtitle}</div>
+        <div className="truncate text-xl font-bold leading-tight text-white">{title}</div>
+        <div className="truncate text-sm text-white">{subtitle}</div>
       </div>
       <span className="shrink-0 text-2xl text-zinc-500" aria-hidden>
         ›
@@ -538,12 +539,10 @@ function StationTile({
           to="/kiosk/recipes"
           className="flex min-w-0 flex-1 touch-manipulation items-center gap-4 rounded-2xl py-1 transition active:bg-zinc-800/60"
         >
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black text-zinc-200">
-            <FermenterIcon strokeWidth={2.4} className="h-[2.34rem] w-[2.34rem]" />
-          </span>
+          <FermenterIcon strokeWidth={2.6} className="h-12 w-12 shrink-0 text-white" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-3xl font-bold leading-tight tracking-tight">{name}</div>
-            <div className="truncate text-base text-zinc-500">
+            <div className="truncate text-base text-white">
               {recipeStyle || 'Tap to select recipe'}
             </div>
           </div>
@@ -691,35 +690,30 @@ function BigValue({ value, unit }: { value: string; unit: string }): JSX.Element
  * Offline devices dim. The card links to the device's chart.
  */
 function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
-  const metrics = isBreweryTempDevice(device)
-    ? orderedMetrics(device.latest.filter((r) => r.metric === 'temp_c'))
-    : orderedMetrics(device.latest);
+  // Brewery ambient + the keg fridge are both single-temperature controllers, so
+  // render them as the same compact temp tile — one big temperature tinted by the
+  // cooling/heating state, with the target beneath — keeping matching cards alike.
+  if (isKegsTempDevice(device)) return <TempControllerCard device={device} title="Keg Fridge" />;
+  if (isBreweryTempDevice(device))
+    return <TempControllerCard device={device} title={device.name} heatOnly />;
 
+  const metrics = orderedMetrics(device.latest);
   const multi = metrics.length > 1;
 
   return (
     <Link
       to={`/kiosk/devices/${device.id}`}
-      className={`flex min-h-0 touch-manipulation flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-4 py-4 transition active:scale-[0.98] active:bg-zinc-800 ${
-        // Multi-metric cards (power/water) carry more, so they take a larger share
-        // of the rail height; a single-reading card (brewery temp) stays compact.
-        multi ? 'flex-[1.6]' : 'flex-1'
-      } ${device.online ? '' : 'opacity-50'}`}
+      className={`flex min-h-0 flex-1 touch-manipulation flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-4 py-4 transition active:scale-[0.98] active:bg-zinc-800 ${
+        device.online ? '' : 'opacity-50'
+      }`}
     >
-      {/* Header: glyph circle + name. A spacer matching the icon balances the
-          row so the name centers against the card's borders, not just the space
-          to the right of the icon. The name wraps to a second line when long. */}
-      <div className="flex shrink-0 items-center gap-2.5">
-        <span
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-black text-zinc-200"
-          aria-hidden
-        >
-          <DeviceGlyph type={device.type} />
-        </span>
-        <span className="min-w-0 flex-1 text-center text-sm font-medium uppercase leading-tight tracking-wider text-zinc-400 line-clamp-2">
+      {/* Header: a small line glyph beside the device name — the desktop
+          dashboard's icon style (no circle, icon next to white text). */}
+      <div className="flex shrink-0 items-center gap-2 text-white">
+        <DeviceGlyph type={device.type} />
+        <span className="min-w-0 flex-1 text-sm font-semibold leading-tight text-white line-clamp-2">
           {device.name}
         </span>
-        <span className="w-12 shrink-0" aria-hidden />
       </div>
 
       {/* Readings — multi-metric cards split into captioned columns (e.g. power's
@@ -738,13 +732,69 @@ function SidebarCard({ device }: { device: DeviceStatus }): JSX.Element {
             >
               <MetricValue reading={m} compact={multi} />
               {multi && (
-                <span className="mt-1.5 max-w-full truncate text-xs text-zinc-500">
+                <span className="mt-1.5 max-w-full truncate text-xs text-white">
                   {METRIC_CAPTION[m.metric] ?? metricLabel(m.metric)}
                 </span>
               )}
             </div>
           ))
         )}
+      </div>
+    </Link>
+  );
+}
+
+/**
+ * Compact rail tile for a single-temperature controller (brewery ambient / keg
+ * fridge): one big temperature tinted by the cooling/heating relay state
+ * (blue/orange, plain when idle) with the target temperature beside it. `title`
+ * names the card (e.g. "Keg Fridge"); `heatOnly` controllers never show the
+ * cooling tint (their cooling relay is unused). Links to the controller's chart.
+ */
+function TempControllerCard({
+  device,
+  title,
+  heatOnly = false,
+}: {
+  device: DeviceStatus;
+  title: string;
+  heatOnly?: boolean;
+}): JSX.Element {
+  const temp = device.latest.find((r) => r.metric === 'temp_c');
+  const setpoint = device.latest.find((r) => r.metric === 'setpoint_c');
+  const state = device.latest.find((r) => r.metric === 'hvac_state');
+  // A heat-only controller's cooling relay isn't wired to anything, so a stray
+  // "cooling" reading shows as idle (plain) rather than the blue cooling tint.
+  const stateValue = state ? (heatOnly && state.value < 0 ? 0 : state.value) : null;
+  const tempColor = stateValue != null ? hvacColor(stateValue) : '';
+
+  return (
+    <Link
+      to={`/kiosk/devices/${device.id}?metric=temp_c`}
+      className={`flex min-h-0 flex-1 touch-manipulation flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-4 py-4 transition active:scale-[0.98] active:bg-zinc-800 ${
+        device.online ? '' : 'opacity-50'
+      }`}
+    >
+      <div className="flex shrink-0 items-center gap-2 text-white">
+        <DeviceGlyph type={device.type} />
+        <span className="min-w-0 flex-1 text-sm font-semibold leading-tight text-white line-clamp-2">
+          {title}
+        </span>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center">
+        <div className="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1">
+          {temp ? (
+            <span className={`text-4xl font-semibold leading-none tracking-tight tabular-nums ${tempColor}`}>
+              {temp.value.toFixed(1)}
+              <span className="ml-0.5 text-base font-medium text-zinc-500">°C</span>
+            </span>
+          ) : (
+            <span className="text-base text-zinc-500">{device.online ? 'No readings' : 'Not connected'}</span>
+          )}
+          {setpoint && device.online && (
+            <span className="text-sm text-zinc-500">Set: {setpoint.value.toFixed(1)}°C</span>
+          )}
+        </div>
       </div>
     </Link>
   );
@@ -774,5 +824,5 @@ function MetricValue({ reading, compact }: { reading: LatestReading; compact?: b
 /** Line-art glyph for a rail card, picked by device type (shared icon set). */
 function DeviceGlyph({ type }: { type: DeviceType }): JSX.Element {
   const Icon = TYPE_ICON[type];
-  return <Icon className="h-[1.56rem] w-[1.56rem]" />;
+  return <Icon className="h-5 w-5 shrink-0" />;
 }

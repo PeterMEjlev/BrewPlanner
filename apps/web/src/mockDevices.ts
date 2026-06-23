@@ -22,6 +22,8 @@ interface MockDevice {
   type: DeviceStatus['type'];
   /** Metric → current value. Order here is the order shown on the tile. */
   base: Record<string, number>;
+  /** Heat-only controller (cooling relay unused) — never reports cooling. */
+  heatOnly?: boolean;
 }
 
 const MOCK_FLEET: MockDevice[] = [
@@ -38,10 +40,19 @@ const MOCK_FLEET: MockDevice[] = [
     base: { temp_c: 18.4, setpoint_c: 18.0, hvac_state: -1 },
   },
   {
+    // Heat-only freeze-safety Inkbird: warms the brewery near freezing, else idle.
     id: 3,
     name: 'Brewery',
     type: 'brew_controller',
-    base: { temp_c: 21.3, setpoint_c: 20.0, hvac_state: 0 },
+    base: { temp_c: 21.3, setpoint_c: 6.0, hvac_state: 0 },
+    heatOnly: true,
+  },
+  {
+    // Inkbird on the filled-keg fridge, held at cold serving temperature.
+    id: 7,
+    name: 'Kegs',
+    type: 'brew_controller',
+    base: { temp_c: 4.1, setpoint_c: 3.5, hvac_state: -1 },
   },
   {
     id: 4,
@@ -70,6 +81,24 @@ const MOCK_FLEET: MockDevice[] = [
 
 /** Cumulative totals only ever climb; gravity falls as sugar is consumed. */
 const CUMULATIVE = new Set(['energy_kwh', 'water_l']);
+
+// Deadband (°C) around the setpoint within which the controller sits idle,
+// mirroring the Inkbird agent (deploy/agents/inkbird-agent/agent.py).
+const HVAC_DEADBAND_C = 0.3;
+
+/**
+ * Relay state a controller would drive given the current temp vs its setpoint:
+ * cooling (-1) when too warm, heating (+1) when too cold, idle (0) inside the
+ * deadband. The real device reports this from its relay; the mock infers it so
+ * cooling/heating stays correct when the operator moves the setpoint past the
+ * current temperature.
+ */
+function hvacStateFor(tempC: number, setpointC: number, heatOnly = false): number {
+  if (tempC < setpointC - HVAC_DEADBAND_C) return 1; // heating
+  if (heatOnly) return 0; // cooling relay unused — idle whenever not heating
+  if (tempC > setpointC + HVAC_DEADBAND_C) return -1; // cooling
+  return 0; // idle
+}
 
 /**
  * Mock fermentation shape for the gravity history + forecast demo. A clean
@@ -148,9 +177,19 @@ function effectiveSetpoint(id: number, base: number): number {
 function latestReadings(d: MockDevice, nowIso: string): LatestReading[] {
   return Object.entries(d.base).map(([metric, base]) => ({
     metric,
-    value: metric === 'setpoint_c' ? effectiveSetpoint(d.id, base) : currentValue(metric, base),
+    value: latestValue(d, metric, base),
     recordedAt: nowIso,
   }));
+}
+
+function latestValue(d: MockDevice, metric: string, base: number): number {
+  if (metric === 'setpoint_c') return effectiveSetpoint(d.id, base);
+  if (metric === 'hvac_state') {
+    const temp = currentValue('temp_c', d.base.temp_c ?? 0);
+    const setpoint = effectiveSetpoint(d.id, d.base.setpoint_c ?? temp);
+    return hvacStateFor(temp, setpoint, d.heatOnly);
+  }
+  return currentValue(metric, base);
 }
 
 function toStatus(d: MockDevice): DeviceStatus {
@@ -208,7 +247,7 @@ export function mockGetDeviceHistory(
       id: i + 1,
       deviceId: id,
       metric,
-      value: historyValue(metric, base, frac, spanDays, t),
+      value: historyValue(d, metric, base, frac, spanDays, t),
       recordedAt: new Date(t).toISOString(),
     });
   }
@@ -232,6 +271,7 @@ export function mockGetDeviceTotal(id: number, metric: string): { metric: string
 }
 
 function historyValue(
+  d: MockDevice,
   metric: string,
   base: number,
   frac: number,
@@ -241,8 +281,11 @@ function historyValue(
   if (metric === 'setpoint_c') return base; // flat target line
 
   if (metric === 'hvac_state') {
-    // Step between cooling (-1) and idle (0) on a slow cycle.
-    return Math.sin(t / (45 * 60 * 1000)) < -0.2 ? -1 : 0;
+    // Track the temp series vs the (effective) setpoint so cooling/heating
+    // follows wherever the operator set the target.
+    const temp = historyValue(d, 'temp_c', d.base.temp_c ?? 0, frac, spanDays, t);
+    const setpoint = effectiveSetpoint(d.id, d.base.setpoint_c ?? temp);
+    return hvacStateFor(temp, setpoint, d.heatOnly);
   }
 
   if (metric === 'energy_kwh') {
