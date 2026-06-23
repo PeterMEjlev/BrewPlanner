@@ -24,6 +24,7 @@
     "better-sqlite3": "^11.7.0",
     "drizzle-orm": "^0.38.3",
     "fastify": "^5.2.0",
+    "sonos": "^1.14.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {

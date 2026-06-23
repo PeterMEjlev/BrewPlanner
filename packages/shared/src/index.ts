@@ -879,3 +879,34 @@ export const idParamSchema = z.object({
 export const stepIdParamSchema = z.object({
   stepId: z.coerce.number().int().positive(),
 });
+
+// ---------------------------------------------------------------------------
+// Music: Sonos / IKEA SYMFONISK now-playing + transport control
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshot of what the brewery speaker is doing (GET /api/music/now-playing).
+ * The IKEA SYMFONISK runs Sonos firmware, so the server controls it over the
+ * LAN (no Spotify account/OAuth) via the `sonos` library. `state` is `no_media`
+ * when nothing is queued; durations/positions are seconds and may be null for a
+ * live stream that doesn't report them. `albumArtUrl` points straight at the
+ * speaker (an `http://<sonos-ip>:1400/...` URL the kiosk loads on the LAN).
+ */
+export interface NowPlaying {
+  state: 'playing' | 'paused' | 'stopped' | 'transitioning' | 'no_media';
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  albumArtUrl: string | null;
+  durationSec: number | null;
+  positionSec: number | null;
+  /** Speaker volume, 0–100. */
+  volume: number;
+  /** The zone/room name of the controlled speaker, when known. */
+  room: string | null;
+}
+
+/** Body for POST /api/music/volume — an absolute level, 0–100. */
+export const setVolumeSchema = z.object({
+  volume: z.coerce.number().int().min(0).max(100),
+});

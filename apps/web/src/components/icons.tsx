@@ -271,3 +271,76 @@ export function FlaskIcon(props: IconProps): JSX.Element {
     </Svg>
   );
 }
+
+// --- Music (brewery speaker) ------------------------------------------------
+
+/** A musical note — the kiosk home shortcut into the now-playing screen. */
+export function MusicIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M9 18V6l11-2v12" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="17" cy="16" r="3" />
+    </Svg>
+  );
+}
+
+/** A filled play triangle for the transport controls. */
+export function PlayIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M7 5v14l11-7z" fill="currentColor" />
+    </Svg>
+  );
+}
+
+/** Two filled bars — pause. */
+export function PauseIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect x="7" y="5" width="3.5" height="14" rx="0.8" fill="currentColor" stroke="none" />
+      <rect x="13.5" y="5" width="3.5" height="14" rx="0.8" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+/** Skip-to-next (a triangle against a bar). */
+export function SkipNextIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M6 5v14l10-7z" fill="currentColor" />
+      <rect x="17" y="5" width="2.6" height="14" rx="0.8" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+/** Skip-to-previous (a bar against a triangle). */
+export function SkipPrevIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect x="4.4" y="5" width="2.6" height="14" rx="0.8" fill="currentColor" stroke="none" />
+      <path d="M18 5v14L8 12z" fill="currentColor" />
+    </Svg>
+  );
+}
+
+/** A speaker — the now-playing placeholder when there's no album art. */
+export function SpeakerIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect x="6" y="3" width="12" height="18" rx="2" />
+      <circle cx="12" cy="14" r="3.5" />
+      <circle cx="12" cy="6.5" r="0.6" fill="currentColor" />
+    </Svg>
+  );
+}
+
+/** A low-volume speaker (for the volume slider end-cap). */
+export function VolumeIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M4 9v6h4l5 4V5L8 9z" />
+      <path d="M16 9.5a3.5 3.5 0 0 1 0 5" />
+    </Svg>
+  );
+}

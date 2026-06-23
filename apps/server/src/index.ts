@@ -14,6 +14,7 @@ import { runNotificationChecks } from './notify/checks.js';
 import { isConfigured as telegramConfigured } from './notify/telegram.js';
 import { apiRoutes } from './routes/api.js';
 import { commandRoutes, deviceRoutes, ingestRoutes } from './routes/devices.js';
+import { musicRoutes } from './routes/music.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -77,6 +78,10 @@ async function main(): Promise<void> {
   await app.register(ingestRoutes, { prefix: '/api/ingest' });
   await app.register(commandRoutes, { prefix: '/api/commands' });
   await app.register(deviceRoutes, { prefix: '/api/devices' });
+
+  // Brewery speaker (Sonos / IKEA SYMFONISK) now-playing + transport control,
+  // driven over the LAN. Read is session-gated; controls are admin/local-only.
+  await app.register(musicRoutes, { prefix: '/api/music' });
 
   // Serve the built web app (apps/web/dist) in production. In dev the web app
   // is served by Vite on its own port, so this directory may not exist.

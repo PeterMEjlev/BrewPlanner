@@ -13,6 +13,7 @@ import type {
   KegContentColors,
   MetricTotal,
   NotificationSettings,
+  NowPlaying,
   Reading,
   Recipe,
   Step,
@@ -269,6 +270,17 @@ export const api = {
       body: JSON.stringify({ newPassword }),
     }),
   deleteAccount: (id: number) => request<void>(`/accounts/${id}`, { method: 'DELETE' }),
+
+  // Brewery speaker (Sonos / IKEA SYMFONISK) — now-playing + transport control,
+  // driven server-side over the LAN. The controls are admin/local-only (the
+  // kiosk on the Pi passes); a 503 means no speaker was reachable.
+  getNowPlaying: () => request<NowPlaying>('/music/now-playing'),
+  musicPlay: () => request<void>('/music/play', { method: 'POST' }),
+  musicPause: () => request<void>('/music/pause', { method: 'POST' }),
+  musicNext: () => request<void>('/music/next', { method: 'POST' }),
+  musicPrevious: () => request<void>('/music/previous', { method: 'POST' }),
+  musicSetVolume: (volume: number) =>
+    request<void>('/music/volume', { method: 'POST', body: JSON.stringify({ volume }) }),
 
   // Software update (admin-only). triggerUpdate starts a remote deploy (git pull
   // + rebuild + restart) on the Pi and returns immediately; poll getUpdateStatus

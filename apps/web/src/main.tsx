@@ -13,10 +13,10 @@ import { HistoryPage } from './pages/History';
 import { KegsPage } from './pages/Kegs';
 import { KegsDesktopPage } from './pages/KegsDesktop';
 import { KioskHomePage } from './pages/KioskHome';
+import { KioskMusicPage } from './pages/KioskMusic';
 import { KioskTodosPage } from './pages/KioskTodos';
 import { LoginPage } from './pages/Login';
 import { RecipesPage } from './pages/Recipes';
-import { SettingsPage } from './pages/Settings';
 import { SettingsDesktopPage } from './pages/SettingsDesktop';
 import { TodosPage } from './pages/Todos';
 import './index.css';
@@ -125,8 +125,8 @@ const router = createBrowserRouter([
       </RequireAuth>
     ),
   },
-  // Desktop (mouse/keyboard) settings. The kiosk keeps its touch variant at
-  // /kiosk/settings; the desktop sidebar's Settings link points here.
+  // Settings live here only (the kiosk's touch Settings page was retired — the
+  // desktop UI is richer and the kiosk now uses that slot for the speaker).
   {
     path: '/settings',
     element: (
@@ -188,12 +188,15 @@ const router = createBrowserRouter([
       </RequireAuth>
     ),
   },
+  // Brewery speaker now-playing + controls. Reached from the kiosk home (where
+  // the settings gear used to be — the kiosk Settings page was retired in favour
+  // of the richer desktop one).
   {
-    path: '/kiosk/settings',
+    path: '/kiosk/music',
     element: (
-      <RequireAuth control>
+      <RequireAuth>
         <KioskFrame>
-          <SettingsPage />
+          <KioskMusicPage />
         </KioskFrame>
       </RequireAuth>
     ),
