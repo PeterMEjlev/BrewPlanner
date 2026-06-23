@@ -281,6 +281,8 @@ export const api = {
   musicPrevious: () => request<void>('/music/previous', { method: 'POST' }),
   musicSetVolume: (volume: number) =>
     request<void>('/music/volume', { method: 'POST', body: JSON.stringify({ volume }) }),
+  musicSeek: (positionSec: number) =>
+    request<void>('/music/seek', { method: 'POST', body: JSON.stringify({ positionSec }) }),
 
   // Software update (admin-only). triggerUpdate starts a remote deploy (git pull
   // + rebuild + restart) on the Pi and returns immediately; poll getUpdateStatus

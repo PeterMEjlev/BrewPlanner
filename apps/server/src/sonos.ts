@@ -156,3 +156,8 @@ export async function previous(): Promise<void> {
 export async function setVolume(volume: number): Promise<void> {
   await withDevice((device) => device.setVolume(volume));
 }
+
+/** Seek to an absolute position (seconds) within the current track. */
+export async function seek(positionSec: number): Promise<void> {
+  await withDevice((device) => device.seek(positionSec));
+}

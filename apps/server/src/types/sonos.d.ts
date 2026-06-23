@@ -38,6 +38,7 @@ declare module 'sonos' {
     pause(): Promise<unknown>;
     next(): Promise<unknown>;
     previous(): Promise<unknown>;
+    seek(seconds: number): Promise<unknown>;
     getAllGroups(): Promise<ZoneGroup[]>;
     getZoneAttrs(): Promise<{ CurrentZoneName?: string }>;
   }

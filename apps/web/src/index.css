@@ -49,6 +49,37 @@ textarea {
   color: inherit;
 }
 
+/* Now-playing sliders (seek + volume): a thin rounded track with a white knob.
+   The green progress fill is painted per-value as an inline gradient on the
+   element (style={{ background: ... }}), so the left of the thumb reads filled
+   and the right reads empty — native accent-color can't split the track that
+   way while keeping a white thumb. */
+.media-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: #3f3f46; /* zinc-700 fallback; overridden inline with the fill */
+}
+.media-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.media-slider::-moz-range-thumb {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
 /* Prevent text selection / long-press menus on the touchscreen. */
 .touch-none-select {
   -webkit-user-select: none;

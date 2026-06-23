@@ -910,3 +910,8 @@ export interface NowPlaying {
 export const setVolumeSchema = z.object({
   volume: z.coerce.number().int().min(0).max(100),
 });
+
+/** Body for POST /api/music/seek — an absolute position within the track, in seconds. */
+export const seekSchema = z.object({
+  positionSec: z.coerce.number().int().min(0),
+});

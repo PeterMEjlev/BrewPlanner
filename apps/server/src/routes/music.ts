@@ -1,4 +1,4 @@
-import { setVolumeSchema } from '@checklist/shared';
+import { seekSchema, setVolumeSchema } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { z } from 'zod';
 import { requireAdmin, requireAuth } from '../auth/index.js';
@@ -44,6 +44,12 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(setVolumeSchema, req.body, reply);
     if (!body) return;
     return control(() => sonos.setVolume(body.volume), reply);
+  });
+
+  app.post('/seek', adminOnly, async (req, reply) => {
+    const body = parse(seekSchema, req.body, reply);
+    if (!body) return;
+    return control(() => sonos.seek(body.positionSec), reply);
   });
 }
 
