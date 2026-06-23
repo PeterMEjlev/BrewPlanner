@@ -1182,20 +1182,22 @@ function BreweryTempCard({
         <p className="mt-3 text-xs font-medium uppercase tracking-wider text-zinc-500">
           Ambient Temp
         </p>
-        <div className="mt-1 flex items-baseline gap-1.5">
-          <span className="text-2xl font-semibold tabular-nums text-zinc-50">
-            {temp ? temp.value.toFixed(1) : '—'}
-          </span>
-          <span className="text-sm font-medium text-zinc-500">°C</span>
-        </div>
-        {setpoint && (
-          <p className="mt-2 text-sm text-zinc-400">
-            Target{' '}
-            <span className="font-semibold tabular-nums text-zinc-200">
-              {setpoint.value.toFixed(1)} °C
+        <div className="mt-1 flex items-baseline gap-3">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-2xl font-semibold tabular-nums text-zinc-50">
+              {temp ? temp.value.toFixed(1) : '—'}
             </span>
-          </p>
-        )}
+            <span className="text-sm font-medium text-zinc-500">°C</span>
+          </div>
+          {setpoint && (
+            <p className="text-sm text-zinc-400">
+              Target{' '}
+              <span className="font-semibold tabular-nums text-zinc-200">
+                {setpoint.value.toFixed(1)} °C
+              </span>
+            </p>
+          )}
+        </div>
         <div className="mt-3">
           <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} />
         </div>
