@@ -87,9 +87,17 @@ sudo cp "$SCRIPT_DIR/checklist-kiosk.service" /etc/systemd/system/
 sudo systemctl daemon-reload
 
 # Ensure the transparent cursor theme exists (the kiosk unit references it via
-# XCURSOR_THEME to hide cage's static centre-screen pointer).
+# XCURSOR_THEME to hide cage's static centre-screen pointer). This is a one-time,
+# persistent system install, so the installer is a no-op once it's in place. It's
+# also purely cosmetic — it must NEVER block a code deploy — so a non-zero exit
+# (e.g. a fresh Pi where it isn't installed yet and the web updater has no sudo)
+# is logged as a warning and the deploy continues. The `if !` guard keeps `set -e`
+# from aborting here.
 echo "==> ensuring transparent cursor theme"
-bash "$SCRIPT_DIR/install-transparent-cursor.sh"
+if ! bash "$SCRIPT_DIR/install-transparent-cursor.sh"; then
+  echo "    (warning: transparent cursor theme step skipped — cosmetic only;"
+  echo "     run deploy/install-transparent-cursor.sh once during Pi setup)"
+fi
 
 echo "==> restarting services"
 sudo systemctl restart checklist-server.service

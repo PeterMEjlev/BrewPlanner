@@ -12,6 +12,30 @@ set -euo pipefail
 
 THEME_DIR=/usr/share/icons/transparent
 
+# Idempotent fast path — and the reason this no longer breaks deploys.
+#
+# This is a ONE-TIME system install that lives under /usr/share and persists
+# across rebuilds, restarts and reboots. The web "Update" button runs the whole
+# deploy as the non-root `brewplanner` user with NO TTY, so any `sudo` below
+# would need a password it can't supply and the deploy would abort. Once the
+# theme exists we therefore do nothing at all — crucially invoking no `sudo` —
+# so the cosmetic cursor step can never again fail a code update.
+if [ -f "$THEME_DIR/index.theme" ] && [ -f "$THEME_DIR/cursors/left_ptr" ]; then
+  echo "Transparent cursor theme already present at $THEME_DIR — nothing to do."
+  exit 0
+fi
+
+# A fresh install genuinely needs root. If we have no terminal to prompt on AND
+# no passwordless sudo (i.e. we're inside the web updater), bail out with a clear
+# message instead of the cryptic "sudo: a terminal is required…". This is a
+# provisioning step: run this script once interactively during Pi setup. The
+# caller (update.sh) treats a non-zero exit here as a non-fatal warning.
+if [ ! -t 0 ] && ! sudo -n true 2>/dev/null; then
+  echo "Transparent cursor theme not installed yet, and no TTY / passwordless sudo" >&2
+  echo "to install it now. Run once during setup:  bash $0" >&2
+  exit 1
+fi
+
 sudo mkdir -p "$THEME_DIR/cursors"
 printf '[Icon Theme]\nName=transparent\n' | sudo tee "$THEME_DIR/index.theme" >/dev/null
 
