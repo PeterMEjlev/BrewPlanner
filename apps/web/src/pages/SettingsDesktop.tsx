@@ -112,10 +112,27 @@ export function SettingsDesktopPage(): JSX.Element {
 
         <div className="grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
           <aside className="lg:sticky lg:top-6 lg:self-start">
+            {/* Phones get a compact dropdown — the horizontal button rail below
+                is too wide to scroll comfortably on a narrow screen. */}
+            <label className="block sm:hidden">
+              <span className="sr-only">Settings category</span>
+              <select
+                value={activeCategory}
+                onChange={(e) => setActiveCategory(e.target.value as SettingsCategoryId)}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 outline-none transition focus:border-blue-500"
+              >
+                {SETTINGS_CATEGORIES.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <nav
               aria-label="Settings categories"
               role="tablist"
-              className="flex gap-2 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900 p-2 lg:flex-col lg:overflow-visible"
+              className="hidden gap-2 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900 p-2 sm:flex lg:flex-col lg:overflow-visible"
             >
               {SETTINGS_CATEGORIES.map((category) => {
                 const selected = category.id === activeCategory;
@@ -235,12 +252,12 @@ function Row({
   children: React.ReactNode;
 }): JSX.Element {
   return (
-    <div className="flex items-center justify-between gap-4 py-2">
+    <div className="flex flex-col items-start gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0">
         <div className="text-sm font-medium text-zinc-200">{label}</div>
         {hint && <div className="text-xs text-zinc-500">{hint}</div>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="max-w-full shrink-0">{children}</div>
     </div>
   );
 }

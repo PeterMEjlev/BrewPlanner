@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
@@ -55,9 +55,10 @@ const NAV: NavItem[] = [
 ];
 
 /**
- * The four destinations that get their own tab in the phone bottom bar; the rest
- * fold into a "More" sheet. These mirror the top of the desktop sidebar, the
- * spots a brewer reaches for most when glancing at their phone.
+ * The destinations shown first in the phone bottom bar — the spots a brewer
+ * reaches for most when glancing at their phone, and what's visible before any
+ * horizontal scrolling. The rest of the nav follows them in the same scrollable
+ * strip; only the account/last-update footer lives behind "More".
  */
 const BOTTOM_BAR_PAGES: ShellPage[] = ['overview', 'kegs', 'alerts', 'devices'];
 
@@ -449,14 +450,22 @@ function BottomNav({
   const { auth, refresh } = useAuth();
   const [moreOpen, setMoreOpen] = useState(false);
   const nav = visibleNav(canControl(auth));
+  const scrollRef = useRef<HTMLElement>(null);
 
-  const tabs = BOTTOM_BAR_PAGES.map((page) => nav.find((item) => item.page === page)).filter(
+  // The primary four lead the strip; the remaining destinations follow in the
+  // same row and become reachable by swiping the bar sideways.
+  const primary = BOTTOM_BAR_PAGES.map((page) => nav.find((item) => item.page === page)).filter(
     (item): item is NavItem => item != null,
   );
-  const moreItems = nav.filter((item) => !BOTTOM_BAR_PAGES.includes(item.page));
-  // Highlight "More" while one of its pages is open, so the active section is
-  // never left without a lit tab.
-  const moreActive = moreItems.some((item) => item.page === active);
+  const tabs = [...primary, ...nav.filter((item) => !BOTTOM_BAR_PAGES.includes(item.page))];
+
+  // Keep the lit tab on screen: when the active page changes, slide it into the
+  // visible part of the scroll strip (e.g. opening Settings from elsewhere).
+  useEffect(() => {
+    scrollRef.current
+      ?.querySelector('[data-active="true"]')
+      ?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }, [active]);
 
   // A tab navigation should dismiss the sheet; so should leaving for `md`+.
   useEffect(() => {
@@ -494,15 +503,7 @@ function BottomNav({
             </button>
           </div>
 
-          <nav className="space-y-1 px-3 pb-2">
-            {moreItems.map((item) => (
-              <Link key={item.key} to={item.to} className="block" onClick={() => setMoreOpen(false)}>
-                <NavRow Icon={item.Icon} label={item.label} active={item.page === active} />
-              </Link>
-            ))}
-          </nav>
-
-          <div className="space-y-3 border-t border-zinc-800 px-5 py-4 text-sm">
+          <div className="space-y-3 px-5 py-4 text-sm">
             <div className="flex items-center gap-2 text-zinc-500">
               <ClockIcon className="h-4 w-4" />
               <div className="leading-tight">
@@ -530,24 +531,37 @@ function BottomNav({
         </div>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+      <nav
+        ref={scrollRef}
+        className="fixed inset-x-0 bottom-0 z-30 flex snap-x overflow-x-auto overscroll-x-contain border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur [-ms-overflow-style:none] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden"
+      >
         {tabs.map((item) => {
           const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
           const dot = item.key === 'devices' && fleet ? fleetDotColor(fleet) : undefined;
+          const isActive = item.page === active;
           return (
-            <Link key={item.key} to={item.to} className="min-w-0 flex-1">
+            <Link
+              key={item.key}
+              to={item.to}
+              data-active={isActive}
+              className="w-[4.5rem] shrink-0 snap-start"
+            >
               <BottomTab
                 Icon={item.Icon}
                 label={item.label}
-                active={item.page === active}
+                active={isActive}
                 badge={badge}
                 dot={dot}
               />
             </Link>
           );
         })}
-        <button type="button" onClick={() => setMoreOpen((v) => !v)} className="min-w-0 flex-1">
-          <BottomTab Icon={MoreIcon} label="More" active={moreActive || moreOpen} />
+        <button
+          type="button"
+          onClick={() => setMoreOpen((v) => !v)}
+          className="w-[4.5rem] shrink-0 snap-start"
+        >
+          <BottomTab Icon={MoreIcon} label="More" active={moreOpen} />
         </button>
       </nav>
     </>

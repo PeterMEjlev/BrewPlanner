@@ -152,7 +152,7 @@ export function SetpointControl({
       <div className={shellClass}>
         <div
           className={`flex items-center ${
-            header ? 'gap-3' : inline ? 'justify-between gap-3' : 'flex-wrap justify-between gap-3'
+            header ? 'gap-3' : inline ? 'flex-wrap justify-between gap-x-3 gap-y-2' : 'flex-wrap justify-between gap-3'
           }`}
         >
           <div className={header ? 'min-w-[5.75rem]' : undefined}>
@@ -190,7 +190,7 @@ export function SetpointControl({
     <div className={shellClass}>
       <div
         className={`flex items-center ${
-          header ? 'gap-3' : inline ? 'justify-between gap-3' : 'flex-wrap justify-between gap-3'
+          header ? 'gap-3' : inline ? 'flex-wrap justify-between gap-x-3 gap-y-2' : 'flex-wrap justify-between gap-3'
         }`}
       >
         <div className={header ? 'min-w-[5.75rem]' : undefined}>

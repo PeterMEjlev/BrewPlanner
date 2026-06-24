@@ -625,7 +625,7 @@ function FermenterCommandCenter({
           </div>
         </div>
         {controller && !controllerOffline && (
-          <div className="min-w-0 flex-1">
+          <div className="order-last w-full min-w-0 lg:order-none lg:w-auto lg:flex-1">
             <SetpointControl
               deviceId={controller.id}
               setpointC={setpoint?.reading.value ?? null}
