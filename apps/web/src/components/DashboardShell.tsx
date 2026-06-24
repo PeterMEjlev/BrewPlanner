@@ -268,6 +268,7 @@ function useArrowPageNav(active: ShellPage): void {
       if (current === -1) return;
       const delta = e.key === 'ArrowDown' ? 1 : -1;
       const next = items[(current + delta + items.length) % items.length];
+      if (!next) return;
       e.preventDefault();
       navigate(next.to);
     };
