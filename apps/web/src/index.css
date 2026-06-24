@@ -8,6 +8,14 @@ body,
   height: 100%;
 }
 
+/* Kiosk app: never let a horizontal overscroll/drag trigger Chromium's built-in
+   swipe-to-go-back / swipe-forward history gesture (it would yank you off the
+   page mid-slider-drag). */
+html,
+body {
+  overscroll-behavior-x: none;
+}
+
 html {
   /* Dark-only app: render native controls (inputs, scrollbars, date pickers)
      with dark defaults and avoid a white flash before React mounts. */

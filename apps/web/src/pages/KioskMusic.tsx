@@ -57,7 +57,14 @@ export function KioskMusicPage(): JSX.Element {
       const data = await api.getNowPlaying();
       setNow(data);
       if (!draggingVolume.current) setVolume(data.volume);
-      if (!draggingSeek.current) setPosition(data.positionSec ?? 0);
+      if (!draggingSeek.current) {
+        const pos = data.positionSec ?? 0;
+        // While paused, Sonos transiently reports position 0 during the
+        // play→pause transition. Position can't change while paused (seeks are
+        // applied locally), so keep the last known value instead of snapping to
+        // 0 and back.
+        setPosition((prev) => (data.state !== 'playing' && pos === 0 && prev > 0 ? prev : pos));
+      }
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Speaker unavailable');
@@ -194,7 +201,7 @@ export function KioskMusicPage(): JSX.Element {
                 max={duration ?? 0}
                 value={Math.min(position, duration ?? 0)}
                 aria-label="Seek"
-                className="media-slider w-full cursor-pointer touch-manipulation"
+                className="media-slider w-full cursor-pointer touch-none"
                 style={fillStyle(seekPct)}
                 onChange={(e) => {
                   draggingSeek.current = true;
@@ -242,7 +249,7 @@ export function KioskMusicPage(): JSX.Element {
           max={100}
           value={volume}
           aria-label="Volume"
-          className="media-slider w-full cursor-pointer touch-manipulation"
+          className="media-slider w-full cursor-pointer touch-none"
           style={fillStyle(volume)}
           onChange={(e) => {
             draggingVolume.current = true;

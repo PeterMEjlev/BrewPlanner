@@ -21,8 +21,7 @@
      then `sudo systemctl restart checklist-server.service`.
   5. (Optional, recommended) Add a shared-secret check inside
      [keg-updater.gs](apps/server/google-apps-script/keg-updater.gs) so the URL
-     alone isn't a capability — require a secret field in the POST body and have
-     the server send it from another env var.
+     alone isn't a capability — require a secret field in the POST body and have the server send it from another env var.
 
   ### B. Stop tracking the live database and move it out of the repo tree
   `data/checklist.sqlite` is git-tracked. On the Pi that path is the **live** DB
