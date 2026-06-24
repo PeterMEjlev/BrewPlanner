@@ -140,6 +140,10 @@ few seconds while the server restarts, then confirms the new version.
 > gated to admins behind the tunnel login (add Cloudflare Access for a second
 > factor), but treat that login like SSH access.
 
+> Want a full shell on the Pi from anywhere (not just deploys)? You can add
+> browser-rendered SSH to this same tunnel, gated by Cloudflare Access — see
+> [README-ssh.md](README-ssh.md).
+
 ## Hardening (optional but recommended)
 
 - **Cloudflare Access** — put an extra identity layer (email one-time PIN,

@@ -1,8 +1,9 @@
 import type { Alert, AlertSeverity, AlertSource } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
-import { BellIcon } from '../components/icons';
+import { BellIcon, CloseIcon } from '../components/icons';
 import { relativeTime } from './Dashboard';
 
 const POLL_MS = 15000;
@@ -53,6 +54,8 @@ function isActive(a: Alert): boolean {
 export function AlertsPage(): JSX.Element {
   const [alerts, setAlerts] = useState<Alert[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { auth } = useAuth();
+  const controllable = canControl(auth);
 
   const load = useCallback(async () => {
     try {
@@ -62,6 +65,25 @@ export function AlertsPage(): JSX.Element {
       setError(e instanceof Error ? e.message : 'Failed to load alerts');
     }
   }, []);
+
+  /**
+   * Dismiss an alert for good. We drop it optimistically — the server omits
+   * dismissed alerts from every listing, so this matches what the next poll
+   * would return — and only refetch to restore the true list if the call fails.
+   */
+  const dismiss = useCallback(
+    async (id: number) => {
+      setAlerts((prev) => prev?.filter((a) => a.id !== id) ?? prev);
+      try {
+        await api.dismissAlert(id);
+        setError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to dismiss alert');
+        void load();
+      }
+    },
+    [load],
+  );
 
   useEffect(() => {
     void load();
@@ -116,7 +138,7 @@ export function AlertsPage(): JSX.Element {
         ) : (
           <ul className="space-y-2.5">
             {list.map((a) => (
-              <AlertRow key={a.id} alert={a} />
+              <AlertRow key={a.id} alert={a} onDismiss={controllable ? dismiss : undefined} />
             ))}
           </ul>
         )}
@@ -125,7 +147,14 @@ export function AlertsPage(): JSX.Element {
   );
 }
 
-function AlertRow({ alert }: { alert: Alert }): JSX.Element {
+function AlertRow({
+  alert,
+  onDismiss,
+}: {
+  alert: Alert;
+  /** Provided only for sessions that may control the hub; absent ⇒ no button. */
+  onDismiss?: (id: number) => void;
+}): JSX.Element {
   const look = SEVERITY[alert.severity];
   const active = isActive(alert);
   return (
@@ -138,7 +167,20 @@ function AlertRow({ alert }: { alert: Alert }): JSX.Element {
           </p>
           <p className="mt-1 text-sm text-zinc-400">{alert.detail}</p>
         </div>
-        <StatusPill active={active} resolved={alert.source === 'device_offline' && !active} />
+        <div className="flex shrink-0 items-center gap-2">
+          <StatusPill active={active} resolved={alert.source === 'device_offline' && !active} />
+          {onDismiss && (
+            <button
+              type="button"
+              onClick={() => onDismiss(alert.id)}
+              aria-label="Dismiss alert"
+              title="Dismiss"
+              className="rounded-lg p-1 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"
+            >
+              <CloseIcon className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
         <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 font-medium text-zinc-400">

@@ -15,5 +15,12 @@ ingress:
   # Public hostname → the local BrewPlanner server.
   - hostname: brew.example.com
     service: http://localhost:3000
+  # Optional: browser-rendered SSH to the Pi for remote admin (see README-ssh.md).
+  # This is a SHELL on the Pi, so it MUST sit behind a Cloudflare Access
+  # application with "Browser rendering = SSH" — the tunnel alone does not
+  # authenticate it. The Pi's sshd must be running (`sudo systemctl enable --now
+  # ssh`). Remove this rule to turn remote SSH off entirely.
+  - hostname: ssh.example.com
+    service: ssh://localhost:22
   # Required catch-all: anything else gets a 404.
   - service: http_status:404
