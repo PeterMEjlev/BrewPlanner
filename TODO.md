@@ -83,9 +83,7 @@
 
 - ## Test SOnos integration on Kiosk
 
- - ## Update failed.
-Version on the Pi: 90ea7d3
 
-Could not start the update. Check the server logs and the Pi setup.
+- ## Water profile calculator
 
-Could not start brewplanner-update.service. Is the unit installed and the sudoers rule in place? (Command failed: sudo -n systemctl start --no-block brewplanner-update.service sudo: a password is required ) 
+- ## Make sure the brewsystem actually uses the updated settings (especially for auto efficiency control) after theyre updated (in the same session).. currently it appears a reboot is needed for the setting change to take effect? Also make auto efficiency control adjustable per pot and not global for both

@@ -7,8 +7,9 @@ Wants=network-online.target
 Type=simple
 User=brewplanner
 WorkingDirectory=/home/brewplanner/checklist
-# Path to the SQLite database. Lives outside the build dir so updates don't wipe data.
-Environment=DATABASE_PATH=/home/brewplanner/checklist/data/checklist.sqlite
+# Path to the SQLite database. Lives OUTSIDE the git checkout (~/checklist) so a
+# git pull / rebuild during deploy can never touch, delete, or revert the live DB.
+Environment=DATABASE_PATH=/home/brewplanner/data/checklist.sqlite
 Environment=PORT=3000
 Environment=HOST=0.0.0.0
 # Production mode: mark session cookies Secure (they only travel over the HTTPS

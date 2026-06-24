@@ -1688,7 +1688,7 @@ interface StateLook {
   cls: string;
 }
 
-function stateLook(value: number, size: 'sm' | 'lg'): StateLook {
+function stateLook(value: number, size: 'sm' | 'lg' = 'sm'): StateLook {
   if (value <= -0.5)
     return { label: 'Cooling', icon: '❄️', cls: 'bg-sky-500/15 text-sky-300 ring-sky-500/40' };
   if (value >= 0.5)
