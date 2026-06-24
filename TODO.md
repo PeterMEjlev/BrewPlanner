@@ -84,11 +84,5 @@
 
 - ## Test SOnos integration on Kiosk
 
- - ## Update failed.
-Version on the Pi: 90ea7d3
-
-Could not start the update. Check the server logs and the Pi setup.
-
-Could not start brewplanner-update.service. Is the unit installed and the sudoers rule in place? (Command failed: sudo -n systemctl start --no-block brewplanner-update.service sudo: a password is required ) 
 
 - ## Water profile calculator
