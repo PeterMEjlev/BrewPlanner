@@ -11,8 +11,9 @@ Type=oneshot
 User=brewplanner
 WorkingDirectory=/home/brewplanner/checklist
 # Match the server's DB location so `npm run db:migrate` hits the real database
-# and the status/log files land in the same data dir the server reads.
-Environment=DATABASE_PATH=/home/brewplanner/checklist/data/checklist.sqlite
+# and the status/log files land in the same data dir the server reads. Must stay
+# in sync with checklist-server.service (the DB lives outside the checkout).
+Environment=DATABASE_PATH=/home/brewplanner/data/checklist.sqlite
 # Optional overrides/secrets, same file the server uses ("-" = ok if absent).
 EnvironmentFile=-/etc/brewplanner.env
 ExecStart=/home/brewplanner/checklist/deploy/update.sh
