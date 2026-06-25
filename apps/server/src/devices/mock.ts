@@ -2,6 +2,25 @@ import type { Device, DeviceStatus, DeviceType, LatestReading, Reading } from '@
 
 const MOCK_ID_BASE = 900_000;
 const MOCK_DEVICE_AGE_DAYS = 21;
+/** Stand-in push cadence for synthesized devices, matching the real ~30s agents. */
+const MOCK_PUSH_INTERVAL_SEC = 30;
+/** First three octets of the brewery LAN the mock satellites pretend to sit on. */
+const MOCK_LAN_PREFIX = '192.168.0';
+
+/** A stable, collision-free LAN address for a mock device, derived from its id. */
+function mockIp(profile: MockProfile): string {
+  return `${MOCK_LAN_PREFIX}.${100 + profile.id}`;
+}
+
+/**
+ * A believable lifetime reading count for a mock device: ~30s pushes over its
+ * age, one row per metric. Lets the Devices page show a non-zero "data points"
+ * figure that's proportional to how chatty the sensor is.
+ */
+function mockReadingCount(profile: MockProfile): number {
+  const pushesPerDay = (24 * 60 * 60) / MOCK_PUSH_INTERVAL_SEC;
+  return Math.round(pushesPerDay * MOCK_DEVICE_AGE_DAYS * Object.keys(profile.base).length);
+}
 
 export interface MockProfile {
   id: number;
@@ -172,8 +191,11 @@ export function mockStatus(
       overrides.createdAt ??
       new Date(now.getTime() - MOCK_DEVICE_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString(),
     lastSeenAt: nowIso,
+    lastIp: mockIp(profile),
     online: true,
     latest: latestReadings(profile, id, nowIso),
+    reportingIntervalSec: MOCK_PUSH_INTERVAL_SEC,
+    readingCount: mockReadingCount(profile),
     pendingSetpointC: resolvePendingSetpoint(id),
   };
 }

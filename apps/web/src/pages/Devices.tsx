@@ -1,17 +1,9 @@
-import type { DeviceStatus, DeviceType, LatestReading } from '@checklist/shared';
+import type { DeviceStatus, DeviceType } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { DashboardShell } from '../components/DashboardShell';
-import { cumulativeMetricOf, useDeviceTotal } from '../useDeviceData';
-import {
-  StateBadge,
-  formatValue,
-  formatValueParts,
-  isStateMetric,
-  metricLabel,
-  relativeTime,
-} from './Dashboard';
+import { metricLabel, relativeTime } from './Dashboard';
 
 const POLL_MS = 10000;
 
@@ -69,6 +61,24 @@ function formatRegistered(createdAt: string): string {
     month: 'short',
     year: 'numeric',
   });
+}
+
+/** Full local timestamp for the `title` tooltip on a relative time, e.g. last fetch. */
+function formatAbsolute(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** A push cadence as "every 30s" / "every 5m" / "every 2h", or "—" when unknown. */
+function formatInterval(sec: number | null | undefined): string {
+  if (sec == null) return '—';
+  if (sec < 90) return `every ${sec}s`;
+  if (sec < 3600) return `every ${Math.round(sec / 60)}m`;
+  return `every ${Math.round(sec / 3600)}h`;
+}
+
+/** A reading count with thousands separators, or "—" when not reported. */
+function formatCount(n: number | null | undefined): string {
+  return n == null ? '—' : n.toLocaleString();
 }
 
 /** A flat list of every registered device, linking to each detail/chart page. */
@@ -146,8 +156,7 @@ export function DevicesPage(): JSX.Element {
 }
 
 function DeviceCard({ device }: { device: DeviceStatus }): JSX.Element {
-  const totalMetric = cumulativeMetricOf(device);
-  const total = useDeviceTotal(device.id, totalMetric);
+  const model = DEVICE_MODEL[device.type];
 
   return (
     <Link
@@ -173,63 +182,59 @@ function DeviceCard({ device }: { device: DeviceStatus }): JSX.Element {
         <StatusBadge online={device.online} />
       </div>
 
-      {device.latest.length > 0 ? (
-        <div className="mt-4 grid flex-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+      <dl className="mt-4 grid flex-1 grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+        <InfoRow label="IP address" value={device.lastIp ?? '—'} mono />
+        <InfoRow label="Protocol" value={model.connectivity} />
+        <InfoRow
+          label="Last fetch"
+          value={device.lastSeenAt ? relativeTime(device.lastSeenAt) : 'Never'}
+          title={device.lastSeenAt ? formatAbsolute(device.lastSeenAt) : undefined}
+        />
+        <InfoRow label="Interval" value={formatInterval(device.reportingIntervalSec)} />
+        <InfoRow label="Data points" value={formatCount(device.readingCount)} />
+        <InfoRow
+          label="Reporting"
+          value={device.latest.length > 0 ? `${device.latest.length} metric${device.latest.length === 1 ? '' : 's'}` : 'None'}
+        />
+      </dl>
+
+      {device.latest.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
           {device.latest.map((r) => (
-            <MetricReading key={r.metric} reading={r} />
+            <Chip key={r.metric} label={metricLabel(r.metric)} />
           ))}
         </div>
-      ) : (
-        <p className="mt-4 flex-1 text-sm text-zinc-500">
-          {device.online ? 'No readings yet.' : 'No device connected.'}
-        </p>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <Chip label={DEVICE_MODEL[device.type].connectivity} accent />
-        {device.latest.map((r) => (
-          <Chip key={r.metric} label={metricLabel(r.metric)} />
-        ))}
-      </div>
-
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-zinc-800 pt-2.5 text-xs text-zinc-500">
-        <span>{device.lastSeenAt ? `Updated ${relativeTime(device.lastSeenAt)}` : 'Never reported'}</span>
         <span className="text-zinc-600">ID {device.id}</span>
         <span>Registered {formatRegistered(device.createdAt)}</span>
-        {totalMetric && total != null && (
-          <span className="ml-auto">
-            All-time{' '}
-            <span className="font-semibold tabular-nums text-zinc-300">
-              {formatValue({ metric: totalMetric, value: total, recordedAt: '' })}
-            </span>
-          </span>
-        )}
       </div>
     </Link>
   );
 }
 
-function MetricReading({ reading }: { reading: LatestReading }): JSX.Element {
-  if (isStateMetric(reading.metric)) {
-    return (
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">
-          {metricLabel(reading.metric)}
-        </p>
-        <StateBadge value={reading.value} />
-      </div>
-    );
-  }
-  const { value, unit } = formatValueParts(reading);
+/** One label/value pair in a device card's info grid. */
+function InfoRow({
+  label,
+  value,
+  mono = false,
+  title,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  title?: string;
+}): JSX.Element {
   return (
-    <div>
-      <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-        {metricLabel(reading.metric)}
-      </p>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <span className="text-2xl font-semibold tracking-tight tabular-nums text-zinc-50">{value}</span>
-        {unit && <span className="text-sm font-medium text-zinc-500">{unit}</span>}
-      </div>
+    <div className="flex items-baseline justify-between gap-2 border-b border-zinc-800/60 py-0.5">
+      <dt className="text-xs font-medium uppercase tracking-wider text-zinc-500">{label}</dt>
+      <dd
+        className={`truncate text-right text-sm text-zinc-200 ${mono ? 'font-mono tabular-nums' : ''}`}
+        title={title ?? value}
+      >
+        {value}
+      </dd>
     </div>
   );
 }

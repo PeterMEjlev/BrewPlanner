@@ -39,8 +39,11 @@ function placeholderStatus(profile: mock.MockProfile): DeviceStatus {
     type: profile.type,
     createdAt: new Date().toISOString(),
     lastSeenAt: null,
+    lastIp: null,
     online: false,
     latest: [],
+    reportingIntervalSec: null,
+    readingCount: 0,
     pendingSetpointC: null,
   };
 }

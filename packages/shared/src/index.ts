@@ -161,6 +161,13 @@ export interface Device {
   type: DeviceType;
   /** ISO timestamp of the last accepted push, or null if never seen. */
   lastSeenAt: string | null;
+  /**
+   * The client IP that sent the device's most recent push, or null if never
+   * seen. Satellites push to the hub directly over the LAN, so this is the
+   * device's local address (e.g. `192.168.0.42`) — useful for SSHing in or
+   * spotting a sensor that moved networks. Captured server-side on each push.
+   */
+  lastIp: string | null;
   createdAt: string;
 }
 
@@ -200,6 +207,19 @@ export interface MetricTotal {
 export interface DeviceStatus extends Device {
   online: boolean;
   latest: LatestReading[];
+  /**
+   * Typical seconds between this device's pushes, derived from the gap between
+   * its two most recent readings. Null until it has reported at least twice.
+   * Lets the Devices page show a "reports every ~30s" cadence without the human
+   * having to eyeball the chart.
+   */
+  reportingIntervalSec?: number | null;
+  /**
+   * How many readings this device has logged over its whole lifetime (all
+   * metrics). A coarse "is data actually flowing / how much have we stored"
+   * signal for the Devices page; absent when not computed.
+   */
+  readingCount?: number;
   /**
    * A target setpoint the operator has requested but the controller hasn't yet
    * confirmed — i.e. there's a pending `set_setpoint` command waiting for the

@@ -23,37 +23,7 @@
      [keg-updater.gs](apps/server/google-apps-script/keg-updater.gs) so the URL
      alone isn't a capability — require a secret field in the POST body and have the server send it from another env var.
 
-  ### B. Stop tracking the live database and move it out of the repo tree
-  `data/checklist.sqlite` is git-tracked. On the Pi that path is the **live** DB
-  (`DATABASE_PATH` in checklist-server.service), holding the admin password hash
-  and device API-key hashes. The committed copy is currently an old empty one, but
-  any future `git add`/commit on the Pi would push those hashes to the public repo
-  — and a stray `git reset --hard` / `git checkout -- .` would **wipe your live DB
-  and lock you out**. Fix it on the Pi, in this order:
 
-  ```bash
-  cd /home/brewplanner/checklist
-  sudo systemctl stop checklist-server.service          # quiesce the DB
-
-  # Move the live DB (and any WAL/SHM sidecars) out of the repo tree
-  sudo mkdir -p /var/lib/brewplanner
-  sudo mv data/checklist.sqlite* /var/lib/brewplanner/ 2>/dev/null
-  sudo chown -R brewplanner:brewplanner /var/lib/brewplanner
-
-  # Point the server at the new path (survives git pulls + rebuilds)
-  sudo nano /etc/brewplanner.env                        # add:
-  #   DATABASE_PATH=/var/lib/brewplanner/checklist.sqlite
-
-  # Untrack the old path so it can never be committed again
-  git rm --cached data/checklist.sqlite
-  git commit -m "Stop tracking the live SQLite database"
-  git push
-
-  sudo systemctl restart checklist-server.service
-  ```
-  After this, confirm the dashboard still shows your data (it's now reading from
-  `/var/lib/brewplanner`). `.gitignore` already ignores `*.sqlite`, so the new
-  path won't be re-added.
 
 - ## Add support for
   - Electricity (Watt) usage
@@ -77,12 +47,11 @@
 - ## Incorporate the readings from the TILT hydrometer to log to brewersfriend. "The Tilt wireless hydrometer operates on bluetooth. Log readings from the phone app or using a Raspberry pi with this Cloud URL. Turn on Tilt integration in your brew session under the Fermentation tab to start collecting temperature and gravity readings. 
   Cloud URL: https://log.brewersfriend.com/tilt/5a2c07e701f38d2c83ff2289df53f598c927129f" 
 
+
+
 - ## Implement Brew System control. 
 
 - ## Apparent attenuation & ABV live tracker — compute OG→current % attenuation and estimated ABV from Tilt readings; show projected final ABV.
-
-- ## Test SOnos integration on Kiosk
-
 
 - ## Water profile calculator
 

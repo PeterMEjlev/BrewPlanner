@@ -117,6 +117,8 @@ export const devices = sqliteTable('devices', {
   type: text('type').notNull().default('other'),
   apiKeyHash: text('api_key_hash').notNull().unique(),
   lastSeenAt: text('last_seen_at'),
+  /** Client IP of the most recent push (the device's LAN address). Null until first seen. */
+  lastIp: text('last_ip'),
   createdAt: text('created_at')
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

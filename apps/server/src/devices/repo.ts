@@ -45,6 +45,7 @@ function toPublic(row: typeof devices.$inferSelect): Device {
     name: row.name,
     type: row.type as DeviceType,
     lastSeenAt: row.lastSeenAt,
+    lastIp: row.lastIp,
     createdAt: row.createdAt,
   };
 }
@@ -75,9 +76,16 @@ export function deviceByKey(key: string): Device | null {
   return row ? toPublic(row) : null;
 }
 
-/** Stamp the heartbeat. Called on every accepted push. */
-export function touchLastSeen(id: number): void {
-  db.update(devices).set({ lastSeenAt: nowIso() }).where(eq(devices.id, id)).run();
+/**
+ * Stamp the heartbeat. Called on every accepted push. When the caller knows the
+ * client IP (the ingestion guard passes `req.ip`), it's recorded too so the
+ * Devices page can show where each satellite is reaching the hub from. A missing
+ * IP leaves the stored value untouched rather than nulling a known address.
+ */
+export function touchLastSeen(id: number, ip?: string | null): void {
+  const patch: { lastSeenAt: string; lastIp?: string } = { lastSeenAt: nowIso() };
+  if (ip) patch.lastIp = ip;
+  db.update(devices).set(patch).where(eq(devices.id, id)).run();
 }
 
 export function getDevice(id: number): Device | null {
@@ -155,25 +163,60 @@ function isOnline(lastSeenAt: string | null): boolean {
   return Date.now() - Date.parse(lastSeenAt) <= ONLINE_WINDOW_MS;
 }
 
+/** Total number of readings a device has logged across every metric, all time. */
+function readingCount(deviceId: number): number {
+  const row = db
+    .select({ n: sql<number>`count(*)` })
+    .from(readings)
+    .where(eq(readings.deviceId, deviceId))
+    .get();
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Seconds between a device's two most recent pushes, as a stand-in for its
+ * reporting cadence. Uses the gap of the last two rows of one metric (so it
+ * rides the (device, metric, time) index); null when the device hasn't reported
+ * that metric at least twice. `metric` is the device's first known metric —
+ * every push carries it, so consecutive rows mark consecutive heartbeats.
+ */
+function reportingIntervalSec(deviceId: number, metric: string | undefined): number | null {
+  if (!metric) return null;
+  const rows = db
+    .select({ recordedAt: readings.recordedAt })
+    .from(readings)
+    .where(and(eq(readings.deviceId, deviceId), eq(readings.metric, metric)))
+    .orderBy(desc(readings.recordedAt))
+    .limit(2)
+    .all();
+  if (rows.length < 2) return null;
+  const gapMs = Date.parse(rows[0]!.recordedAt) - Date.parse(rows[1]!.recordedAt);
+  if (!Number.isFinite(gapMs) || gapMs <= 0) return null;
+  return Math.round(gapMs / 1000);
+}
+
+/** Enrich a real device row with the live/derived fields the dashboards need. */
+function enrich(device: Device): DeviceStatus {
+  const latest = latestPerMetric(device.id);
+  return {
+    ...device,
+    online: isOnline(device.lastSeenAt),
+    latest,
+    reportingIntervalSec: reportingIntervalSec(device.id, latest[0]?.metric),
+    readingCount: readingCount(device.id),
+    pendingSetpointC: pendingSetpoint(device.id),
+  };
+}
+
 /** Devices enriched with online state + latest value per metric (dashboard). */
 export function listDeviceStatus(): DeviceStatus[] {
-  return listDevices().map((d) => ({
-    ...d,
-    online: isOnline(d.lastSeenAt),
-    latest: latestPerMetric(d.id),
-    pendingSetpointC: pendingSetpoint(d.id),
-  }));
+  return listDevices().map(enrich);
 }
 
 export function getDeviceStatus(id: number): DeviceStatus | null {
   const device = getDevice(id);
   if (!device) return null;
-  return {
-    ...device,
-    online: isOnline(device.lastSeenAt),
-    latest: latestPerMetric(id),
-    pendingSetpointC: pendingSetpoint(id),
-  };
+  return enrich(device);
 }
 
 /**

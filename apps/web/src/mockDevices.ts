@@ -202,6 +202,7 @@ function toStatus(d: MockDevice): DeviceStatus {
     // Created a few weeks ago; last seen "just now" so it reads as online.
     createdAt: new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000).toISOString(),
     lastSeenAt: nowIso,
+    lastIp: null,
     online: true,
     latest: latestReadings(d, nowIso),
     pendingSetpointC: resolvePendingSetpoint(d.id),
