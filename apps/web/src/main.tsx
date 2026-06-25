@@ -19,6 +19,7 @@ import { LoginPage } from './pages/Login';
 import { RecipesPage } from './pages/Recipes';
 import { SettingsDesktopPage } from './pages/SettingsDesktop';
 import { TodosPage } from './pages/Todos';
+import { WaterCalculatorPage } from './pages/WaterCalculator';
 import './index.css';
 
 // The physical Pi kiosk launches Chromium with ?kiosk=1 (see
@@ -112,6 +113,16 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth control>
         <BrewSystemPage />
+      </RequireAuth>
+    ),
+  },
+  // Brewing-water salt calculator. Client-side only (no mutations), so any
+  // signed-in user — including a read-only guest — can use it.
+  {
+    path: '/water',
+    element: (
+      <RequireAuth>
+        <WaterCalculatorPage />
       </RequireAuth>
     ),
   },
