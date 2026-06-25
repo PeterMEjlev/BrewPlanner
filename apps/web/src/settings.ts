@@ -17,8 +17,6 @@ export interface Settings {
   fermentStableDays: number;
   /** Max SG spread over that window still counted as "flat". */
   fermentThresholdSg: number;
-  /** How often (seconds) the desktop dashboard re-polls device status. */
-  dashboardRefreshSec: number;
   /**
    * User zoom multiplier for the desktop Overview. 1 keeps the previous
    * auto-fit-only behaviour; below 1 shrinks everything, above 1 enlarges it
@@ -37,24 +35,21 @@ export interface Settings {
 }
 
 /**
- * Defaults match the kiosk's previous hardcoded behaviour: pressure shown in PSI,
- * the classic "flat for ~2 days within 0.002 SG" fermentation check, and the 10s
- * dashboard poll that was previously hardcoded.
+ * Defaults match the kiosk's previous hardcoded behaviour: pressure shown in PSI
+ * and the classic "flat for ~2 days within 0.002 SG" fermentation check. (The
+ * dashboard poll cadence is no longer a single setting — it follows each
+ * device's own logging interval; see the Devices page.)
  */
 export const DEFAULT_SETTINGS: Settings = {
   pressureUnit: 'psi',
   fermentStableDays: 2,
   fermentThresholdSg: 0.002,
-  dashboardRefreshSec: 10,
   dashboardZoom: 1,
   // ~2 months / ~6 months — the points at which a stored keg looks worth
   // watching, then likely past its best.
   kegWarnDays: 60,
   kegOldDays: 180,
 };
-
-/** Selectable dashboard refresh cadences, in seconds (desktop Settings page). */
-export const REFRESH_SEC_OPTIONS = [5, 10, 30, 60] as const;
 
 // Tuning bounds + step sizes, shared by the steppers so clamping and the UI
 // agree. Days move in half-day clicks (1–7 days); the SG threshold in 0.001

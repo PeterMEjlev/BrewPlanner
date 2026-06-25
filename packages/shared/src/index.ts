@@ -168,6 +168,13 @@ export interface Device {
    * spotting a sensor that moved networks. Captured server-side on each push.
    */
   lastIp: string | null;
+  /**
+   * How often (seconds) this device should log a reading — the single cadence
+   * the operator tunes per device from the dashboard. The hub returns it to the
+   * agent on every push so the agent matches its sample/push rate to it, and the
+   * dashboards poll this device at the same rate. Defaults to 30.
+   */
+  reportingIntervalSec: number;
   createdAt: string;
 }
 
@@ -207,13 +214,6 @@ export interface MetricTotal {
 export interface DeviceStatus extends Device {
   online: boolean;
   latest: LatestReading[];
-  /**
-   * Typical seconds between this device's pushes, derived from the gap between
-   * its two most recent readings. Null until it has reported at least twice.
-   * Lets the Devices page show a "reports every ~30s" cadence without the human
-   * having to eyeball the chart.
-   */
-  reportingIntervalSec?: number | null;
   /**
    * How many readings this device has logged over its whole lifetime (all
    * metrics). A coarse "is data actually flowing / how much have we stored"
@@ -741,6 +741,26 @@ export const setSetpointSchema = z.object({
   value: z.number().finite().min(-10).max(50),
 });
 export type SetSetpointInput = z.infer<typeof setSetpointSchema>;
+
+/**
+ * Allowed range for a device's logging cadence: from 5s (the fastest the agents
+ * sample) up to an hour. Shared so the server validation and the dashboard's
+ * picker agree on the bounds.
+ */
+export const REPORTING_INTERVAL_SEC = { min: 5, max: 3600 } as const;
+
+/** Cadences offered in the dashboard's per-device interval picker, in seconds. */
+export const REPORTING_INTERVAL_OPTIONS = [5, 10, 30, 60, 300, 600] as const;
+
+/** Body for `PATCH /api/devices/:id` — the device's new logging cadence (seconds). */
+export const setReportingIntervalSchema = z.object({
+  reportingIntervalSec: z
+    .number()
+    .int()
+    .min(REPORTING_INTERVAL_SEC.min)
+    .max(REPORTING_INTERVAL_SEC.max),
+});
+export type SetReportingIntervalInput = z.infer<typeof setReportingIntervalSchema>;
 
 /**
  * Body for `POST /api/commands/ack` — the ids of the commands a device has

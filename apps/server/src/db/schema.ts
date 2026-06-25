@@ -119,6 +119,13 @@ export const devices = sqliteTable('devices', {
   lastSeenAt: text('last_seen_at'),
   /** Client IP of the most recent push (the device's LAN address). Null until first seen. */
   lastIp: text('last_ip'),
+  /**
+   * How often (seconds) this device should log a reading. The operator sets it
+   * per device from the dashboard; the hub hands it back to the agent on every
+   * push (the `/api/ingest` response) so the agent self-adjusts its sample/push
+   * cadence without a redeploy. Defaults to the agents' built-in 30s.
+   */
+  reportingIntervalSec: integer('reporting_interval_sec').notNull().default(30),
   createdAt: text('created_at')
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

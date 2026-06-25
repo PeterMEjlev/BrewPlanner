@@ -173,6 +173,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ value }),
     }),
+  // Change a device's logging cadence (seconds) — the single per-device interval
+  // the agent matches its push rate to and the dashboards poll at. Admin/local
+  // only; the agent adopts it on its next push. Echoes the saved value.
+  setDeviceInterval: (id: number, reportingIntervalSec: number) =>
+    request<{ reportingIntervalSec: number }>(`/devices/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reportingIntervalSec }),
+    }),
 
   // Per-sensor mock/real data source choice (server-shared, edited from the
   // Settings page). The whole map is sent on each save, like the colour palettes.

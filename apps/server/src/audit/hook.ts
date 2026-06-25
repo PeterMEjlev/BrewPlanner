@@ -219,6 +219,16 @@ const RULES: Rule[] = [
       return { entity: 'Device', action: `Set ${ref} setpoint${value ? ` to ${value}°C` : ''}` };
     },
   },
+  {
+    method: 'PATCH',
+    re: /^\/api\/devices\/(\d+)$/,
+    build: ({ m, body }) => {
+      const dn = deviceName(m[1] ?? '');
+      const ref = dn ? `"${dn}"` : `device #${m[1]}`;
+      const value = str(body, 'reportingIntervalSec');
+      return { entity: 'Device', action: `Set ${ref} logging interval${value ? ` to ${value}s` : ''}` };
+    },
+  },
 
   // --- Accounts (never log the password itself) -----------------------------
   { method: 'POST', re: /^\/api\/accounts$/, build: ({ body }) => ({ entity: 'Account', action: `Created account${str(body, 'username') ? ` "${str(body, 'username')}"` : ''}${str(body, 'role') ? ` (${str(body, 'role')})` : ''}` }) },

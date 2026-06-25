@@ -52,7 +52,7 @@ import {
 import { SetpointControl } from '../SetpointControl';
 import { formatPressure, useSettings } from '../settings';
 import { ChartRangeProvider, useChartRange } from '../chartRange';
-import { RANGES, useDeviceTotal, useMetricSeries, useMetricSeriesT } from '../useDeviceData';
+import { RANGES, listPollMs, useDeviceTotal, useMetricSeries, useMetricSeriesT } from '../useDeviceData';
 import { relativeTime } from '../util';
 
 const KEG_POLL_MS = 60_000;
@@ -291,7 +291,7 @@ export function DashboardPage(): JSX.Element {
   const [alerts, setAlerts] = useState<Alert[]>(() => cachedDashboard?.alerts ?? []);
   const [error, setError] = useState<string | null>(null);
   const [chart, setChart] = useState<ChartTarget | null>(null);
-  const { dashboardRefreshSec, dashboardZoom } = useSettings();
+  const { dashboardZoom } = useSettings();
   const { auth } = useAuth();
   const controllable = canControl(auth);
   const { kegs, loading: kegsLoading, error: kegsError } = useKegs(KEG_POLL_MS);
@@ -314,11 +314,14 @@ export function DashboardPage(): JSX.Element {
     }
   }, []);
 
+  // Re-poll at the fleet's fastest per-device logging cadence (each device's own
+  // interval, set from the Devices/Settings page) rather than one global rate.
+  const pollMs = listPollMs(devices);
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(), dashboardRefreshSec * 1000);
+    const id = setInterval(() => void load(), pollMs);
     return () => clearInterval(id);
-  }, [load, dashboardRefreshSec]);
+  }, [load, pollMs]);
 
   // Scroll to a section when the sidebar links here with a hash from another page.
   useEffect(() => {

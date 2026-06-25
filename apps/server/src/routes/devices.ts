@@ -4,6 +4,7 @@ import {
   idParamSchema,
   ingestSchema,
   metricTotalQuerySchema,
+  setReportingIntervalSchema,
   setSetpointSchema,
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -40,7 +41,11 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
     // `readings` defaults to [] in the schema, but its input type is optional.
     const samples = body.readings ?? [];
     devices.insertReadings(req.device!.id, samples);
-    return reply.status(202).send({ accepted: samples.length });
+    // Echo the device's configured cadence so the agent self-adjusts its
+    // sample/push rate to whatever the operator set in the dashboard.
+    return reply
+      .status(202)
+      .send({ accepted: samples.length, intervalSec: req.device!.reportingIntervalSec });
   });
 }
 
@@ -83,6 +88,21 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const total = deviceFallback.getMetricTotal(params.id, query.metric);
     if (total == null) return reply.status(404).send({ error: 'Device not found' });
     return { metric: query.metric, total };
+  });
+
+  // Update a device's logging cadence (seconds). Admin-or-local only, like the
+  // setpoint control. Only real (registered) devices have an agent to honour it,
+  // so a mock/placeholder id is rejected. The agent picks the new value up on
+  // its next push (the ingest response).
+  app.patch('/:id', { preHandler: requireAdmin }, async (req, reply) => {
+    const params = parse(idParamSchema, req.params, reply);
+    if (!params) return;
+    const body = parse(setReportingIntervalSchema, req.body, reply);
+    if (!body) return;
+    if (!devices.setReportingInterval(params.id, body.reportingIntervalSec)) {
+      return reply.status(404).send({ error: 'Device not found' });
+    }
+    return { reportingIntervalSec: body.reportingIntervalSec };
   });
 
   // Queue a new target setpoint for a brew controller. The change isn't applied

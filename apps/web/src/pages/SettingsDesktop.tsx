@@ -2,9 +2,11 @@ import {
   DEFAULT_DEVICE_DATA_SOURCES,
   DEFAULT_GRAPH_COLORS,
   DEFAULT_NOTIFICATION_SETTINGS,
+  REPORTING_INTERVAL_OPTIONS,
   SENSOR_CATALOG,
   type DeviceDataSource,
   type DeviceDataSources,
+  type DeviceStatus,
   type GraphColors,
   type KegContentColors,
   type NotificationSettings,
@@ -27,7 +29,6 @@ import {
   FERMENT_SG,
   KEG_OLD_DAYS,
   KEG_WARN_DAYS,
-  REFRESH_SEC_OPTIONS,
   clampStep,
   resetSettings,
   setSetting,
@@ -67,7 +68,7 @@ const SETTINGS_CATEGORIES: {
   {
     id: 'sensors',
     label: 'Sensors',
-    description: 'Mock or live data per sensor',
+    description: 'Data source and logging interval per sensor',
   },
   {
     id: 'colours',
@@ -197,7 +198,12 @@ function renderSettingsCategory(category: SettingsCategoryId): React.ReactNode {
         </>
       );
     case 'sensors':
-      return <DataSourcesSection />;
+      return (
+        <>
+          <DataSourcesSection />
+          <LoggingIntervalSection />
+        </>
+      );
     case 'colours':
       return (
         <>
@@ -344,7 +350,7 @@ function EyeOffIcon(): JSX.Element {
 // --- Display ---------------------------------------------------------------
 
 function DisplaySection(): JSX.Element {
-  const { pressureUnit, dashboardRefreshSec, dashboardZoom } = useSettings();
+  const { pressureUnit, dashboardZoom } = useSettings();
   return (
     <Card title="Display" hint="Applies to this browser only — the kiosk and other computers keep their own.">
       <div className="divide-y divide-zinc-800/70">
@@ -356,13 +362,6 @@ function DisplaySection(): JSX.Element {
               { value: 'psi', label: 'PSI' },
             ]}
             onChange={(v) => setSetting('pressureUnit', v)}
-          />
-        </Row>
-        <Row label="Dashboard refresh" hint="How often the Overview re-polls device status.">
-          <Segmented<number>
-            value={dashboardRefreshSec}
-            options={REFRESH_SEC_OPTIONS.map((s) => ({ value: s, label: `${s}s` }))}
-            onChange={(v) => setSetting('dashboardRefreshSec', v)}
           />
         </Row>
         <Row label="Dashboard zoom" hint="Scale the whole Overview up or down. It scrolls if it no longer fits.">
@@ -476,6 +475,94 @@ function DataSourcesSection(): JSX.Element {
               />
             </Row>
           ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// --- Logging interval (per device) -----------------------------------------
+
+/**
+ * Synthesized mock/placeholder devices use ids at/above this base (the server's
+ * MOCK_ID_BASE) and have no agent, so their logging interval isn't editable.
+ */
+const MOCK_ID_BASE = 900_000;
+
+const DEVICE_KIND_LABEL: Record<string, string> = {
+  pressure_sensor: 'Pressure',
+  brew_controller: 'Controller',
+  power_meter: 'Power meter',
+  water_meter: 'Water meter',
+  hydrometer: 'Hydrometer',
+  other: 'Sensor',
+};
+
+/** A cadence as "30s" / "5m" / "1h" for the interval picker. */
+function intervalLabel(sec: number): string {
+  if (sec < 90) return `${sec}s`;
+  if (sec < 3600) return `${Math.round(sec / 60)}m`;
+  return `${Math.round(sec / 3600)}h`;
+}
+
+function LoggingIntervalSection(): JSX.Element {
+  const [devices, setDevices] = useState<DeviceStatus[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listDevices()
+      .then((d) => !cancelled && setDevices(d))
+      .catch(() => !cancelled && setDevices([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const update = (id: number, seconds: number): void => {
+    setDevices(
+      (prev) => prev?.map((d) => (d.id === id ? { ...d, reportingIntervalSec: seconds } : d)) ?? prev,
+    );
+    void api.setDeviceInterval(id, seconds).catch(() => {});
+  };
+
+  // Real (registered) devices only — mock sensors have no agent to honour it.
+  const real = (devices ?? [])
+    .filter((d) => d.id < MOCK_ID_BASE)
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+
+  return (
+    <Card
+      title="Logging interval"
+      hint="How often each device logs a reading. Its sensor agent matches its push rate to this, and the dashboards poll it at the same cadence. Demo (mock) sensors aren't shown."
+    >
+      {!devices ? (
+        <p className="text-sm text-zinc-500">Loading…</p>
+      ) : real.length === 0 ? (
+        <p className="text-sm text-zinc-500">No registered devices yet.</p>
+      ) : (
+        <div className="divide-y divide-zinc-800/70">
+          {real.map((d) => {
+            const options = Array.from(
+              new Set<number>([...REPORTING_INTERVAL_OPTIONS, d.reportingIntervalSec]),
+            ).sort((a, b) => a - b);
+            return (
+              <Row key={d.id} label={d.name} hint={DEVICE_KIND_LABEL[d.type] ?? d.type}>
+                <select
+                  value={d.reportingIntervalSec}
+                  aria-label={`Logging interval for ${d.name}`}
+                  onChange={(e) => update(d.id, Number(e.target.value))}
+                  className={`${inputClass} tabular-nums`}
+                >
+                  {options.map((s) => (
+                    <option key={s} value={s}>
+                      {intervalLabel(s)}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            );
+          })}
         </div>
       )}
     </Card>

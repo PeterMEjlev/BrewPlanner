@@ -1,0 +1,1 @@
+ALTER TABLE `devices` ADD `reporting_interval_sec` integer DEFAULT 30 NOT NULL;

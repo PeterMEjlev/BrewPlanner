@@ -196,8 +196,14 @@ def read_inkbird() -> dict[str, float]:
     return metrics
 
 
-def push(samples: list[dict]) -> bool:
-    """POST a batch of readings. Returns True on success (HTTP 2xx)."""
+def push(samples: list[dict], current_interval: float) -> float | None:
+    """
+    POST a batch of readings. On success, return the hub's advised logging
+    interval in seconds — the per-device cadence the operator sets from the
+    dashboard — so the agent can match its push rate to it; falls back to
+    current_interval when the response omits one. Returns None on failure so the
+    caller keeps the backlog for the next attempt.
+    """
     body = json.dumps({"readings": samples}).encode("utf-8")
     req = urllib.request.Request(
         f"{HUB_URL}/api/ingest",
@@ -210,14 +216,22 @@ def push(samples: list[dict]) -> bool:
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            return 200 <= resp.status < 300
+            if not 200 <= resp.status < 300:
+                return None
+            try:
+                advised = json.loads(resp.read().decode("utf-8")).get("intervalSec")
+            except (ValueError, OSError):
+                advised = None
+            if isinstance(advised, (int, float)) and advised > 0:
+                return float(advised)
+            return current_interval
     except urllib.error.HTTPError as e:
         # 401 means a bad/empty key — log loudly; retrying won't help.
         log(f"push rejected: HTTP {e.code} {e.reason}")
-        return False
+        return None
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         log(f"push failed (will retry): {e}")
-        return False
+        return None
 
 
 def apply_setpoint(target_c: float) -> None:
@@ -335,6 +349,9 @@ def main() -> int:
     )
 
     buffer: deque[dict] = deque(maxlen=MAX_BUFFER)
+    # The hub hands back the operator-set logging cadence on each push; start
+    # from the env default until the first successful push tells us otherwise.
+    interval = INTERVAL
 
     while _running:
         cycle_start = time.monotonic()
@@ -345,9 +362,16 @@ def main() -> int:
         except Exception as e:  # a flaky controller/network shouldn't kill the agent
             log(f"read failed (will retry): {e}")
 
-        # Try to flush the whole backlog at once; keep it on failure.
-        if buffer and push(list(buffer)):
-            buffer.clear()
+        # Flush the whole backlog at once; keep it on failure. A successful push
+        # echoes the hub's current per-device logging interval — adopt it so a
+        # change made from the dashboard takes effect without a redeploy.
+        if buffer:
+            advised = push(list(buffer), interval)
+            if advised is not None:
+                buffer.clear()
+                if advised != interval:
+                    log(f"hub set logging interval to {advised:g}s")
+                    interval = advised
 
         # Apply any setpoint changes the operator queued from the dashboard. A
         # flaky controller/network here must never kill the agent either.
@@ -359,7 +383,7 @@ def main() -> int:
 
         # Sleep the remainder of the interval, waking early on shutdown.
         elapsed = time.monotonic() - cycle_start
-        remaining = max(0.0, INTERVAL - elapsed)
+        remaining = max(0.0, interval - elapsed)
         while _running and remaining > 0:
             step = min(1.0, remaining)
             time.sleep(step)

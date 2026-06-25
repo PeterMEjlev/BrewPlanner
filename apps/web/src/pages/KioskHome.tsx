@@ -23,10 +23,8 @@ import {
 } from '../components/icons';
 import { isUnknownContents, useKegs } from '../kegs';
 import { formatPressure, useSettings } from '../settings';
+import { listPollMs } from '../useDeviceData';
 import { formatValueParts, metricLabel } from './Dashboard';
-
-/** Refresh cadence for the wall display — frequent enough to feel live. */
-const POLL_MS = 5000;
 
 /** Keg counts move slowly — re-pull the sheet once a minute for the home tile. */
 const KEG_POLL_MS = 60_000;
@@ -274,11 +272,14 @@ export function KioskHomePage(): JSX.Element {
     }
   }, []);
 
+  // Poll at the fleet's fastest per-device logging cadence (each device's own
+  // interval) rather than one fixed rate.
+  const pollMs = listPollMs(devices);
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(), POLL_MS);
+    const id = setInterval(() => void load(), pollMs);
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, pollMs]);
 
   // The fermenter (a multi-device "station") is the hero on the left; every
   // other sensor — lone watched sensors (brewery + keg-fridge temps) and the

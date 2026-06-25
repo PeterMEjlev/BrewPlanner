@@ -2,7 +2,21 @@ import type { DeviceStatus, LatestReading, Reading } from '@checklist/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api';
 
-const POLL_MS = 10000;
+/** Poll cadence before a device's own logging interval is known (first fetch). */
+const DEFAULT_POLL_MS = 10000;
+
+/**
+ * Poll cadence (ms) for a batched device list (Overview / Devices): the fastest
+ * device's configured logging interval, so the chattiest sensor stays fresh
+ * without over-polling the rest. Falls back to the default before any device
+ * (which carries its interval) has loaded.
+ */
+export function listPollMs(
+  devices: { reportingIntervalSec: number }[] | null | undefined,
+): number {
+  const secs = (devices ?? []).map((d) => d.reportingIntervalSec).filter((n) => n > 0);
+  return secs.length ? Math.min(...secs) * 1000 : DEFAULT_POLL_MS;
+}
 
 /** Selectable history windows, shared by the laptop and touch sensor views. */
 export const RANGES = [
@@ -89,17 +103,24 @@ export function useDeviceData(
     }
   }, [deviceId, metric, rangeMs]);
 
+  // Poll this device at its own configured logging cadence — no point refetching
+  // faster than the agent logs. Falls back to a default until the first status
+  // (which carries the interval) lands.
+  const pollMs = (device?.reportingIntervalSec ?? 0) > 0
+    ? device!.reportingIntervalSec * 1000
+    : DEFAULT_POLL_MS;
+
   useEffect(() => {
     void loadDevice();
-    const t = setInterval(() => void loadDevice(), POLL_MS);
+    const t = setInterval(() => void loadDevice(), pollMs);
     return () => clearInterval(t);
-  }, [loadDevice]);
+  }, [loadDevice, pollMs]);
 
   useEffect(() => {
     void loadHistory();
-    const t = setInterval(() => void loadHistory(), POLL_MS);
+    const t = setInterval(() => void loadHistory(), pollMs);
     return () => clearInterval(t);
-  }, [loadHistory]);
+  }, [loadHistory, pollMs]);
 
   const chartData = useMemo(
     () => [...history].reverse().map((r) => ({ t: Date.parse(r.recordedAt), value: r.value })),

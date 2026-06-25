@@ -1,11 +1,26 @@
-import type { DeviceStatus, DeviceType } from '@checklist/shared';
+import { REPORTING_INTERVAL_OPTIONS, type DeviceStatus, type DeviceType } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
+import { listPollMs } from '../useDeviceData';
 import { metricLabel, relativeTime } from './Dashboard';
 
-const POLL_MS = 10000;
+/**
+ * Synthesized mock/placeholder devices use ids at/above this base (see the
+ * server's MOCK_ID_BASE). They have no real agent behind them, so their logging
+ * interval can't be changed — the editor falls back to a static value for them.
+ */
+const MOCK_ID_BASE = 900_000;
+
+/**
+ * Cumulative meter metrics hidden from the Devices page. A water/power meter
+ * reports one live quantity (flow / power); its running total (`water_l` /
+ * `energy_kwh`) is a derived counter, not a separate "data type", so it's left
+ * off the per-device metric chips and count here.
+ */
+const HIDDEN_METRICS = new Set(['water_l', 'energy_kwh']);
 
 const TYPE_ICON: Record<DeviceType, string> = {
   pressure_sensor: '📈',
@@ -85,6 +100,8 @@ function formatCount(n: number | null | undefined): string {
 export function DevicesPage(): JSX.Element {
   const [devices, setDevices] = useState<DeviceStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { auth } = useAuth();
+  const editable = canControl(auth);
 
   const load = useCallback(async () => {
     try {
@@ -95,11 +112,29 @@ export function DevicesPage(): JSX.Element {
     }
   }, []);
 
+  // Save a device's new logging interval, updating the card immediately and
+  // reloading on failure so a rejected change doesn't stick visually.
+  const saveInterval = useCallback(
+    async (id: number, seconds: number) => {
+      setDevices(
+        (cur) => cur?.map((d) => (d.id === id ? { ...d, reportingIntervalSec: seconds } : d)) ?? cur,
+      );
+      try {
+        await api.setDeviceInterval(id, seconds);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to update interval');
+        void load();
+      }
+    },
+    [load],
+  );
+
+  const pollMs = listPollMs(devices);
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(id);
-  }, [load]);
+    const id = window.setInterval(() => void load(), pollMs);
+    return () => window.clearInterval(id);
+  }, [load, pollMs]);
 
   const list = devices ?? [];
   const online = list.filter((d) => d.online).length;
@@ -146,7 +181,12 @@ export function DevicesPage(): JSX.Element {
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {sorted.map((d) => (
-              <DeviceCard key={d.id} device={d} />
+              <DeviceCard
+                key={d.id}
+                device={d}
+                editable={editable && d.id < MOCK_ID_BASE}
+                onSetInterval={saveInterval}
+              />
             ))}
           </div>
         )}
@@ -155,8 +195,18 @@ export function DevicesPage(): JSX.Element {
   );
 }
 
-function DeviceCard({ device }: { device: DeviceStatus }): JSX.Element {
+function DeviceCard({
+  device,
+  editable,
+  onSetInterval,
+}: {
+  device: DeviceStatus;
+  editable: boolean;
+  onSetInterval: (id: number, seconds: number) => void;
+}): JSX.Element {
   const model = DEVICE_MODEL[device.type];
+  // A meter's running-total counter isn't a separate data type — hide it here.
+  const metrics = device.latest.filter((r) => !HIDDEN_METRICS.has(r.metric));
 
   return (
     <Link
@@ -190,17 +240,21 @@ function DeviceCard({ device }: { device: DeviceStatus }): JSX.Element {
           value={device.lastSeenAt ? relativeTime(device.lastSeenAt) : 'Never'}
           title={device.lastSeenAt ? formatAbsolute(device.lastSeenAt) : undefined}
         />
-        <InfoRow label="Interval" value={formatInterval(device.reportingIntervalSec)} />
+        <IntervalRow
+          seconds={device.reportingIntervalSec}
+          editable={editable}
+          onChange={(s) => onSetInterval(device.id, s)}
+        />
         <InfoRow label="Data points" value={formatCount(device.readingCount)} />
         <InfoRow
           label="Reporting"
-          value={device.latest.length > 0 ? `${device.latest.length} metric${device.latest.length === 1 ? '' : 's'}` : 'None'}
+          value={metrics.length > 0 ? `${metrics.length} metric${metrics.length === 1 ? '' : 's'}` : 'None'}
         />
       </dl>
 
-      {device.latest.length > 0 && (
+      {metrics.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {device.latest.map((r) => (
+          {metrics.map((r) => (
             <Chip key={r.metric} label={metricLabel(r.metric)} />
           ))}
         </div>
@@ -234,6 +288,58 @@ function InfoRow({
         title={title ?? value}
       >
         {value}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * The "Interval" grid row. Read-only it mirrors {@link InfoRow}; for an admin on
+ * a real device it's an inline picker for that device's logging cadence. Pointer
+ * and change events are stopped so using the picker doesn't follow the card's
+ * link.
+ */
+function IntervalRow({
+  seconds,
+  editable,
+  onChange,
+}: {
+  seconds: number;
+  editable: boolean;
+  onChange: (seconds: number) => void;
+}): JSX.Element {
+  if (!editable) return <InfoRow label="Interval" value={formatInterval(seconds)} />;
+  // Always include the current value so a custom/legacy cadence still shows.
+  const options = Array.from(new Set<number>([...REPORTING_INTERVAL_OPTIONS, seconds])).sort(
+    (a, b) => a - b,
+  );
+  return (
+    <div className="flex items-baseline justify-between gap-2 border-b border-zinc-800/60 py-0.5">
+      <dt className="text-xs font-medium uppercase tracking-wider text-zinc-500">Interval</dt>
+      <dd className="text-right">
+        <select
+          value={seconds}
+          aria-label="Logging interval"
+          // Keep clicks off the card's link: stop bubbling (so React Router's
+          // handler never runs) and cancel the anchor's default navigation. The
+          // dropdown opens on mousedown, so preventing the click default is safe.
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onChange={(e) => {
+            e.stopPropagation();
+            onChange(Number(e.target.value));
+          }}
+          className="cursor-pointer rounded-md border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-sm text-zinc-200 transition hover:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          {options.map((s) => (
+            <option key={s} value={s}>
+              {formatInterval(s)}
+            </option>
+          ))}
+        </select>
       </dd>
     </div>
   );

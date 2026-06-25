@@ -46,6 +46,7 @@ function toPublic(row: typeof devices.$inferSelect): Device {
     type: row.type as DeviceType,
     lastSeenAt: row.lastSeenAt,
     lastIp: row.lastIp,
+    reportingIntervalSec: row.reportingIntervalSec,
     createdAt: row.createdAt,
   };
 }
@@ -173,39 +174,30 @@ function readingCount(deviceId: number): number {
   return Number(row?.n ?? 0);
 }
 
-/**
- * Seconds between a device's two most recent pushes, as a stand-in for its
- * reporting cadence. Uses the gap of the last two rows of one metric (so it
- * rides the (device, metric, time) index); null when the device hasn't reported
- * that metric at least twice. `metric` is the device's first known metric —
- * every push carries it, so consecutive rows mark consecutive heartbeats.
- */
-function reportingIntervalSec(deviceId: number, metric: string | undefined): number | null {
-  if (!metric) return null;
-  const rows = db
-    .select({ recordedAt: readings.recordedAt })
-    .from(readings)
-    .where(and(eq(readings.deviceId, deviceId), eq(readings.metric, metric)))
-    .orderBy(desc(readings.recordedAt))
-    .limit(2)
-    .all();
-  if (rows.length < 2) return null;
-  const gapMs = Date.parse(rows[0]!.recordedAt) - Date.parse(rows[1]!.recordedAt);
-  if (!Number.isFinite(gapMs) || gapMs <= 0) return null;
-  return Math.round(gapMs / 1000);
-}
-
 /** Enrich a real device row with the live/derived fields the dashboards need. */
 function enrich(device: Device): DeviceStatus {
-  const latest = latestPerMetric(device.id);
   return {
     ...device,
     online: isOnline(device.lastSeenAt),
-    latest,
-    reportingIntervalSec: reportingIntervalSec(device.id, latest[0]?.metric),
+    latest: latestPerMetric(device.id),
     readingCount: readingCount(device.id),
     pendingSetpointC: pendingSetpoint(device.id),
   };
+}
+
+/**
+ * Update a device's logging cadence (seconds). Returns true when the device
+ * exists. The new value is handed to the agent on its next push (the ingest
+ * response) so its sample/push rate follows without a redeploy.
+ */
+export function setReportingInterval(id: number, seconds: number): boolean {
+  return (
+    db
+      .update(devices)
+      .set({ reportingIntervalSec: seconds, updatedAt: nowIso() })
+      .where(eq(devices.id, id))
+      .run().changes > 0
+  );
 }
 
 /** Devices enriched with online state + latest value per metric (dashboard). */
