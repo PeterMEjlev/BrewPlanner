@@ -1,5 +1,4 @@
 import type {
-  Alert,
   DeviceStatus,
   DeviceType,
   LatestReading,
@@ -240,18 +239,6 @@ function hvacColor(value: number): string {
   return 'text-zinc-300';
 }
 
-// --- Alerts -----------------------------------------------------------------
-
-/**
- * An alert is "active" while its condition still holds: a `device_offline` alert
- * until the device reports again, and event alerts (keg age, fermentation done)
- * until they're dismissed. Dismissed alerts are dropped server-side, so they
- * never reach the dashboard. The active set drives the card and the sidebar
- * badge, and matches the Alerts page so the counts agree.
- */
-function isActiveAlert(a: Alert): boolean {
-  return a.resolvedAt == null;
-}
 
 /** A metric the user clicked to enlarge in the chart overlay. */
 interface ChartTarget {
@@ -275,20 +262,18 @@ type OpenChart = (target: ChartTarget) => void;
 interface DashboardSnapshot {
   devices: DeviceStatus[];
   recipe: Recipe | null;
-  alerts: Alert[];
 }
 let cachedDashboard: DashboardSnapshot | null = null;
 
 /**
  * The hub landing page at `/`. A desktop "command centre": the fermenter and
- * utilities live in the main column, with keg inventory, operations, the device
- * fleet and a derived alerts feed in the right rail. A persistent sidebar
- * ([DashboardShell]) wraps it.
+ * utilities live in the main column, with keg inventory, operations and the
+ * device fleet in the right rail. A persistent sidebar ([DashboardShell]) wraps
+ * it; the sidebar polls its own alert count for the Alerts badge.
  */
 export function DashboardPage(): JSX.Element {
   const [devices, setDevices] = useState<DeviceStatus[] | null>(() => cachedDashboard?.devices ?? null);
   const [recipe, setRecipe] = useState<Recipe | null>(() => cachedDashboard?.recipe ?? null);
-  const [alerts, setAlerts] = useState<Alert[]>(() => cachedDashboard?.alerts ?? []);
   const [error, setError] = useState<string | null>(null);
   const [chart, setChart] = useState<ChartTarget | null>(null);
   const { dashboardZoom } = useSettings();
@@ -299,16 +284,14 @@ export function DashboardPage(): JSX.Element {
 
   const load = useCallback(async () => {
     try {
-      const [d, r, a] = await Promise.all([
+      const [d, r] = await Promise.all([
         api.listDevices(),
         api.getActiveRecipe().catch(() => null),
-        api.listAlerts().catch(() => [] as Alert[]),
       ]);
       setDevices(d);
       setRecipe(r);
-      setAlerts(a);
       setError(null);
-      cachedDashboard = { devices: d, recipe: r, alerts: a };
+      cachedDashboard = { devices: d, recipe: r };
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load devices');
     }
@@ -339,7 +322,6 @@ export function DashboardPage(): JSX.Element {
     .filter(isStationGroup)
     .sort((a, b) => groupRank(a) - groupRank(b) || a[0]!.name.localeCompare(b[0]!.name));
 
-  const activeAlerts = alerts.filter(isActiveAlert);
   const lastUpdate = latestDeviceTimestamp(deviceList);
 
   const brewery = deviceList.find(isBreweryTempDevice) ?? null;
@@ -351,7 +333,7 @@ export function DashboardPage(): JSX.Element {
 
   return (
     <ChartRangeProvider>
-    <DashboardShell active="overview" alertCount={activeAlerts.length} lastUpdate={lastUpdate} fit>
+    <DashboardShell active="overview" lastUpdate={lastUpdate} fit>
       <FitScale zoom={dashboardZoom}>
       <main className="w-full px-5 py-5">
         {error && (

@@ -83,6 +83,7 @@ interface FleetStatus {
 let cachedFleet: FleetStatus | null = null;
 let cachedKegStatus: KegStatus | null = null;
 let cachedTodoCount: number | null = null;
+let cachedAlertCount: number | null = null;
 
 /**
  * Poll the device fleet so the Devices nav item can show an online/total count
@@ -199,6 +200,38 @@ function useOpenTodoCount(): number | null {
   return count;
 }
 
+/**
+ * Poll active alerts so the Alerts nav badge shows a live count on *every* page,
+ * not only the Overview/Alerts pages that fetch alerts themselves. Lives in the
+ * shell (like {@link useFleetStatus}) so the badge is global, and keeps the last
+ * count through a transient failure. "Active" = not yet resolved, matching the
+ * Overview and Alerts page counts.
+ */
+function useAlertCount(): number {
+  const [count, setCount] = useState<number>(cachedAlertCount ?? 0);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const alerts = await api.listAlerts();
+        if (!cancelled) {
+          cachedAlertCount = alerts.filter((a) => a.resolvedAt == null).length;
+          setCount(cachedAlertCount);
+        }
+      } catch {
+        // Keep the last known count through a transient failure.
+      }
+    };
+    void load();
+    const id = setInterval(() => void load(), FLEET_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+  return count;
+}
+
 /** Filled/total keg count, for the Kegs nav item. */
 function KegBadge({ filled, total }: KegStatus): JSX.Element {
   return (
@@ -296,14 +329,11 @@ function visibleNav(controllable: boolean): NavItem[] {
  */
 export function DashboardShell({
   active,
-  alertCount = 0,
   lastUpdate,
   fit = false,
   children,
 }: {
   active: ShellPage;
-  /** Badge shown on the Alerts nav item. */
-  alertCount?: number;
   /** ISO timestamp of the most recent device report, for the footer. */
   lastUpdate?: string | null;
   /**
@@ -318,6 +348,7 @@ export function DashboardShell({
   const fleet = useFleetStatus();
   const kegs = useKegStatus();
   const openTodos = useOpenTodoCount();
+  const alertCount = useAlertCount();
   useEscapeToOverview(active);
   useArrowPageNav(active);
   return (

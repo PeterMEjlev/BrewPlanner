@@ -95,7 +95,7 @@ export function AlertsPage(): JSX.Element {
   const activeCount = list.filter(isActive).length;
 
   return (
-    <DashboardShell active="alerts" alertCount={activeCount}>
+    <DashboardShell active="alerts">
       <main className="w-full max-w-[1100px] px-5 py-5">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">

@@ -138,12 +138,11 @@ export function DevicesPage(): JSX.Element {
 
   const list = devices ?? [];
   const online = list.filter((d) => d.online).length;
-  const offline = list.filter((d) => !d.online).length;
   const lastUpdate = latestDeviceTimestamp(list);
   const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
 
   return (
-    <DashboardShell active="devices" alertCount={offline} lastUpdate={lastUpdate}>
+    <DashboardShell active="devices" lastUpdate={lastUpdate}>
       <main className="w-full max-w-[1580px] px-5 py-5">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
