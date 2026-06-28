@@ -27,6 +27,7 @@ interface BrewersFriendRecipe {
   id: string | number;
   title?: string;
   stylename?: string;
+  abv?: string | number;
 }
 
 /**
@@ -49,5 +50,7 @@ export async function listRecipes(): Promise<Recipe[]> {
     id: String(r.id),
     name: (r.title ?? '').trim() || 'Untitled recipe',
     style: (r.stylename ?? '').trim(),
+    // Normalize to a bare number string and drop any "%" the API includes.
+    abv: String(r.abv ?? '').trim().replace(/%/g, ''),
   }));
 }

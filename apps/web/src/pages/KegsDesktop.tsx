@@ -415,7 +415,9 @@ function KegCard({
         </span>
       )}
       {keg.note && <span className="mt-1 text-sm italic text-zinc-400">{keg.note}</span>}
-      {keg.abv && <span className="mt-auto pt-2 text-sm text-zinc-400">{keg.abv} ABV</span>}
+      {keg.abv && (
+        <span className="mt-auto pt-2 text-sm text-zinc-400">{keg.abv.replace(/%/g, '')}% ABV</span>
+      )}
     </div>
   );
 }
@@ -538,7 +540,12 @@ function KegEditModal({
     setShowPicker(false);
     setRecipeSearch('');
     const match = matchContentOption(recipe.name, recipe.style);
-    setForm((f) => ({ ...f, contents: match ?? recipe.name }));
+    setForm((f) => ({
+      ...f,
+      contents: match ?? recipe.name,
+      // Carry the recipe's ABV across when it has one; otherwise keep what's set.
+      abv: recipe.abv || f.abv,
+    }));
   };
 
   const filteredRecipes = recipes.filter((r) => {
@@ -766,7 +773,7 @@ function KegEditModal({
               className={inputClass}
               value={form.abv}
               onChange={(e) => update('abv', e.target.value)}
-              placeholder={isBulk ? 'Leave blank to keep existing' : 'e.g. 5.2%'}
+              placeholder={isBulk ? 'Leave blank to keep existing' : 'e.g. 5.2'}
             />
           </div>
 

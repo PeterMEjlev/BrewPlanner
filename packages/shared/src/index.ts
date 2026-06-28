@@ -114,6 +114,8 @@ export interface Recipe {
   name: string;
   /** Beer style (e.g. "West Coast IPA"); may be empty if the recipe has none. */
   style: string;
+  /** Target ABV as a bare number string (e.g. "5.2"); empty if unknown. */
+  abv: string;
 }
 
 /**
@@ -794,6 +796,7 @@ export const setActiveRecipeSchema = z.object({
   id: z.string().trim().min(1).max(200),
   name: z.string().trim().min(1, 'Recipe name is required').max(300),
   style: z.string().trim().max(300).default(''),
+  abv: z.string().trim().max(20).default(''),
 });
 export type SetActiveRecipeInput = z.infer<typeof setActiveRecipeSchema>;
 

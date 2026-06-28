@@ -262,6 +262,7 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       id: body.id,
       name: body.name,
       style: body.style ?? '',
+      abv: body.abv ?? '',
     });
     return { recipe };
   });
