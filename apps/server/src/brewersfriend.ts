@@ -53,7 +53,11 @@ export async function listRecipes(): Promise<Recipe[]> {
     style: (r.stylename ?? '').trim(),
     // Normalize to a bare number string and drop any "%" the API includes.
     abv: String(r.abv ?? '').trim().replace(/%/g, ''),
-    // Public recipe page; fall back to the standard view URL built from the id.
-    url: (r.url ?? '').trim() || `https://web.brewersfriend.com/homebrew/recipe/view/${r.id}`,
+    // Public recipe page. The API hands back a "web." host that 404s in a
+    // browser, so strip it; fall back to the standard view URL built from the id.
+    url: ((r.url ?? '').trim() || `https://brewersfriend.com/homebrew/recipe/view/${r.id}`).replace(
+      '://web.',
+      '://',
+    ),
   }));
 }

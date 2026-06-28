@@ -85,6 +85,12 @@ export function KegsDesktopPage(): JSX.Element {
     }
   }
 
+  // Warm the recipe cache as soon as the page loads (only admins ever open the
+  // editor), so the first keg opened already has its linked-recipe chip ready.
+  useEffect(() => {
+    if (controllable) loadRecipes().catch(() => {});
+  }, [controllable]);
+
   const exitSelect = useCallback(() => {
     setSelectMode(false);
     setSelected(new Set());
@@ -458,6 +464,31 @@ interface KegForm {
   abv: string;
 }
 
+// Brewer's Friend recipes, fetched once per page session and reused across every
+// modal open. Caching here (rather than per-modal) means reopening a keg shows
+// its linked-recipe chip instantly — no "Loading recipes…" flash — and avoids a
+// fresh request on each edit. `recipesPromise` dedupes concurrent loads and is
+// cleared on failure so the next open retries.
+let recipesCache: Recipe[] | null = null;
+let recipesPromise: Promise<Recipe[]> | null = null;
+
+function loadRecipes(): Promise<Recipe[]> {
+  if (recipesCache) return Promise.resolve(recipesCache);
+  if (!recipesPromise) {
+    recipesPromise = api
+      .listRecipes()
+      .then((data) => {
+        recipesCache = data;
+        return data;
+      })
+      .catch((err) => {
+        recipesPromise = null; // allow a retry on the next open
+        throw err;
+      });
+  }
+  return recipesPromise;
+}
+
 /**
  * The keg editor, used for both a single keg and a bulk "assign content to N
  * kegs". In bulk mode the date/note/abv fields start blank and a blank value
@@ -492,13 +523,19 @@ function KegEditModal({
   const [error, setError] = useState('');
   const [progress, setProgress] = useState('');
 
-  // Recipe linking (Brewer's Friend). The list is fetched once; failures (no key
-  // configured, upstream down) just leave the picker empty/disabled.
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [recipesLoading, setRecipesLoading] = useState(true);
+  // Recipe linking (Brewer's Friend). The list is cached across opens (see
+  // loadRecipes); failures (no key configured, upstream down) just leave the
+  // picker empty/disabled. When the cache is already warm we seed straight from
+  // it so a linked keg's chip shows with no loading flash.
+  const [recipes, setRecipes] = useState<Recipe[]>(recipesCache ?? []);
+  const [recipesLoading, setRecipesLoading] = useState(recipesCache === null);
   const [showPicker, setShowPicker] = useState(false);
   const [recipeSearch, setRecipeSearch] = useState('');
-  const [linkedRecipe, setLinkedRecipe] = useState<Recipe | null>(null);
+  const [linkedRecipe, setLinkedRecipe] = useState<Recipe | null>(() =>
+    !isBulk && first.recipeId && recipesCache
+      ? recipesCache.find((r) => r.id === first.recipeId) ?? null
+      : null,
+  );
   // The id actually written back. Seeded from the keg so a single-keg save made
   // before the recipe list loads (or while it's unreachable) preserves the link
   // instead of wiping it; `linkedRecipe` only drives the display chip. Bulk edits
@@ -521,9 +558,10 @@ function KegEditModal({
   }, [onClose]);
 
   useEffect(() => {
+    // Already seeded from a warm cache — nothing to fetch.
+    if (recipesCache) return;
     let cancelled = false;
-    api
-      .listRecipes()
+    loadRecipes()
       .then((data) => {
         if (cancelled) return;
         setRecipes(data);
