@@ -116,6 +116,8 @@ export interface Recipe {
   style: string;
   /** Target ABV as a bare number string (e.g. "5.2"); empty if unknown. */
   abv: string;
+  /** Public Brewer's Friend recipe page URL; empty if unknown. */
+  url: string;
 }
 
 /**
@@ -797,6 +799,7 @@ export const setActiveRecipeSchema = z.object({
   name: z.string().trim().min(1, 'Recipe name is required').max(300),
   style: z.string().trim().max(300).default(''),
   abv: z.string().trim().max(20).default(''),
+  url: z.string().trim().max(500).default(''),
 });
 export type SetActiveRecipeInput = z.infer<typeof setActiveRecipeSchema>;
 

@@ -540,11 +540,14 @@ function KegEditModal({
     setShowPicker(false);
     setRecipeSearch('');
     const match = matchContentOption(recipe.name, recipe.style);
+    // Carry the recipe's ABV across, rounded to one decimal; keep what's set if
+    // the recipe has no (numeric) ABV.
+    const recipeAbv = Number(recipe.abv);
+    const abv = recipe.abv && Number.isFinite(recipeAbv) ? recipeAbv.toFixed(1) : '';
     setForm((f) => ({
       ...f,
       contents: match ?? recipe.name,
-      // Carry the recipe's ABV across when it has one; otherwise keep what's set.
-      abv: recipe.abv || f.abv,
+      abv: abv || f.abv,
     }));
   };
 
@@ -692,7 +695,19 @@ function KegEditModal({
               <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2">
                 <div className="min-w-0">
                   <div className="text-xs uppercase tracking-wide text-blue-300/80">Linked recipe</div>
-                  <div className="truncate text-sm font-medium text-zinc-100">{linkedRecipe.name}</div>
+                  {linkedRecipe.url ? (
+                    <a
+                      href={linkedRecipe.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block truncate text-sm font-medium text-blue-300 underline-offset-2 hover:underline"
+                      title="Open recipe in a new tab"
+                    >
+                      {linkedRecipe.name}
+                    </a>
+                  ) : (
+                    <div className="truncate text-sm font-medium text-zinc-100">{linkedRecipe.name}</div>
+                  )}
                   <div className="truncate text-xs text-zinc-400">{linkedRecipe.style || 'No style'}</div>
                 </div>
                 <button
