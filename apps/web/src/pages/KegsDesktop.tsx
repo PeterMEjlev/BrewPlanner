@@ -499,6 +499,12 @@ function KegEditModal({
   const [showPicker, setShowPicker] = useState(false);
   const [recipeSearch, setRecipeSearch] = useState('');
   const [linkedRecipe, setLinkedRecipe] = useState<Recipe | null>(null);
+  // The id actually written back. Seeded from the keg so a single-keg save made
+  // before the recipe list loads (or while it's unreachable) preserves the link
+  // instead of wiping it; `linkedRecipe` only drives the display chip. Bulk edits
+  // don't use this — they key off `linkedRecipe` so they only touch the link when
+  // one was explicitly chosen.
+  const [recipeId, setRecipeId] = useState(isBulk ? '' : first.recipeId);
 
   // Close on Escape; lock body scroll while open.
   useEffect(() => {
@@ -519,7 +525,15 @@ function KegEditModal({
     api
       .listRecipes()
       .then((data) => {
-        if (!cancelled) setRecipes(data);
+        if (cancelled) return;
+        setRecipes(data);
+        // Restore the linked-recipe chip for a single keg that was saved with a
+        // recipe (bulk edits don't carry one). Matched from the fetched list so
+        // the name/style/url stay current.
+        if (!isBulk && first.recipeId) {
+          const saved = data.find((r) => r.id === first.recipeId);
+          if (saved) setLinkedRecipe(saved);
+        }
       })
       .catch(() => {
         // No Brewer's Friend key / upstream error — recipe linking stays off.
@@ -537,6 +551,7 @@ function KegEditModal({
 
   const handleLink = (recipe: Recipe): void => {
     setLinkedRecipe(recipe);
+    setRecipeId(recipe.id);
     setShowPicker(false);
     setRecipeSearch('');
     const match = matchContentOption(recipe.name, recipe.style);
@@ -576,7 +591,11 @@ function KegEditModal({
       const date = isBulk ? form.date.trim() || keg.date : form.date.trim();
       const note = isBulk ? form.note.trim() || keg.note : form.note.trim();
       const abv = isBulk ? form.abv.trim() || keg.abv : form.abv.trim();
-      const fields = { contents: form.contents, date, note, abv };
+      // Recipe link. Bulk only overwrites when a recipe was actually linked (so
+      // bulk-assigning content doesn't wipe each keg's existing link); single
+      // saves the tracked id (seeded from the keg), so unlinking clears the cell.
+      const kegRecipeId = isBulk ? linkedRecipe?.id ?? keg.recipeId : recipeId;
+      const fields = { contents: form.contents, date, note, abv, recipeId: kegRecipeId };
       try {
         await api.updateKeg(keg.number, fields);
         updated.push({ ...keg, ...fields, color });
@@ -712,7 +731,10 @@ function KegEditModal({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setLinkedRecipe(null)}
+                  onClick={() => {
+                    setLinkedRecipe(null);
+                    setRecipeId('');
+                  }}
                   aria-label="Unlink recipe"
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
                 >

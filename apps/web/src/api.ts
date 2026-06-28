@@ -251,7 +251,7 @@ export const api = {
   // untouched (it's not sent).
   updateKeg: (
     number: string,
-    fields: { contents: string; date: string; note: string; abv: string },
+    fields: { contents: string; date: string; note: string; abv: string; recipeId: string },
   ) =>
     request<void>(`/kegs/${encodeURIComponent(number)}`, {
       method: 'PUT',

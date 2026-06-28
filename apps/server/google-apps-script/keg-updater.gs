@@ -15,9 +15,10 @@
  *   4. Copy the deployment URL (…/exec) into KEG_SHEET_WRITE_URL on the server
  *      (see deploy/brewplanner.env.example).
  *
- * Expects a JSON POST body: { number, contents, date, note, abv }
+ * Expects a JSON POST body: { number, contents, date, note, abv, recipeId }
  * where `number` (column B) selects the row. `volume` (column F) is intentionally
- * never sent, so it's left untouched. The reply is always HTTP 200 (Apps Script
+ * never sent, so it's left untouched. `recipeId` (column H) is the linked Brewer's
+ * Friend recipe id (blank unlinks). The reply is always HTTP 200 (Apps Script
  * can't set status codes); success/failure is signalled in the JSON body, and the
  * server keys off `error` / `success`.
  */
@@ -50,13 +51,15 @@ function doPost(e) {
       return response({ error: 'Keg #' + kegNumber + ' not found' });
     }
 
-    // Update columns C–G (1-based): C = Contents, D = Date, E = Note,
-    // F = Volume, G = ABV. Only fields present in the body are written.
+    // Update columns C–H (1-based): C = Contents, D = Date, E = Note,
+    // F = Volume, G = ABV, H = Recipe id. Only fields present in the body are
+    // written.
     if (data.contents !== undefined) sheet.getRange(targetRow, 3).setValue(data.contents);
     if (data.date !== undefined) sheet.getRange(targetRow, 4).setValue(data.date);
     if (data.note !== undefined) sheet.getRange(targetRow, 5).setValue(data.note);
     if (data.volume !== undefined) sheet.getRange(targetRow, 6).setValue(data.volume);
     if (data.abv !== undefined) sheet.getRange(targetRow, 7).setValue(data.abv);
+    if (data.recipeId !== undefined) sheet.getRange(targetRow, 8).setValue(data.recipeId);
 
     SpreadsheetApp.flush();
 

@@ -490,6 +490,8 @@ export interface Keg {
   note: string;
   volume: string;
   abv: string;
+  /** Linked Brewer's Friend recipe id (sheet column H); empty if none. */
+  recipeId: string;
 }
 
 /** Minimal CSV parser that respects quoted fields (no embedded newlines). */
@@ -535,6 +537,7 @@ export function parseKegs(
         note: cols[4] || '',
         volume: cols[5] || '',
         abv: cols[6] || '',
+        recipeId: cols[7] || '',
       };
     })
     .filter((k) => k.number);
@@ -845,12 +848,16 @@ export const kegNumberParamSchema = z.object({
  * of the keg, so the writer leaves that cell untouched. A blank date/note/abv
  * clears that cell; the desktop editor pre-fills existing values so a bulk
  * "assign content" can keep them. Contents is the one always-required field.
+ * `recipeId` is the linked Brewer's Friend recipe (sheet column H); blank
+ * unlinks. It's optional in the body so older clients that omit it leave the
+ * cell untouched.
  */
 export const updateKegSchema = z.object({
   contents: z.string().trim().min(1, 'Contents is required').max(100),
   date: z.string().trim().max(40),
   note: z.string().trim().max(200),
   abv: z.string().trim().max(20),
+  recipeId: z.string().trim().max(200).optional(),
 });
 export type UpdateKegInput = z.infer<typeof updateKegSchema>;
 
