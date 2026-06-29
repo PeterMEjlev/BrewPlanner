@@ -273,10 +273,13 @@ function AppRoot(): JSX.Element {
 
   useEffect(() => {
     if (!isNative()) return;
-    // The app runs in immersive fullscreen (see MainActivity.java): the system
-    // bars are hidden and only revealed transiently by an edge swipe. Keep light
-    // icons so the status bar stays legible against the dark UI when it appears.
+    // The nav bar is hidden for an immersive feel (see MainActivity.java) but the
+    // status bar stays. Keep the web view *below* the status bar (not edge-to-edge
+    // under it) so page content never sits under the camera cutout, and match the
+    // bar to the app's zinc-950 background with light icons.
+    void StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
     void StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+    void StatusBar.setBackgroundColor({ color: '#09090b' }).catch(() => {});
     // Hardware back button: walk the in-app history, then exit at the root.
     const handle = CapacitorApp.addListener('backButton', () => {
       if (window.history.length > 1) window.history.back();

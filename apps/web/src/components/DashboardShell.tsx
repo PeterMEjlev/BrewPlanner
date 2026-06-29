@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
@@ -84,6 +84,12 @@ let cachedFleet: FleetStatus | null = null;
 let cachedKegStatus: KegStatus | null = null;
 let cachedTodoCount: number | null = null;
 let cachedAlertCount: number | null = null;
+/**
+ * The phone bottom-bar's horizontal scroll offset, remembered across shell
+ * remounts. The shell remounts on every navigation, so without this the
+ * scrollable tab strip would jump back to the start each time you tapped a tab.
+ */
+let cachedNavScrollLeft = 0;
 
 /**
  * Poll the device fleet so the Devices nav item can show an online/total count
@@ -494,12 +500,21 @@ function BottomNav({
   );
   const tabs = [...primary, ...nav.filter((item) => !BOTTOM_BAR_PAGES.includes(item.page))];
 
-  // Keep the lit tab on screen: when the active page changes, slide it into the
-  // visible part of the scroll strip (e.g. opening Settings from elsewhere).
-  useEffect(() => {
-    scrollRef.current
-      ?.querySelector('[data-active="true"]')
-      ?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  // Restore the strip's last scroll position (it remounts on every navigation),
+  // then only nudge the active tab into view if it ended up off-screen — so
+  // tapping a tab you can already see doesn't jump the strip back to the start.
+  useLayoutEffect(() => {
+    const strip = scrollRef.current;
+    if (!strip) return;
+    strip.scrollLeft = cachedNavScrollLeft;
+    const activeEl = strip.querySelector<HTMLElement>('[data-active="true"]');
+    if (activeEl) {
+      const a = activeEl.getBoundingClientRect();
+      const c = strip.getBoundingClientRect();
+      if (a.left < c.left || a.right > c.right) {
+        activeEl.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      }
+    }
   }, [active]);
 
   // A tab navigation should dismiss the sheet; so should leaving for `md`+.
@@ -568,6 +583,9 @@ function BottomNav({
 
       <nav
         ref={scrollRef}
+        onScroll={(e) => {
+          cachedNavScrollLeft = e.currentTarget.scrollLeft;
+        }}
         className="fixed inset-x-0 bottom-0 z-30 flex snap-x overflow-x-auto overscroll-x-contain border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur [-ms-overflow-style:none] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden"
       >
         {tabs.map((item) => {

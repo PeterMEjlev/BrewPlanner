@@ -170,7 +170,7 @@ export function KegsDesktopPage(): JSX.Element {
 
   return (
     <DashboardShell active="kegs">
-      <main className="w-full max-w-[1580px] px-5 py-5">
+      <main className="w-full max-w-[1580px] px-3 py-4 sm:px-5 sm:py-5">
         <div className="mb-5 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold tracking-tight text-zinc-50">Kegs</h1>
@@ -243,10 +243,9 @@ export function KegsDesktopPage(): JSX.Element {
           })}
         </div>
 
-        <div
-          className="grid gap-3"
-          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}
-        >
+        {/* Two columns on a phone (there's room for it); auto-fill wider tiles
+            from the `sm` breakpoint up so the desktop keeps its dense grid. */}
+        <div className="grid grid-cols-2 gap-3 sm:[grid-template-columns:repeat(auto-fill,minmax(180px,1fr))]">
           {loading
             ? Array.from({ length: 12 }, (_, i) => <KegSkeleton key={i} />)
             : sorted.map((keg) => (

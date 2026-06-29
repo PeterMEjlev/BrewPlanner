@@ -38,6 +38,10 @@ async function main(): Promise<void> {
   // cookies, so no credentialed-CORS (and the SameSite cookie stays `lax`).
   await app.register(fastifyCors, {
     origin: ['https://localhost', 'http://localhost', 'capacitor://localhost'],
+    // @fastify/cors defaults to GET,HEAD,POST only — name every verb the API
+    // uses so the native app's keg edits (PUT), device/role changes (PATCH) and
+    // alert dismissals (DELETE) aren't blocked at the CORS preflight.
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
   // Signed session cookies. The secret signs the session cookie; a stable

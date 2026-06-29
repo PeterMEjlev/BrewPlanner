@@ -405,7 +405,7 @@ export function DashboardPage(): JSX.Element {
               onOpen={openChart}
               compact
             />
-            <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={load} />
+            <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={load} compact />
           </div>
         ) : (
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem] xl:items-start">
@@ -1978,11 +1978,14 @@ function KegFridgeCard({
   loading,
   onOpen,
   onRefresh,
+  compact = false,
 }: {
   device: DeviceStatus | null;
   loading: boolean;
   onOpen: OpenChart;
   onRefresh: () => void;
+  /** Phone layout: same readings, but tighter padding/spacing to waste less room. */
+  compact?: boolean;
 }): JSX.Element {
   const colors = useGraphColors();
   const series = useMetricSeries(device?.id ?? null, 'temp_c', useChartRange(device?.id ?? null, 'temp_c'));
@@ -1991,12 +1994,14 @@ function KegFridgeCard({
   const state = device?.latest.find((r) => r.metric === 'hvac_state');
   const offline = !device || !device.online;
   const range = minMax(series);
+  // Tighter rhythm on phones; the desktop rail keeps its roomier spacing.
+  const gap = compact ? 'mt-2' : 'mt-3';
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+    <section className={`rounded-xl border border-zinc-800 bg-zinc-900 ${compact ? 'p-3' : 'p-5'}`}>
       <PanelHeading title="Keg Fridge" icon={<ThermometerIcon className="h-5 w-5" />} />
       {offline ? (
-        <p className="mt-4 flex items-center gap-1.5 text-sm text-zinc-600">
+        <p className={`flex items-center gap-1.5 text-sm text-zinc-600 ${compact ? 'mt-2' : 'mt-4'}`}>
           <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" aria-hidden />
           {loading ? 'Loading…' : notConnectedNote(device)}
         </p>
@@ -2005,7 +2010,9 @@ function KegFridgeCard({
           <button
             type="button"
             onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Keg fridge temperature' })}
-            className="mt-4 block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500"
+            className={`block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500 ${
+              compact ? 'mt-2' : 'mt-4'
+            }`}
           >
             <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Fridge</p>
             <div className="mt-1 flex items-baseline gap-1.5">
@@ -2015,7 +2022,7 @@ function KegFridgeCard({
               <span className="text-sm font-medium text-zinc-500">°C</span>
             </div>
           </button>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
+          <div className={`flex flex-wrap items-center gap-3 ${gap}`}>
             {state && <StateBadge value={state.value} />}
             {setpoint && (
               <span className="text-sm text-zinc-400">
@@ -2029,11 +2036,11 @@ function KegFridgeCard({
           <button
             type="button"
             onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Keg fridge temperature' })}
-            className="mt-3 block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500"
+            className={`block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500 ${gap}`}
           >
             <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} />
             {range && (
-              <p className="mt-3 text-xs text-zinc-500">
+              <p className={`text-xs text-zinc-500 ${compact ? 'mt-1.5' : 'mt-3'}`}>
                 Min{' '}
                 <span className="font-semibold tabular-nums text-zinc-300">{range.min.toFixed(1)} °C</span>
                 {'  ·  Max '}
@@ -2041,7 +2048,7 @@ function KegFridgeCard({
               </p>
             )}
           </button>
-          <div className="mt-3">
+          <div className={gap}>
             <SetpointControl
               deviceId={device.id}
               setpointC={setpoint?.value ?? null}
