@@ -266,6 +266,25 @@ interface DashboardSnapshot {
 let cachedDashboard: DashboardSnapshot | null = null;
 
 /**
+ * True on phone-sized screens (below Tailwind's `md`, where the shell switches to
+ * the bottom-nav layout). Drives the compact dashboard used by the Android app
+ * and the website on a phone; desktop keeps the full command-centre layout.
+ */
+function useIsMobile(): boolean {
+  const query = '(max-width: 767px)';
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = (): void => setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isMobile;
+}
+
+/**
  * The hub landing page at `/`. A desktop "command centre": the fermenter and
  * utilities live in the main column, with keg inventory, operations and the
  * device fleet in the right rail. A persistent sidebar ([DashboardShell]) wraps
@@ -278,6 +297,7 @@ export function DashboardPage(): JSX.Element {
   const [chart, setChart] = useState<ChartTarget | null>(null);
   const { dashboardZoom } = useSettings();
   const { auth } = useAuth();
+  const isMobile = useIsMobile();
   const controllable = canControl(auth);
   const { kegs, loading: kegsLoading, error: kegsError } = useKegs(KEG_POLL_MS);
   const openChart = useCallback((target: ChartTarget) => setChart(target), []);
@@ -331,44 +351,50 @@ export function DashboardPage(): JSX.Element {
   const utilityOnline = [brewery, power, water].filter((d) => d?.online).length;
   const utilityTotal = [brewery, power, water].filter(Boolean).length;
 
+  const renderFermenter = (compact: boolean): JSX.Element =>
+    devices === null ? (
+      <LoadingPanel label="Loading fermenter…" />
+    ) : stationGroups.length === 0 ? (
+      <EmptyPanel
+        title="No fermenter station yet"
+        body="Register pressure, controller, or hydrometer devices with the same fermenter name and they will group here."
+      />
+    ) : (
+      <div className={compact ? 'space-y-4' : 'space-y-5'}>
+        {stationGroups.map((group) => (
+          <FermenterCommandCenter
+            key={group[0]!.name}
+            name={group[0]!.name}
+            devices={group}
+            recipe={recipe}
+            controllable={controllable}
+            onRefresh={load}
+            onOpen={openChart}
+            compact={compact}
+          />
+        ))}
+      </div>
+    );
+
   return (
     <ChartRangeProvider>
     <DashboardShell active="overview" lastUpdate={lastUpdate} fit>
       <FitScale zoom={dashboardZoom}>
-      <main className="w-full px-5 py-5">
+      <main className={`w-full ${isMobile ? 'px-3 py-3' : 'px-5 py-5'}`}>
         {error && (
-          <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}
           </div>
         )}
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem] xl:items-start">
-          <div className="min-w-0 space-y-5">
+        {isMobile ? (
+          // Compact phone layout (Android app + mobile web). Keg inventory and
+          // operations are intentionally absent — they live in the bottom nav —
+          // leaving the fermenter, the keg fridge, and a tight utilities row.
+          <div className="space-y-4">
             <section id="fermenter" className="scroll-mt-5">
-              {devices === null ? (
-                <LoadingPanel label="Loading fermenter…" />
-              ) : stationGroups.length === 0 ? (
-                <EmptyPanel
-                  title="No fermenter station yet"
-                  body="Register pressure, controller, or hydrometer devices with the same fermenter name and they will group here."
-                />
-              ) : (
-                <div className="space-y-5">
-                  {stationGroups.map((group) => (
-                    <FermenterCommandCenter
-                      key={group[0]!.name}
-                      name={group[0]!.name}
-                      devices={group}
-                      recipe={recipe}
-                      controllable={controllable}
-                      onRefresh={load}
-                      onOpen={openChart}
-                    />
-                  ))}
-                </div>
-              )}
+              {renderFermenter(true)}
             </section>
-
             <BreweryUtilities
               brewery={brewery}
               power={power}
@@ -377,20 +403,40 @@ export function DashboardPage(): JSX.Element {
               total={utilityTotal}
               loading={devices === null}
               onOpen={openChart}
+              compact
             />
-          </div>
-
-          <aside className="space-y-5">
-            <KegInventoryPanel
-              kegs={kegs}
-              loading={kegsLoading}
-              error={kegsError}
-              controllable={controllable}
-            />
-            <OperationsPanel />
             <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={load} />
-          </aside>
-        </div>
+          </div>
+        ) : (
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem] xl:items-start">
+            <div className="min-w-0 space-y-5">
+              <section id="fermenter" className="scroll-mt-5">
+                {renderFermenter(false)}
+              </section>
+
+              <BreweryUtilities
+                brewery={brewery}
+                power={power}
+                water={water}
+                online={utilityOnline}
+                total={utilityTotal}
+                loading={devices === null}
+                onOpen={openChart}
+              />
+            </div>
+
+            <aside className="space-y-5">
+              <KegInventoryPanel
+                kegs={kegs}
+                loading={kegsLoading}
+                error={kegsError}
+                controllable={controllable}
+              />
+              <OperationsPanel />
+              <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={load} />
+            </aside>
+          </div>
+        )}
       </main>
       </FitScale>
 
@@ -475,6 +521,7 @@ function FermenterCommandCenter({
   controllable,
   onRefresh,
   onOpen,
+  compact = false,
 }: {
   name: string;
   devices: DeviceStatus[];
@@ -483,10 +530,14 @@ function FermenterCommandCenter({
   controllable: boolean;
   onRefresh: () => void;
   onOpen: OpenChart;
+  /** Phone layout: a tabbed, single-chart-at-a-time card instead of the 3-up grid. */
+  compact?: boolean;
 }): JSX.Element {
   const { pressureUnit, fermentStableDays, fermentThresholdSg } = useSettings();
   const colors = useGraphColors();
   const status = useFermentStatus(devices);
+  // Which metric the compact (phone) card is expanded to. Ignored on desktop.
+  const [tab, setTab] = useState<'overview' | 'pressure' | 'temp' | 'gravity'>('overview');
   const pressure = findReading(devices, 'pressure_bar');
   const beer = findReading(devices, 'temp_c', 'hydrometer');
   const fridge = findReading(devices, 'temp_c', 'brew_controller');
@@ -568,6 +619,302 @@ function FermenterCommandCenter({
     tempDrawable && tempValues.length > 0
       ? { min: Math.min(...tempValues), max: Math.max(...tempValues) }
       : null;
+
+  // --- Phone layout: a tabbed card so only one chart is tall at a time. --------
+  if (compact) {
+    const TABS = [
+      { key: 'overview', label: 'Overview' },
+      { key: 'pressure', label: 'Pressure' },
+      { key: 'temp', label: 'Temp' },
+      { key: 'gravity', label: 'Gravity' },
+    ] as const;
+    const pressureFmt = pressure ? formatPressure(pressure.reading.value, pressureUnit) : null;
+    return (
+      <article className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+        <div className="flex items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
+          <FermenterIcon className="h-8 w-8 shrink-0 text-white" strokeWidth={2.6} />
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-sm font-semibold uppercase tracking-wide text-white">{name}</h2>
+            {recipe ? (
+              controllable ? (
+                <Link
+                  to="/kiosk/recipes"
+                  className="block truncate text-xs text-zinc-500 transition hover:text-white"
+                >
+                  {recipe.name}
+                  {recipe.style ? ` (${recipe.style})` : ''}
+                </Link>
+              ) : (
+                <span className="block truncate text-xs text-zinc-500">
+                  {recipe.name}
+                  {recipe.style ? ` (${recipe.style})` : ''}
+                </span>
+              )
+            ) : controllable ? (
+              <Link
+                to="/kiosk/recipes"
+                className="text-xs font-semibold text-zinc-400 transition hover:text-white"
+              >
+                + Link recipe
+              </Link>
+            ) : (
+              <span className="block truncate text-xs text-zinc-600">No recipe linked</span>
+            )}
+          </div>
+          <SensorsOnlinePill online={online} total={devices.length} />
+        </div>
+
+        {controller && !controllerOffline && (
+          <div className="border-b border-zinc-800 px-4 py-3">
+            <SetpointControl
+              deviceId={controller.id}
+              setpointC={setpoint?.reading.value ?? null}
+              pendingC={controller.pendingSetpointC ?? null}
+              onApplied={onRefresh}
+              variant="inline"
+            />
+          </div>
+        )}
+
+        <div className="px-4 pt-3">
+          <div className="flex gap-1 rounded-lg border border-zinc-800 bg-zinc-950/40 p-1">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`flex-1 rounded-md px-2 py-1.5 text-xs font-semibold transition ${
+                  tab === t.key ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="p-4">
+          {tab === 'overview' && (
+            <div className="divide-y divide-zinc-800">
+              <button
+                type="button"
+                onClick={() => setTab('pressure')}
+                className="flex w-full items-center gap-3 py-2.5 text-left transition hover:bg-zinc-800/30"
+              >
+                <GaugeIcon className="h-5 w-5 shrink-0 text-white" />
+                <span className="flex-1 truncate text-sm font-medium text-zinc-300">Pressure</span>
+                {pressureOffline ? (
+                  <span className="text-xs text-zinc-600">Not connected</span>
+                ) : pressureFmt ? (
+                  <span className="text-lg font-semibold tabular-nums text-zinc-50">
+                    {pressureFmt.value}
+                    <span className="ml-1 text-xs font-medium text-zinc-500">{pressureFmt.unit}</span>
+                  </span>
+                ) : (
+                  <span className="text-sm text-zinc-600">—</span>
+                )}
+                <div className="w-16 shrink-0">
+                  {!pressureOffline && pressureSeries.length > 1 && (
+                    <Sparkline data={pressureSeries} stroke={colors.pressure} fill={withAlpha(colors.pressure, 0.12)} height={28} />
+                  )}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTab('temp')}
+                className="flex w-full items-center gap-3 py-2.5 text-left transition hover:bg-zinc-800/30"
+              >
+                <ThermometerIcon className="h-5 w-5 shrink-0 text-white" />
+                <span className="flex-1 truncate text-sm font-medium text-zinc-300">Temperature</span>
+                <span className="text-base font-semibold tabular-nums text-zinc-50">
+                  {beer ? `${beer.reading.value.toFixed(1)}°` : '—'}
+                  <span className="px-1 text-zinc-600">/</span>
+                  <span className={state ? hvacColor(state.reading.value) : undefined}>
+                    {fridge ? `${fridge.reading.value.toFixed(1)}°` : '—'}
+                  </span>
+                </span>
+                <div className="w-16 shrink-0">
+                  {(tempSeries.length > 1 || fridgeSeries.length > 1) && (
+                    <MultiLineSparkline
+                      series={[
+                        ...(beer ? [{ data: tempSeries, stroke: colors.beerTemp }] : []),
+                        ...(fridge ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dashed: true }] : []),
+                      ]}
+                      height={28}
+                    />
+                  )}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTab('gravity')}
+                className="flex w-full items-center gap-3 py-2.5 text-left transition hover:bg-zinc-800/30"
+              >
+                <FlaskIcon className="h-5 w-5 shrink-0 text-white" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-zinc-300">Gravity</div>
+                  {gravityForecast && gravityDone && (
+                    <div className="truncate text-xs text-zinc-500">{gravityDoneLabel(gravityDone)}</div>
+                  )}
+                </div>
+                {gravity && !hydrometerOffline ? (
+                  <span className="text-lg font-semibold tabular-nums text-zinc-50">
+                    {gravity.reading.value.toFixed(3)}
+                    <span className="ml-1 text-xs font-medium text-zinc-500">SG</span>
+                  </span>
+                ) : (
+                  <span className="text-xs text-zinc-600">{hydrometerOffline ? 'Not connected' : '—'}</span>
+                )}
+                <span
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-semibold ${status.shellClass}`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${status.dotClass}`} aria-hidden />
+                  {status.label}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {tab === 'pressure' &&
+            (pressureOffline ? (
+              <NotConnected label="Pressure sensor not connected" />
+            ) : pressureFmt ? (
+              <>
+                <BigValue value={pressureFmt.value} unit={pressureFmt.unit} />
+                <div className="mt-3 h-44">
+                  <MiniChartFrame
+                    max={pressureRange ? formatPressure(pressureRange.max, pressureUnit).value : undefined}
+                    min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
+                    caption={pressureRange ? rangeCaption(pressureRangeMs) : undefined}
+                  >
+                    <Sparkline data={pressureSeries} stroke={colors.pressure} fill={withAlpha(colors.pressure, 0.1)} grow />
+                  </MiniChartFrame>
+                </div>
+              </>
+            ) : (
+              <MissingMetric label="No pressure sensor" />
+            ))}
+
+          {tab === 'temp' && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Beer</p>
+                  {hydrometerOffline ? (
+                    <NotConnected label="Tilt not connected" compact />
+                  ) : beer ? (
+                    <TemperatureValue reading={beer.reading} />
+                  ) : (
+                    <MissingMetric label="No beer temp" compact />
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Fridge</p>
+                  {controllerOffline ? (
+                    <NotConnected label="Controller not connected" compact />
+                  ) : fridge ? (
+                    <TemperatureValue
+                      reading={fridge.reading}
+                      valueClass={state ? hvacColor(state.reading.value) : undefined}
+                    />
+                  ) : (
+                    <MissingMetric label="No fridge temp" compact />
+                  )}
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                {state && <StateBadge value={state.reading.value} />}
+                {setpoint && (
+                  <span className="text-sm text-zinc-400">
+                    Target{' '}
+                    <span className="font-semibold tabular-nums text-zinc-200">
+                      {setpoint.reading.value.toFixed(1)} °C
+                    </span>
+                  </span>
+                )}
+              </div>
+              {(beer || fridge) && (
+                <>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                    {beer && <LegendSwatch color={colors.beerTemp} label="Beer" />}
+                    {fridge && <LegendSwatch color={colors.fridgeTemp} label="Fridge" dashed />}
+                    {setpoint && <LegendSwatch color={colors.setpoint} label="Target" dotted />}
+                  </div>
+                  <div className="mt-2 h-44">
+                    <MiniChartFrame
+                      max={tempRange ? `${tempRange.max.toFixed(1)}°` : undefined}
+                      min={tempRange ? `${tempRange.min.toFixed(1)}°` : undefined}
+                      caption={tempRange ? rangeCaption(tempRangeMs) : undefined}
+                    >
+                      <MultiLineSparkline
+                        series={[
+                          ...(beer ? [{ data: tempSeries, stroke: colors.beerTemp }] : []),
+                          ...(fridge ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dashed: true }] : []),
+                        ]}
+                        refLine={setpoint ? { value: setpoint.reading.value, stroke: colors.setpoint } : undefined}
+                        grow
+                      />
+                    </MiniChartFrame>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {tab === 'gravity' &&
+            (hydrometerOffline ? (
+              <NotConnected label="Tilt hydrometer not connected" />
+            ) : gravity ? (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
+                  <div className="flex flex-col items-end gap-1">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${status.shellClass}`}
+                    >
+                      <span className={`h-2 w-2 rounded-full ${status.dotClass}`} aria-hidden />
+                      {status.label}
+                    </span>
+                    {gravityForecast && gravityDone && (
+                      <span className="text-sm font-semibold text-white">{gravityDoneLabel(gravityDone)}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-3 h-44">
+                  {gravityValues.length > 1 ? (
+                    <MiniChartFrame
+                      max={gravityRange ? gravityRange.max.toFixed(3) : undefined}
+                      min={gravityRange ? gravityRange.min.toFixed(3) : undefined}
+                      caption={gravityForecast != null ? 'Last 48h' : 'Recent trend'}
+                      captionRight={gravityForecast != null ? '2-day forecast' : undefined}
+                    >
+                      {gravityForecast ? (
+                        <ForecastSparkline
+                          history={gravityHistory}
+                          forecast={gravityForecast}
+                          now={gravityNow}
+                          stroke={colors.gravity}
+                          fill={withAlpha(colors.gravity, 0.12)}
+                          grow
+                        />
+                      ) : (
+                        <Sparkline data={gravityValues} stroke={colors.gravity} fill={withAlpha(colors.gravity, 0.12)} grow />
+                      )}
+                    </MiniChartFrame>
+                  ) : (
+                    <div className="flex h-full items-center text-xs text-zinc-600">Collecting trend…</div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <MissingMetric label="No gravity data" />
+            ))}
+        </div>
+      </article>
+    );
+  }
 
   return (
     <article className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
@@ -1037,6 +1384,7 @@ function BreweryUtilities({
   total,
   loading,
   onOpen,
+  compact = false,
 }: {
   brewery: DeviceStatus | null;
   power: DeviceStatus | null;
@@ -1045,25 +1393,91 @@ function BreweryUtilities({
   total: number;
   loading: boolean;
   onOpen: OpenChart;
+  /** Phone layout: a tight 3-across row of slim tiles. */
+  compact?: boolean;
 }): JSX.Element {
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+    <section className={`rounded-xl border border-zinc-800 bg-zinc-900 ${compact ? 'p-4' : 'p-5'}`}>
       <PanelHeading
         title="Brewery & Utilities"
-        icon={<HutIcon className="h-7 w-7" />}
+        icon={<HutIcon className={compact ? 'h-5 w-5' : 'h-7 w-7'} />}
         right={total > 0 ? <SensorsOnlinePill online={online} total={total} /> : undefined}
-        large
+        large={!compact}
       />
       {loading ? (
         <p className="mt-4 text-sm text-zinc-400">Loading utilities…</p>
       ) : (
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <BreweryTempCard device={brewery} onOpen={onOpen} />
-          <PowerCard device={power} onOpen={onOpen} />
-          <WaterCard device={water} onOpen={onOpen} />
+        <div className={compact ? 'mt-3 grid grid-cols-3 gap-2' : 'mt-4 grid gap-4 md:grid-cols-3'}>
+          <BreweryTempCard device={brewery} onOpen={onOpen} compact={compact} />
+          <PowerCard device={power} onOpen={onOpen} compact={compact} />
+          <WaterCard device={water} onOpen={onOpen} compact={compact} />
         </div>
       )}
     </section>
+  );
+}
+
+/** Slim utility tile for the phone 3-across row: title, current value, mini chart. */
+function CompactUtilityTile({
+  icon,
+  title,
+  value,
+  unit,
+  sub,
+  onClick,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  value: string;
+  unit?: string | null;
+  /** A small secondary line, e.g. "Today 143 kWh" or "Target 6.0°". */
+  sub?: string;
+  onClick: () => void;
+  /** The mini chart (rendered at a fixed small height). */
+  children?: React.ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col rounded-lg border border-zinc-800 bg-zinc-950/40 p-2.5 text-left transition hover:border-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+    >
+      <div className="flex items-center gap-1.5 text-white">
+        {icon}
+        <span className="truncate text-[11px] font-semibold uppercase tracking-wide">{title}</span>
+      </div>
+      <div className="mt-1.5 flex items-baseline gap-1">
+        <span className="text-base font-semibold tabular-nums text-zinc-50">{value}</span>
+        {unit && <span className="text-[10px] font-medium text-zinc-500">{unit}</span>}
+      </div>
+      {sub && <p className="truncate text-[10px] text-zinc-500">{sub}</p>}
+      {children && <div className="mt-1.5">{children}</div>}
+    </button>
+  );
+}
+
+/** Slim "no data yet" tile matching {@link CompactUtilityTile}'s footprint. */
+function CompactUtilityPlaceholder({
+  icon,
+  title,
+  note,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  note: string;
+}): JSX.Element {
+  return (
+    <div className="flex flex-col rounded-lg border border-dashed border-zinc-800 bg-zinc-950/30 p-2.5">
+      <div className="flex items-center gap-1.5 text-zinc-300 opacity-70">
+        {icon}
+        <span className="truncate text-[11px] font-semibold uppercase tracking-wide">{title}</span>
+      </div>
+      <p className="mt-2 flex items-center gap-1 text-[10px] text-zinc-600">
+        <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" aria-hidden />
+        {note}
+      </p>
+    </div>
   );
 }
 
@@ -1142,14 +1556,22 @@ function notConnectedNote(device: DeviceStatus | null): string {
 function BreweryTempCard({
   device,
   onOpen,
+  compact = false,
 }: {
   device: DeviceStatus | null;
   onOpen: OpenChart;
+  compact?: boolean;
 }): JSX.Element {
   const series = useMetricSeries(device?.id ?? null, 'temp_c', useChartRange(device?.id ?? null, 'temp_c'));
   const colors = useGraphColors();
   if (!device || !device.online) {
-    return (
+    return compact ? (
+      <CompactUtilityPlaceholder
+        icon={<ThermometerIcon className="h-4 w-4" />}
+        title="Temp"
+        note={notConnectedNote(device)}
+      />
+    ) : (
       <UtilityPlaceholder
         icon={<ThermometerIcon className="h-5 w-5" />}
         title="Temperature"
@@ -1160,6 +1582,20 @@ function BreweryTempCard({
   const temp = device.latest.find((r) => r.metric === 'temp_c');
   const setpoint = device.latest.find((r) => r.metric === 'setpoint_c');
   const range = minMax(series);
+  if (compact) {
+    return (
+      <CompactUtilityTile
+        icon={<ThermometerIcon className="h-4 w-4" />}
+        title="Temp"
+        value={temp ? temp.value.toFixed(1) : '—'}
+        unit="°C"
+        sub={setpoint ? `Target ${setpoint.value.toFixed(1)}°` : undefined}
+        onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Brewery ambient temperature' })}
+      >
+        <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={24} />
+      </CompactUtilityTile>
+    );
+  }
   return (
     <UtilityCardButton
       onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Brewery ambient temperature' })}
@@ -1203,19 +1639,38 @@ function BreweryTempCard({
 function PowerCard({
   device,
   onOpen,
+  compact = false,
 }: {
   device: DeviceStatus | null;
   onOpen: OpenChart;
+  compact?: boolean;
 }): JSX.Element {
   const series = useMetricSeries(device?.id ?? null, 'power_w', useChartRange(device?.id ?? null, 'power_w'));
   const total = useDeviceTotal(device?.id ?? -1, device ? 'energy_kwh' : undefined);
   const colors = useGraphColors();
   if (!device || !device.online)
-    return (
+    return compact ? (
+      <CompactUtilityPlaceholder icon={<BoltIcon className="h-4 w-4" />} title="Power" note={notConnectedNote(device)} />
+    ) : (
       <UtilityPlaceholder icon={<BoltIcon className="h-5 w-5" />} title="Power" note={notConnectedNote(device)} />
     );
   const current = device.latest.find((r) => r.metric === 'power_w');
   const today = device.latest.find((r) => r.metric === 'energy_kwh');
+  if (compact) {
+    const cur = current ? formatValueParts(current) : null;
+    return (
+      <CompactUtilityTile
+        icon={<BoltIcon className="h-4 w-4" />}
+        title="Power"
+        value={cur ? cur.value : '—'}
+        unit={cur?.unit}
+        sub={today ? `Today ${formatValue(today)}` : undefined}
+        onClick={() => onOpen({ deviceId: device.id, metric: 'power_w', title: 'Power draw' })}
+      >
+        <BarSpark data={series} fill={colors.power} height={24} />
+      </CompactUtilityTile>
+    );
+  }
   return (
     <UtilityCardButton
       onClick={() => onOpen({ deviceId: device.id, metric: 'power_w', title: 'Power draw' })}
@@ -1244,19 +1699,38 @@ function PowerCard({
 function WaterCard({
   device,
   onOpen,
+  compact = false,
 }: {
   device: DeviceStatus | null;
   onOpen: OpenChart;
+  compact?: boolean;
 }): JSX.Element {
   const series = useMetricSeries(device?.id ?? null, 'flow_lpm', useChartRange(device?.id ?? null, 'flow_lpm'));
   const total = useDeviceTotal(device?.id ?? -1, device ? 'water_l' : undefined);
   const colors = useGraphColors();
   if (!device || !device.online)
-    return (
+    return compact ? (
+      <CompactUtilityPlaceholder icon={<DropletIcon className="h-4 w-4" />} title="Water" note={notConnectedNote(device)} />
+    ) : (
       <UtilityPlaceholder icon={<DropletIcon className="h-5 w-5" />} title="Water" note={notConnectedNote(device)} />
     );
   const current = device.latest.find((r) => r.metric === 'flow_lpm');
   const today = device.latest.find((r) => r.metric === 'water_l');
+  if (compact) {
+    const cur = current ? formatValueParts(current) : null;
+    return (
+      <CompactUtilityTile
+        icon={<DropletIcon className="h-4 w-4" />}
+        title="Water"
+        value={cur ? cur.value : '—'}
+        unit={cur?.unit}
+        sub={today ? `Today ${formatValue(today)}` : undefined}
+        onClick={() => onOpen({ deviceId: device.id, metric: 'flow_lpm', title: 'Water flow' })}
+      >
+        <Sparkline data={series} stroke={colors.water} fill={withAlpha(colors.water, 0.1)} height={24} />
+      </CompactUtilityTile>
+    );
+  }
   return (
     <UtilityCardButton
       onClick={() => onOpen({ deviceId: device.id, metric: 'flow_lpm', title: 'Water flow' })}

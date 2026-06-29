@@ -273,9 +273,10 @@ function AppRoot(): JSX.Element {
 
   useEffect(() => {
     if (!isNative()) return;
-    // Dark status bar with light icons, matching the app's zinc-950 background.
+    // The app runs in immersive fullscreen (see MainActivity.java): the system
+    // bars are hidden and only revealed transiently by an edge swipe. Keep light
+    // icons so the status bar stays legible against the dark UI when it appears.
     void StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
-    void StatusBar.setBackgroundColor({ color: '#09090b' }).catch(() => {});
     // Hardware back button: walk the in-app history, then exit at the root.
     const handle = CapacitorApp.addListener('backButton', () => {
       if (window.history.length > 1) window.history.back();

@@ -25,18 +25,28 @@ export function ServerSetup({ onConnected }: { onConnected: () => void }): JSX.E
     try {
       // /api/auth/me is unauthenticated and always returns JSON, so a clean 200
       // confirms we're really pointing at a Konfus server.
-      const res = await fetch(`${normalized}/api/auth/me`, {
-        headers: { Accept: 'application/json' },
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const body = (await res.json()) as { isLocal?: unknown };
-      if (typeof body?.isLocal !== 'boolean') throw new Error('not a Konfus server');
+      let res: Response;
+      try {
+        res = await fetch(`${normalized}/api/auth/me`, { headers: { Accept: 'application/json' } });
+      } catch (err) {
+        // A *thrown* fetch is a transport-level failure — DNS, offline, TLS, or
+        // the server not sending CORS headers for this origin — never an HTTP
+        // status. Distinguish it so "wrong address" and "can't reach" don't look
+        // the same. Logged so it's visible over `adb logcat` when debugging.
+        console.error('[ServerSetup] connect failed:', err);
+        throw new Error(`Couldn’t reach ${normalized}. Check the address and that you’re online.`);
+      }
+      if (!res.ok) {
+        throw new Error(`That server responded with ${res.status}. Double-check the address.`);
+      }
+      const body = (await res.json().catch(() => null)) as { isLocal?: unknown } | null;
+      if (typeof body?.isLocal !== 'boolean') {
+        throw new Error("That address responded, but it doesn’t look like a Konfus server.");
+      }
       await setServerUrl(normalized);
       onConnected();
-    } catch {
-      setError(
-        "Couldn't reach a Konfus server at that address. Check the URL and that you're online.",
-      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not connect.');
     } finally {
       setBusy(false);
     }
