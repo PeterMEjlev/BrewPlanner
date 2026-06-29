@@ -1,6 +1,8 @@
 ﻿import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { isNative } from '../native';
+import { useReopenSetup } from '../setupContext';
 
 /**
  * Login screen shown to remote visitors. Local kiosk requests are trusted and
@@ -10,6 +12,7 @@ import { api } from '../api';
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const reopenSetup = useReopenSetup();
   const from = (location.state as { from?: string } | null)?.from ?? '/';
 
   const [username, setUsername] = useState('');
@@ -90,6 +93,16 @@ export function LoginPage() {
         >
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+
+        {isNative() && reopenSetup && (
+          <button
+            type="button"
+            onClick={reopenSetup}
+            className="w-full text-center text-xs text-zinc-500 transition hover:text-zinc-300"
+          >
+            Connect to a different server
+          </button>
+        )}
       </form>
     </div>
   );

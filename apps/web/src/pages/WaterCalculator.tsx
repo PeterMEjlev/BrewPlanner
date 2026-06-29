@@ -293,10 +293,10 @@ export function WaterCalculatorPage(): JSX.Element {
                     <tr className="text-xs uppercase tracking-wider text-zinc-500">
                       <th className="py-1 text-left font-medium">Ion</th>
                       <th className="py-1 text-right font-medium">Src</th>
-                      <th className="py-1 text-right font-medium">Add</th>
+                      <th className="py-1 text-right font-medium">Add</th> 
                       <th className="py-1 text-right font-medium">Result</th>
                       <th className="py-1 text-right font-medium">Target</th>
-                      <th className="py-1 text-right font-medium">vs target</th>
+                      <th className="py-1 text-right font-medium">Delta</th>
                     </tr>
                   </thead>
                   <tbody>

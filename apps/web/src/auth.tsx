@@ -3,6 +3,8 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { api } from './api';
+import { isNative } from './native';
+import { useReopenSetup } from './setupContext';
 
 interface AuthContextValue {
   auth: AuthState;
@@ -50,6 +52,7 @@ export function RequireAuth({
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [failed, setFailed] = useState(false);
   const location = useLocation();
+  const reopenSetup = useReopenSetup();
 
   const refresh = useCallback(async () => {
     setAuth(await api.getAuth());
@@ -61,8 +64,17 @@ export function RequireAuth({
 
   if (failed) {
     return (
-      <div className="flex h-full items-center justify-center bg-zinc-950 p-6 text-center text-zinc-400">
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-zinc-950 p-6 text-center text-zinc-400">
         Couldn’t reach the server. Check your connection and reload.
+        {isNative() && reopenSetup && (
+          <button
+            type="button"
+            onClick={reopenSetup}
+            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-800"
+          >
+            Connect to a different server
+          </button>
+        )}
       </div>
     );
   }

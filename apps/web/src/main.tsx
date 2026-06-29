@@ -1,7 +1,12 @@
-﻿import React, { Suspense, lazy } from 'react';
+﻿import { App as CapacitorApp } from '@capacitor/app';
+import { Style, StatusBar } from '@capacitor/status-bar';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { RequireAuth } from './auth';
+import { hasServerUrl, hydrateConfig, isNative, setUnauthorizedHandler } from './native';
+import { ReopenSetupContext } from './setupContext';
+import { ServerSetup } from './pages/ServerSetup';
 import { KioskFrame } from './components/KioskFrame';
 import { AdminPage } from './pages/Admin';
 import { AlertsPage } from './pages/Alerts';
@@ -251,8 +256,51 @@ const router = createBrowserRouter([
   { path: '*', element: <Navigate to="/" replace /> },
 ]);
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <RouterProvider router={router} />
-  </React.StrictMode>,
-);
+// A 401 anywhere routes back to /login through the router rather than a full
+// page reload — a reload would break in the bundled native app, which has no
+// server at its localhost origin to serve /login.
+setUnauthorizedHandler(() => {
+  void router.navigate('/login');
+});
+
+/**
+ * Root gate. In the browser this is just the router. In the native app it first
+ * requires a server URL (the one-time setup screen) and wires the Android
+ * hardware back button plus a dark status bar.
+ */
+function AppRoot(): JSX.Element {
+  const [configured, setConfigured] = useState(hasServerUrl());
+
+  useEffect(() => {
+    if (!isNative()) return;
+    // Dark status bar with light icons, matching the app's zinc-950 background.
+    void StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+    void StatusBar.setBackgroundColor({ color: '#09090b' }).catch(() => {});
+    // Hardware back button: walk the in-app history, then exit at the root.
+    const handle = CapacitorApp.addListener('backButton', () => {
+      if (window.history.length > 1) window.history.back();
+      else void CapacitorApp.exitApp();
+    });
+    return () => {
+      void handle.then((h) => h.remove());
+    };
+  }, []);
+
+  if (isNative() && !configured) {
+    return <ServerSetup onConnected={() => setConfigured(true)} />;
+  }
+  return (
+    <ReopenSetupContext.Provider value={() => setConfigured(false)}>
+      <RouterProvider router={router} />
+    </ReopenSetupContext.Provider>
+  );
+}
+
+// Load the saved server URL / token before the first render (native only), then mount.
+void hydrateConfig().finally(() => {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <AppRoot />
+    </React.StrictMode>,
+  );
+});

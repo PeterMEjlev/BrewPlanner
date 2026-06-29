@@ -22,7 +22,7 @@ import type {
   UserRole,
 } from '@checklist/shared';
 
-const BASE = '/api';
+import { getApiBase, getToken, handleUnauthorized, setToken } from './native';
 
 /** Progress of a remote software update (the Settings "Update" button). */
 export interface SystemUpdateStatus {
@@ -40,15 +40,23 @@ export interface SystemUpdateStatus {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {};
   // Only send a JSON content-type when there's actually a body — Fastify
   // rejects an empty body that declares `Content-Type: application/json`.
-  const headers = init?.body ? { 'Content-Type': 'application/json' } : undefined;
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  if (init?.body) headers['Content-Type'] = 'application/json';
+  // Native app: authenticate with the bearer token (it has no session cookie
+  // across the tunnel origin). In the browser getToken() is null and the cookie
+  // carries the session, so this header is simply absent.
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  // getApiBase() is '' in the browser (same-origin /api) and the configured
+  // server origin in the native app (calls go over the tunnel).
+  const res = await fetch(`${getApiBase()}/api${path}`, { ...init, headers });
   // A 401 on a normal request means the session expired (or never existed for
   // a remote client). Bounce to the login page — except on /auth/* calls,
   // where the caller handles the status itself (e.g. wrong password on login).
   if (res.status === 401 && !path.startsWith('/auth/')) {
-    window.location.assign('/login');
+    handleUnauthorized();
     throw new Error('401: Authentication required');
   }
   if (!res.ok) {
@@ -69,12 +77,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   // Auth
   getAuth: () => request<AuthState>('/auth/me'),
-  login: (username: string, password: string) =>
-    request<AuthState>('/auth/login', {
+  login: async (username: string, password: string) => {
+    // The server also returns a full-access bearer token; the native app stores
+    // it for subsequent requests (the browser ignores it and uses its cookie).
+    const res = await request<AuthState & { token?: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
-    }),
-  logout: () => request<void>('/auth/logout', { method: 'POST' }),
+    });
+    if (res.token) await setToken(res.token);
+    return res;
+  },
+  logout: async () => {
+    try {
+      await request<void>('/auth/logout', { method: 'POST' });
+    } finally {
+      // Clear the native token even if the request failed (e.g. already expired).
+      await setToken(null);
+    }
+  },
   changePassword: (currentPassword: string, newPassword: string) =>
     request<AuthState>('/auth/change-password', {
       method: 'POST',

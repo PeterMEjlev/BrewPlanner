@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fastifyCookie from '@fastify/cookie';
+import fastifyCors from '@fastify/cors';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
@@ -29,6 +30,15 @@ async function main(): Promise<void> {
 
   // Ensure a login account exists (first boot creates the admin user).
   seedAdminUser(app.log);
+
+  // Allow the bundled native app to call the API cross-origin. Capacitor's
+  // Android web view serves the app from a `localhost` origin, so its requests
+  // to this server over the tunnel are cross-origin and need CORS. The browser
+  // dashboard is same-origin and unaffected. Auth is by bearer token, not
+  // cookies, so no credentialed-CORS (and the SameSite cookie stays `lax`).
+  await app.register(fastifyCors, {
+    origin: ['https://localhost', 'http://localhost', 'capacitor://localhost'],
+  });
 
   // Signed session cookies. The secret signs the session cookie; a stable
   // value keeps sessions valid across restarts. See auth/secret.ts.

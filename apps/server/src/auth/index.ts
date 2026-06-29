@@ -97,6 +97,39 @@ export function getSessionUser(req: FastifyRequest): User | null {
   return getUserById(id);
 }
 
+/**
+ * A full-access token for a native client that can't hold a session cookie —
+ * notably the Android (Capacitor) app, whose bundled web view runs from a
+ * `localhost` origin and talks to this server cross-origin over the tunnel, so
+ * the browser won't attach the session cookie. The token is just the user id
+ * signed with the *same* secret as the session cookie (minted at login, see the
+ * /login handler), so it's verified the same way and carries that user's role.
+ *
+ * This is deliberately distinct from the read-only `WATCH_API_TOKEN` above: that
+ * one is a shared, view-only env secret; this one identifies a real account and
+ * therefore grants whatever that account may do (including admin control).
+ */
+export function getBearerUser(req: FastifyRequest): User | null {
+  const header = req.headers.authorization;
+  const presented = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!presented) return null;
+  const unsigned = req.unsignCookie(presented);
+  if (!unsigned.valid || !unsigned.value) return null;
+  const id = Number(unsigned.value);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return getUserById(id);
+}
+
+/** Mint a full-access token (signed user id) for {@link getBearerUser}. */
+export function mintAuthToken(req: FastifyRequest, userId: number): string {
+  return req.server.signCookie(String(userId));
+}
+
+/** The user behind a request, whether by session cookie or full-access bearer token. */
+export function getRequestUser(req: FastifyRequest): User | null {
+  return getSessionUser(req) ?? getBearerUser(req);
+}
+
 function setSessionCookie(reply: FastifyReply, userId: number): void {
   reply.setCookie(SESSION_COOKIE, String(userId), {
     path: '/',
@@ -114,7 +147,7 @@ function setSessionCookie(reply: FastifyReply, userId: number): void {
  */
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (isLocalRequest(req)) return;
-  if (getSessionUser(req)) return;
+  if (getRequestUser(req)) return;
   if (hasValidBearerToken(req)) return;
   await reply.status(401).send({ error: 'Authentication required' });
 }
@@ -129,7 +162,7 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Pro
  */
 export async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (isLocalRequest(req)) return;
-  const user = getSessionUser(req);
+  const user = getRequestUser(req);
   if (user?.role === 'admin') return;
   if (user) {
     await reply.status(403).send({ error: 'Admin privileges required' });
@@ -151,7 +184,7 @@ function parseBody<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply):
 /** Auth endpoints, registered under /api/auth (intentionally unguarded). */
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.get('/me', async (req): Promise<AuthState> => {
-    return { user: getSessionUser(req), isLocal: isLocalRequest(req) };
+    return { user: getRequestUser(req), isLocal: isLocalRequest(req) };
   });
 
   // Throttle login attempts per client IP (see the rate-limit registration in
@@ -168,7 +201,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const user = authenticate(result.data.username, result.data.password);
     if (!user) return reply.status(401).send({ error: 'Invalid username or password' });
     setSessionCookie(reply, user.id);
-    return { user, isLocal: isLocalRequest(req) } satisfies AuthState;
+    // Also hand back a full-access bearer token. Browsers ignore it (they use the
+    // cookie just set); the native app, which can't hold a cross-origin cookie,
+    // stores it and sends it as `Authorization: Bearer` on every request.
+    const state: AuthState = { user, isLocal: isLocalRequest(req) };
+    return { ...state, token: mintAuthToken(req, user.id) };
   });
 
   app.post('/logout', async (_req, reply) => {
