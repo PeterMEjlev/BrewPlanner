@@ -7,13 +7,11 @@ import {
   BellIcon,
   ChecklistIcon,
   ClockIcon,
-  CloseIcon,
   FlaskIcon,
   HistoryIcon,
   HomeIcon,
   KegIcon,
   MonitorIcon,
-  MoreIcon,
   SettingsIcon,
   SlidersIcon,
   TodoIcon,
@@ -371,16 +369,20 @@ export function DashboardShell({
         openTodos={openTodos}
         lastUpdate={lastUpdate}
       />
-      {/* Below `md` the sidebar is hidden, so leave room for the fixed bottom bar
-          (it would otherwise cover the last cards of a scrolling page). */}
+      {/* Below `md` the sidebar is hidden, so: leave room for the fixed bottom
+          bar (it would otherwise cover the last cards), and inset the top by the
+          safe-area so content clears the status bar / camera cutout on a phone.
+          Both fall away at `md`+ where the desktop chrome takes over. */}
       <div
-        className={`min-w-0 flex-1 pb-16 md:pb-0 ${
-          fit ? 'xl:h-screen xl:overflow-hidden' : ''
+        className={`min-w-0 flex-1 pb-16 pt-[env(safe-area-inset-top)] md:pb-0 md:pt-0 ${
+          fit
+            ? 'h-[100dvh] overflow-hidden md:h-auto md:overflow-visible xl:h-screen xl:overflow-hidden'
+            : ''
         }`}
       >
         {children}
       </div>
-      <BottomNav active={active} alertCount={alertCount} fleet={fleet} lastUpdate={lastUpdate} />
+      <BottomNav active={active} alertCount={alertCount} fleet={fleet} />
     </div>
   );
 }
@@ -481,15 +483,12 @@ function BottomNav({
   active,
   alertCount,
   fleet,
-  lastUpdate,
 }: {
   active: ShellPage;
   alertCount: number;
   fleet: FleetStatus | null;
-  lastUpdate?: string | null;
 }): JSX.Element {
-  const { auth, refresh } = useAuth();
-  const [moreOpen, setMoreOpen] = useState(false);
+  const { auth } = useAuth();
   const nav = visibleNav(canControl(auth));
   const scrollRef = useRef<HTMLElement>(null);
 
@@ -517,70 +516,7 @@ function BottomNav({
     }
   }, [active]);
 
-  // A tab navigation should dismiss the sheet; so should leaving for `md`+.
-  useEffect(() => {
-    if (!moreOpen) return;
-    const mq = window.matchMedia('(min-width: 768px)');
-    const close = (): void => setMoreOpen(false);
-    mq.addEventListener('change', close);
-    return () => mq.removeEventListener('change', close);
-  }, [moreOpen]);
-
   return (
-    <>
-      {moreOpen && (
-        <button
-          type="button"
-          aria-label="Close menu"
-          onClick={() => setMoreOpen(false)}
-          className="fixed inset-0 z-40 bg-black/60 md:hidden"
-        />
-      )}
-
-      {moreOpen && (
-        <div className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl border-t border-zinc-800 bg-zinc-950 pb-[env(safe-area-inset-bottom)] md:hidden">
-          <div className="flex items-center justify-between px-5 pb-2 pt-4">
-            <span className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
-              More
-            </span>
-            <button
-              type="button"
-              onClick={() => setMoreOpen(false)}
-              aria-label="Close menu"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
-            >
-              <CloseIcon className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className="space-y-3 px-5 py-4 text-sm">
-            <div className="flex items-center gap-2 text-zinc-500">
-              <ClockIcon className="h-4 w-4" />
-              <div className="leading-tight">
-                <div className="text-zinc-300">{lastUpdate ? relativeTime(lastUpdate) : '—'}</div>
-                <div className="text-xs">Last update</div>
-              </div>
-            </div>
-            {auth.user && (
-              <div className="flex items-center justify-between gap-2 text-zinc-500">
-                <span className="truncate text-zinc-400">{auth.user.username}</span>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setMoreOpen(false);
-                    await api.logout();
-                    await refresh();
-                  }}
-                  className="rounded-lg px-2 py-1 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
-                >
-                  Sign out
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <nav
         ref={scrollRef}
         onScroll={(e) => {
@@ -609,15 +545,7 @@ function BottomNav({
             </Link>
           );
         })}
-        <button
-          type="button"
-          onClick={() => setMoreOpen((v) => !v)}
-          className="w-[4.5rem] shrink-0 snap-start"
-        >
-          <BottomTab Icon={MoreIcon} label="More" active={moreOpen} />
-        </button>
       </nav>
-    </>
   );
 }
 

@@ -360,27 +360,28 @@ export function DashboardPage(): JSX.Element {
         body="Register pressure, controller, or hydrometer devices with the same fermenter name and they will group here."
       />
     ) : (
-      <div className={compact ? 'space-y-4' : 'space-y-5'}>
+      // Compact: a flex column whose cards each fill an equal share of the
+      // height, so the (usually single) fermenter card stretches to fill the
+      // section the page layout hands it.
+      <div className={compact ? 'flex h-full flex-col gap-4' : 'space-y-5'}>
         {stationGroups.map((group) => (
-          <FermenterCommandCenter
-            key={group[0]!.name}
-            name={group[0]!.name}
-            devices={group}
-            recipe={recipe}
-            controllable={controllable}
-            onRefresh={load}
-            onOpen={openChart}
-            compact={compact}
-          />
+          <div key={group[0]!.name} className={compact ? 'min-h-0 flex-1' : undefined}>
+            <FermenterCommandCenter
+              name={group[0]!.name}
+              devices={group}
+              recipe={recipe}
+              controllable={controllable}
+              onRefresh={load}
+              onOpen={openChart}
+              compact={compact}
+            />
+          </div>
         ))}
       </div>
     );
 
-  return (
-    <ChartRangeProvider>
-    <DashboardShell active="overview" lastUpdate={lastUpdate} fit>
-      <FitScale zoom={dashboardZoom}>
-      <main className={`w-full ${isMobile ? 'px-3 py-3' : 'px-5 py-5'}`}>
+  const overviewBody = (
+      <main className={isMobile ? 'flex h-full flex-col gap-3 overflow-y-auto px-3 py-3' : 'w-full px-5 py-5'}>
         {error && (
           <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}
@@ -388,25 +389,31 @@ export function DashboardPage(): JSX.Element {
         )}
 
         {isMobile ? (
-          // Compact phone layout (Android app + mobile web). Keg inventory and
-          // operations are intentionally absent — they live in the bottom nav —
-          // leaving the fermenter, the keg fridge, and a tight utilities row.
-          <div className="space-y-4">
-            <section id="fermenter" className="scroll-mt-5">
+          // Compact phone layout (Android app + mobile web): a flex column that
+          // fills the screen. The fermenter card grows to absorb the slack, so
+          // its height — and the whole page — stays put as you switch its tabs,
+          // and nothing is scaled so the full width is used. Keg inventory and
+          // operations live in the bottom nav, not here.
+          <>
+            <section id="fermenter" className="min-h-0 flex-1">
               {renderFermenter(true)}
             </section>
-            <BreweryUtilities
-              brewery={brewery}
-              power={power}
-              water={water}
-              online={utilityOnline}
-              total={utilityTotal}
-              loading={devices === null}
-              onOpen={openChart}
-              compact
-            />
-            <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={load} compact />
-          </div>
+            <div className="shrink-0">
+              <BreweryUtilities
+                brewery={brewery}
+                power={power}
+                water={water}
+                online={utilityOnline}
+                total={utilityTotal}
+                loading={devices === null}
+                onOpen={openChart}
+                compact
+              />
+            </div>
+            <div className="shrink-0">
+              <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={load} compact />
+            </div>
+          </>
         ) : (
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem] xl:items-start">
             <div className="min-w-0 space-y-5">
@@ -438,7 +445,15 @@ export function DashboardPage(): JSX.Element {
           </div>
         )}
       </main>
-      </FitScale>
+  );
+
+  return (
+    <ChartRangeProvider>
+    <DashboardShell active="overview" lastUpdate={lastUpdate} fit>
+      {/* Phone: a height-filling flex layout — no scaling, so the full width is
+          used and the size stays constant across the fermenter tabs. Desktop:
+          the existing fill-the-monitor scaler. */}
+      {isMobile ? overviewBody : <FitScale zoom={dashboardZoom}>{overviewBody}</FitScale>}
 
       {chart && (
         <MetricModal
@@ -630,8 +645,8 @@ function FermenterCommandCenter({
     ] as const;
     const pressureFmt = pressure ? formatPressure(pressure.reading.value, pressureUnit) : null;
     return (
-      <article className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
-        <div className="flex items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
+      <article className="flex h-full flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+        <div className="flex shrink-0 items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
           <FermenterIcon className="h-8 w-8 shrink-0 text-white" strokeWidth={2.6} />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold uppercase tracking-wide text-white">{name}</h2>
@@ -665,7 +680,7 @@ function FermenterCommandCenter({
         </div>
 
         {controller && !controllerOffline && (
-          <div className="border-b border-zinc-800 px-4 py-3">
+          <div className="shrink-0 border-b border-zinc-800 px-4 py-3">
             <SetpointControl
               deviceId={controller.id}
               setpointC={setpoint?.reading.value ?? null}
@@ -676,7 +691,7 @@ function FermenterCommandCenter({
           </div>
         )}
 
-        <div className="px-4 pt-3">
+        <div className="shrink-0 px-4 pt-3">
           <div className="flex gap-1 rounded-lg border border-zinc-800 bg-zinc-950/40 p-1">
             {TABS.map((t) => (
               <button
@@ -693,13 +708,13 @@ function FermenterCommandCenter({
           </div>
         </div>
 
-        <div className="p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {tab === 'overview' && (
-            <div className="divide-y divide-zinc-800">
+            <div className="flex h-full flex-col divide-y divide-zinc-800">
               <button
                 type="button"
                 onClick={() => setTab('pressure')}
-                className="flex w-full items-center gap-3 py-2.5 text-left transition hover:bg-zinc-800/30"
+                className="flex w-full flex-1 items-center gap-3 text-left transition hover:bg-zinc-800/30"
               >
                 <GaugeIcon className="h-5 w-5 shrink-0 text-white" />
                 <span className="flex-1 truncate text-sm font-medium text-zinc-300">Pressure</span>
@@ -723,7 +738,7 @@ function FermenterCommandCenter({
               <button
                 type="button"
                 onClick={() => setTab('temp')}
-                className="flex w-full items-center gap-3 py-2.5 text-left transition hover:bg-zinc-800/30"
+                className="flex w-full flex-1 items-center gap-3 text-left transition hover:bg-zinc-800/30"
               >
                 <ThermometerIcon className="h-5 w-5 shrink-0 text-white" />
                 <span className="flex-1 truncate text-sm font-medium text-zinc-300">Temperature</span>
@@ -750,7 +765,7 @@ function FermenterCommandCenter({
               <button
                 type="button"
                 onClick={() => setTab('gravity')}
-                className="flex w-full items-center gap-3 py-2.5 text-left transition hover:bg-zinc-800/30"
+                className="flex w-full flex-1 items-center gap-3 text-left transition hover:bg-zinc-800/30"
               >
                 <FlaskIcon className="h-5 w-5 shrink-0 text-white" />
                 <div className="min-w-0 flex-1">
@@ -777,28 +792,31 @@ function FermenterCommandCenter({
             </div>
           )}
 
-          {tab === 'pressure' &&
-            (pressureOffline ? (
-              <NotConnected label="Pressure sensor not connected" />
-            ) : pressureFmt ? (
-              <>
-                <BigValue value={pressureFmt.value} unit={pressureFmt.unit} />
-                <div className="mt-3 h-44">
-                  <MiniChartFrame
-                    max={pressureRange ? formatPressure(pressureRange.max, pressureUnit).value : undefined}
-                    min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
-                    caption={pressureRange ? rangeCaption(pressureRangeMs) : undefined}
-                  >
-                    <Sparkline data={pressureSeries} stroke={colors.pressure} fill={withAlpha(colors.pressure, 0.1)} grow />
-                  </MiniChartFrame>
-                </div>
-              </>
-            ) : (
-              <MissingMetric label="No pressure sensor" />
-            ))}
+          {tab === 'pressure' && (
+            <div className="flex h-full flex-col">
+              {pressureOffline ? (
+                <NotConnected label="Pressure sensor not connected" />
+              ) : pressureFmt ? (
+                <>
+                  <BigValue value={pressureFmt.value} unit={pressureFmt.unit} />
+                  <div className="mt-3 min-h-0 flex-1">
+                    <MiniChartFrame
+                      max={pressureRange ? formatPressure(pressureRange.max, pressureUnit).value : undefined}
+                      min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
+                      caption={pressureRange ? rangeCaption(pressureRangeMs) : undefined}
+                    >
+                      <Sparkline data={pressureSeries} stroke={colors.pressure} fill={withAlpha(colors.pressure, 0.1)} grow />
+                    </MiniChartFrame>
+                  </div>
+                </>
+              ) : (
+                <MissingMetric label="No pressure sensor" />
+              )}
+            </div>
+          )}
 
           {tab === 'temp' && (
-            <>
+            <div className="flex h-full flex-col">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Beer</p>
@@ -842,7 +860,7 @@ function FermenterCommandCenter({
                     {fridge && <LegendSwatch color={colors.fridgeTemp} label="Fridge" dashed />}
                     {setpoint && <LegendSwatch color={colors.setpoint} label="Target" dotted />}
                   </div>
-                  <div className="mt-2 h-44">
+                  <div className="mt-2 min-h-0 flex-1">
                     <MiniChartFrame
                       max={tempRange ? `${tempRange.max.toFixed(1)}°` : undefined}
                       min={tempRange ? `${tempRange.min.toFixed(1)}°` : undefined}
@@ -860,57 +878,60 @@ function FermenterCommandCenter({
                   </div>
                 </>
               )}
-            </>
+            </div>
           )}
 
-          {tab === 'gravity' &&
-            (hydrometerOffline ? (
-              <NotConnected label="Tilt hydrometer not connected" />
-            ) : gravity ? (
-              <>
-                <div className="flex items-start justify-between gap-3">
-                  <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
-                  <div className="flex flex-col items-end gap-1">
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${status.shellClass}`}
-                    >
-                      <span className={`h-2 w-2 rounded-full ${status.dotClass}`} aria-hidden />
-                      {status.label}
-                    </span>
-                    {gravityForecast && gravityDone && (
-                      <span className="text-sm font-semibold text-white">{gravityDoneLabel(gravityDone)}</span>
+          {tab === 'gravity' && (
+            <div className="flex h-full flex-col">
+              {hydrometerOffline ? (
+                <NotConnected label="Tilt hydrometer not connected" />
+              ) : gravity ? (
+                <>
+                  <div className="flex items-start justify-between gap-3">
+                    <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
+                    <div className="flex flex-col items-end gap-1">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${status.shellClass}`}
+                      >
+                        <span className={`h-2 w-2 rounded-full ${status.dotClass}`} aria-hidden />
+                        {status.label}
+                      </span>
+                      {gravityForecast && gravityDone && (
+                        <span className="text-sm font-semibold text-white">{gravityDoneLabel(gravityDone)}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-3 min-h-0 flex-1">
+                    {gravityValues.length > 1 ? (
+                      <MiniChartFrame
+                        max={gravityRange ? gravityRange.max.toFixed(3) : undefined}
+                        min={gravityRange ? gravityRange.min.toFixed(3) : undefined}
+                        caption={gravityForecast != null ? 'Last 48h' : 'Recent trend'}
+                        captionRight={gravityForecast != null ? '2-day forecast' : undefined}
+                      >
+                        {gravityForecast ? (
+                          <ForecastSparkline
+                            history={gravityHistory}
+                            forecast={gravityForecast}
+                            now={gravityNow}
+                            stroke={colors.gravity}
+                            fill={withAlpha(colors.gravity, 0.12)}
+                            grow
+                          />
+                        ) : (
+                          <Sparkline data={gravityValues} stroke={colors.gravity} fill={withAlpha(colors.gravity, 0.12)} grow />
+                        )}
+                      </MiniChartFrame>
+                    ) : (
+                      <div className="flex h-full items-center text-xs text-zinc-600">Collecting trend…</div>
                     )}
                   </div>
-                </div>
-                <div className="mt-3 h-44">
-                  {gravityValues.length > 1 ? (
-                    <MiniChartFrame
-                      max={gravityRange ? gravityRange.max.toFixed(3) : undefined}
-                      min={gravityRange ? gravityRange.min.toFixed(3) : undefined}
-                      caption={gravityForecast != null ? 'Last 48h' : 'Recent trend'}
-                      captionRight={gravityForecast != null ? '2-day forecast' : undefined}
-                    >
-                      {gravityForecast ? (
-                        <ForecastSparkline
-                          history={gravityHistory}
-                          forecast={gravityForecast}
-                          now={gravityNow}
-                          stroke={colors.gravity}
-                          fill={withAlpha(colors.gravity, 0.12)}
-                          grow
-                        />
-                      ) : (
-                        <Sparkline data={gravityValues} stroke={colors.gravity} fill={withAlpha(colors.gravity, 0.12)} grow />
-                      )}
-                    </MiniChartFrame>
-                  ) : (
-                    <div className="flex h-full items-center text-xs text-zinc-600">Collecting trend…</div>
-                  )}
-                </div>
-              </>
-            ) : (
-              <MissingMetric label="No gravity data" />
-            ))}
+                </>
+              ) : (
+                <MissingMetric label="No gravity data" />
+              )}
+            </div>
+          )}
         </div>
       </article>
     );
@@ -1999,7 +2020,12 @@ function KegFridgeCard({
 
   return (
     <section className={`rounded-xl border border-zinc-800 bg-zinc-900 ${compact ? 'p-3' : 'p-5'}`}>
-      <PanelHeading title="Keg Fridge" icon={<ThermometerIcon className="h-5 w-5" />} />
+      <PanelHeading
+        title="Keg Fridge"
+        icon={<ThermometerIcon className="h-5 w-5" />}
+        // Compact (phone): pull the cooling/heating state up onto the title row.
+        right={compact && state ? <StateBadge value={state.value} /> : undefined}
+      />
       {offline ? (
         <p className={`flex items-center gap-1.5 text-sm text-zinc-600 ${compact ? 'mt-2' : 'mt-4'}`}>
           <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" aria-hidden />
@@ -2015,24 +2041,37 @@ function KegFridgeCard({
             }`}
           >
             <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Fridge</p>
-            <div className="mt-1 flex items-baseline gap-1.5">
-              <span className="text-3xl font-semibold tabular-nums text-zinc-50">
-                {temp ? temp.value.toFixed(1) : '—'}
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-semibold tabular-nums text-zinc-50">
+                  {temp ? temp.value.toFixed(1) : '—'}
+                </span>
+                <span className="text-sm font-medium text-zinc-500">°C</span>
               </span>
-              <span className="text-sm font-medium text-zinc-500">°C</span>
+              {/* Compact: target sits next to the live temperature instead of its own row. */}
+              {compact && setpoint && (
+                <span className="text-sm text-zinc-400">
+                  Target{' '}
+                  <span className="font-semibold tabular-nums text-zinc-200">
+                    {setpoint.value.toFixed(1)} °C
+                  </span>
+                </span>
+              )}
             </div>
           </button>
-          <div className={`flex flex-wrap items-center gap-3 ${gap}`}>
-            {state && <StateBadge value={state.value} />}
-            {setpoint && (
-              <span className="text-sm text-zinc-400">
-                Target{' '}
-                <span className="font-semibold tabular-nums text-zinc-200">
-                  {setpoint.value.toFixed(1)} °C
+          {!compact && (
+            <div className={`flex flex-wrap items-center gap-3 ${gap}`}>
+              {state && <StateBadge value={state.value} />}
+              {setpoint && (
+                <span className="text-sm text-zinc-400">
+                  Target{' '}
+                  <span className="font-semibold tabular-nums text-zinc-200">
+                    {setpoint.value.toFixed(1)} °C
+                  </span>
                 </span>
-              </span>
-            )}
-          </div>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Keg fridge temperature' })}
