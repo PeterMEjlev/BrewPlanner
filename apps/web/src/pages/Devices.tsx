@@ -233,6 +233,8 @@ function DeviceCard({
 
       <dl className="mt-4 grid flex-1 grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
         <InfoRow label="IP address" value={device.lastIp ?? '—'} mono />
+        {/* Only shown when the device reported a MAC (mock/older agents leave it null). */}
+        {device.mac && <InfoRow label="MAC address" value={device.mac} mono />}
         <InfoRow label="Protocol" value={model.connectivity} />
         <InfoRow
           label="Last fetch"

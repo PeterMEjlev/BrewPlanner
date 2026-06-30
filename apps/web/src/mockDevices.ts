@@ -203,6 +203,7 @@ function toStatus(d: MockDevice): DeviceStatus {
     createdAt: new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000).toISOString(),
     lastSeenAt: nowIso,
     lastIp: null,
+    mac: null,
     reportingIntervalSec: 30,
     online: true,
     latest: latestReadings(d, nowIso),

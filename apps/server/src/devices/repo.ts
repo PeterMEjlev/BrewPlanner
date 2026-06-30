@@ -8,7 +8,7 @@ import type {
 } from '@checklist/shared';
 import { SET_SETPOINT_COMMAND } from '@checklist/shared';
 import { createHash, randomBytes } from 'node:crypto';
-import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { deviceCommands, devices, readings } from '../db/schema.js';
 
@@ -46,6 +46,7 @@ function toPublic(row: typeof devices.$inferSelect): Device {
     type: row.type as DeviceType,
     lastSeenAt: row.lastSeenAt,
     lastIp: row.lastIp,
+    mac: row.mac,
     reportingIntervalSec: row.reportingIntervalSec,
     createdAt: row.createdAt,
   };
@@ -87,6 +88,21 @@ export function touchLastSeen(id: number, ip?: string | null): void {
   const patch: { lastSeenAt: string; lastIp?: string } = { lastSeenAt: nowIso() };
   if (ip) patch.lastIp = ip;
   db.update(devices).set(patch).where(eq(devices.id, id)).run();
+}
+
+/**
+ * Record the MAC address a device reported on a push. Like {@link touchLastSeen}
+ * this is heartbeat metadata, but the MAC rides in the ingest body (the
+ * link-layer address never reaches the hub on its own), so it's stamped from the
+ * ingest handler rather than the auth guard. The MAC is effectively static, so
+ * the write is skipped unless the value actually changed — keeping the common
+ * push a no-op.
+ */
+export function recordDeviceMac(id: number, mac: string): void {
+  db.update(devices)
+    .set({ mac })
+    .where(and(eq(devices.id, id), or(isNull(devices.mac), ne(devices.mac, mac))))
+    .run();
 }
 
 export function getDevice(id: number): Device | null {

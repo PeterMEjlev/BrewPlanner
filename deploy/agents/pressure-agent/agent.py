@@ -28,6 +28,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from collections import deque
 from datetime import datetime, timezone
 
@@ -87,6 +88,26 @@ def read_pressure() -> float:
     )
 
 
+def host_mac() -> str | None:
+    """
+    Best-effort MAC of this host's primary interface, reported to the hub so the
+    Devices page can show a stable hardware id (the link-layer address never
+    survives the trip over IP). Returns None when only a random/locally-
+    administered address is available — uuid.getnode()'s fallback when it can't
+    find real hardware — so the hub leaves the field blank rather than storing a
+    meaningless value. Computed once into MAC below; it doesn't change at runtime.
+    """
+    node = uuid.getnode()
+    # getnode() sets the multicast bit (the low bit of the first octet) only when
+    # it had to invent a random address; a real NIC MAC never has it set.
+    if (node >> 40) & 0x01:
+        return None
+    return ":".join(f"{(node >> shift) & 0xFF:02x}" for shift in range(40, -8, -8))
+
+
+MAC = host_mac()
+
+
 def push(samples: list[dict], current_interval: float) -> float | None:
     """
     POST a batch of readings. On success, return the hub's advised logging
@@ -95,7 +116,10 @@ def push(samples: list[dict], current_interval: float) -> float | None:
     current_interval when the response omits one. Returns None on failure so the
     caller keeps the backlog for the next attempt.
     """
-    body = json.dumps({"readings": samples}).encode("utf-8")
+    payload: dict = {"readings": samples}
+    if MAC:
+        payload["mac"] = MAC
+    body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"{HUB_URL}/api/ingest",
         data=body,

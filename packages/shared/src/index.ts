@@ -173,6 +173,15 @@ export interface Device {
    */
   lastIp: string | null;
   /**
+   * The device's own network MAC address (lowercase, colon-separated), reported
+   * by its agent on push. Unlike `lastIp` — which a DHCP lease can change — this
+   * is a stable hardware id for the satellite. The link-layer address never
+   * survives the trip to the hub, so the agent has to send it; agents that can't
+   * determine a real MAC (and mock/placeholder devices) leave it null. The
+   * dashboard only shows it when present.
+   */
+  mac: string | null;
+  /**
    * How often (seconds) this device should log a reading — the single cadence
    * the operator tunes per device from the dashboard. The hub returns it to the
    * agent on every push so the agent matches its sample/push rate to it, and the
@@ -721,6 +730,18 @@ export const ingestSchema = z.object({
     )
     .max(500)
     .default([]),
+  /**
+   * The device's own MAC address — heartbeat metadata, not a reading. Optional,
+   * since older agents omit it. Accepts the usual colon- or hyphen-separated hex
+   * and is normalized to canonical lowercase colon form so the stored value is
+   * stable regardless of how the agent formatted it.
+   */
+  mac: z
+    .string()
+    .trim()
+    .regex(/^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$/, 'Must be a MAC address')
+    .transform((m) => m.toLowerCase().replace(/-/g, ':'))
+    .optional(),
 });
 export type IngestInput = z.infer<typeof ingestSchema>;
 

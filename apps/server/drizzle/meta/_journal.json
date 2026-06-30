@@ -99,6 +99,13 @@
       "when": 1782412407451,
       "tag": "0013_sharp_liz_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1782830997488,
+      "tag": "0014_deep_jackpot",
+      "breakpoints": true
     }
   ]
 }

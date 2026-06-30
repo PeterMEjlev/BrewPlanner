@@ -41,6 +41,9 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
     // `readings` defaults to [] in the schema, but its input type is optional.
     const samples = body.readings ?? [];
     devices.insertReadings(req.device!.id, samples);
+    // Record the device's self-reported MAC (heartbeat metadata) when sent — a
+    // no-op once stored, since it doesn't change.
+    if (body.mac) devices.recordDeviceMac(req.device!.id, body.mac);
     // Echo the device's configured cadence so the agent self-adjusts its
     // sample/push rate to whatever the operator set in the dashboard.
     return reply

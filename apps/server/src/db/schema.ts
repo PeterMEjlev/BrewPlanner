@@ -120,6 +120,12 @@ export const devices = sqliteTable('devices', {
   /** Client IP of the most recent push (the device's LAN address). Null until first seen. */
   lastIp: text('last_ip'),
   /**
+   * The device's own MAC address (canonical lowercase colon form), as reported by
+   * its agent on push. A stable hardware id that — unlike `lastIp` — survives DHCP
+   * lease changes. Null until an agent reports one (or for devices that can't).
+   */
+  mac: text('mac'),
+  /**
    * How often (seconds) this device should log a reading. The operator sets it
    * per device from the dashboard; the hub hands it back to the agent on every
    * push (the `/api/ingest` response) so the agent self-adjusts its sample/push

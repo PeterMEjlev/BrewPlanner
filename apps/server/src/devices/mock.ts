@@ -13,6 +13,15 @@ function mockIp(profile: MockProfile): string {
 }
 
 /**
+ * A stable, believable MAC for a mock device, derived from its id. Uses the
+ * Raspberry Pi Foundation OUI (b8:27:eb) so the demo fleet looks like the real
+ * Pis the agents run on, mirroring how {@link mockIp} fakes a LAN address.
+ */
+function mockMac(profile: MockProfile): string {
+  return `b8:27:eb:00:00:${profile.id.toString(16).padStart(2, '0')}`;
+}
+
+/**
  * A believable lifetime reading count for a mock device: ~30s pushes over its
  * age, one row per metric. Lets the Devices page show a non-zero "data points"
  * figure that's proportional to how chatty the sensor is.
@@ -192,6 +201,7 @@ export function mockStatus(
       new Date(now.getTime() - MOCK_DEVICE_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString(),
     lastSeenAt: nowIso,
     lastIp: mockIp(profile),
+    mac: mockMac(profile),
     online: true,
     latest: latestReadings(profile, id, nowIso),
     reportingIntervalSec: MOCK_PUSH_INTERVAL_SEC,
