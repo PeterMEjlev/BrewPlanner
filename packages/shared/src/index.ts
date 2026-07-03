@@ -989,3 +989,100 @@ export const setVolumeSchema = z.object({
 export const seekSchema = z.object({
   positionSec: z.coerce.number().int().min(0),
 });
+
+// ---------------------------------------------------------------------------
+// Brew system (the brewing rig — a separate Raspberry Pi running brew-system-v3)
+// ---------------------------------------------------------------------------
+// The BrewPlanner server proxies /api/brew-system/* to the rig's unauthenticated
+// FastAPI over the LAN (BREW_SYSTEM_URL), so BrewPlanner's session auth is the
+// only way to reach it remotely. These shapes mirror the rig's API responses.
+
+/** BK and HLT have heaters; MLT is a read-only temperature (no control state). */
+export type BrewPot = 'BK' | 'HLT';
+export type BrewPump = 'P1' | 'P2';
+
+export interface BrewPotControl {
+  heaterOn: boolean;
+  /** Target temperature (set value), °C. */
+  sv: number;
+  /** Heating element duty cycle, 0–100 %. */
+  efficiency: number;
+  regulationEnabled: boolean;
+}
+
+export interface BrewPumpControl {
+  on: boolean;
+  /** Pump PWM duty cycle, 0–100 %. */
+  speed: number;
+}
+
+export interface BrewTimerState {
+  running: boolean;
+  /** Counts up as a stopwatch when target is 0, down toward 0 otherwise. */
+  seconds: number;
+  /** Countdown target in seconds; 0 = stopwatch mode. */
+  target: number;
+}
+
+/** The rig's GET /api/hardware/state response. Temperatures are null when a sensor fails. */
+export interface BrewSystemState {
+  temperatures: { bk: number | null; mlt: number | null; hlt: number | null };
+  controlState: {
+    pots: Record<BrewPot, BrewPotControl>;
+    pumps: Record<BrewPump, BrewPumpControl>;
+  };
+  timer: BrewTimerState;
+}
+
+export interface BrewAutoEfficiencyStep {
+  /** Degrees below setpoint at which this power step kicks in. */
+  threshold: number;
+  /** Duty cycle applied for this step, 0–100 %. */
+  power: number;
+}
+
+export interface BrewPotAutoEfficiency {
+  enabled: boolean;
+  steps: BrewAutoEfficiencyStep[];
+}
+
+/** The `app` block of the rig's /api/settings — only what the dashboard needs. */
+export interface BrewSystemAppSettings {
+  max_watts?: number;
+  bk_element_watts?: number;
+  hlt_element_watts?: number;
+  auto_efficiency?: { bk?: BrewPotAutoEfficiency; hlt?: BrewPotAutoEfficiency };
+}
+
+/**
+ * Envelope for GET /api/brew-system/state. `configured` is false when the
+ * server has no BREW_SYSTEM_URL; `online` is false when the rig didn't answer
+ * (it's normally powered off between brew days). `state` only when online.
+ */
+export interface BrewSystemStatus {
+  configured: boolean;
+  online: boolean;
+  state?: BrewSystemState;
+}
+
+/** Envelope for GET /api/brew-system/config — the rig's app settings + theme colours. */
+export interface BrewSystemConfig {
+  configured: boolean;
+  online: boolean;
+  app?: BrewSystemAppSettings;
+  /** The rig's custom theme colours (keys like `accentBlue`), if the user changed any. */
+  theme?: Record<string, string>;
+}
+
+/** Body for POST /api/brew-system/pot/:pot/power and /pump/:pump/power. */
+export const brewOnSchema = z.object({ on: z.boolean() });
+/** Body for efficiency / speed / sv — the rig treats all three as 0–100. */
+export const brewValueSchema = z.object({ value: z.coerce.number().min(0).max(100) });
+/** Body for POST /api/brew-system/pot/:pot/regulation. */
+export const brewEnabledSchema = z.object({ enabled: z.boolean() });
+/** Body for POST /api/brew-system/timer — mirrors the rig's timer actions. */
+export const brewTimerActionSchema = z.object({
+  action: z.enum(['start', 'stop', 'reset', 'set']),
+  seconds: z.coerce.number().int().min(0).optional(),
+});
+export type BrewTimerActionInput = z.infer<typeof brewTimerActionSchema>;

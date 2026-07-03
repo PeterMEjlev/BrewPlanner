@@ -133,6 +133,20 @@ checklist (no steps, runs or progress reset). On the `/display` page it lives
 behind its own **To-Do** button in the top bar so it never gets mixed up with
 procedure checklists; the button shows a badge with the open-item count.
 
+### Brew System page
+
+`/brew-system` mirrors the brewing rig's (the separate brew-system-v3 Pi) main
+screen — three pot cards, two pumps, and the brew timer — and controls it
+remotely. The server proxies `/api/brew-system/*` to the rig's FastAPI over the
+LAN (`BREW_SYSTEM_URL` in `/etc/brewplanner.env`, e.g. `http://192.168.1.60:8000`
+— give that Pi a DHCP reservation). The rig's API is unauthenticated by design
+(LAN-only), so this proxy is its only remote door: reads need a session,
+controls need the admin role, and heater/pump commands land in the change
+history. The rig is normally powered off between brew days — the page shows an
+offline card and reconnects automatically. The rig's backend keeps running the
+regulation loop, power limit, and safety watchdog itself, so a dropped remote
+connection can never leave a heater unmanaged.
+
 ## Authentication & remote access
 
 The app supports logging in and being reached from anywhere over the internet,

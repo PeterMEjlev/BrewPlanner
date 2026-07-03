@@ -14,6 +14,7 @@ import { runMigrations } from './db/index.js';
 import { runNotificationChecks } from './notify/checks.js';
 import { isConfigured as telegramConfigured } from './notify/telegram.js';
 import { apiRoutes } from './routes/api.js';
+import { brewSystemRoutes } from './routes/brewSystem.js';
 import { commandRoutes, deviceRoutes, ingestRoutes } from './routes/devices.js';
 import { musicRoutes } from './routes/music.js';
 
@@ -96,6 +97,12 @@ async function main(): Promise<void> {
   // Brewery speaker (Sonos / IKEA SYMFONISK) now-playing + transport control,
   // driven over the LAN. Read is session-gated; controls are admin/local-only.
   await app.register(musicRoutes, { prefix: '/api/music' });
+
+  // Brewing rig (brew-system-v3 Pi) status + control, proxied over the LAN.
+  // The rig's own API is unauthenticated, so this proxy is its only remote
+  // door: reads are session-gated, controls are admin-only. Set BREW_SYSTEM_URL
+  // to enable; unset, the Brew System page shows "not configured".
+  await app.register(brewSystemRoutes, { prefix: '/api/brew-system' });
 
   // Serve the built web app (apps/web/dist) in production. In dev the web app
   // is served by Vite on its own port, so this directory may not exist.

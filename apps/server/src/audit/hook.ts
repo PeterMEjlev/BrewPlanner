@@ -230,6 +230,29 @@ const RULES: Rule[] = [
     },
   },
 
+  // --- Brew system (heater/pump commands proxied to the brewing rig) --------
+  {
+    method: 'POST',
+    re: /^\/api\/brew-system\/pot\/([A-Z]+)\/power$/,
+    build: ({ m, body }) => ({ entity: 'Brew system', action: `Turned the ${m[1]} heater ${str(body, 'on') === 'true' ? 'on' : 'off'}` }),
+  },
+  {
+    method: 'POST',
+    re: /^\/api\/brew-system\/pot\/([A-Z]+)\/regulation$/,
+    build: ({ m, body }) => ({ entity: 'Brew system', action: `Turned ${m[1]} regulation ${str(body, 'enabled') === 'true' ? 'on' : 'off'}` }),
+  },
+  { method: 'POST', re: /^\/api\/brew-system\/pot\/([A-Z]+)\/sv$/, build: ({ m, body }) => ({ entity: 'Brew system', action: `Set the ${m[1]} target temperature${str(body, 'value') ? ` to ${str(body, 'value')}°C` : ''}` }) },
+  {
+    method: 'POST',
+    re: /^\/api\/brew-system\/pump\/([A-Z0-9]+)\/power$/,
+    build: ({ m, body }) => ({ entity: 'Brew system', action: `Turned pump ${m[1]} ${str(body, 'on') === 'true' ? 'on' : 'off'}` }),
+  },
+  // Slider spam (efficiency/speed while dragging) and timer taps are operational
+  // noise, not configuration changes — deliberately kept out of the history.
+  { method: 'POST', re: /^\/api\/brew-system\/pot\/[A-Z]+\/efficiency$/, build: () => null },
+  { method: 'POST', re: /^\/api\/brew-system\/pump\/[A-Z0-9]+\/speed$/, build: () => null },
+  { method: 'POST', re: /^\/api\/brew-system\/timer$/, build: () => null },
+
   // --- Accounts (never log the password itself) -----------------------------
   { method: 'POST', re: /^\/api\/accounts$/, build: ({ body }) => ({ entity: 'Account', action: `Created account${str(body, 'username') ? ` "${str(body, 'username')}"` : ''}${str(body, 'role') ? ` (${str(body, 'role')})` : ''}` }) },
   { method: 'PATCH', re: /^\/api\/accounts\/(\d+)\/role$/, build: ({ m, body }) => ({ entity: 'Account', action: `Changed account ${named(accountName(m[1] ?? ''), m[1] ?? '')} role${str(body, 'role') ? ` to ${str(body, 'role')}` : ''}` }) },
