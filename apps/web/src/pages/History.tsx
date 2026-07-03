@@ -1,8 +1,9 @@
 import type { AuditEntry } from '@checklist/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { api } from '../api';
 import { DashboardShell } from '../components/DashboardShell';
 import { HistoryIcon } from '../components/icons';
+import { usePoll } from '../usePoll';
 import { relativeTime } from '../util';
 
 const POLL_MS = 15000;
@@ -44,11 +45,7 @@ export function HistoryPage(): JSX.Element {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(id);
-  }, [load]);
+  usePoll(load, POLL_MS, [load]);
 
   const list = entries ?? [];
 

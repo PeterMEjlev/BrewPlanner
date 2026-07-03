@@ -11,6 +11,7 @@ import { evaluateDeviceAlerts } from './alerts/evaluate.js';
 import { accountAdminRoutes, authRoutes, seedAdminUser } from './auth/index.js';
 import { resolveSessionSecret } from './auth/secret.js';
 import { runMigrations } from './db/index.js';
+import { RETENTION_DAYS, pruneOldReadings } from './devices/retention.js';
 import { runNotificationChecks } from './notify/checks.js';
 import { isConfigured as telegramConfigured } from './notify/telegram.js';
 import { apiRoutes } from './routes/api.js';
@@ -126,6 +127,7 @@ async function main(): Promise<void> {
     await app.listen({ host: HOST, port: PORT });
     startAlertScheduler(app);
     startNotificationScheduler(app);
+    startRetentionScheduler(app);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
@@ -166,6 +168,30 @@ function startNotificationScheduler(app: FastifyInstance): void {
   // Run once shortly after boot so a due alert doesn't wait a full interval.
   setTimeout(tick, 15_000).unref();
   app.log.info(`Telegram notifications enabled (checking every ${intervalMs / 1000}s).`);
+}
+
+/**
+ * Daily readings retention (see devices/retention.ts): prune raw samples older
+ * than READINGS_RETENTION_DAYS so the SQLite file stops growing forever on the
+ * Pi's SD card. First run a few minutes after boot (off the startup rush), then
+ * every 24h. The prune is synchronous (better-sqlite3), so it's deliberately
+ * infrequent; the interval is unref'd like the other schedulers.
+ */
+function startRetentionScheduler(app: FastifyInstance): void {
+  if (!(RETENTION_DAYS > 0)) {
+    app.log.info('Readings retention disabled (READINGS_RETENTION_DAYS <= 0).');
+    return;
+  }
+  const tick = () => {
+    try {
+      pruneOldReadings(app.log);
+    } catch (err) {
+      app.log.error(err, 'Readings retention failed');
+    }
+  };
+  setInterval(tick, 24 * 60 * 60 * 1000).unref();
+  setTimeout(tick, 2 * 60 * 1000).unref();
+  app.log.info(`Readings retention enabled (pruning rows older than ${RETENTION_DAYS} days, daily).`);
 }
 
 void main();

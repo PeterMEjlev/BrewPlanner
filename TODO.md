@@ -27,51 +27,11 @@
 Ordered by impact. Themes: unbounded data growth, hot polling paths doing repeated
 full-table work, and tokens that never expire.
 
+(Original #1 readings retention, #2 devices hot path, #3 keg-sheet cache, #4 token
+expiry/revocation, and #10 polling pause were completed 2026-07-03. Item numbers
+below are kept stable so cross-references still line up.)
+
 ## Backend
-
-### 1. `readings` grows forever — no retention or downsampling
-No pruning anywhere. At a 5s interval one metric writes ~17k rows/day; a few
-devices × metrics = tens of millions of rows/year in one SQLite file on the Pi's
-SD card. Every `count(*)`, total, and long-range history query slows down, and SD
-wear increases.
-- Add a nightly maintenance job (same scheduler pattern as index.ts:134).
-- Create a `readings_rollup` table (deviceId, metric, bucketStart, avg, min, max);
-  fold readings older than ~30 days into 5-min buckets, then delete raw rows.
-- Have `getHistory` (devices/repo.ts:252) serve raw rows for short ranges and
-  rollups for 7d+ (charts can't display 100k points anyway).
-- Simpler v1: `DELETE FROM readings WHERE recorded_at < ?` with a 90-day cutoff,
-  plus `PRAGMA incremental_vacuum`.
-
-### 2. `/api/devices` does a full `count(*)` per device on every poll
-enrich() (devices/repo.ts:184-191) runs readingCount (count(*) over all readings),
-latestPerMetric (2 queries), and pendingSetpoint (1 query) PER device. The nav
-badge (DashboardShell.tsx:113) polls this every 15s from every open client; the
-Devices page polls as fast as every 5s. better-sqlite3 is synchronous, so these
-counts block the event loop, and the cost grows with #1.
-- Keep the count in memory: one grouped query on boot into a Map<deviceId, count>,
-  increment in insertReadings, delete on device delete. Turns the hot path from
-  O(rows) into O(1).
-- latestPerMetric for all devices can be one grouped query instead of 2×N.
-
-### 3. Every `/api/kegs` request fetches the Google Sheet live
-kegs.ts:20-24 has no cache; the shell's keg badge polls it every 15s per client
-(DashboardShell.tsx:169). A Google round trip every 15s per open dashboard — slow,
-rate-limit-prone, and a single Google hiccup errors the badge.
-- Add a module-level TTL cache (~60s) with in-flight dedupe and stale-on-error.
-- Apply colours post-cache (or cache the raw CSV text) so callers can pass
-  different palettes.
-
-### 4. Sessions and bearer tokens never expire server-side and can't be revoked
-Session cookie and Android bearer token are both just signCookie(String(userId))
-(auth/index.ts:124). The 30-day maxAge is only browser-enforced; the signature
-carries no timestamp. So: a leaked token / lost phone grants access forever,
-changing your password does NOT invalidate existing sessions, and logout only
-clears the client copy.
-- Embed issued-at: sign `${userId}.${Date.now()}`, reject tokens older than
-  SESSION_MAX_AGE_SECONDS in getSessionUser/getBearerUser.
-- Add a `tokenVersion` column to users, include in payload
-  (`${id}.${issuedAt}.${version}`), bump it in changeUserPassword — kills every
-  outstanding cookie/token for that account on password change.
 
 ### 5. `getMetricTotal` re-scans the entire metric history every 60s
 devices/repo.ts:239-249 runs a window function over the full history of
@@ -114,24 +74,15 @@ auth=null on every mount (auth.tsx:52), so every navigation shows "Loading…" u
   cachedFleet, cachedKegs…): init from cache, render immediately when cached user
   exists, revalidate in background. Or hoist a single AuthProvider above the router.
 
-### 10. Polling never pauses when the app is hidden
-~16 independent setInterval poll loops (DashboardShell, useDeviceData, Alerts,
-Display, KioskMusic at 4s…). None pause when the tab is hidden or the Android app
-is backgrounded — a phone with the app backgrounded hammers the tunnel and drains
-battery.
-- Extract one shared usePoll(fn, ms) hook: skip ticks while
-  document.visibilityState === 'hidden', fire immediately on return to visible.
-  In native, wire Capacitor App 'appStateChange'. Replaces 16 copies of
-  interval/cancelled/cleanup boilerplate.
-
 ### 11. Duplicate concurrent polls for the same resource
 Module-level caches share results, but each hook instance runs its own interval —
 two components showing the same series fetch it twice; DashboardShell polls
 /api/devices every 15s while the Dashboard page polls the same endpoint separately.
 - A small subscription store (key → one timer + subscriber set), OR adopt
-  @tanstack/react-query (dedupe, refetchIntervalInBackground:false [solves #10],
-  retry/backoff, stale-while-revalidate) and delete most hand-rolled cache code in
-  useDeviceData.ts and kegs.ts.
+  @tanstack/react-query (dedupe, retry/backoff, stale-while-revalidate) and
+  delete most hand-rolled cache code in useDeviceData.ts and kegs.ts. (The
+  hidden-tab pause that react-query would also have provided now exists as the
+  shared usePoll hook — a subscription store could build on it.)
 
 ### 12. Split the two giant page files
 Dashboard.tsx = 2,239 lines, SettingsDesktop.tsx = 1,617. Both contain several
@@ -159,7 +110,6 @@ Server routes testable via app.inject() against a temp-file SQLite DB
 Actions workflow running typecheck + tests + build on push (typecheck already
 wired in root package.json).
 
-## If picking three first
-1. Readings retention (#1) — before the table gets big enough to hurt.
-2. Token expiry/revocation (#4) — the app is internet-reachable.
-3. Keg-sheet cache (#3) — cheapest win.
+## Next up by impact
+#6 (history polling refetches the full window — the `since` param is already
+there) and #9 (route changes blank the screen waiting on /auth/me).

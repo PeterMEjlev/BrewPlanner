@@ -1,5 +1,5 @@
 import type { DeviceStatus, Reading } from '@checklist/shared';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   CartesianGrid,
@@ -14,6 +14,7 @@ import { api } from '../api';
 import { useGraphColors } from '../graphColors';
 import { SetpointControl } from '../SetpointControl';
 import { RANGES, formatTick } from '../useDeviceData';
+import { usePoll } from '../usePoll';
 
 const POLL_MS = 10000;
 const DEFAULT_RANGE_MS = RANGES[2].ms; // 24h
@@ -137,11 +138,7 @@ export function TemperaturePage(): JSX.Element {
     }
   }, [sources, rangeMs]);
 
-  useEffect(() => {
-    void load();
-    const t = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(t);
-  }, [load]);
+  usePoll(load, POLL_MS, [load]);
 
   // Merge the per-device histories onto a shared time axis. The Tilt and Inkbird
   // report on their own schedules, so most rows carry just one value; the lines

@@ -63,15 +63,34 @@ export function verifyUserPassword(id: number, password: string): boolean {
   return !!row && verifyPassword(password, row.passwordHash);
 }
 
-/** Set a new password for a user. Returns the public user, or null if missing. */
+/**
+ * Set a new password for a user. Returns the public user, or null if missing.
+ * Also bumps `tokenVersion`, which invalidates every session cookie and bearer
+ * token previously minted for the account (see auth/index.ts) — changing a
+ * password is exactly the moment outstanding sessions must die.
+ */
 export function changeUserPassword(id: number, newPassword: string): User | null {
   const row = db
     .update(users)
-    .set({ passwordHash: hashPassword(newPassword), updatedAt: new Date().toISOString() })
+    .set({
+      passwordHash: hashPassword(newPassword),
+      tokenVersion: sql`${users.tokenVersion} + 1`,
+      updatedAt: new Date().toISOString(),
+    })
     .where(eq(users.id, id))
     .returning()
     .get();
   return row ? toPublic(row) : null;
+}
+
+/** Current token version for an account, or null if the account is missing. */
+export function getUserTokenVersion(id: number): number | null {
+  const row = db
+    .select({ v: users.tokenVersion })
+    .from(users)
+    .where(eq(users.id, id))
+    .get();
+  return row ? row.v : null;
 }
 
 /**
@@ -151,7 +170,8 @@ export function upsertUser(username: string, password: string, role: UserRole = 
     .values({ username, passwordHash, role })
     .onConflictDoUpdate({
       target: users.username,
-      set: { passwordHash, updatedAt: now },
+      // A CLI password reset revokes outstanding sessions/tokens too.
+      set: { passwordHash, tokenVersion: sql`${users.tokenVersion} + 1`, updatedAt: now },
     })
     .returning()
     .get();

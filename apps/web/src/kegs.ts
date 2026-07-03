@@ -6,8 +6,9 @@ import {
   matchContentOption,
   parseKegDate,
 } from '@checklist/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { api } from './api';
+import { usePoll } from './usePoll';
 
 /**
  * Keg inventory lives in a shared Google Sheet — the same one the brew-system
@@ -144,28 +145,19 @@ export function useKegs(pollMs?: number): UseKegs {
   const [loading, setLoading] = useState(cachedKegs === null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const data = await fetchKegs();
-        if (cancelled) return;
-        cachedKegs = data;
-        setKegs(data);
-        setError(null);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to fetch keg data');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    void load();
-    const id = pollMs ? setInterval(() => void load(), pollMs) : undefined;
-    return () => {
-      cancelled = true;
-      if (id) clearInterval(id);
-    };
-  }, [pollMs]);
+  usePoll(async (isStale) => {
+    try {
+      const data = await fetchKegs();
+      if (isStale()) return;
+      cachedKegs = data;
+      setKegs(data);
+      setError(null);
+    } catch (e) {
+      if (!isStale()) setError(e instanceof Error ? e.message : 'Failed to fetch keg data');
+    } finally {
+      if (!isStale()) setLoading(false);
+    }
+  }, pollMs || null);
 
   const applyLocalUpdates = useCallback((updated: Keg[]) => {
     const byNumber = new Map(updated.map((k) => [k.number, k]));

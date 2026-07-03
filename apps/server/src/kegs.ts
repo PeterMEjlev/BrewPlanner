@@ -16,11 +16,50 @@ import {
  * The browser pulls the CSV directly (the sheet is CORS-enabled); the server
  * fetches it too so headless clients that can't parse CSV — notably the Garmin
  * watch app — can get the inventory as JSON.
+ *
+ * The shell's keg badge polls this every 15s from every open client, so the CSV
+ * is cached for a short TTL rather than hitting Google on each request:
+ * concurrent callers share one in-flight fetch, and when Google errors we keep
+ * serving the last good copy (marking it fresh again so a flaky sheet is
+ * retried once per TTL, not hammered). The *raw text* is cached — parsing is
+ * cheap and per-caller, so each caller can apply its own colour palette.
  */
-export async function fetchKegs(colors?: KegContentColors): Promise<Keg[]> {
+const KEG_CACHE_TTL_MS = Number(process.env.KEG_CACHE_TTL_SECONDS ?? 60) * 1000;
+
+let cachedCsv: { text: string; fetchedAt: number } | null = null;
+let inFlight: Promise<string> | null = null;
+
+async function fetchKegCsv(): Promise<string> {
   const res = await fetch(KEG_SHEET_CSV_URL);
   if (!res.ok) throw new Error(`Keg sheet fetch failed: ${res.status} ${res.statusText}`);
-  return parseKegs(await res.text(), colors);
+  return res.text();
+}
+
+async function getKegCsv(): Promise<string> {
+  if (cachedCsv && Date.now() - cachedCsv.fetchedAt < KEG_CACHE_TTL_MS) return cachedCsv.text;
+  inFlight ??= fetchKegCsv()
+    .then((text) => {
+      cachedCsv = { text, fetchedAt: Date.now() };
+      return text;
+    })
+    .catch((err) => {
+      // Stale-on-error: a Google hiccup shouldn't blank every keg badge. Bump
+      // fetchedAt so the next attempt waits a full TTL instead of retrying on
+      // every poll tick.
+      if (cachedCsv) {
+        cachedCsv.fetchedAt = Date.now();
+        return cachedCsv.text;
+      }
+      throw err;
+    })
+    .finally(() => {
+      inFlight = null;
+    });
+  return inFlight;
+}
+
+export async function fetchKegs(colors?: KegContentColors): Promise<Keg[]> {
+  return parseKegs(await getKegCsv(), colors);
 }
 
 /**
@@ -59,4 +98,8 @@ export async function updateKeg(number: string, fields: UpdateKegInput): Promise
   const data = (await res.json()) as { success?: boolean; error?: string };
   if (data.error) throw new Error(data.error);
   if (!data.success) throw new Error('Keg sheet write did not confirm success');
+
+  // Expire the CSV cache so the edit shows up on the next read rather than
+  // after a full TTL (the published CSV itself can still lag a little).
+  cachedCsv = null;
 }

@@ -7,10 +7,11 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { DescriptionModal, InfoButton, useTouchSensors } from '../components/touch';
+import { usePoll } from '../usePoll';
 
 const POLL_MS = 5000;
 
@@ -36,11 +37,7 @@ export function KioskTodosPage() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(id);
-  }, [load]);
+  usePoll(load, POLL_MS, [load]);
 
   async function runTodo(action: () => Promise<unknown>) {
     try {

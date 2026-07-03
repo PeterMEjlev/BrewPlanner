@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { isUnknownContents } from '../kegs';
+import { usePoll } from '../usePoll';
 import {
   BellIcon,
   ChecklistIcon,
@@ -96,26 +97,17 @@ let cachedNavScrollLeft = 0;
  */
 function useFleetStatus(): FleetStatus | null {
   const [fleet, setFleet] = useState<FleetStatus | null>(cachedFleet);
-  useEffect(() => {
-    let cancelled = false;
-    const load = async (): Promise<void> => {
-      try {
-        const devices = await api.listDevices();
-        if (!cancelled) {
-          cachedFleet = { online: devices.filter((d) => d.online).length, total: devices.length };
-          setFleet(cachedFleet);
-        }
-      } catch {
-        // Keep the last known counts through a transient failure.
+  usePoll(async (isStale) => {
+    try {
+      const devices = await api.listDevices();
+      if (!isStale()) {
+        cachedFleet = { online: devices.filter((d) => d.online).length, total: devices.length };
+        setFleet(cachedFleet);
       }
-    };
-    void load();
-    const id = setInterval(() => void load(), FLEET_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+    } catch {
+      // Keep the last known counts through a transient failure.
+    }
+  }, FLEET_POLL_MS);
   return fleet;
 }
 
@@ -149,29 +141,20 @@ interface KegStatus {
  */
 function useKegStatus(): KegStatus | null {
   const [kegs, setKegs] = useState<KegStatus | null>(cachedKegStatus);
-  useEffect(() => {
-    let cancelled = false;
-    const load = async (): Promise<void> => {
-      try {
-        const data = await api.getKegs();
-        if (!cancelled) {
-          cachedKegStatus = {
-            filled: data.filter((k) => !isUnknownContents(k.contents)).length,
-            total: data.length,
-          };
-          setKegs(cachedKegStatus);
-        }
-      } catch {
-        // Keep the last known counts through a transient failure.
+  usePoll(async (isStale) => {
+    try {
+      const data = await api.getKegs();
+      if (!isStale()) {
+        cachedKegStatus = {
+          filled: data.filter((k) => !isUnknownContents(k.contents)).length,
+          total: data.length,
+        };
+        setKegs(cachedKegStatus);
       }
-    };
-    void load();
-    const id = setInterval(() => void load(), FLEET_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+    } catch {
+      // Keep the last known counts through a transient failure.
+    }
+  }, FLEET_POLL_MS);
   return kegs;
 }
 
@@ -181,26 +164,17 @@ function useKegStatus(): KegStatus | null {
  */
 function useOpenTodoCount(): number | null {
   const [count, setCount] = useState<number | null>(cachedTodoCount);
-  useEffect(() => {
-    let cancelled = false;
-    const load = async (): Promise<void> => {
-      try {
-        const todos = await api.listTodos();
-        if (!cancelled) {
-          cachedTodoCount = todos.filter((t) => !t.done).length;
-          setCount(cachedTodoCount);
-        }
-      } catch {
-        // Keep the last known count through a transient failure.
+  usePoll(async (isStale) => {
+    try {
+      const todos = await api.listTodos();
+      if (!isStale()) {
+        cachedTodoCount = todos.filter((t) => !t.done).length;
+        setCount(cachedTodoCount);
       }
-    };
-    void load();
-    const id = setInterval(() => void load(), FLEET_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+    } catch {
+      // Keep the last known count through a transient failure.
+    }
+  }, FLEET_POLL_MS);
   return count;
 }
 
@@ -213,26 +187,17 @@ function useOpenTodoCount(): number | null {
  */
 function useAlertCount(): number {
   const [count, setCount] = useState<number>(cachedAlertCount ?? 0);
-  useEffect(() => {
-    let cancelled = false;
-    const load = async (): Promise<void> => {
-      try {
-        const alerts = await api.listAlerts();
-        if (!cancelled) {
-          cachedAlertCount = alerts.filter((a) => a.resolvedAt == null).length;
-          setCount(cachedAlertCount);
-        }
-      } catch {
-        // Keep the last known count through a transient failure.
+  usePoll(async (isStale) => {
+    try {
+      const alerts = await api.listAlerts();
+      if (!isStale()) {
+        cachedAlertCount = alerts.filter((a) => a.resolvedAt == null).length;
+        setCount(cachedAlertCount);
       }
-    };
-    void load();
-    const id = setInterval(() => void load(), FLEET_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+    } catch {
+      // Keep the last known count through a transient failure.
+    }
+  }, FLEET_POLL_MS);
   return count;
 }
 

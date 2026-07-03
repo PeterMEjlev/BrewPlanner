@@ -24,6 +24,7 @@ import {
 import { isUnknownContents, useKegs } from '../kegs';
 import { formatPressure, useSettings } from '../settings';
 import { listPollMs } from '../useDeviceData';
+import { usePoll } from '../usePoll';
 import { formatValueParts, metricLabel } from './Dashboard';
 
 /** Keg counts move slowly — re-pull the sheet once a minute for the home tile. */
@@ -167,12 +168,12 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
   const [done, setDone] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (gravityDeviceId == null) {
-      setDone(null);
-      return;
-    }
-    let cancelled = false;
-    const check = async () => {
+    if (gravityDeviceId == null) setDone(null);
+  }, [gravityDeviceId]);
+
+  usePoll(
+    async (isStale) => {
+      if (gravityDeviceId == null) return;
       try {
         const since = new Date(Date.now() - lookbackMs).toISOString();
         const history = await api.getDeviceHistory(gravityDeviceId, {
@@ -180,18 +181,14 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
           since,
           limit: 2000,
         });
-        if (!cancelled) setDone(fermentationDone(history, windowMs, fermentThresholdSg));
+        if (!isStale()) setDone(fermentationDone(history, windowMs, fermentThresholdSg));
       } catch {
         // Keep the last known verdict on a transient fetch error.
       }
-    };
-    void check();
-    const id = setInterval(() => void check(), FERMENT_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [gravityDeviceId, windowMs, lookbackMs, fermentThresholdSg]);
+    },
+    FERMENT_POLL_MS,
+    [gravityDeviceId, windowMs, lookbackMs, fermentThresholdSg],
+  );
 
   if (!anyOnline) {
     return { label: 'Offline', dotClass: 'bg-zinc-600', textClass: 'text-zinc-400' };
@@ -275,11 +272,7 @@ export function KioskHomePage(): JSX.Element {
   // Poll at the fleet's fastest per-device logging cadence (each device's own
   // interval) rather than one fixed rate.
   const pollMs = listPollMs(devices);
-  useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), pollMs);
-    return () => clearInterval(id);
-  }, [load, pollMs]);
+  usePoll(load, pollMs, [load]);
 
   // The fermenter (a multi-device "station") is the hero on the left; every
   // other sensor — lone watched sensors (brewery + keg-fridge temps) and the

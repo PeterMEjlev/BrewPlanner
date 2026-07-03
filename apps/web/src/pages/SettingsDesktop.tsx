@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type SystemUpdateStatus } from '../api';
 import { useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
+import { usePoll } from '../usePoll';
 import { resetGraphColors, saveGraphColors, useGraphColors } from '../graphColors';
 import {
   resetKegContentColors,
@@ -1506,16 +1507,9 @@ function SoftwareUpdateSection(): JSX.Element {
     }
   }, []);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  // While a deploy runs, poll for progress (tolerating the restart blip).
-  useEffect(() => {
-    if (status?.state !== 'running') return;
-    const id = window.setInterval(() => void refresh(), 2500);
-    return () => window.clearInterval(id);
-  }, [status?.state, refresh]);
+  // Fetch once on mount; while a deploy runs, poll for progress (tolerating
+  // the restart blip).
+  usePoll(refresh, status?.state === 'running' ? 2500 : null, [refresh]);
 
   const running = status?.state === 'running';
 

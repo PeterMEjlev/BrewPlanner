@@ -16,7 +16,9 @@ export const databasePath = resolve(
 // Ensure the parent directory exists before SQLite tries to open the file.
 mkdirSync(dirname(databasePath), { recursive: true });
 
-const sqlite = new Database(databasePath);
+// Exported raw handle for maintenance work that needs pragmas (see
+// devices/retention.ts); everything else goes through the drizzle `db`.
+export const sqlite: Database.Database = new Database(databasePath);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
 

@@ -8,9 +8,10 @@ import type {
 } from '@checklist/shared';
 import { SET_SETPOINT_COMMAND } from '@checklist/shared';
 import { createHash, randomBytes } from 'node:crypto';
-import { and, asc, desc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, like, ne, or, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { deviceCommands, devices, readings } from '../db/schema.js';
+import { deviceCommands, devices, readings, settings } from '../db/schema.js';
+import { getSetting } from '../repo.js';
 
 /**
  * A device is considered online when its last push arrived within this window.
@@ -116,7 +117,13 @@ export function listDevices(): Device[] {
 
 /** Delete a device (and its readings, via cascade) by name. */
 export function deleteDeviceByName(name: string): boolean {
-  return db.delete(devices).where(eq(devices.name, name)).run().changes > 0;
+  const row = db.select({ id: devices.id }).from(devices).where(eq(devices.name, name)).get();
+  if (!row) return false;
+  db.delete(devices).where(eq(devices.id, row.id)).run();
+  // Drop any total baselines the retention job stored for this device.
+  db.delete(settings).where(like(settings.key, `metricTotalBase:${row.id}:%`)).run();
+  readingCounts?.delete(row.id);
+  return true;
 }
 
 /** Rotate a device's key by name, returning the new plaintext key. */
@@ -132,6 +139,33 @@ export function rotateKeyByName(name: string): string | null {
 }
 
 // --- Readings ---------------------------------------------------------------
+
+/**
+ * Per-device stored-readings counts, kept in memory. The Devices page and nav
+ * badge poll device status every few seconds, and a `count(*)` over a
+ * years-long readings table per device per poll blocks the event loop
+ * (better-sqlite3 is synchronous) and grows with the table. Seeded lazily with
+ * one grouped query, incremented on every insert, dropped with the device, and
+ * invalidated by the retention job after it prunes rows (next read re-seeds).
+ */
+let readingCounts: Map<number, number> | null = null;
+
+function ensureReadingCounts(): Map<number, number> {
+  readingCounts ??= new Map(
+    db
+      .select({ deviceId: readings.deviceId, n: sql<number>`count(*)` })
+      .from(readings)
+      .groupBy(readings.deviceId)
+      .all()
+      .map((r) => [r.deviceId, Number(r.n)] as const),
+  );
+  return readingCounts;
+}
+
+/** Drop the cached per-device reading counts; the next read re-seeds them. */
+export function invalidateReadingCounts(): void {
+  readingCounts = null;
+}
 
 /**
  * Append readings for a device. Every row gets an ISO-8601 `recordedAt` (the
@@ -154,6 +188,8 @@ export function insertReadings(
       })),
     )
     .run();
+  const counts = readingCounts;
+  if (counts) counts.set(deviceId, (counts.get(deviceId) ?? 0) + samples.length);
 }
 
 /** The most recent value for each metric a device has reported. */
@@ -175,19 +211,47 @@ function latestPerMetric(deviceId: number): LatestReading[] {
     .all();
 }
 
+/**
+ * The most recent value per metric for *every* device at once — the batched
+ * counterpart of {@link latestPerMetric}, so listing N devices costs two
+ * queries instead of 2×N.
+ */
+function latestForAllDevices(): Map<number, LatestReading[]> {
+  const byDevice = new Map<number, LatestReading[]>();
+  const ids = db
+    .select({ maxId: sql<number>`max(${readings.id})` })
+    .from(readings)
+    .groupBy(readings.deviceId, readings.metric)
+    .all()
+    .map((r) => r.maxId);
+  if (ids.length === 0) return byDevice;
+  const rows = db
+    .select({
+      deviceId: readings.deviceId,
+      metric: readings.metric,
+      value: readings.value,
+      recordedAt: readings.recordedAt,
+    })
+    .from(readings)
+    .where(inArray(readings.id, ids))
+    .orderBy(asc(readings.metric))
+    .all();
+  for (const { deviceId, ...reading } of rows) {
+    const list = byDevice.get(deviceId);
+    if (list) list.push(reading);
+    else byDevice.set(deviceId, [reading]);
+  }
+  return byDevice;
+}
+
 function isOnline(lastSeenAt: string | null): boolean {
   if (!lastSeenAt) return false;
   return Date.now() - Date.parse(lastSeenAt) <= ONLINE_WINDOW_MS;
 }
 
-/** Total number of readings a device has logged across every metric, all time. */
+/** Stored readings for a device (all metrics), from the in-memory counts. */
 function readingCount(deviceId: number): number {
-  const row = db
-    .select({ n: sql<number>`count(*)` })
-    .from(readings)
-    .where(eq(readings.deviceId, deviceId))
-    .get();
-  return Number(row?.n ?? 0);
+  return ensureReadingCounts().get(deviceId) ?? 0;
 }
 
 /** Enrich a real device row with the live/derived fields the dashboards need. */
@@ -216,15 +280,40 @@ export function setReportingInterval(id: number, seconds: number): boolean {
   );
 }
 
-/** Devices enriched with online state + latest value per metric (dashboard). */
+/**
+ * Devices enriched with online state + latest value per metric (dashboard).
+ * This is the hot path — the nav badge and Devices page poll it every few
+ * seconds from every open client — so everything is batched: one grouped
+ * latest-readings query pair, one pending-setpoints query, and the in-memory
+ * reading counts. Cost stays flat as devices and history grow.
+ */
 export function listDeviceStatus(): DeviceStatus[] {
-  return listDevices().map(enrich);
+  const latest = latestForAllDevices();
+  const counts = ensureReadingCounts();
+  const pending = pendingSetpointsForAll();
+  return listDevices().map((device) => ({
+    ...device,
+    online: isOnline(device.lastSeenAt),
+    latest: latest.get(device.id) ?? [],
+    readingCount: counts.get(device.id) ?? 0,
+    pendingSetpointC: pending.get(device.id) ?? null,
+  }));
 }
 
 export function getDeviceStatus(id: number): DeviceStatus | null {
   const device = getDevice(id);
   if (!device) return null;
   return enrich(device);
+}
+
+/** settings key holding the pruned-consumption baseline for one device+metric. */
+export function metricTotalBaselineKey(deviceId: number, metric: string): string {
+  return `metricTotalBase:${deviceId}:${metric}`;
+}
+
+/** The pruning baseline for a metric's all-time total (0 when never pruned). */
+export function getMetricTotalBaseline(deviceId: number, metric: string): number {
+  return Number(getSetting(metricTotalBaselineKey(deviceId, metric)) ?? 0);
 }
 
 /**
@@ -235,6 +324,10 @@ export function getDeviceStatus(id: number): DeviceStatus | null {
  * and the negative reset step is dropped. The first reading has no predecessor
  * (`prev` is NULL), so it isn't counted, i.e. the total is consumption observed
  * since this device started reporting.
+ *
+ * The retention job (devices/retention.ts) deletes raw rows past the retention
+ * window, folding their consumption into a stored baseline first — added here
+ * so the total keeps covering the device's whole reporting lifetime.
  */
 export function getMetricTotal(deviceId: number, metric: string): number {
   const row = db.get<{ total: number }>(sql`
@@ -245,7 +338,7 @@ export function getMetricTotal(deviceId: number, metric: string): number {
       WHERE device_id = ${deviceId} AND metric = ${metric}
     )
   `);
-  return Number(row?.total ?? 0);
+  return getMetricTotalBaseline(deviceId, metric) + Number(row?.total ?? 0);
 }
 
 /** History for a device, newest first, optionally filtered by metric/since. */
@@ -311,6 +404,25 @@ export function pendingSetpoint(deviceId: number): number | null {
     .orderBy(desc(deviceCommands.id))
     .get();
   return row ? row.value : null;
+}
+
+/**
+ * Newest pending setpoint target per device — the batched counterpart of
+ * {@link pendingSetpoint} for {@link listDeviceStatus}. Rows come back in id
+ * order, so the last write per device wins.
+ */
+function pendingSetpointsForAll(): Map<number, number> {
+  const rows = db
+    .select({ deviceId: deviceCommands.deviceId, value: deviceCommands.value })
+    .from(deviceCommands)
+    .where(
+      and(eq(deviceCommands.command, SET_SETPOINT_COMMAND), eq(deviceCommands.status, 'pending')),
+    )
+    .orderBy(asc(deviceCommands.id))
+    .all();
+  const byDevice = new Map<number, number>();
+  for (const row of rows) byDevice.set(row.deviceId, row.value);
+  return byDevice;
 }
 
 /**

@@ -1,9 +1,10 @@
 import type { Alert, AlertSeverity, AlertSource } from '@checklist/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { BellIcon, CloseIcon } from '../components/icons';
+import { usePoll } from '../usePoll';
 import { relativeTime } from './Dashboard';
 
 const POLL_MS = 15000;
@@ -85,11 +86,7 @@ export function AlertsPage(): JSX.Element {
     [load],
   );
 
-  useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(id);
-  }, [load]);
+  usePoll(load, POLL_MS, [load]);
 
   const list = alerts ?? [];
   const activeCount = list.filter(isActive).length;
