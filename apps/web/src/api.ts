@@ -95,11 +95,17 @@ export const api = {
       await setToken(null);
     }
   },
-  changePassword: (currentPassword: string, newPassword: string) =>
-    request<AuthState>('/auth/change-password', {
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    // Changing the password revokes every outstanding token (tokenVersion
+    // bump), so the server hands this client a fresh one — store it or the
+    // native app would be logged out by its own password change.
+    const res = await request<AuthState & { token?: string }>('/auth/change-password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
-    }),
+    });
+    if (res.token) await setToken(res.token);
+    return res;
+  },
   changeUsername: (username: string, currentPassword: string) =>
     request<AuthState>('/auth/change-username', {
       method: 'POST',

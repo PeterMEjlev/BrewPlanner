@@ -2,6 +2,7 @@ import type { NowPlaying } from '@checklist/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import { usePoll } from '../usePoll';
 import {
   HomeIcon,
   PauseIcon,
@@ -71,11 +72,7 @@ export function KioskMusicPage(): JSX.Element {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(id);
-  }, [load]);
+  usePoll(load, POLL_MS, [load]);
 
   // Reset the art-failed flag whenever the artwork URL changes (new track).
   const artUrl = now?.albumArtUrl ?? null;

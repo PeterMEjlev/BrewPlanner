@@ -19,6 +19,7 @@ import {
   createUser,
   deleteUserById,
   getUserById,
+  getUserTokenVersion,
   listUsers,
   renameUser,
   setUserRole,
@@ -86,15 +87,49 @@ function hasValidBearerToken(req: FastifyRequest): boolean {
   return timingSafeEqual(a, b);
 }
 
+/**
+ * Session cookies and native-app bearer tokens carry the same signed payload:
+ * `<userId>.<issuedAtMs>.<tokenVersion>`. The cookie signature proves the
+ * server minted it; the embedded fields let the server expire and revoke:
+ *
+ *  - `issuedAt` — the payload is rejected once older than
+ *    SESSION_MAX_AGE_SECONDS, so the 30-day lifetime is enforced server-side
+ *    rather than only by the browser's cookie jar (which a stolen bearer token
+ *    never respected at all).
+ *  - `tokenVersion` — must equal the account's current `users.token_version`.
+ *    Changing the password bumps that column, instantly invalidating every
+ *    outstanding cookie and token for the account (lost phone: change your
+ *    password and its stored token is dead).
+ *
+ * Legacy payloads (a bare user id, from before expiry existed) fail the
+ * three-part parse and are rejected — those holders sign in again once.
+ */
+function mintPayload(userId: number): string {
+  return `${userId}.${Date.now()}.${getUserTokenVersion(userId) ?? 0}`;
+}
+
+/** Verify a payload's shape, age and token version; resolve its user. */
+function userFromPayload(payload: string): User | null {
+  const parts = payload.split('.');
+  if (parts.length !== 3) return null;
+  const id = Number(parts[0]);
+  const issuedAt = Number(parts[1]);
+  const version = Number(parts[2]);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  if (!Number.isFinite(issuedAt)) return null;
+  const age = Date.now() - issuedAt;
+  if (age < 0 || age > SESSION_MAX_AGE_SECONDS * 1000) return null;
+  if (!Number.isInteger(version) || version !== getUserTokenVersion(id)) return null;
+  return getUserById(id);
+}
+
 /** Resolve the logged-in user from the signed session cookie, if any. */
 export function getSessionUser(req: FastifyRequest): User | null {
   const raw = req.cookies[SESSION_COOKIE];
   if (!raw) return null;
   const unsigned = req.unsignCookie(raw);
   if (!unsigned.valid || !unsigned.value) return null;
-  const id = Number(unsigned.value);
-  if (!Number.isInteger(id) || id <= 0) return null;
-  return getUserById(id);
+  return userFromPayload(unsigned.value);
 }
 
 /**
@@ -115,14 +150,12 @@ export function getBearerUser(req: FastifyRequest): User | null {
   if (!presented) return null;
   const unsigned = req.unsignCookie(presented);
   if (!unsigned.valid || !unsigned.value) return null;
-  const id = Number(unsigned.value);
-  if (!Number.isInteger(id) || id <= 0) return null;
-  return getUserById(id);
+  return userFromPayload(unsigned.value);
 }
 
-/** Mint a full-access token (signed user id) for {@link getBearerUser}. */
+/** Mint a full-access token (signed payload) for {@link getBearerUser}. */
 export function mintAuthToken(req: FastifyRequest, userId: number): string {
-  return req.server.signCookie(String(userId));
+  return req.server.signCookie(mintPayload(userId));
 }
 
 /** The user behind a request, whether by session cookie or full-access bearer token. */
@@ -131,7 +164,7 @@ export function getRequestUser(req: FastifyRequest): User | null {
 }
 
 function setSessionCookie(reply: FastifyReply, userId: number): void {
-  reply.setCookie(SESSION_COOKIE, String(userId), {
+  reply.setCookie(SESSION_COOKIE, mintPayload(userId), {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
@@ -229,9 +262,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     const updated = changeUserPassword(user.id, result.data.newPassword);
     if (!updated) return reply.status(404).send({ error: 'Account no longer exists.' });
-    // Keep the session alive (same user id) and refresh the cookie's max-age.
+    // The password change bumped tokenVersion, revoking every outstanding
+    // cookie/token for the account — including the one used for this request.
+    // Re-issue both for this client (new version), so the session that made the
+    // change stays signed in while every other device is logged out.
     setSessionCookie(reply, updated.id);
-    return { user: updated, isLocal: isLocalRequest(req) } satisfies AuthState;
+    const state: AuthState = { user: updated, isLocal: isLocalRequest(req) };
+    return { ...state, token: mintAuthToken(req, updated.id) };
   });
 
   app.post('/change-username', async (req, reply) => {

@@ -52,6 +52,7 @@ import { SetpointControl } from '../SetpointControl';
 import { formatPressure, useSettings } from '../settings';
 import { ChartRangeProvider, useChartRange } from '../chartRange';
 import { RANGES, listPollMs, useDeviceTotal, useMetricSeries, useMetricSeriesT } from '../useDeviceData';
+import { usePoll } from '../usePoll';
 import { relativeTime } from '../util';
 
 const KEG_POLL_MS = 60_000;
@@ -155,8 +156,11 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
     }
     const cached = fermentDoneCache.get(gravityDeviceId);
     if (cached != null) setDone(cached);
-    let cancelled = false;
-    const check = async () => {
+  }, [gravityDeviceId]);
+
+  usePoll(
+    async (isStale) => {
+      if (gravityDeviceId == null) return;
       try {
         const since = new Date(Date.now() - lookbackMs).toISOString();
         const history = await api.getDeviceHistory(gravityDeviceId, {
@@ -164,7 +168,7 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
           since,
           limit: 2000,
         });
-        if (!cancelled) {
+        if (!isStale()) {
           const verdict = fermentationDone(history, windowMs, fermentThresholdSg);
           fermentDoneCache.set(gravityDeviceId, verdict);
           setDone(verdict);
@@ -172,14 +176,10 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
       } catch {
         // Keep the last known verdict through transient history failures.
       }
-    };
-    void check();
-    const id = setInterval(() => void check(), FERMENT_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [gravityDeviceId, windowMs, lookbackMs, fermentThresholdSg]);
+    },
+    FERMENT_POLL_MS,
+    [gravityDeviceId, windowMs, lookbackMs, fermentThresholdSg],
+  );
 
   if (!anyOnline) {
     return {
@@ -320,11 +320,7 @@ export function DashboardPage(): JSX.Element {
   // Re-poll at the fleet's fastest per-device logging cadence (each device's own
   // interval, set from the Devices/Settings page) rather than one global rate.
   const pollMs = listPollMs(devices);
-  useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), pollMs);
-    return () => clearInterval(id);
-  }, [load, pollMs]);
+  usePoll(load, pollMs, [load]);
 
   // Scroll to a section when the sidebar links here with a hash from another page.
   useEffect(() => {

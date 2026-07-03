@@ -1,6 +1,7 @@
 import type { DeviceStatus, LatestReading, Reading } from '@checklist/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api';
+import { usePoll } from './usePoll';
 
 /** Poll cadence before a device's own logging interval is known (first fetch). */
 const DEFAULT_POLL_MS = 10000;
@@ -110,17 +111,8 @@ export function useDeviceData(
     ? device!.reportingIntervalSec * 1000
     : DEFAULT_POLL_MS;
 
-  useEffect(() => {
-    void loadDevice();
-    const t = setInterval(() => void loadDevice(), pollMs);
-    return () => clearInterval(t);
-  }, [loadDevice, pollMs]);
-
-  useEffect(() => {
-    void loadHistory();
-    const t = setInterval(() => void loadHistory(), pollMs);
-    return () => clearInterval(t);
-  }, [loadHistory, pollMs]);
+  usePoll(loadDevice, pollMs, [loadDevice]);
+  usePoll(loadHistory, pollMs, [loadHistory]);
 
   const chartData = useMemo(
     () => [...history].reverse().map((r) => ({ t: Date.parse(r.recordedAt), value: r.value })),
@@ -178,37 +170,35 @@ export function useMetricSeries(
     deviceId == null ? [] : seriesCache.get(seriesKey(deviceId, metric, rangeMs)) ?? [],
   );
 
+  // Re-seed from cache when the key changes mid-mount (e.g. range switch), so
+  // the preview shows the last data for the new window without a blank frame.
   useEffect(() => {
     if (deviceId == null) {
       setSeries([]);
       return;
     }
-    const key = seriesKey(deviceId, metric, rangeMs);
-    // Re-seed from cache when the key changes mid-mount (e.g. range switch), so
-    // the preview shows the last data for the new window without a blank frame.
-    const cached = seriesCache.get(key);
+    const cached = seriesCache.get(seriesKey(deviceId, metric, rangeMs));
     if (cached) setSeries(cached);
-    let cancelled = false;
-    const load = async () => {
+  }, [deviceId, metric, rangeMs]);
+
+  usePoll(
+    async (isStale) => {
+      if (deviceId == null) return;
       try {
         const since = new Date(Date.now() - rangeMs).toISOString();
         const history = await api.getDeviceHistory(deviceId, { metric, since, limit: 200 });
-        if (!cancelled) {
+        if (!isStale()) {
           const values = [...history].reverse().map((r) => r.value);
-          seriesCache.set(key, values);
+          seriesCache.set(seriesKey(deviceId, metric, rangeMs), values);
           setSeries(values);
         }
       } catch {
         // Keep the last known series through a transient history failure.
       }
-    };
-    void load();
-    const t = setInterval(() => void load(), SERIES_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [deviceId, metric, rangeMs]);
+    },
+    SERIES_POLL_MS,
+    [deviceId, metric, rangeMs],
+  );
 
   return series;
 }
@@ -233,30 +223,28 @@ export function useMetricSeriesT(
       setSeries([]);
       return;
     }
-    const key = seriesKey(deviceId, metric, rangeMs);
-    const cached = seriesTCache.get(key);
+    const cached = seriesTCache.get(seriesKey(deviceId, metric, rangeMs));
     if (cached) setSeries(cached);
-    let cancelled = false;
-    const load = async () => {
+  }, [deviceId, metric, rangeMs]);
+
+  usePoll(
+    async (isStale) => {
+      if (deviceId == null) return;
       try {
         const since = new Date(Date.now() - rangeMs).toISOString();
         const history = await api.getDeviceHistory(deviceId, { metric, since, limit: 2000 });
-        if (!cancelled) {
+        if (!isStale()) {
           const points = [...history].reverse().map((r) => ({ t: Date.parse(r.recordedAt), value: r.value }));
-          seriesTCache.set(key, points);
+          seriesTCache.set(seriesKey(deviceId, metric, rangeMs), points);
           setSeries(points);
         }
       } catch {
         // Keep the last known series through a transient history failure.
       }
-    };
-    void load();
-    const t = setInterval(() => void load(), SERIES_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [deviceId, metric, rangeMs]);
+    },
+    SERIES_POLL_MS,
+    [deviceId, metric, rangeMs],
+  );
 
   return series;
 }
@@ -291,28 +279,26 @@ export function useDeviceTotal(deviceId: number, metric: string | undefined): nu
       setTotal(null);
       return;
     }
-    const key = `${deviceId}:${metric}`;
-    const cached = totalCache.get(key);
+    const cached = totalCache.get(`${deviceId}:${metric}`);
     if (cached != null) setTotal(cached);
-    let cancelled = false;
-    const load = async () => {
+  }, [deviceId, metric]);
+
+  usePoll(
+    async (isStale) => {
+      if (!metric) return;
       try {
         const res = await api.getDeviceTotal(deviceId, metric);
-        if (!cancelled) {
-          totalCache.set(key, res.total);
+        if (!isStale()) {
+          totalCache.set(`${deviceId}:${metric}`, res.total);
           setTotal(res.total);
         }
       } catch {
         // Keep the last known total on a transient fetch error.
       }
-    };
-    void load();
-    const t = setInterval(() => void load(), TOTAL_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [deviceId, metric]);
+    },
+    TOTAL_POLL_MS,
+    [deviceId, metric],
+  );
 
   return total;
 }

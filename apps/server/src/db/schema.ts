@@ -19,6 +19,13 @@ export const users = sqliteTable('users', {
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   role: text('role').notNull().default('admin'),
+  /**
+   * Monotonic counter embedded in every session cookie / bearer token minted
+   * for this account. Verification rejects a token whose version no longer
+   * matches, so bumping it (done on every password change) instantly revokes
+   * all outstanding sessions and native-app tokens for the account.
+   */
+  tokenVersion: integer('token_version').notNull().default(0),
   createdAt: text('created_at')
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

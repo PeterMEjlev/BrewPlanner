@@ -1,10 +1,11 @@
 import { REPORTING_INTERVAL_OPTIONS, type DeviceStatus, type DeviceType } from '@checklist/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { listPollMs } from '../useDeviceData';
+import { usePoll } from '../usePoll';
 import { metricLabel, relativeTime } from './Dashboard';
 
 /**
@@ -130,11 +131,7 @@ export function DevicesPage(): JSX.Element {
   );
 
   const pollMs = listPollMs(devices);
-  useEffect(() => {
-    void load();
-    const id = window.setInterval(() => void load(), pollMs);
-    return () => window.clearInterval(id);
-  }, [load, pollMs]);
+  usePoll(load, pollMs, [load]);
 
   const list = devices ?? [];
   const online = list.filter((d) => d.online).length;
