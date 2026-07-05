@@ -30,10 +30,12 @@ admin configures checklists from any PC on the same network.
 │   │   │   ├── repo.ts    Data access (all SQL lives here)
 │   │   │   └── index.ts   Server bootstrap + SPA static serving
 │   │   └── drizzle/      Generated SQL migrations
-│   └── web/           React app (/display and /admin)
-│       └── src/
-│           ├── pages/    Display.tsx, Admin.tsx
-│           └── api.ts    Typed fetch client
+│   ├── web/           React app (/display and /admin)
+│   │   └── src/
+│   │       ├── pages/    Display.tsx, Admin.tsx
+│   │       └── api.ts    Typed fetch client
+│   └── bruce/         Voice assistant (wake word + OpenAI Realtime), runs as
+│                      its own service on the Pi — see deploy/README-bruce.md
 ├── packages/
 │   └── shared/        Types + Zod validation shared by server and web
 └── deploy/            systemd units + Raspberry Pi setup guide
@@ -146,6 +148,19 @@ history. The rig is normally powered off between brew days — the page shows an
 offline card and reconnects automatically. The rig's backend keeps running the
 regulation loop, power limit, and safety watchdog itself, so a dropped remote
 connection can never leave a heater unmanaged.
+
+### Bruce — voice assistant
+
+Bruce (`apps/bruce`, migrated from brew-system-v3) is a wake-word voice
+assistant that runs on this Pi as its own systemd service (`bruce.service`).
+Say "Bruce!" near the microphone to control the rig (through the same audited
+`/api/brew-system/*` proxy), check the keg inventory, hear fermenter status,
+sensor readings and alerts, set brew-day reminders, and run brewing
+calculators. He calls the server over loopback (trusted-local — no token) and
+speaks through OpenAI's Realtime API; the wake word is detected offline
+(Porcupine). One-time Pi setup (audio hardware, API keys, enablement):
+`deploy/README-bruce.md`. The `/bruce` dashboard page is a placeholder for a
+future status/transcript view.
 
 ## Authentication & remote access
 

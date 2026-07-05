@@ -82,6 +82,12 @@ function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T |
 const potParamSchema = z.object({ pot: z.enum(['BK', 'HLT']) });
 const pumpParamSchema = z.object({ pump: z.enum(['P1', 'P2']) });
 
+/** Query for GET /temperature/average — MLT has no heater but does have a sensor. */
+const tempAverageQuerySchema = z.object({
+  pot: z.enum(['BK', 'MLT', 'HLT']),
+  minutes: z.coerce.number().positive(),
+});
+
 export async function brewSystemRoutes(app: FastifyInstance): Promise<void> {
   registerAuditHook(app);
 
@@ -113,6 +119,26 @@ export async function brewSystemRoutes(app: FastifyInstance): Promise<void> {
         '/api/settings',
       );
       return { configured: true, online: true, app: settings.app, theme: settings.theme };
+    } catch {
+      return { configured: true, online: false };
+    }
+  });
+
+  // GET /api/brew-system/temperature/average?pot=BK&minutes=5 — average pot
+  // temperature over the rig's current session log. Added for Bruce (the voice
+  // assistant), who answers "what was the average mash temp the last 10
+  // minutes?" from it; same availability envelope as the other reads.
+  app.get('/temperature/average', { preHandler: requireAuth }, async (req, reply) => {
+    const base = rigBase();
+    if (!base) return { configured: false, online: false };
+    const query = parse(tempAverageQuerySchema, req.query, reply);
+    if (!query) return;
+    try {
+      const data = await rigGet<Record<string, unknown>>(
+        base,
+        `/api/temperature/average?pot=${query.pot}&minutes=${query.minutes}`,
+      );
+      return { configured: true, online: true, ...data };
     } catch {
       return { configured: true, online: false };
     }

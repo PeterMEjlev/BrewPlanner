@@ -21,8 +21,10 @@ Cmnd_Alias BREWPLANNER_DEPLOY = \
     /usr/bin/systemctl start --no-block brewplanner-update.service, \
     /usr/bin/systemctl restart checklist-server.service, \
     /usr/bin/systemctl restart checklist-kiosk.service, \
+    /usr/bin/systemctl restart bruce.service, \
     /usr/bin/systemctl daemon-reload, \
     /usr/bin/cp /home/brewplanner/checklist/deploy/checklist-server.service /etc/systemd/system/, \
-    /usr/bin/cp /home/brewplanner/checklist/deploy/checklist-kiosk.service /etc/systemd/system/
+    /usr/bin/cp /home/brewplanner/checklist/deploy/checklist-kiosk.service /etc/systemd/system/, \
+    /usr/bin/cp /home/brewplanner/checklist/deploy/bruce.service /etc/systemd/system/
 
 brewplanner ALL=(root) NOPASSWD: BREWPLANNER_DEPLOY

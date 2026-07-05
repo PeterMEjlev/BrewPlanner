@@ -1,0 +1,26 @@
+[Unit]
+Description=Bruce voice assistant (wake word + OpenAI Realtime)
+# Bruce's functions call the BrewPlanner server on loopback, so start after it
+# — but don't Require it: Bruce keeps running (and answers calculators and
+# reminders) even while the server restarts during a deploy.
+After=network-online.target checklist-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=brewplanner
+# ALSA device access for the mic and speaker.
+SupplementaryGroups=audio
+WorkingDirectory=/home/brewplanner/checklist
+Environment=BREWPLANNER_URL=http://127.0.0.1:3000
+# OPENAI_API_KEY, PICOVOICE_ACCESS_KEY (and optional BRUCE_* overrides) live in
+# this file, which is NOT in git. See deploy/brewplanner.env.example.
+# "-" means the unit still starts if the file is absent (it then exits with a
+# clear "missing env" message in the journal).
+EnvironmentFile=-/etc/brewplanner.env
+ExecStart=/usr/bin/node apps/bruce/src/main.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

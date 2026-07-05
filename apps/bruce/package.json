@@ -1,0 +1,23 @@
+{
+  "name": "@checklist/bruce",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bruce — wake-word voice assistant for the brewery (Porcupine + OpenAI Realtime API)",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "dev": "node --watch src/main.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@picovoice/porcupine-node": "^4.0.2",
+    "dotenv": "^17.3.1",
+    "node-record-lpcm16": "^1.0.1",
+    "ws": "^8.19.0"
+  },
+  "optionalDependencies": {
+    "speaker": "^0.5.5"
+  }
+}

@@ -12,6 +12,7 @@ import {
   HistoryIcon,
   HomeIcon,
   KegIcon,
+  MicIcon,
   MonitorIcon,
   SettingsIcon,
   SlidersIcon,
@@ -24,6 +25,7 @@ export type ShellPage =
   | 'overview'
   | 'devices'
   | 'brewSystem'
+  | 'bruce'
   | 'water'
   | 'alerts'
   | 'settings'
@@ -49,6 +51,7 @@ const NAV: NavItem[] = [
   { key: 'alerts', label: 'Alerts', Icon: BellIcon, to: '/alerts', page: 'alerts' },
   { key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
   { key: 'brewSystem', label: 'Brew System', Icon: SlidersIcon, to: '/brew-system', page: 'brewSystem' },
+  { key: 'bruce', label: 'Bruce', Icon: MicIcon, to: '/bruce', page: 'bruce' },
   { key: 'water', label: 'Water Calc', Icon: FlaskIcon, to: '/water', page: 'water' },
   { key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin', page: 'checklists' },
   { key: 'todos', label: 'To-Do', Icon: TodoIcon, to: '/todos', page: 'todos' },
@@ -287,7 +290,10 @@ function visibleNav(controllable: boolean): NavItem[] {
   if (controllable) return NAV;
   return NAV.filter(
     (item) =>
-      item.page !== 'brewSystem' && item.page !== 'settings' && item.page !== 'history',
+      item.page !== 'brewSystem' &&
+      item.page !== 'bruce' &&
+      item.page !== 'settings' &&
+      item.page !== 'history',
   );
 }
 
@@ -369,9 +375,9 @@ function Sidebar({
 }): JSX.Element {
   const { auth, refresh } = useAuth();
 
-  // Guests are read-only and can't open the Brew System, Settings or History
-  // pages (History reveals who changed what, so it stays admin-only), so drop
-  // those rails entirely; the kiosk/LAN and admins see the full nav.
+  // Guests are read-only and can't open the Brew System, Bruce, Settings or
+  // History pages (History reveals who changed what, so it stays admin-only),
+  // so drop those rails entirely; the kiosk/LAN and admins see the full nav.
   const navItems = visibleNav(canControl(auth));
 
   return (
