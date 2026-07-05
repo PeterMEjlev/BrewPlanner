@@ -20,6 +20,8 @@ BrewPlanner server over loopback, which passes as trusted-local — no tokens.
   - `stats.js` — fermenter status, sensor readings, alerts
   - `tools.js` — reminders + brewing calculators (no network)
 - `src/main.js` — entry point: wires functions, env, and journald-friendly logs
+- `src/statusServer.js` — loopback HTTP API (state, transcript, speak, volume)
+  that the BrewPlanner server proxies as `/api/bruce/*` for the dashboard page
 - `config.js` — voice-detection tunables (silence thresholds, timeouts)
 - `system-prompt.txt` — Bruce's spoken-persona instructions
 - `wake-words/` — Porcupine models (`RPi` for the Pi, `windows` for dev)
@@ -32,6 +34,7 @@ microphone and speaker, and `sox` on the PATH.
 
 ```
 npm run dev --workspace @checklist/bruce   # local dev (Windows works — sox waveaudio)
+npm test --workspace @checklist/bruce      # state machine + function tests (no audio/network)
 sudo systemctl start bruce.service          # on the Pi
 ```
 

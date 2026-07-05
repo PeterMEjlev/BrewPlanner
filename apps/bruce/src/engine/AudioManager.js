@@ -10,6 +10,11 @@ const PLAYBACK_SAMPLE_RATE = 24000; // OpenAI Realtime API outputs 24kHz
 const CHANNELS = 1;
 const BIT_DEPTH = 16;
 
+// Backoff schedule for restarting a dead microphone stream. The last entry
+// repeats forever — a missing/unplugged mic keeps retrying (and logging)
+// every 30s until it comes back.
+const MIC_RESTART_DELAYS_MS = [1000, 2000, 5000, 10000, 30000];
+
 class AudioManager extends EventEmitter {
   constructor() {
     super();
@@ -19,24 +24,65 @@ class AudioManager extends EventEmitter {
     this._speakerQueue = [];
     this._speakerDraining = false;
     this._gain = 1.0; // 0.0–1.0 speech volume
+
+    // Mic auto-restart state (see _handleMicFailure)
+    this._micOpts = {};
+    this._micStopped = true;
+    this._micRetries = 0;
+    this._micRestartPending = false;
   }
 
   /**
-   * Set playback volume gain (0.0 = silent, 1.0 = full volume).
+   * Set playback volume gain (0.0 = silent, 1.0 = native volume; up to 2.0
+   * digital boost for quiet speakers — boosted samples are hard-clipped).
    * @param {number} gain
    */
   setVolume(gain) {
-    this._gain = Math.max(0, Math.min(1, gain));
+    this._gain = Math.max(0, Math.min(2, gain));
+  }
+
+  /** Current playback gain (0.0–2.0). */
+  get volume() {
+    return this._gain;
   }
 
   /**
    * Start microphone capture. Emits 'data' with raw PCM16 Buffer chunks.
+   * If the underlying recorder process dies (USB hiccup, sox crash), it is
+   * restarted automatically with backoff — a dead mic must never mean a
+   * permanently deaf assistant.
    * @param {object} [opts]
    * @param {string} [opts.device] - Audio device (e.g. 'plughw:1' on Linux)
    * @param {string} [opts.recorder] - Recorder backend ('sox' or 'arecord')
    */
   startMic(opts = {}) {
     if (this._recording) return;
+    this._micOpts = opts;
+    this._micStopped = false;
+    this._micRetries = 0;
+    this._micRestartPending = false;
+    this._spawnMic();
+  }
+
+  stopMic() {
+    this._micStopped = true;
+    if (this._recording) {
+      this._recording.stop();
+      this._recording = null;
+    }
+  }
+
+  /** @private Spawn the platform-appropriate recorder process. */
+  _spawnMic() {
+    this._micRestartPending = false;
+    const opts = this._micOpts;
+
+    // A chunk arriving proves the recorder works — reset the backoff so the
+    // next failure (hours later) starts from a quick 1s retry again.
+    const onData = (chunk) => {
+      this._micRetries = 0;
+      this.emit('data', chunk);
+    };
 
     if (process.platform === 'win32') {
       // node-record-lpcm16 uses --default-device which fails on Windows.
@@ -51,12 +97,12 @@ class AudioManager extends EventEmitter {
         '-',
       ]);
 
-      child.stdout.on('data', (chunk) => this.emit('data', chunk));
+      child.stdout.on('data', onData);
       child.stderr.on('data', () => {}); // suppress sox progress output
-      child.on('error', (err) => this.emit('error', err));
+      child.on('error', (err) => this._handleMicFailure(err));
       child.on('exit', (code) => {
         if (code !== null && code !== 0) {
-          this.emit('error', new Error(`sox exited with code ${code}`));
+          this._handleMicFailure(new Error(`sox exited with code ${code}`));
         }
       });
 
@@ -77,15 +123,30 @@ class AudioManager extends EventEmitter {
 
     this._recording
       .stream()
-      .on('data', (chunk) => this.emit('data', chunk))
-      .on('error', (err) => this.emit('error', err));
+      .on('data', onData)
+      .on('error', (err) => this._handleMicFailure(err))
+      // The recorder process exiting without an error still means silence.
+      .on('end', () => this._handleMicFailure(new Error('microphone stream ended unexpectedly')));
   }
 
-  stopMic() {
-    if (this._recording) {
-      this._recording.stop();
-      this._recording = null;
-    }
+  /**
+   * @private The mic stream died. Unless we stopped it on purpose, report it
+   * once and schedule a restart. Error + exit can both fire for one death, so
+   * a pending flag keeps the restarts from stacking.
+   */
+  _handleMicFailure(err) {
+    if (this._micStopped || this._micRestartPending) return;
+    this._micRestartPending = true;
+    this._recording = null;
+
+    this.emit('error', err instanceof Error ? err : new Error(String(err)));
+    const delay =
+      MIC_RESTART_DELAYS_MS[Math.min(this._micRetries, MIC_RESTART_DELAYS_MS.length - 1)];
+    this._micRetries++;
+    console.log(`[Bruce] Microphone stream died — restarting in ${delay / 1000}s (attempt ${this._micRetries})`);
+    setTimeout(() => {
+      if (!this._micStopped) this._spawnMic();
+    }, delay);
   }
 
   /**
@@ -274,9 +335,9 @@ class AudioManager extends EventEmitter {
         return;
       }
 
-      // Apply volume gain to PCM16 samples
+      // Apply volume gain to PCM16 samples (attenuate or boost; boost clips)
       let output = chunk;
-      if (this._gain < 1.0) {
+      if (this._gain !== 1.0) {
         output = Buffer.alloc(chunk.length);
         for (let i = 0; i < chunk.length - 1; i += 2) {
           const sample = Math.max(-32768, Math.min(32767, Math.round(chunk.readInt16LE(i) * this._gain)));

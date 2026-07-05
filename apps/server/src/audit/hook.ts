@@ -253,6 +253,11 @@ const RULES: Rule[] = [
   { method: 'POST', re: /^\/api\/brew-system\/pump\/[A-Z0-9]+\/speed$/, build: () => null },
   { method: 'POST', re: /^\/api\/brew-system\/timer$/, build: () => null },
 
+  // --- Bruce (voice assistant) ----------------------------------------------
+  { method: 'POST', re: /^\/api\/bruce\/speak$/, build: ({ body }) => ({ entity: 'Bruce', action: `Sent Bruce a message to speak${str(body, 'message') ? `: "${str(body, 'message')}"` : ''}` }) },
+  // Volume nudges are operational noise (slider drags), not configuration.
+  { method: 'POST', re: /^\/api\/bruce\/volume$/, build: () => null },
+
   // --- Accounts (never log the password itself) -----------------------------
   { method: 'POST', re: /^\/api\/accounts$/, build: ({ body }) => ({ entity: 'Account', action: `Created account${str(body, 'username') ? ` "${str(body, 'username')}"` : ''}${str(body, 'role') ? ` (${str(body, 'role')})` : ''}` }) },
   { method: 'PATCH', re: /^\/api\/accounts\/(\d+)\/role$/, build: ({ m, body }) => ({ entity: 'Account', action: `Changed account ${named(accountName(m[1] ?? ''), m[1] ?? '')} role${str(body, 'role') ? ` to ${str(body, 'role')}` : ''}` }) },

@@ -5,6 +5,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const WakeWordDetector = require('./WakeWordDetector');
 const AudioManager = require('./AudioManager');
+const AudioEchoCanceller = require('./AudioEchoCanceller');
 const RealtimeClient = require('./RealtimeClient');
 const FunctionRegistry = require('./FunctionRegistry');
 const cfg = require('../../config');
@@ -16,6 +17,17 @@ const SILENCE_ENERGY_THRESHOLD = cfg.SILENCE_ENERGY_THRESHOLD;
 const FOLLOW_UP_TIMEOUT_MS     = cfg.FOLLOW_UP_TIMEOUT_MS;
 const MIN_SPEECH_ENERGY        = cfg.MIN_SPEECH_ENERGY;
 const DEBUG_ENERGY             = cfg.DEBUG_ENERGY || 'off';
+const SESSION_IDLE_TIMEOUT_MS  = cfg.SESSION_IDLE_TIMEOUT_MS;
+const THINKING_TIMEOUT_MS      = cfg.THINKING_TIMEOUT_MS;
+const SPEAKING_TIMEOUT_MS      = cfg.SPEAKING_TIMEOUT_MS;
+const LISTENING_GRACE_MS       = cfg.LISTENING_GRACE_MS;
+const BARGE_IN_ENABLED         = cfg.BARGE_IN_ENABLED;
+const BARGE_IN_ENERGY_THRESHOLD = cfg.BARGE_IN_ENERGY_THRESHOLD;
+
+// How many times speak() retries connecting before dropping the message —
+// a reminder must survive a transient network blip, not just a warm session.
+const SPEAK_CONNECT_ATTEMPTS = 3;
+const SPEAK_RETRY_DELAY_MS = 5000;
 
 /**
  * BruceAssistant
@@ -57,9 +69,17 @@ class BruceAssistant extends EventEmitter {
 
     this._audio = new AudioManager();
 
+    // Barge-in echo gate (only consulted when BARGE_IN_ENABLED).
+    this._aec = new AudioEchoCanceller({
+      speechThreshold: BARGE_IN_ENERGY_THRESHOLD,
+      debug: DEBUG_ENERGY === 'all',
+    });
+
     this._realtime = new RealtimeClient({
       apiKey: config.openaiKey,
       voice: config.voice || 'alloy',
+      model: config.model || cfg.REALTIME_MODEL,
+      transcriptionModel: config.transcriptionModel || cfg.TRANSCRIPTION_MODEL || undefined,
       systemPrompt:
         config.systemPrompt ||
         'You are Bruce, a helpful AI assistant for a home brewing setup. Keep responses concise and conversational — you are speaking, not writing.',
@@ -73,6 +93,14 @@ class BruceAssistant extends EventEmitter {
     this._skipFollowUp = false;
     this._peakEnergy = 0;
     this._audioPlayedThisTurn = false;
+
+    // Session lifecycle: the OpenAI connection is opened on demand and closed
+    // after idling, so a dropped WS never leaves Bruce permanently deaf.
+    this._connectPromise = null;
+    this._idleTimer = null;
+    // Watchdog: force-reset out of any non-idle state that overstays (a dead
+    // session otherwise wedges the state machine until a service restart).
+    this._watchdogTimer = null;
 
     this._bindEvents();
   }
@@ -97,11 +125,19 @@ class BruceAssistant extends EventEmitter {
     );
 
     this._audio.loadNotificationSound(path.join(__dirname, '..', '..', 'assets', 'plop.wav'));
-    await this._realtime.connect();
     this._wakeWord.start();
     this._audio.startMic({ device: this._config.micDevice });
     this._setState('idle');
     this.emit('ready');
+
+    // Warm up the OpenAI session so the first question after boot is snappy
+    // (and a bad API key shows up in the journal immediately). Failure is not
+    // fatal — the session is (re)opened on demand at every wake word.
+    try {
+      await this._ensureConnected();
+    } catch (err) {
+      console.log('[Bruce] Initial OpenAI connect failed (will retry on wake word):', err.message);
+    }
   }
 
   /**
@@ -109,6 +145,8 @@ class BruceAssistant extends EventEmitter {
    */
   async stop() {
     this._cancelTimers();
+    if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
+    if (this._watchdogTimer) { clearTimeout(this._watchdogTimer); this._watchdogTimer = null; }
     this._audio.stopMic();
     this._audio.stopPlayback();
     this._wakeWord.stop();
@@ -117,8 +155,45 @@ class BruceAssistant extends EventEmitter {
   }
 
   /**
+   * Resolve once the OpenAI session is ready, connecting (or reconnecting)
+   * if needed. Concurrent callers share one in-flight connect.
+   * @private
+   */
+  _ensureConnected() {
+    if (this._realtime.isReady) return Promise.resolve();
+    if (!this._connectPromise) {
+      this._connectPromise = this._realtime
+        .connect()
+        .then(() => console.log('[Bruce] OpenAI session ready'))
+        .finally(() => {
+          this._connectPromise = null;
+        });
+    }
+    return this._connectPromise;
+  }
+
+  /**
+   * Abandon the current turn and return to idle — the escape hatch for a dead
+   * or wedged session. Closes the session so the next wake word starts fresh.
+   * @private
+   */
+  _forceIdle(reason) {
+    console.log(`[Bruce] Resetting to idle (${reason})`);
+    this._cancelTimers();
+    this._skipFollowUp = false;
+    this._audio.stopPlayback();
+    try {
+      this._realtime.clearAudioBuffer();
+    } catch { /* session may already be gone */ }
+    this._realtime.disconnect();
+    this._setState('idle');
+    this.emit('idle');
+  }
+
+  /**
    * Register a tool Bruce can call during conversation.
-   * Can be called before or after start().
+   * Can be called before or after start() — if the session is already live,
+   * the configuration is re-sent so the model actually sees the new tool.
    * @param {string} name - snake_case function name
    * @param {string} description - Description for the LLM
    * @param {object} parameters - JSON Schema object
@@ -126,6 +201,7 @@ class BruceAssistant extends EventEmitter {
    */
   registerFunction(name, description, parameters, handler) {
     this._registry.register(name, description, parameters, handler);
+    this._realtime.refreshTools();
   }
 
   get state() {
@@ -133,20 +209,45 @@ class BruceAssistant extends EventEmitter {
   }
 
   /**
-   * Set Bruce's speech volume (0.0 = silent, 1.0 = full volume).
+   * Set Bruce's speech volume (0.0 = silent, 1.0 = native, up to 2.0 boost).
    * @param {number} gain
    */
   setVolume(gain) {
     this._audio.setVolume(gain);
   }
 
+  /** Current speech volume gain (0.0–2.0). */
+  get volume() {
+    return this._audio.volume;
+  }
+
+  /** True while the OpenAI session is connected and configured. */
+  get connected() {
+    return this._realtime.isReady;
+  }
+
   /**
    * Make Bruce speak unprompted by injecting a text message into the conversation.
    * Bruce will respond with TTS audio as if the user had spoken to him.
+   *
+   * Reconnects the OpenAI session if needed (with retries) — a fired reminder
+   * must survive a dropped connection, not be silently swallowed.
    * @param {string} text - The text prompt for Bruce to respond to
    */
-  speak(text) {
-    if (!this._realtime.isReady) return;
+  async speak(text) {
+    for (let attempt = 1; attempt <= SPEAK_CONNECT_ATTEMPTS; attempt++) {
+      try {
+        await this._ensureConnected();
+        break;
+      } catch (err) {
+        if (attempt === SPEAK_CONNECT_ATTEMPTS) {
+          console.error(`[Bruce] Could not connect after ${attempt} attempts — dropping message: "${text}"`);
+          this.emit('error', new Error(`Dropped speak message (no connection): ${err.message}`));
+          return;
+        }
+        await new Promise((r) => setTimeout(r, SPEAK_RETRY_DELAY_MS));
+      }
+    }
     // If Bruce is busy (listening/thinking/speaking), wait for idle
     if (this._state !== 'idle') {
       const onIdle = () => {
@@ -161,6 +262,14 @@ class BruceAssistant extends EventEmitter {
 
   /** @private */
   async _doSpeak(text) {
+    try {
+      // The session may have idled out while we waited for the idle event.
+      await this._ensureConnected();
+    } catch (err) {
+      console.error('[Bruce] Could not reconnect to speak:', err.message);
+      this.emit('error', err);
+      return;
+    }
     this._skipFollowUp = true;
     this._realtime.sendText(text);
   }
@@ -175,6 +284,12 @@ class BruceAssistant extends EventEmitter {
       } else if (this._state === 'listening') {
         this._realtime.sendAudioChunk(chunk);
         this._checkSilence(chunk);
+      } else if (this._state === 'speaking' && BARGE_IN_ENABLED) {
+        // Echo gate: interrupt Bruce when the mic is louder than his own
+        // speech bleeding back in — i.e. the user talking over him.
+        if (this._aec.detectBargeIn(chunk)) {
+          this._onBargeIn();
+        }
       }
     });
 
@@ -187,19 +302,37 @@ class BruceAssistant extends EventEmitter {
     // TTS audio chunks stream in as Base64-decoded PCM16 buffers
     this._realtime.on('audioChunk', (buffer) => {
       if (this._state === 'idle') return;  // conversation already ended
-      if (this._state !== 'speaking') this._setState('speaking');
+      if (this._state !== 'speaking') {
+        this._setState('speaking');
+        this._aec.resetForUtterance();
+      }
+      if (BARGE_IN_ENABLED) this._aec.feedFarEnd(buffer);
       this._audioPlayedThisTurn = true;
       this._audio.playChunk(buffer);
     });
 
     this._realtime.on('audioDone', () => {
-      if (this._state === 'idle') return;  // don't open a phantom speaker after conversation ended
+      // Only while actually speaking: after a barge-in (state: listening) the
+      // cancelled response's audioDone must not open a phantom speaker whose
+      // flush would trigger a second, overlapping follow-up window.
+      if (this._state !== 'speaking') return;
       this._audio.endPlayback();
+    });
+
+    // Session dropped unexpectedly (network blip, server-side session expiry).
+    // Mid-conversation: bail out to idle — the next wake word reconnects.
+    // While idle: nothing to do; _ensureConnected reconnects on demand.
+    this._realtime.on('disconnected', ({ code, deliberate }) => {
+      if (deliberate) return;
+      console.log(`[Bruce] OpenAI session dropped (code ${code})`);
+      if (this._state !== 'idle') {
+        this._forceIdle('session dropped mid-conversation');
+      }
     });
 
     // Speaker finished — listen for follow-up instead of going idle
     this._audio.on('speakingEnd', () => {
-      if (this._state === 'idle') return;  // conversation already ended
+      if (this._state !== 'speaking') return;  // conversation ended or barge-in took over
       if (this._skipFollowUp) {
         this._skipFollowUp = false;
         this._setState('idle');
@@ -254,10 +387,26 @@ class BruceAssistant extends EventEmitter {
   async _onWakeWordDetected() {
     this.emit('wake');
 
+    // (Re)connect the OpenAI session while the beep plays — the session is
+    // opened on demand, and the beep's ~0.5s masks most of the connect time.
+    const connecting = this._ensureConnected();
+    connecting.catch(() => { /* handled below — avoid an unhandled rejection */ });
+
     // Play a short beep so the user knows Bruce is listening,
     // then start streaming — this way the mic won't send the beep to OpenAI.
     await this._audio.playNotification();
 
+    try {
+      await connecting;
+    } catch (err) {
+      console.error('[Bruce] Could not reach OpenAI:', err.message);
+      this.emit('error', new Error(`Wake word ignored — OpenAI unreachable: ${err.message}`));
+      this._setState('idle');
+      this.emit('idle');
+      return;
+    }
+
+    this._aec.reset();
     this._setState('listening');
     this.emit('listening');
 
@@ -268,6 +417,31 @@ class BruceAssistant extends EventEmitter {
     this._realtime.startStreaming();
 
     // Safety valve: auto-commit after MAX_UTTERANCE_MS even without silence
+    this._utteranceTimer = setTimeout(() => this._commitAudio(), MAX_UTTERANCE_MS);
+  }
+
+  /**
+   * The user talked over Bruce: kill playback, cancel the in-flight response,
+   * and flip straight to listening — no beep, they're already speaking. The
+   * words that triggered the gate are lost (detection latency); in practice
+   * you interrupt with a filler ("Bruce—", "no wait") and then the request.
+   * @private
+   */
+  _onBargeIn() {
+    console.log('[Bruce] Barge-in — interrupting playback');
+    this._cancelTimers();
+    this._audio.stopPlayback();
+    this._realtime.cancelResponse();
+    this._skipFollowUp = false;
+
+    this._setState('listening');
+    this.emit('listening');
+
+    this._hasHeardVoice = true; // they interrupted by speaking
+    this._peakEnergy = 0;
+    this._listeningStartedAt = Date.now();
+    this._audioPlayedThisTurn = false;
+    this._realtime.startStreaming();
     this._utteranceTimer = setTimeout(() => this._commitAudio(), MAX_UTTERANCE_MS);
   }
 
@@ -304,6 +478,12 @@ class BruceAssistant extends EventEmitter {
   _commitAudio() {
     this._cancelTimers();
     if (this._state !== 'listening') return;
+    if (!this._realtime.isReady) {
+      // Session died while we were listening — committing would be silently
+      // swallowed and the watchdog would have to clean up. Bail out now.
+      this._forceIdle('session died while listening');
+      return;
+    }
     console.log(`[Bruce] Peak energy: ${Math.round(this._peakEnergy)} (min: ${MIN_SPEECH_ENERGY})`);
     if (!this._hasHeardVoice || this._peakEnergy < MIN_SPEECH_ENERGY) {
       // No meaningful speech detected — go idle
@@ -353,8 +533,59 @@ class BruceAssistant extends EventEmitter {
 
   _setState(state) {
     this._state = state;
+    this._armWatchdog(state);
+    this._manageIdleTimer(state);
     if (state === 'thinking') this.emit('thinking');
     if (state === 'speaking') this.emit('speaking');
+  }
+
+  /**
+   * Per-state watchdog. Every non-idle state has a hard upper bound; if the
+   * expected server event never arrives (dropped WS, lost event), the watchdog
+   * is the only way back to idle short of restarting the service.
+   * @private
+   */
+  _armWatchdog(state) {
+    if (this._watchdogTimer) {
+      clearTimeout(this._watchdogTimer);
+      this._watchdogTimer = null;
+    }
+    const limits = {
+      thinking: THINKING_TIMEOUT_MS,
+      speaking: SPEAKING_TIMEOUT_MS,
+      // listening normally exits via the utterance/silence timers; this only
+      // catches a commit that a dead session swallowed.
+      listening: MAX_UTTERANCE_MS + LISTENING_GRACE_MS,
+    };
+    const limit = limits[state];
+    if (limit > 0) {
+      this._watchdogTimer = setTimeout(() => {
+        this._watchdogTimer = null;
+        this._forceIdle(`watchdog: stuck in "${state}" for ${Math.round(limit / 1000)}s`);
+      }, limit);
+    }
+  }
+
+  /**
+   * Close the OpenAI session after sitting idle for a while. Within the window
+   * Bruce keeps conversation context; afterwards the next wake word (or
+   * reminder) reconnects fresh — which also bounds context/token growth.
+   * @private
+   */
+  _manageIdleTimer(state) {
+    if (this._idleTimer) {
+      clearTimeout(this._idleTimer);
+      this._idleTimer = null;
+    }
+    if (state === 'idle' && SESSION_IDLE_TIMEOUT_MS > 0) {
+      this._idleTimer = setTimeout(() => {
+        this._idleTimer = null;
+        if (this._state === 'idle' && this._realtime.isReady) {
+          console.log('[Bruce] Closing OpenAI session after idle timeout (reconnects on next wake)');
+          this._realtime.disconnect();
+        }
+      }, SESSION_IDLE_TIMEOUT_MS);
+    }
   }
 }
 

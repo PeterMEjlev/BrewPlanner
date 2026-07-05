@@ -1086,3 +1086,44 @@ export const brewTimerActionSchema = z.object({
   seconds: z.coerce.number().int().min(0).optional(),
 });
 export type BrewTimerActionInput = z.infer<typeof brewTimerActionSchema>;
+
+// ---------------------------------------------------------------------------
+// Bruce, the voice assistant (apps/bruce). Bruce exposes a loopback status API
+// on his Pi; the server proxies it as /api/bruce/* behind session auth, and
+// the dashboard's Bruce page renders these shapes.
+
+export type BruceState = 'idle' | 'listening' | 'thinking' | 'speaking';
+
+/** One line of Bruce's rolling conversation transcript. */
+export interface BruceTranscriptEntry {
+  /** `system` = injected events (dashboard speak requests, reminders). */
+  type: 'user' | 'assistant' | 'function_call' | 'system';
+  content: string;
+  /** Epoch milliseconds. */
+  timestamp: number;
+}
+
+/** Bruce's live status (GET /status on his loopback API). */
+export interface BruceStatus {
+  state: BruceState;
+  /** True while the OpenAI session is open (it idles out between conversations — that's normal, not an error). */
+  connected: boolean;
+  /** Realtime model in use, e.g. `gpt-realtime-mini`. */
+  model: string;
+  /** Speech volume, 0–200 (100 = native). */
+  volumePercent: number;
+  /** ISO timestamp of when the Bruce service started. */
+  startedAt: string;
+  transcript: BruceTranscriptEntry[];
+}
+
+/** Envelope for GET /api/bruce/status — `online: false` when the Bruce service is down/unreachable. */
+export type BruceServiceStatus = { online: false } | ({ online: true } & BruceStatus);
+
+/** Body for POST /api/bruce/speak. */
+export const bruceSpeakSchema = z.object({ message: z.string().trim().min(1).max(500) });
+export type BruceSpeakInput = z.infer<typeof bruceSpeakSchema>;
+
+/** Body for POST /api/bruce/volume — 0–200 %, 100 = native. */
+export const bruceVolumeSchema = z.object({ percent: z.coerce.number().min(0).max(200) });
+export type BruceVolumeInput = z.infer<typeof bruceVolumeSchema>;

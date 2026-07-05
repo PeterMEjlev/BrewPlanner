@@ -16,12 +16,23 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const BruceAssistant = require('./engine');
+const cfg = require('../config');
 
 const { apiCall } = require('./api');
+const { startStatusServer } = require('./statusServer');
 const brewSystemFunctions = require('./functions/brewSystem');
 const kegFunctions = require('./functions/kegs');
 const statsFunctions = require('./functions/stats');
 const toolFunctions = require('./functions/tools');
+
+// Rolling transcript of recent turns, served by the status API for the
+// dashboard's Bruce page. Entries: { type: 'user'|'assistant'|'function_call'|'system', content, timestamp }.
+const TRANSCRIPT_MAX = 100;
+const transcript = [];
+function record(type, content) {
+  transcript.push({ type, content, timestamp: Date.now() });
+  if (transcript.length > TRANSCRIPT_MAX) transcript.splice(0, transcript.length - TRANSCRIPT_MAX);
+}
 
 // Porcupine wake-word models are platform-specific; pick the right one for
 // where we're running (RPi in production, Windows for development).
@@ -52,6 +63,10 @@ async function main() {
       fs.readFileSync(path.join(__dirname, '..', 'system-prompt.txt'), 'utf-8').trim(),
   });
 
+  // Default speech volume: 100 = native, up to 200 (digital boost, clips).
+  const volumePct = Number(process.env.BRUCE_VOLUME_PERCENT);
+  if (Number.isFinite(volumePct)) bruce.setVolume(volumePct / 100);
+
   brewSystemFunctions.register(bruce, apiCall);
   kegFunctions.register(bruce, apiCall);
   statsFunctions.register(bruce, apiCall);
@@ -73,6 +88,7 @@ async function main() {
   const flushTranscript = () => {
     if (pendingTranscript) {
       console.log(`[You] ${pendingTranscript}`);
+      record('user', pendingTranscript);
       pendingTranscript = null;
       transcriptFlushed = true;
     }
@@ -135,14 +151,30 @@ async function main() {
   });
 
   bruce.on('functionCall', (name, args) => {
-    bruceOutput(() => console.log(`[Bruce] Function call: ${name}`, args));
+    bruceOutput(() => {
+      console.log(`[Bruce] Function call: ${name}`, args);
+      const argStr = args && Object.keys(args).length ? ` ${JSON.stringify(args)}` : '';
+      record('function_call', `${name}${argStr}`);
+    });
   });
 
   bruce.on('reply', (text) => {
-    bruceOutput(() => console.log(`[Bruce] ${text}`));
+    bruceOutput(() => {
+      console.log(`[Bruce] ${text}`);
+      record('assistant', text);
+    });
   });
 
   bruce.on('error', (err) => console.error('[Bruce] Error:', err));
+
+  // Loopback status API for the dashboard's Bruce page (proxied by the
+  // BrewPlanner server as /api/bruce/* behind its auth).
+  startStatusServer({
+    bruce,
+    transcript,
+    model: cfg.REALTIME_MODEL,
+    port: Number(process.env.BRUCE_STATUS_PORT) || 3555,
+  });
 
   // Graceful shutdown so systemd stop/restart releases the mic and speaker.
   for (const signal of ['SIGINT', 'SIGTERM']) {

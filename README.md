@@ -154,13 +154,15 @@ connection can never leave a heater unmanaged.
 Bruce (`apps/bruce`, migrated from brew-system-v3) is a wake-word voice
 assistant that runs on this Pi as its own systemd service (`bruce.service`).
 Say "Bruce!" near the microphone to control the rig (through the same audited
-`/api/brew-system/*` proxy), check the keg inventory, hear fermenter status,
-sensor readings and alerts, set brew-day reminders, and run brewing
-calculators. He calls the server over loopback (trusted-local — no token) and
-speaks through OpenAI's Realtime API; the wake word is detected offline
-(Porcupine). One-time Pi setup (audio hardware, API keys, enablement):
-`deploy/README-bruce.md`. The `/bruce` dashboard page is a placeholder for a
-future status/transcript view.
+`/api/brew-system/*` proxy), check or update the keg inventory, hear fermenter
+status, sensor readings and alerts, change controller setpoints, set brew-day
+reminders, and run brewing calculators. He calls the server over loopback
+(trusted-local — no token) and speaks through OpenAI's GA Realtime API
+(`gpt-realtime-mini`); the wake word is detected offline (Porcupine). The
+`/bruce` dashboard page shows his live state and conversation transcript, and
+can set his volume or make him say something in the brewery (Bruce serves a
+loopback status API that the server proxies as `/api/bruce/*`). One-time Pi
+setup (audio hardware, API keys, enablement): `deploy/README-bruce.md`.
 
 ## Authentication & remote access
 

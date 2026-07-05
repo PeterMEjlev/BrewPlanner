@@ -8,6 +8,7 @@ import type {
   BrewPump,
   BrewSystemConfig,
   BrewSystemStatus,
+  BruceServiceStatus,
   ChecklistSummary,
   ChecklistWithSteps,
   DeviceDataSources,
@@ -350,5 +351,17 @@ export const api = {
     request<void>('/brew-system/timer', {
       method: 'POST',
       body: JSON.stringify(seconds === undefined ? { action } : { action, seconds }),
+    }),
+
+  // Bruce, the voice assistant (apps/bruce), proxied server-side from his
+  // loopback API. Status answers `{ online: false }` when the service is down;
+  // speak/volume are admin-only and 502 when he's unreachable.
+  getBruceStatus: () => request<BruceServiceStatus>('/bruce/status'),
+  bruceSpeak: (message: string) =>
+    request<{ ok: boolean }>('/bruce/speak', { method: 'POST', body: JSON.stringify({ message }) }),
+  bruceSetVolume: (percent: number) =>
+    request<{ volumePercent: number }>('/bruce/volume', {
+      method: 'POST',
+      body: JSON.stringify({ percent }),
     }),
 };

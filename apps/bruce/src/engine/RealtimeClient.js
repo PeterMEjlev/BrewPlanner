@@ -3,8 +3,15 @@
 const { EventEmitter } = require('events');
 const WebSocket = require('ws');
 
-const REALTIME_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview';
-const AUDIO_FORMAT = 'pcm16';
+// GA Realtime API only. The original beta protocol (OpenAI-Beta header,
+// gpt-4o-*-realtime-preview models, `response.audio.*` events) was retired by
+// OpenAI — the server now answers "The Realtime Beta API is no longer
+// supported" and the preview models return model_not_found (verified
+// 2026-07-05), so there is deliberately no legacy code path here.
+const REALTIME_BASE_URL = 'wss://api.openai.com/v1/realtime';
+const DEFAULT_MODEL = 'gpt-realtime-mini';
+const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
+const CONNECT_TIMEOUT_MS = 15000;
 
 class RealtimeClient extends EventEmitter {
   /**
@@ -13,16 +20,26 @@ class RealtimeClient extends EventEmitter {
    * @param {string} [opts.voice='alloy'] - TTS voice
    * @param {string} [opts.systemPrompt=''] - System instructions for the assistant
    * @param {import('./FunctionRegistry')} opts.registry - Function registry instance
+   * @param {string} [opts.model='gpt-realtime-mini'] - Realtime model id
+   * @param {string} [opts.transcriptionModel='gpt-4o-mini-transcribe'] - Input transcription model
    */
-  constructor({ apiKey, voice = 'alloy', systemPrompt = '', registry }) {
+  constructor({ apiKey, voice = 'alloy', systemPrompt = '', registry, model, transcriptionModel }) {
     super();
     this._apiKey = apiKey;
     this._voice = voice;
     this._systemPrompt = systemPrompt;
     this._registry = registry;
+    this._model = model || DEFAULT_MODEL;
+    this._transcriptionModel = transcriptionModel || DEFAULT_TRANSCRIPTION_MODEL;
     this._ws = null;
     this._sessionReady = false;
     this._streaming = false;
+    // True while a close we asked for is in flight, so the engine can tell a
+    // planned shutdown (idle timeout, stop()) from a dropped session.
+    this._deliberateClose = false;
+    // Set by cancelResponse(): swallow the response.done of the cancelled
+    // response so the phase machine doesn't chain a new response from it.
+    this._suppressNextResponseDone = false;
     // Accumulate function call arguments keyed by call_id
     this._pendingFunctionCalls = new Map();
     // Completed function calls waiting to be executed when response.done fires
@@ -36,45 +53,85 @@ class RealtimeClient extends EventEmitter {
   /**
    * Open WebSocket and configure the session.
    * Resolves when the session is ready to receive audio.
+   * Safe to call again after a disconnect — all per-session state is reset.
    * @returns {Promise<void>}
    */
   connect() {
-    return new Promise((resolve, reject) => {
-      this._ws = new WebSocket(REALTIME_URL, {
-        headers: {
-          Authorization: `Bearer ${this._apiKey}`,
-          'OpenAI-Beta': 'realtime=v1',
-        },
-      });
+    // Drop any half-dead previous socket before starting fresh.
+    if (this._ws) {
+      this._deliberateClose = true;
+      try { this._ws.terminate(); } catch { /* already dead */ }
+      this._ws = null;
+    }
+    this._sessionReady = false;
+    this._streaming = false;
+    this._deliberateClose = false;
+    this._suppressNextResponseDone = false;
+    this._pendingFunctionCalls.clear();
+    this._completedCalls = [];
+    this._lastFunctionResults = '';
+    this._responsePhase = null;
 
-      this._ws.on('message', (data) => {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(`${REALTIME_BASE_URL}?model=${encodeURIComponent(this._model)}`, {
+        headers: { Authorization: `Bearer ${this._apiKey}` },
+      });
+      this._ws = ws;
+
+      let settled = false;
+      const settle = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(connectTimer);
+        fn(arg);
+      };
+
+      // A hung TLS/WebSocket handshake must not wedge the caller forever.
+      const connectTimer = setTimeout(() => {
+        try { ws.terminate(); } catch { /* ignore */ }
+        settle(reject, new Error('Timed out connecting to the OpenAI Realtime API'));
+      }, CONNECT_TIMEOUT_MS);
+
+      ws.on('message', (data) => {
         let event;
         try {
           event = JSON.parse(data.toString());
         } catch {
           return;
         }
-        this._handleServerEvent(event, resolve, reject);
+        this._handleServerEvent(
+          event,
+          () => settle(resolve),
+          (err) => settle(reject, err)
+        );
       });
 
-      this._ws.on('error', (err) => {
+      ws.on('error', (err) => {
         this.emit('error', err);
-        reject(err);
+        settle(reject, err);
       });
 
-      this._ws.on('close', (code, reason) => {
+      ws.on('close', (code, reason) => {
         this._sessionReady = false;
         this._streaming = false;
-        this.emit('disconnected', { code, reason: reason.toString() });
+        this.emit('disconnected', {
+          code,
+          reason: reason.toString(),
+          deliberate: this._deliberateClose,
+        });
+        settle(reject, new Error(`Realtime connection closed during connect (code ${code})`));
       });
     });
   }
 
   disconnect() {
     if (this._ws) {
+      this._deliberateClose = true;
       this._ws.close();
       this._ws = null;
     }
+    this._sessionReady = false;
+    this._streaming = false;
   }
 
   /**
@@ -137,8 +194,21 @@ class RealtimeClient extends EventEmitter {
 
   /**
    * Cancel an in-progress response (for barge-in).
+   *
+   * If a phase is active, its response.done will still arrive (status
+   * "cancelled") — flag it to be swallowed so the phase machine doesn't chain
+   * a new response from it and start talking over the interrupting user. When
+   * no phase is active (all responses finished, speaker just draining local
+   * audio) there is nothing server-side to cancel; the cancel is still sent
+   * and the resulting "no active response" error is ignored in the handler.
    */
   cancelResponse() {
+    if (this._responsePhase !== null) {
+      this._suppressNextResponseDone = true;
+      this._responsePhase = null;
+      this._completedCalls = [];
+      this._lastFunctionResults = '';
+    }
     this._send({ type: 'response.cancel' });
   }
 
@@ -166,24 +236,48 @@ class RealtimeClient extends EventEmitter {
     }
   }
 
+  /**
+   * GA response modalities: exactly ['audio'] (transcript events come with
+   * audio) or ['text'].
+   * @private
+   */
+  _modalities(mods) {
+    return { output_modalities: mods.includes('audio') ? ['audio'] : ['text'] };
+  }
+
   _configureSession() {
     const tools = this._registry.getToolDefinitions();
     this._send({
       type: 'session.update',
       session: {
-        modalities: ['text', 'audio'],
+        type: 'realtime',
         instructions: this._systemPrompt,
-        voice: this._voice,
-        input_audio_format: AUDIO_FORMAT,
-        output_audio_format: AUDIO_FORMAT,
-        input_audio_transcription: { model: 'whisper-1' },
-        // Disable server-side VAD — we commit audio manually after wake word + silence detection
-        turn_detection: null,
+        output_modalities: ['audio'],
+        audio: {
+          input: {
+            format: { type: 'audio/pcm', rate: 24000 },
+            transcription: { model: this._transcriptionModel },
+            // Disable server-side VAD — we commit audio manually after wake
+            // word + silence detection
+            turn_detection: null,
+          },
+          output: {
+            format: { type: 'audio/pcm', rate: 24000 },
+            voice: this._voice,
+          },
+        },
         tools: tools,
         tool_choice: tools.length > 0 ? 'auto' : 'none',
-        temperature: 0.6,
       },
     });
+  }
+
+  /**
+   * Re-send the session configuration (e.g. after a function was registered
+   * post-connect, so the model actually sees the new tool).
+   */
+  refreshTools() {
+    if (this._sessionReady) this._configureSession();
   }
 
   async _handleServerEvent(event, resolveConnect, rejectConnect) {
@@ -200,18 +294,18 @@ class RealtimeClient extends EventEmitter {
         if (resolveConnect) resolveConnect();
         break;
 
-      case 'response.audio.delta': {
+      case 'response.output_audio.delta': {
         // Incremental TTS audio chunk (Base64 PCM16)
         const audioBuffer = Buffer.from(event.delta, 'base64');
         this.emit('audioChunk', audioBuffer);
         break;
       }
 
-      case 'response.audio.done':
+      case 'response.output_audio.done':
         this.emit('audioDone');
         break;
 
-      case 'response.audio_transcript.done': {
+      case 'response.output_audio_transcript.done': {
         const text = event.transcript?.trim();
         if (text) this.emit('reply', text);
         break;
@@ -267,6 +361,13 @@ class RealtimeClient extends EventEmitter {
       }
 
       case 'response.done': {
+        if (this._suppressNextResponseDone) {
+          // The done of a response we cancelled for barge-in — discard its
+          // leftovers and let the new user turn drive the next response.
+          this._suppressNextResponseDone = false;
+          this._completedCalls = [];
+          break;
+        }
         const calls = this._completedCalls.splice(0);
 
         if (this._responsePhase === 'announce') {
@@ -274,7 +375,7 @@ class RealtimeClient extends EventEmitter {
           this._responsePhase = 'execute';
           this._send({
             type: 'response.create',
-            response: { modalities: ['text'], tool_choice: 'auto' },
+            response: { ...this._modalities(['text']), tool_choice: 'auto' },
           });
         } else if (calls.length > 0) {
           // Functions were called — execute all in parallel
@@ -311,7 +412,7 @@ class RealtimeClient extends EventEmitter {
             this._send({
               type: 'response.create',
               response: {
-                modalities: ['text'],
+                ...this._modalities(['text']),
                 tool_choice: 'auto',
                 instructions: 'If you need to call additional functions, do so now. Otherwise respond with just the word "done" — do NOT summarize or discuss the results yet, you will speak them aloud in the next step.',
               },
@@ -338,7 +439,7 @@ class RealtimeClient extends EventEmitter {
           this._send({
             type: 'response.create',
             response: {
-              modalities: ['text', 'audio'],
+              ...this._modalities(['text', 'audio']),
               tool_choice: 'none',
             },
           });
@@ -353,6 +454,9 @@ class RealtimeClient extends EventEmitter {
       }
 
       case 'error': {
+        // Cancelling when the response already finished naturally is a no-op
+        // race (audio playback outlasts response.done), not a real error.
+        if (event.error?.code === 'response_cancel_not_active') break;
         const err = new Error(`Realtime API error: ${event.error?.message || JSON.stringify(event.error)}`);
         this.emit('error', err);
         if (rejectConnect) rejectConnect(err);

@@ -111,6 +111,51 @@ function register(bruce, apiCall) {
     }
   );
 
+  // ── Temperature controller setpoints ────────────────────────────────────
+
+  bruce.registerFunction(
+    'set_controller_setpoint',
+    'Set the target temperature of a temperature controller (the fermenter fridge/heater, or the kegs fridge). The change is queued and the controller confirms it shortly after. Range −10 to 50°C. Use for "set the fermenter to 19 degrees" or "make the keg fridge colder, 3 degrees". Defaults to the fermenter controller when no device is named.',
+    {
+      type: 'object',
+      properties: {
+        temperature: { type: 'number', description: 'Target temperature in °C (−10 to 50)' },
+        device: { type: 'string', description: 'Which controller, by name fragment — e.g. "fermenter" (default) or "kegs"' },
+      },
+      required: ['temperature'],
+    },
+    async ({ temperature, device }) => {
+      if (temperature < -10 || temperature > 50) {
+        return 'The setpoint must be between minus 10 and 50 degrees.';
+      }
+      const devices = await apiCall('GET', '/api/devices');
+      const controllers = devices.filter((d) => d.type === 'brew_controller');
+      if (controllers.length === 0) return 'No temperature controllers are registered.';
+
+      const needle = (device || 'ferment').toLowerCase();
+      let matches = controllers.filter((d) => d.name.toLowerCase().includes(needle));
+      // "fermenter" wasn't matched by name — fall back to the convention that
+      // the unqualified controller is the fermenter one.
+      if (matches.length === 0 && !device) matches = controllers;
+      if (matches.length === 0) {
+        return `No controller matches "${device}". Available: ${controllers.map((d) => d.name).join(', ')}.`;
+      }
+      if (matches.length > 1) {
+        return `Several controllers match — ask the user which one: ${matches.map((d) => d.name).join(', ')}.`;
+      }
+
+      const target = matches[0];
+      if (!target.online) {
+        return `${target.name} is offline right now — the setpoint would not reach it.`;
+      }
+      const res = await apiCall('POST', `/api/devices/${target.id}/setpoint`, { value: temperature });
+      const current = target.latest.find((r) => r.metric === 'temp_c');
+      let reply = `${target.name} setpoint queued to ${res.pendingSetpointC ?? temperature}°C — the controller will confirm shortly.`;
+      if (current) reply += ` It is currently ${current.value.toFixed(1)}°C.`;
+      return reply;
+    }
+  );
+
   // ── Active alerts ──────────────────────────────────────────────────────
 
   bruce.registerFunction(

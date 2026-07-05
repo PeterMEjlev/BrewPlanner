@@ -36,6 +36,79 @@ function register(bruce, apiCall) {
     return unwrap(await apiCall('GET', '/api/brew-system/state')).state;
   }
 
+  // ── Countdown watch: announce when the brew timer hits zero ─────────────
+  //
+  // When Bruce starts a countdown he schedules one state check for just after
+  // the expected end (no continuous polling — the rig is often powered off and
+  // every probe would wait out the proxy timeout). If the timer was paused in
+  // the meantime, he re-checks every 15 s; if it was reset, the rig went
+  // offline, or the watch has run for 4 h, he gives up silently. A restart of
+  // Bruce forgets the watch — the reminder system is the durable path.
+
+  let timerWatch = null; // { startedAt, errors, timeout }
+
+  function clearTimerWatch() {
+    if (timerWatch) {
+      clearTimeout(timerWatch.timeout);
+      timerWatch = null;
+    }
+  }
+
+  function scheduleTimerCheck(delayMs) {
+    timerWatch.timeout = setTimeout(checkTimer, delayMs);
+  }
+
+  async function checkTimer() {
+    const watch = timerWatch;
+    if (!watch) return;
+
+    let res;
+    try {
+      res = await apiCall('GET', '/api/brew-system/state');
+    } catch {
+      if (timerWatch !== watch) return;
+      watch.errors = (watch.errors || 0) + 1;
+      if (watch.errors >= 3) {
+        console.log('[Bruce] Timer watch abandoned — BrewPlanner server unreachable');
+        timerWatch = null;
+      } else {
+        scheduleTimerCheck(10000);
+      }
+      return;
+    }
+    if (timerWatch !== watch) return; // watch replaced/cleared while fetching
+
+    const timer = res.configured && res.online ? res.state?.timer : null;
+    if (!timer || timer.target === 0) {
+      // Rig off, or timer reset / switched to stopwatch — nothing to announce.
+      timerWatch = null;
+      return;
+    }
+
+    if (timer.seconds === 0 && !timer.running) {
+      timerWatch = null;
+      console.log('[Bruce] Brew timer finished — announcing');
+      bruce.speak('[SYSTEM] The brew timer has just reached zero. Tell the user their brew timer is done — one short sentence, nothing else.');
+      return;
+    }
+
+    if (Date.now() - watch.startedAt > 4 * 3600 * 1000) {
+      console.log('[Bruce] Timer watch abandoned after 4 hours');
+      timerWatch = null;
+      return;
+    }
+
+    // Still counting down (someone restarted/extended it) → check again right
+    // after the new expected end; paused → peek every 15 s.
+    scheduleTimerCheck(timer.running ? Math.max(timer.seconds * 1000 + 1500, 3000) : 15000);
+  }
+
+  function startTimerWatch(totalSeconds) {
+    clearTimerWatch();
+    timerWatch = { startedAt: Date.now(), errors: 0, timeout: null };
+    scheduleTimerCheck(totalSeconds * 1000 + 1500);
+  }
+
   // ── Temperature reading ─────────────────────────────────────────────────
 
   bruce.registerFunction(
@@ -241,6 +314,7 @@ function register(bruce, apiCall) {
       if (action === 'start' && totalSeconds > 0) {
         await apiCall('POST', '/api/brew-system/timer', { action: 'set', seconds: totalSeconds });
         await apiCall('POST', '/api/brew-system/timer', { action: 'start' });
+        startTimerWatch(totalSeconds);
         const h = Math.floor(totalSeconds / 3600);
         const m = Math.floor((totalSeconds % 3600) / 60);
         const s = totalSeconds % 60;
@@ -252,6 +326,7 @@ function register(bruce, apiCall) {
       }
 
       const res = await apiCall('POST', '/api/brew-system/timer', { action });
+      if (action === 'reset') clearTimerWatch();
       const secs = res?.timer?.seconds ?? 0;
       const h = Math.floor(secs / 3600);
       const m = Math.floor((secs % 3600) / 60);

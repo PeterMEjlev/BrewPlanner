@@ -16,6 +16,7 @@ import { runNotificationChecks } from './notify/checks.js';
 import { isConfigured as telegramConfigured } from './notify/telegram.js';
 import { apiRoutes } from './routes/api.js';
 import { brewSystemRoutes } from './routes/brewSystem.js';
+import { bruceRoutes } from './routes/bruce.js';
 import { commandRoutes, deviceRoutes, ingestRoutes } from './routes/devices.js';
 import { musicRoutes } from './routes/music.js';
 
@@ -104,6 +105,11 @@ async function main(): Promise<void> {
   // door: reads are session-gated, controls are admin-only. Set BREW_SYSTEM_URL
   // to enable; unset, the Brew System page shows "not configured".
   await app.register(brewSystemRoutes, { prefix: '/api/brew-system' });
+
+  // Bruce, the voice assistant (apps/bruce, loopback status API on this Pi):
+  // live state + transcript for the dashboard's Bruce page, plus speak/volume
+  // controls. Status is session-gated; controls are admin-only.
+  await app.register(bruceRoutes, { prefix: '/api/bruce' });
 
   // Serve the built web app (apps/web/dist) in production. In dev the web app
   // is served by Vite on its own port, so this directory may not exist.

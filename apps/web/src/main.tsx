@@ -122,8 +122,9 @@ const router = createBrowserRouter([
       </RequireAuth>
     ),
   },
-  // Bruce, the voice assistant. Admin-only like the Brew System page — the
-  // future status view will expose conversation transcripts and controls.
+  // Bruce, the voice assistant: live state, conversation transcript, remote
+  // speech, and volume. Admin-only like the Brew System page — the speak box
+  // and volume slider are controls.
   {
     path: '/bruce',
     element: (

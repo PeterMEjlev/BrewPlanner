@@ -91,6 +91,49 @@ Say **"Bruce!"** near the mic — you should hear the plop, then ask e.g.
 From here on, every deploy (`deploy/update.sh` or the dashboard Update button)
 restarts Bruce automatically along with the other services.
 
+## Optional: enable barge-in (interrupting Bruce mid-speech)
+
+Barge-in lets you talk over Bruce to cut him off ("Bruce— no, stop"). It ships
+**disabled** because the echo gate has to be tuned to your room and speaker
+volume first — a miscalibrated gate makes Bruce interrupt himself whenever he
+hears his own voice. Once the basics work:
+
+1. Set `BRUCE_DEBUG_ENERGY=all` in `/etc/brewplanner.env`, restart, ask Bruce
+   something long (e.g. a full keg rundown) and watch
+   `journalctl -u bruce.service -f`: the `[AEC]` lines show mic energy vs the
+   expected echo (`excess=`) while he speaks.
+2. Pick a `BRUCE_BARGE_IN_ENERGY_THRESHOLD` comfortably above the excess you
+   see when *silent* and below the excess when *you* talk over him
+   (default 400).
+3. Set `BRUCE_BARGE_IN_ENABLED=1`, remove the debug var, restart.
+
+## Notes on behaviour
+
+- **The dashboard has a live Bruce page.** `/bruce` shows his state
+  (idle/listening/thinking/speaking), the OpenAI session, a rolling
+  conversation transcript, a volume slider, and a box to make him say
+  something in the brewery — handy for testing the speaker before the mic
+  works. It reads Bruce's loopback status API (port 3555,
+  `BRUCE_STATUS_PORT`) through the server; when the service is down the page
+  shows an offline card.
+- **Speech model.** Bruce speaks through OpenAI's GA Realtime API
+  (`gpt-realtime-mini` by default; set `BRUCE_REALTIME_MODEL=gpt-realtime`
+  for the bigger one). The old beta API his brew-system incarnation used has
+  been retired by OpenAI, so old configs pinning a `*-realtime-preview`
+  model will not work.
+- **Reminders survive restarts.** Pending reminders are saved to
+  `~/.bruce/reminders.json` (`BRUCE_STATE_DIR` to relocate) and re-armed when
+  the service starts; one that should have fired while Bruce was down is
+  spoken belatedly if it's less than 10 minutes late.
+- **The OpenAI session is on-demand.** It connects at the wake word (the beep
+  masks the latency) and closes after ~2 minutes of idle
+  (`BRUCE_SESSION_IDLE_TIMEOUT_MS`). Within that window Bruce remembers the
+  conversation; after it, each conversation starts fresh. Dropped connections
+  self-heal the same way, and a watchdog resets any conversation that hangs.
+- **The microphone self-heals.** If the recorder process dies (USB hiccup),
+  it is restarted automatically with backoff — check the journal for
+  "Microphone stream died" if Bruce seems deaf.
+
 ## Troubleshooting
 
 - **`Missing required environment variable ...` in the journal** — step 3.
