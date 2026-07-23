@@ -175,9 +175,10 @@ export function KioskMusicPage(): JSX.Element {
 
           {hasMedia ? (
             <div className="min-w-0">
-              <div className="truncate text-4xl font-extrabold leading-tight xl:text-5xl">
-                {now?.title ?? 'Unknown track'}
-              </div>
+              <ScrollingText
+                text={now?.title ?? 'Unknown track'}
+                className="text-4xl font-extrabold leading-tight xl:text-5xl"
+              />
               <div className="mt-2 truncate text-2xl text-zinc-400">{now?.artist ?? '—'}</div>
             </div>
           ) : (
@@ -299,5 +300,55 @@ function TransportButton({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * A single line of text that gently scrolls horizontally when it's wider than
+ * its container, so a long song title reveals its end instead of being cut off
+ * with an ellipsis. Text that fits — or when the viewer prefers reduced motion —
+ * renders as a normal truncating line. The scroll distance is measured from the
+ * live layout, so it adapts to any title length and screen width.
+ */
+function ScrollingText({ text, className }: { text: string; className?: string }): JSX.Element {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [shift, setShift] = useState(0); // px the text overflows its box by; 0 = fits, don't scroll
+
+  useEffect(() => {
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const measure = (): void => {
+      const viewport = viewportRef.current;
+      const textEl = textRef.current;
+      if (!viewport || !textEl) return;
+      // scrollWidth is the full text width even while truncated, so this detects
+      // overflow whether we're currently scrolling or showing the static line.
+      const overflow = textEl.scrollWidth - viewport.clientWidth;
+      setShift(!prefersReduced && overflow > 4 ? overflow : 0);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (viewportRef.current) observer.observe(viewportRef.current);
+    return () => observer.disconnect();
+  }, [text]);
+
+  const scrolling = shift > 0;
+  // Slow, readable pace (~45 px/s). The keyframes spend ~38% of the cycle on each
+  // sweep, so scale the total duration to hold that pace whatever the distance.
+  const durationSec = scrolling ? shift / 45 / 0.38 : 0;
+  const style = scrolling
+    ? ({ '--marquee-shift': `-${shift}px`, animationDuration: `${durationSec}s` } as React.CSSProperties)
+    : undefined;
+
+  return (
+    <div ref={viewportRef} className={`overflow-hidden ${className ?? ''}`}>
+      <span
+        ref={textRef}
+        className={scrolling ? 'marquee-pingpong inline-block whitespace-nowrap' : 'block truncate'}
+        style={style}
+      >
+        {text}
+      </span>
+    </div>
   );
 }

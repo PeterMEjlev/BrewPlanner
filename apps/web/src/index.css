@@ -115,3 +115,34 @@ html.kiosk *::after {
     cursor: none !important;
   }
 }
+
+/* Now-playing marquee: a line wider than its box slides to reveal its end,
+   pauses, then slides back — used by KioskMusic's <ScrollingText> for long song
+   titles instead of clipping them with an ellipsis. The shift distance is set
+   inline (--marquee-shift) from the measured overflow; the component only adds
+   this class when the text actually overflows. */
+@keyframes marquee-pingpong {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  50%,
+  62% {
+    transform: translateX(var(--marquee-shift, 0));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+.marquee-pingpong {
+  animation-name: marquee-pingpong;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee-pingpong {
+    animation: none;
+    transform: none;
+  }
+}
