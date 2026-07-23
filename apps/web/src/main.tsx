@@ -11,6 +11,7 @@ import { KioskFrame } from './components/KioskFrame';
 import { AdminPage } from './pages/Admin';
 import { AlertsPage } from './pages/Alerts';
 import { BrewSystemPage } from './pages/BrewSystem';
+import { BrucePage } from './pages/Bruce';
 import { DashboardPage } from './pages/Dashboard';
 import { DevicesPage } from './pages/Devices';
 import { DisplayPage } from './pages/Display';
@@ -118,6 +119,17 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth control>
         <BrewSystemPage />
+      </RequireAuth>
+    ),
+  },
+  // Bruce, the voice assistant: live state, conversation transcript, remote
+  // speech, and volume. Admin-only like the Brew System page — the speak box
+  // and volume slider are controls.
+  {
+    path: '/bruce',
+    element: (
+      <RequireAuth control>
+        <BrucePage />
       </RequireAuth>
     ),
   },

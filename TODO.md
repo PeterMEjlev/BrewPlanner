@@ -18,11 +18,23 @@
 
 - ## Implement Brew System control. 
 
+- ## Bruce voice assistant — finish the Pi setup (code is migrated, hardware isn't)
+  Bruce now lives in `apps/bruce` and runs on THIS Pi (removed from brew-system-v3).
+  Blocked on: SSH access to the Pi + a USB microphone and speaker.
+  When both are available, follow **deploy/README-bruce.md** step by step:
+  1. `sudo apt install -y sox libasound2-dev alsa-utils`, then `npm rebuild speaker`
+  2. Pick/test mic with `arecord -l` (set `BRUCE_MIC_DEVICE` if not default)
+  3. Add `OPENAI_API_KEY` + `PICOVOICE_ACCESS_KEY` to `/etc/brewplanner.env`
+  4. Reinstall the sudoers whitelist (it now covers bruce.service)
+  5. `sudo systemctl enable --now bruce.service`, check `journalctl -u bruce.service -f`
+  Also still to do: build the Bruce page contents in the dashboard (the sidebar
+  tab exists but the page is a placeholder — status indicator + conversation log).
+
 - ## Apparent attenuation & ABV live tracker — compute OG→current % attenuation and estimated ABV from Tilt readings; show projected final ABV.
 
 - ## Water profile calculator
 
-- ## Make sure the brewsystem actually uses the updated settings (especially for auto efficiency control) after theyre updated (in the same session).. currently it appears a reboot is needed for the setting change to take effect? Also make auto efficiency control adjustable per pot and not global for both
+
 
 ---
 

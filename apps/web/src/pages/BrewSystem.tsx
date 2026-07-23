@@ -1,8 +1,10 @@
+import { BrewingPanel } from '../components/brewsystem/BrewingPanel';
 import { DashboardShell } from '../components/DashboardShell';
 
 /**
- * View and control the physical brewing system. Blank for now — the status
- * panels and controls land here later.
+ * View and control the physical brewing system (the brew-system-v3 Pi),
+ * proxied through this server over the LAN. The panel mirrors the rig's own
+ * main screen: three pots, two pumps, and the brew timer.
  */
 export function BrewSystemPage(): JSX.Element {
   return (
@@ -14,6 +16,7 @@ export function BrewSystemPage(): JSX.Element {
             View the status of the brewing system and control it.
           </p>
         </div>
+        <BrewingPanel />
       </main>
     </DashboardShell>
   );

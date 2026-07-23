@@ -30,10 +30,12 @@ admin configures checklists from any PC on the same network.
 │   │   │   ├── repo.ts    Data access (all SQL lives here)
 │   │   │   └── index.ts   Server bootstrap + SPA static serving
 │   │   └── drizzle/      Generated SQL migrations
-│   └── web/           React app (/display and /admin)
-│       └── src/
-│           ├── pages/    Display.tsx, Admin.tsx
-│           └── api.ts    Typed fetch client
+│   ├── web/           React app (/display and /admin)
+│   │   └── src/
+│   │       ├── pages/    Display.tsx, Admin.tsx
+│   │       └── api.ts    Typed fetch client
+│   └── bruce/         Voice assistant (wake word + OpenAI Realtime), runs as
+│                      its own service on the Pi — see deploy/README-bruce.md
 ├── packages/
 │   └── shared/        Types + Zod validation shared by server and web
 └── deploy/            systemd units + Raspberry Pi setup guide
@@ -132,6 +134,35 @@ A separate, standalone list of ad-hoc brewery tasks — intentionally **not** a
 checklist (no steps, runs or progress reset). On the `/display` page it lives
 behind its own **To-Do** button in the top bar so it never gets mixed up with
 procedure checklists; the button shows a badge with the open-item count.
+
+### Brew System page
+
+`/brew-system` mirrors the brewing rig's (the separate brew-system-v3 Pi) main
+screen — three pot cards, two pumps, and the brew timer — and controls it
+remotely. The server proxies `/api/brew-system/*` to the rig's FastAPI over the
+LAN (`BREW_SYSTEM_URL` in `/etc/brewplanner.env`, e.g. `http://192.168.1.60:8000`
+— give that Pi a DHCP reservation). The rig's API is unauthenticated by design
+(LAN-only), so this proxy is its only remote door: reads need a session,
+controls need the admin role, and heater/pump commands land in the change
+history. The rig is normally powered off between brew days — the page shows an
+offline card and reconnects automatically. The rig's backend keeps running the
+regulation loop, power limit, and safety watchdog itself, so a dropped remote
+connection can never leave a heater unmanaged.
+
+### Bruce — voice assistant
+
+Bruce (`apps/bruce`, migrated from brew-system-v3) is a wake-word voice
+assistant that runs on this Pi as its own systemd service (`bruce.service`).
+Say "Bruce!" near the microphone to control the rig (through the same audited
+`/api/brew-system/*` proxy), check or update the keg inventory, hear fermenter
+status, sensor readings and alerts, change controller setpoints, set brew-day
+reminders, and run brewing calculators. He calls the server over loopback
+(trusted-local — no token) and speaks through OpenAI's GA Realtime API
+(`gpt-realtime-mini`); the wake word is detected offline (Porcupine). The
+`/bruce` dashboard page shows his live state and conversation transcript, and
+can set his volume or make him say something in the brewery (Bruce serves a
+loopback status API that the server proxies as `/api/bruce/*`). One-time Pi
+setup (audio hardware, API keys, enablement): `deploy/README-bruce.md`.
 
 ## Authentication & remote access
 

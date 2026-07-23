@@ -1,0 +1,165 @@
+/* Ported from brew-system-v3 (src/components/BrewingPanel/BrewingPanel.module.css).
+   The rig defines these design tokens on :root; here they're scoped to the panel
+   so they can't leak into the Tailwind-styled rest of the dashboard. Custom
+   properties inherit, so the child card modules resolve them from this root. */
+
+.brewingPanel {
+  /* Backgrounds */
+  --color-bg-primary: #0f172a;
+  --color-bg-secondary: #1e293b;
+
+  /* Text */
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-text-dark: #64748b;
+
+  /* Borders */
+  --color-border: #334155;
+  --color-border-light: #475569;
+
+  /* Accents */
+  --color-accent-blue: #3b82f6;
+  --color-accent-green: #10b981;
+  --color-accent-orange: #f97316;
+
+  /* Gradient stops */
+  --color-gradient-warm-start: #f04c65;
+  --color-gradient-warm-end: #f58361;
+  --color-gradient-cool-start: #3a47d5;
+  --color-gradient-cool-end: #00d2ff;
+
+  /* Temperature scale */
+  --color-temp-cold: #3b82f6;
+  --color-temp-hot: #ef4444;
+
+  /* Composite gradients */
+  --gradient-warm: linear-gradient(135deg, var(--color-gradient-warm-start), var(--color-gradient-warm-end));
+  --gradient-cool: linear-gradient(135deg, var(--color-gradient-cool-start), var(--color-gradient-cool-end));
+
+  /* Typography */
+  --font-mono: 'Courier New', monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-base: 16px;
+  --font-size-lg: 20px;
+  --font-size-xl: 24px;
+  --font-size-2xl: 28px;
+  --font-size-3xl: 48px;
+  --font-size-4xl: 56px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Radii, shadows, transitions */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.3);
+  --transition-fast: all 0.2s;
+
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.connectionBanner {
+  background: #7f1d1d;
+  border: 2px solid #ef4444;
+  border-radius: 12px;
+  color: #fecaca;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  padding: 12px 20px;
+  text-align: center;
+  animation: connectionPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes connectionPulse {
+  0%, 100% { border-color: #ef4444; }
+  50% { border-color: #fca5a5; }
+}
+
+/* Cards + power readout, so the offline state can gray them out as one block. */
+.panelBody {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Rig unreachable: keep showing the last known state but make it inert. */
+.offline {
+  pointer-events: none;
+  opacity: 0.55;
+  filter: saturate(0.5);
+}
+
+/* "Not configured" / "waiting for first contact" placeholder card. */
+.placeholder {
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  padding: 48px 32px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.placeholderTitle {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.placeholderText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.potRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  align-items: start;
+  align-content: start;
+}
+
+.pumpRow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 20px;
+  width: 100%;
+}
+
+.powerText {
+  text-align: center;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+}
+
+.powerTextOver {
+  color: #ef4444;
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 1400px) {
+  .potRow {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+
+  .pumpRow {
+    grid-template-columns: 1fr auto 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .potRow,
+  .pumpRow {
+    grid-template-columns: 1fr;
+  }
+}

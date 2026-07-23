@@ -84,6 +84,14 @@ npm run db:migrate
 echo "==> syncing systemd units"
 sudo cp "$SCRIPT_DIR/checklist-server.service" /etc/systemd/system/
 sudo cp "$SCRIPT_DIR/checklist-kiosk.service" /etc/systemd/system/
+# bruce.service was added after the sudoers whitelist
+# (deploy/brewplanner-deploy.sudoers) shipped, so on a Pi whose whitelist
+# predates it this cp is refused. Bruce is optional — warn and keep deploying
+# rather than failing the whole update.
+if ! sudo -n cp "$SCRIPT_DIR/bruce.service" /etc/systemd/system/ 2>/dev/null; then
+  echo "    (warning: bruce.service not synced — reinstall the sudoers whitelist:"
+  echo "     sudo cp deploy/brewplanner-deploy.sudoers /etc/sudoers.d/brewplanner-deploy)"
+fi
 sudo systemctl daemon-reload
 
 # Ensure the transparent cursor theme exists (the kiosk unit references it via
@@ -102,6 +110,17 @@ fi
 echo "==> restarting services"
 sudo systemctl restart checklist-server.service
 sudo systemctl restart checklist-kiosk.service
+
+# Bruce (the voice assistant) is opt-in: it only runs once the operator has
+# enabled it (audio hardware + API keys, see deploy/README-bruce.md). Restart
+# it only when enabled — and never let it fail the deploy (the whitelist on an
+# older Pi may not cover it yet; see the unit-sync warning above).
+if systemctl is-enabled --quiet bruce.service 2>/dev/null; then
+  echo "==> restarting bruce.service"
+  if ! sudo -n systemctl restart bruce.service 2>/dev/null; then
+    echo "    (warning: bruce.service not restarted — reinstall the sudoers whitelist)"
+  fi
+fi
 
 echo "==> done. Now on commit:"
 git --no-pager log -1 --oneline

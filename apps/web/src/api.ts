@@ -4,6 +4,11 @@ import type {
   Alert,
   AuditEntry,
   AuthState,
+  BrewPot,
+  BrewPump,
+  BrewSystemConfig,
+  BrewSystemStatus,
+  BruceServiceStatus,
   ChecklistSummary,
   ChecklistWithSteps,
   DeviceDataSources,
@@ -324,4 +329,39 @@ export const api = {
   // should tolerate transient request failures while polling.
   triggerUpdate: () => request<SystemUpdateStatus>('/system/update', { method: 'POST' }),
   getUpdateStatus: () => request<SystemUpdateStatus>('/system/update/status'),
+
+  // Brewing rig (brew-system-v3 Pi), proxied server-side over the LAN. Reads
+  // answer `{ online: false }` when the rig is powered off (its normal state
+  // between brew days); controls are admin-only and 502 when it's unreachable.
+  getBrewSystemState: () => request<BrewSystemStatus>('/brew-system/state'),
+  getBrewSystemConfig: () => request<BrewSystemConfig>('/brew-system/config'),
+  setBrewPotPower: (pot: BrewPot, on: boolean) =>
+    request<void>(`/brew-system/pot/${pot}/power`, { method: 'POST', body: JSON.stringify({ on }) }),
+  setBrewPotEfficiency: (pot: BrewPot, value: number) =>
+    request<void>(`/brew-system/pot/${pot}/efficiency`, { method: 'POST', body: JSON.stringify({ value }) }),
+  setBrewPotSv: (pot: BrewPot, value: number) =>
+    request<void>(`/brew-system/pot/${pot}/sv`, { method: 'POST', body: JSON.stringify({ value }) }),
+  setBrewPotRegulation: (pot: BrewPot, enabled: boolean) =>
+    request<void>(`/brew-system/pot/${pot}/regulation`, { method: 'POST', body: JSON.stringify({ enabled }) }),
+  setBrewPumpPower: (pump: BrewPump, on: boolean) =>
+    request<void>(`/brew-system/pump/${pump}/power`, { method: 'POST', body: JSON.stringify({ on }) }),
+  setBrewPumpSpeed: (pump: BrewPump, value: number) =>
+    request<void>(`/brew-system/pump/${pump}/speed`, { method: 'POST', body: JSON.stringify({ value }) }),
+  brewTimerAction: (action: 'start' | 'stop' | 'reset' | 'set', seconds?: number) =>
+    request<void>('/brew-system/timer', {
+      method: 'POST',
+      body: JSON.stringify(seconds === undefined ? { action } : { action, seconds }),
+    }),
+
+  // Bruce, the voice assistant (apps/bruce), proxied server-side from his
+  // loopback API. Status answers `{ online: false }` when the service is down;
+  // speak/volume are admin-only and 502 when he's unreachable.
+  getBruceStatus: () => request<BruceServiceStatus>('/bruce/status'),
+  bruceSpeak: (message: string) =>
+    request<{ ok: boolean }>('/bruce/speak', { method: 'POST', body: JSON.stringify({ message }) }),
+  bruceSetVolume: (percent: number) =>
+    request<{ volumePercent: number }>('/bruce/volume', {
+      method: 'POST',
+      body: JSON.stringify({ percent }),
+    }),
 };

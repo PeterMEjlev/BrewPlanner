@@ -1,0 +1,123 @@
+.pumpCard {
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-xl);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  box-shadow: var(--shadow-card);
+  flex: 1;
+  min-width: 300px;
+  position: relative;
+  z-index: 1;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.toggleBtn {
+  padding: 14px 30px;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  border: 2px solid var(--color-border-light);
+  background: transparent;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  min-width: 100px;
+  touch-action: manipulation;
+}
+
+.toggleBtn:active {
+  transform: scale(0.95);
+}
+
+.toggleBtn.on {
+  background: var(--gradient-cool);
+  border-color: var(--color-gradient-cool-start);
+  color: white;
+}
+
+.gearIcon {
+  width: 56px;
+  height: 56px;
+  margin: -10px 0;
+  animation: spin linear infinite;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-accent-blue) 60%, transparent));
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.controlLabel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.controlValue {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  font-family: var(--font-mono);
+  color: var(--color-accent-blue);
+}
+
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 52px;
+  border-radius: var(--radius-md);
+  outline: none;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 5px;
+  height: 62px;
+  border-radius: 10%;
+  background: rgba(126, 53, 53, 0);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0);
+  border: 3px solid #0f172a00;
+}
+
+.slider::-moz-range-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  border: 3px solid var(--color-bg-primary);
+}
