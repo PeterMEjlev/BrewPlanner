@@ -1,5 +1,9 @@
 
 
+- Make the sonos page work again. the new fixed ip for the sonos speaker is 192.168.3.7
+
+
+
 - ## Add support for
   - Electricity (Watt) usage
   - Water usage 
