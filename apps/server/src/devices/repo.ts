@@ -95,15 +95,14 @@ export function deviceByKey(key: string): Device | null {
 }
 
 /**
- * Stamp the heartbeat. Called on every accepted push. When the caller knows the
- * client IP (the ingestion guard passes `req.ip`), it's recorded too so the
- * Devices page can show where each satellite is reaching the hub from. A missing
- * IP leaves the stored value untouched rather than nulling a known address.
+ * Stamp the heartbeat (last-contact time). Called by the device auth guard on
+ * every authenticated request — both ingest pushes and command polls — so the
+ * online/offline signal reflects any contact. The device's LAN IP is recorded
+ * separately by the ingest handler (see {@link recordDeviceIp}), which can prefer
+ * an agent-declared device address over the transport source IP.
  */
-export function touchLastSeen(id: number, ip?: string | null): void {
-  const patch: { lastSeenAt: string; lastIp?: string } = { lastSeenAt: nowIso() };
-  if (ip) patch.lastIp = ip;
-  db.update(devices).set(patch).where(eq(devices.id, id)).run();
+export function touchLastSeen(id: number): void {
+  db.update(devices).set({ lastSeenAt: nowIso() }).where(eq(devices.id, id)).run();
 }
 
 /**
@@ -118,6 +117,22 @@ export function recordDeviceMac(id: number, mac: string): void {
   db.update(devices)
     .set({ mac })
     .where(and(eq(devices.id, id), or(isNull(devices.mac), ne(devices.mac, mac))))
+    .run();
+}
+
+/**
+ * Record the device's LAN IP, stamped from the ingest handler on each push. The
+ * caller passes the agent-declared device IP when it has one (an agent polling a
+ * *separate* networked device — the Inkbird controller is a Tuya box elsewhere on
+ * the LAN — sends the controller's own address so the Devices page shows that,
+ * not the shared satellite host's), otherwise the push's source IP (`req.ip`),
+ * which is correct when the agent runs on the device itself. Skipped when the
+ * value is unchanged, so the steady-state push adds no write.
+ */
+export function recordDeviceIp(id: number, ip: string): void {
+  db.update(devices)
+    .set({ lastIp: ip })
+    .where(and(eq(devices.id, id), or(isNull(devices.lastIp), ne(devices.lastIp, ip))))
     .run();
 }
 

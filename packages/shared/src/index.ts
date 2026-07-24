@@ -758,6 +758,23 @@ export const ingestSchema = z.object({
     .regex(/^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$/, 'Must be a MAC address')
     .transform((m) => m.toLowerCase().replace(/-/g, ':'))
     .optional(),
+  /**
+   * The device's own LAN IP — heartbeat metadata, optional. Normally the hub just
+   * uses the push's source IP (`req.ip`), which is correct when the agent runs on
+   * the device itself. But an agent that polls a *separate* networked device (the
+   * Inkbird controller is a Tuya box elsewhere on the LAN) knows the device's real
+   * address and sends it here so the Devices page shows the controller's IP, not
+   * the shared satellite host's. When present it overrides the source IP.
+   *
+   * A malformed value is dropped (treated as absent) rather than rejecting the
+   * whole push — cosmetic metadata must never drop telemetry; the hub then just
+   * uses the source IP for that push.
+   */
+  ip: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v && z.string().ip().safeParse(v).success ? v : undefined)),
 });
 export type IngestInput = z.infer<typeof ingestSchema>;
 

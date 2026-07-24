@@ -31,8 +31,9 @@ export async function requireDevice(req: FastifyRequest, reply: FastifyReply): P
     await reply.status(401).send({ error: 'Invalid device API key' });
     return;
   }
-  // Stamp the heartbeat with the device's source IP. Satellites push to the hub
-  // over the LAN, so `req.ip` is their local address (used on the Devices page).
-  touchLastSeen(device.id, req.ip);
+  // Stamp the last-contact heartbeat. The device's LAN IP is recorded separately
+  // by the ingest handler (which can prefer an agent-declared device IP over the
+  // transport source address); command polls just refresh the heartbeat.
+  touchLastSeen(device.id);
   req.device = device;
 }

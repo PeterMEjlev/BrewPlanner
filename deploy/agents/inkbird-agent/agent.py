@@ -208,12 +208,14 @@ def read_inkbird() -> dict[str, float]:
 
 def host_mac() -> str | None:
     """
-    Best-effort MAC of this host's primary interface, reported to the hub so the
-    Devices page can show a stable hardware id (the link-layer address never
-    survives the trip over IP). Returns None when only a random/locally-
-    administered address is available — uuid.getnode()'s fallback when it can't
-    find real hardware — so the hub leaves the field blank rather than storing a
-    meaningless value. Computed once into MAC below; it doesn't change at runtime.
+    Best-effort MAC of this host's primary interface (the link-layer address
+    never survives the trip over IP). Used only as the SIMULATE-mode identity —
+    live pushes report the *controller's* MAC instead (see device_identity),
+    since several controllers can share one satellite host. Returns None when only
+    a random/locally-administered address is available — uuid.getnode()'s fallback
+    when it can't find real hardware — so the hub leaves the field blank rather
+    than storing a meaningless value. Computed once into HOST_MAC below; it
+    doesn't change at runtime.
     """
     node = uuid.getnode()
     # getnode() sets the multicast bit (the low bit of the first octet) only when
@@ -223,7 +225,51 @@ def host_mac() -> str | None:
     return ":".join(f"{(node >> shift) & 0xFF:02x}" for shift in range(40, -8, -8))
 
 
-MAC = host_mac()
+HOST_MAC = host_mac()
+
+
+def controller_mac() -> str | None:
+    """
+    Best-effort MAC of the Inkbird controller itself (INKBIRD_IP), read from the
+    host's ARP neighbour table (/proc/net/arp on Linux). The controller is a
+    *separate* Tuya device on the LAN, so its hardware address — not the pushing
+    satellite's — is what the Devices page should show. The entry is normally
+    present because the poll we do each cycle talks to INKBIRD_IP over TCP, which
+    populates the cache. Returns None when it can't be resolved (controller not on
+    the same L2 segment, not yet cached, or a non-Linux host), so the hub keeps
+    the last value rather than storing a wrong one.
+    """
+    if not INKBIRD_IP:
+        return None
+    try:
+        with open("/proc/net/arp", encoding="ascii") as fh:
+            next(fh, None)  # skip the header row
+            for line in fh:
+                fields = line.split()
+                # columns: IP address, HW type, Flags, HW address, Mask, Device
+                if len(fields) >= 4 and fields[0] == INKBIRD_IP:
+                    mac = fields[3].lower()
+                    if mac and mac != "00:00:00:00:00:00":
+                        return mac
+    except OSError:
+        pass
+    return None
+
+
+def device_identity() -> tuple[str | None, str | None]:
+    """
+    (mac, ip) describing the *controlled device* to report on each push, so the
+    Devices page identifies the Inkbird controller rather than this satellite
+    host. Live: the controller's ARP-resolved MAC and its configured LAN IP.
+    SIMULATE (no real controller): the host's own MAC and no IP, matching the
+    pre-existing behaviour. A None MAC is simply omitted from the push (the hub
+    keeps whatever it last stored) rather than falling back to the host's —
+    reporting the shared host MAC is exactly the mix-up we're avoiding, since
+    several controllers on one satellite would then all show the same address.
+    """
+    if not SIMULATE and INKBIRD_IP:
+        return controller_mac(), INKBIRD_IP
+    return HOST_MAC, None
 
 
 def push(samples: list[dict], current_interval: float) -> float | None:
@@ -235,8 +281,11 @@ def push(samples: list[dict], current_interval: float) -> float | None:
     caller keeps the backlog for the next attempt.
     """
     payload: dict = {"readings": samples}
-    if MAC:
-        payload["mac"] = MAC
+    mac, ip = device_identity()
+    if mac:
+        payload["mac"] = mac
+    if ip:
+        payload["ip"] = ip
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"{HUB_URL}/api/ingest",
