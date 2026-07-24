@@ -79,6 +79,20 @@ export function dismissAlert(id: number): boolean {
 }
 
 /**
+ * Dismiss every alert still showing (the Alerts page's "Clear all"). Same
+ * semantics as {@link dismissAlert}, applied in one statement so a long history
+ * clears in a single round-trip; returns how many rows it closed.
+ */
+export function dismissAllAlerts(): number {
+  const res = db
+    .update(alerts)
+    .set({ dismissedAt: nowIso() })
+    .where(isNull(alerts.dismissedAt))
+    .run();
+  return res.changes;
+}
+
+/**
  * The open (unresolved) offline alert for a device, if one exists — used to
  * dedupe so a device that stays offline raises a single alert, not one per tick.
  */

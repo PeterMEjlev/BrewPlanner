@@ -55,6 +55,7 @@ function isActive(a: Alert): boolean {
 export function AlertsPage(): JSX.Element {
   const [alerts, setAlerts] = useState<Alert[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
   const { auth } = useAuth();
   const controllable = canControl(auth);
 
@@ -86,6 +87,26 @@ export function AlertsPage(): JSX.Element {
     [load],
   );
 
+  /**
+   * Clear the whole feed. Optimistic like {@link dismiss} — the server dismisses
+   * every row, so an empty list is what the next poll would return anyway — and
+   * refetches only if the call failed.
+   */
+  const clearAll = useCallback(async () => {
+    if (!window.confirm('Clear all alerts? They disappear from the history for good.')) return;
+    setClearing(true);
+    setAlerts([]);
+    try {
+      await api.clearAlerts();
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to clear alerts');
+      void load();
+    } finally {
+      setClearing(false);
+    }
+  }, [load]);
+
   usePoll(load, POLL_MS, [load]);
 
   const list = alerts ?? [];
@@ -100,6 +121,16 @@ export function AlertsPage(): JSX.Element {
               <span className="font-semibold text-zinc-100">{activeCount}</span> active ·{' '}
               {list.length} total
             </span>
+          )}
+          {controllable && list.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void clearAll()}
+              disabled={clearing}
+              className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
+            >
+              {clearing ? 'Clearing…' : 'Clear all'}
+            </button>
           )}
         </div>
 

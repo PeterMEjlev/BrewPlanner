@@ -143,7 +143,7 @@ export function SettingsDesktopPage(): JSX.Element {
                     role="tab"
                     className={`min-w-44 rounded-lg border px-3 py-2 text-left transition lg:min-w-0 ${
                       selected
-                        ? 'border-[#f87a68]/60 bg-[#f87a68]/10 text-zinc-50'
+                        ? 'border-[#f87a68] bg-gradient-to-br from-[#f87a68]/25 to-[#e0463f]/25 text-zinc-50'
                         : 'border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-950 hover:text-zinc-200'
                     }`}
                   >

@@ -89,6 +89,7 @@ let cachedFleet: FleetStatus | null = null;
 let cachedKegStatus: KegStatus | null = null;
 let cachedTodoCount: number | null = null;
 let cachedAlertCount: number | null = null;
+let cachedBrewSystem: BrewSystemNavStatus | null = null;
 /**
  * The phone bottom-bar's horizontal scroll offset, remembered across shell
  * remounts. The shell remounts on every navigation, so without this the
@@ -205,6 +206,43 @@ function useAlertCount(): number {
     }
   }, FLEET_POLL_MS);
   return count;
+}
+
+/**
+ * The brewing rig's reachability, for the Brew System nav dot. `configured` is
+ * false when no rig URL is set (a common single-fermenter install) — then the
+ * nav shows no dot at all, rather than a misleading "offline" red.
+ */
+interface BrewSystemNavStatus {
+  configured: boolean;
+  online: boolean;
+}
+
+/**
+ * Poll the brewing rig so the Brew System nav item can show a health dot (green
+ * reachable / red powered-off). Lives in the shell like {@link useFleetStatus}
+ * so the dot is right on every page, and holds the last value through a blip.
+ * The rig is off most of the year, so this is cheap and expected to read offline.
+ */
+function useBrewSystemStatus(): BrewSystemNavStatus | null {
+  const [status, setStatus] = useState<BrewSystemNavStatus | null>(cachedBrewSystem);
+  usePoll(async (isStale) => {
+    try {
+      const state = await api.getBrewSystemState();
+      if (!isStale()) {
+        cachedBrewSystem = { configured: state.configured, online: state.online };
+        setStatus(cachedBrewSystem);
+      }
+    } catch {
+      // Keep the last known status through a transient failure.
+    }
+  }, FLEET_POLL_MS);
+  return status;
+}
+
+/** Green when the rig is reachable, red when configured but powered off/unreachable. */
+function brewSystemDotColor({ online }: BrewSystemNavStatus): string {
+  return online ? 'bg-emerald-400' : 'bg-red-500';
 }
 
 /** Filled/total keg count, for the Kegs nav item. */
@@ -327,6 +365,7 @@ export function DashboardShell({
   const kegs = useKegStatus();
   const openTodos = useOpenTodoCount();
   const alertCount = useAlertCount();
+  const brewSystem = useBrewSystemStatus();
   useEscapeToOverview(active);
   useArrowPageNav(active);
   return (
@@ -341,6 +380,7 @@ export function DashboardShell({
         fleet={fleet}
         kegs={kegs}
         openTodos={openTodos}
+        brewSystem={brewSystem}
         lastUpdate={lastUpdate}
       />
       {/* Below `md` the sidebar is hidden, so: leave room for the fixed bottom
@@ -367,6 +407,7 @@ function Sidebar({
   fleet,
   kegs,
   openTodos,
+  brewSystem,
   lastUpdate,
 }: {
   active: ShellPage;
@@ -374,6 +415,7 @@ function Sidebar({
   fleet: FleetStatus | null;
   kegs: KegStatus | null;
   openTodos: number | null;
+  brewSystem: BrewSystemNavStatus | null;
   lastUpdate?: string | null;
 }): JSX.Element {
   const { auth, refresh } = useAuth();
@@ -405,6 +447,16 @@ function Sidebar({
             accessory = <KegBadge filled={kegs.filled} total={kegs.total} />;
           else if (item.key === 'todos' && openTodos != null && openTodos > 0)
             accessory = <CountBadge count={openTodos} />;
+          // Show the rig's health dot only once a rig URL is configured — an
+          // install with no brewing rig shows nothing rather than a red "offline".
+          else if (item.key === 'brewSystem' && brewSystem?.configured)
+            accessory = (
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${brewSystemDotColor(brewSystem)}`}
+                title={brewSystem.online ? 'Brew system online' : 'Brew system offline'}
+                aria-hidden
+              />
+            );
           return (
             <Link key={item.key} to={item.to} className="block">
               <NavRow

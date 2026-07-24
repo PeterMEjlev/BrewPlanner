@@ -254,6 +254,9 @@ export const api = {
   // Dismiss an alert (clicked away on the dashboard); removes it from every feed.
   dismissAlert: (id: number) => request<void>(`/alerts/${id}`, { method: 'DELETE' }),
 
+  // Dismiss every alert at once; resolves with how many were cleared.
+  clearAlerts: () => request<{ dismissed: number }>('/alerts/clear', { method: 'POST' }),
+
   // Change history: the audit log of admin changes, newest first (admin-only).
   listAudit: (limit?: number) =>
     request<AuditEntry[]>(`/history${limit ? `?limit=${limit}` : ''}`),

@@ -191,6 +191,11 @@ const RULES: Rule[] = [
   },
   { method: 'DELETE', re: /^\/api\/todos\/(\d+)$/, before: (m) => todoText(m[1] ?? ''), build: ({ m, before }) => ({ entity: 'To-do', action: `Deleted to-do ${named(before, m[1] ?? '')}` }) },
 
+  // --- Alerts ---------------------------------------------------------------
+  // Clearing the whole feed is worth a line in the history; dismissing a single
+  // alert is everyday tidying and falls through to the generic entry.
+  { method: 'POST', re: /^\/api\/alerts\/clear$/, build: () => ({ entity: 'Alert', action: 'Cleared all alerts' }) },
+
   // --- Active recipe --------------------------------------------------------
   { method: 'PUT', re: /^\/api\/recipe$/, build: ({ body }) => ({ entity: 'Recipe', action: `Set the active recipe${str(body, 'name') ? ` to "${str(body, 'name')}"` : ''}` }) },
   { method: 'DELETE', re: /^\/api\/recipe$/, build: () => ({ entity: 'Recipe', action: 'Cleared the active recipe' }) },

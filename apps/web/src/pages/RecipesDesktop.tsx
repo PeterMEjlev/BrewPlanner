@@ -1,9 +1,12 @@
-import type { Recipe } from '@checklist/shared';
+import type { KegContentColors, Recipe } from '@checklist/shared';
+import { getRecipeColor, matchContentOption } from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { FermenterIcon } from '../components/icons';
+import { useKegContentColors } from '../kegContentColors';
+import { hexToRgb } from '../kegs';
 import { asMessage } from '../util';
 
 /** Sentinel for the page's `saving` id while the choice is being cleared. */
@@ -18,6 +21,30 @@ function cleanError(err: unknown): string {
 function describeRecipe(recipe: Recipe): string {
   const abv = recipe.abv ? `${recipe.abv}%` : '';
   return [recipe.style, abv].filter(Boolean).join(' · ') || 'No style set';
+}
+
+/**
+ * The beer's colour swatch, from the shared keg palette (so an IPA looks the
+ * same here as on its keg). Hollow when the style doesn't map to a known type.
+ */
+function StyleDot({
+  color,
+  label,
+  className = 'h-2.5 w-2.5',
+}: {
+  color: string | null;
+  /** The matched content type, for the tooltip. */
+  label: string | null;
+  className?: string;
+}): JSX.Element {
+  return (
+    <span
+      className={`${className} shrink-0 rounded-full ${color ? '' : 'border border-zinc-600'}`}
+      style={color ? { backgroundColor: color } : undefined}
+      title={label ?? 'Unrecognised style'}
+      aria-hidden
+    />
+  );
 }
 
 /**
@@ -37,6 +64,9 @@ export function RecipesDesktopPage(): JSX.Element {
   // Setting the fermenter's recipe is admin-only server-side (PUT/DELETE
   // /api/recipe), so a read-only guest gets the same list without the controls.
   const controllable = canControl(auth);
+  // Shared beer-style palette (same one the kegs use), so a style wears its
+  // colour here too.
+  const colors = useKegContentColors();
 
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [active, setActive] = useState<Recipe | null>(null);
@@ -86,6 +116,10 @@ export function RecipesDesktopPage(): JSX.Element {
     }
   }
 
+  // The active beer's palette colour + matched type, for the header dot/icon.
+  const activeColor = active ? getRecipeColor(active, colors) : null;
+  const activeMatch = active ? matchContentOption(active.name, active.style) : null;
+
   const filtered = useMemo(() => {
     if (!recipes) return [];
     const q = search.trim().toLowerCase();
@@ -131,16 +165,24 @@ export function RecipesDesktopPage(): JSX.Element {
         )}
 
         {/* What's fermenting right now — the reason this page exists, so it sits
-            above the list rather than being inferred from a highlighted card. */}
+            above the list rather than being inferred from a highlighted card. The
+            icon takes the beer's own colour when the style is recognised. */}
         <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
-          <FermenterIcon className="h-10 w-10 shrink-0 text-white" strokeWidth={2.6} />
+          <FermenterIcon
+            className="h-10 w-10 shrink-0 text-white"
+            strokeWidth={2.6}
+            style={activeColor ? { color: activeColor } : undefined}
+          />
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
               In the fermenter
             </div>
             {active ? (
               <>
-                <div className="truncate text-base font-semibold text-zinc-50">{active.name}</div>
+                <div className="flex items-center gap-2">
+                  <StyleDot color={activeColor} label={activeMatch} />
+                  <span className="truncate text-base font-semibold text-zinc-50">{active.name}</span>
+                </div>
                 <div className="truncate text-sm text-zinc-400">{describeRecipe(active)}</div>
               </>
             ) : (
@@ -189,6 +231,7 @@ export function RecipesDesktopPage(): JSX.Element {
               <li key={r.id}>
                 <RecipeCard
                   recipe={r}
+                  colors={colors}
                   selected={r.id === active?.id}
                   selectable={controllable}
                   busy={saving === r.id}
@@ -207,10 +250,13 @@ export function RecipesDesktopPage(): JSX.Element {
 /**
  * One recipe in the grid. The whole card selects it; the Brewer's Friend link is
  * a sibling pinned to the corner rather than a child, since a link nested in a
- * button is invalid markup (and would swallow the click).
+ * button is invalid markup (and would swallow the click). A recognised beer
+ * style tints the card with its palette colour (a left edge + faint wash),
+ * matching the keg cards.
  */
 function RecipeCard({
   recipe,
+  colors,
   selected,
   selectable,
   busy,
@@ -218,6 +264,7 @@ function RecipeCard({
   onSelect,
 }: {
   recipe: Recipe;
+  colors: KegContentColors;
   selected: boolean;
   /** False for read-only guests: the card renders, but picking is off. */
   selectable: boolean;
@@ -225,6 +272,18 @@ function RecipeCard({
   disabled: boolean;
   onSelect: () => void;
 }): JSX.Element {
+  const color = getRecipeColor(recipe, colors);
+  const match = matchContentOption(recipe.name, recipe.style);
+  // The selected card keeps the coral highlight; an unselected one with a known
+  // style gets a subtle tint of the beer's colour (left edge + faint wash).
+  const tint: React.CSSProperties =
+    !selected && color
+      ? {
+          borderLeftColor: color,
+          borderLeftWidth: 3,
+          background: `linear-gradient(135deg, rgba(${hexToRgb(color)}, 0.1), rgb(24 24 27))`,
+        }
+      : {};
   return (
     <div className="relative h-full">
       <button
@@ -232,15 +291,23 @@ function RecipeCard({
         onClick={onSelect}
         disabled={!selectable || disabled}
         aria-pressed={selected}
+        style={tint}
         className={`flex h-full w-full flex-col items-start gap-1 rounded-xl border px-4 py-3.5 pr-12 text-left transition disabled:cursor-default ${
           selected
-            ? 'border-[#f87a68]/60 bg-[#f87a68]/10'
+            ? 'border-[#f87a68] bg-gradient-to-br from-[#f87a68]/25 to-[#e0463f]/25'
             : 'border-zinc-800 bg-zinc-900 enabled:hover:border-zinc-700 enabled:hover:bg-zinc-800/60'
         } ${disabled && !busy ? 'opacity-60' : ''}`}
       >
-        <span className="w-full truncate text-sm font-semibold text-zinc-100">{recipe.name}</span>
-        <span className="w-full truncate text-xs text-zinc-500">{describeRecipe(recipe)}</span>
-        <span className="mt-auto pt-2 text-xs font-semibold text-[#f87a68]">
+        <span className="flex w-full items-center gap-2">
+          <StyleDot color={color} label={match} />
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
+            {recipe.name}
+          </span>
+        </span>
+        <span className="w-full truncate pl-[18px] text-xs text-zinc-500">
+          {describeRecipe(recipe)}
+        </span>
+        <span className="mt-auto pl-[18px] pt-2 text-xs font-semibold text-[#f87a68]">
           {busy ? 'Saving…' : selected ? '✓ In the fermenter' : ' '}
         </span>
       </button>

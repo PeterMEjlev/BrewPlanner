@@ -7,9 +7,11 @@
 
 interface IconProps {
   className?: string;
+  /** Inline styles — mainly to set `color`, which the icons draw with (currentColor). */
+  style?: React.CSSProperties;
 }
 
-function Svg({ className, children }: IconProps & { children: React.ReactNode }): JSX.Element {
+function Svg({ className, style, children }: IconProps & { children: React.ReactNode }): JSX.Element {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -19,6 +21,7 @@ function Svg({ className, children }: IconProps & { children: React.ReactNode })
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className ?? 'h-5 w-5'}
+      style={style}
       aria-hidden
     >
       {children}
@@ -55,6 +58,7 @@ export function MicIcon(props: IconProps): JSX.Element {
  */
 export function FermenterIcon({
   className,
+  style,
   strokeWidth = 4.5,
 }: IconProps & { strokeWidth?: number }): JSX.Element {
   return (
@@ -69,6 +73,7 @@ export function FermenterIcon({
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className ?? 'h-5 w-5'}
+      style={style}
       aria-hidden
     >
       {/* top port */}

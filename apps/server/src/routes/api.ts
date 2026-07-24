@@ -21,7 +21,7 @@ import {
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { dismissAlert, listAlerts } from '../alerts/repo.js';
+import { dismissAlert, dismissAllAlerts, listAlerts } from '../alerts/repo.js';
 import { listAudit } from '../audit/repo.js';
 import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
@@ -218,6 +218,10 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     if (!query) return;
     return listAlerts(query.limit);
   });
+
+  // Clear the whole feed at once (the Alerts page's "Clear all"). Dismisses
+  // rather than deletes, so the offline-alert dedup still sees the old rows.
+  app.post('/alerts/clear', adminOnly, async () => ({ dismissed: dismissAllAlerts() }));
 
   // Dismiss an alert (clicked away on the dashboard). It drops out of every feed
   // but stays in the table so a still-offline device doesn't re-raise it.

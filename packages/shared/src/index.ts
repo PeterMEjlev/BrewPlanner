@@ -489,6 +489,19 @@ export function getContentColor(
   return key ? colors[key] : null;
 }
 
+/**
+ * Colour for a recipe's beer style, borrowed from the keg palette so a beer
+ * wears the same colour everywhere it shows up — keg card, recipe list, and the
+ * fermenter's title dot. Null when the style doesn't match a known content type.
+ */
+export function getRecipeColor(
+  recipe: { name: string; style: string },
+  colors: KegContentColors = DEFAULT_KEG_CONTENT_COLORS,
+): string | null {
+  const match = matchContentOption(recipe.name, recipe.style);
+  return match ? colors[match] : null;
+}
+
 export interface Keg {
   number: string;
   contents: string;

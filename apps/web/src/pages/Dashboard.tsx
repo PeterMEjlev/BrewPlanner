@@ -5,6 +5,7 @@ import type {
   Reading,
   Recipe,
 } from '@checklist/shared';
+import { getRecipeColor, matchContentOption } from '@checklist/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -43,6 +44,7 @@ import {
   isUnknownContents,
   useKegs,
 } from '../kegs';
+import { useKegContentColors } from '../kegContentColors';
 import {
   type GravityPoint,
   estimateDoneTime,
@@ -526,6 +528,23 @@ function EmptyPanel({ title, body }: { title: string; body: string }): JSX.Eleme
 
 // --- Fermenter command centre -----------------------------------------------
 
+/**
+ * A small colour dot beside the FERMENTER title showing the linked recipe's beer
+ * style (from the shared keg palette, so a beer wears one colour app-wide). Sized
+ * to sit inline with the title; hollow when the style is unrecognised or nothing
+ * is linked, so the title never looks broken.
+ */
+function BeerStyleDot({ color, label }: { color: string | null; label: string | null }): JSX.Element {
+  return (
+    <span
+      className={`h-3 w-3 shrink-0 rounded-full ${color ? '' : 'border border-zinc-600'}`}
+      style={color ? { backgroundColor: color } : undefined}
+      title={label ? `Fermenting: ${label}` : 'No recipe linked'}
+      aria-hidden
+    />
+  );
+}
+
 function FermenterCommandCenter({
   name,
   devices,
@@ -547,6 +566,12 @@ function FermenterCommandCenter({
 }): JSX.Element {
   const { pressureUnit, fermentStableDays, fermentThresholdSg, tempMinSpanC } = useSettings();
   const colors = useGraphColors();
+  // The beer-style palette (shared with the kegs), so the title dot matches the
+  // linked recipe's colour elsewhere in the app. Hollow when the style is
+  // unrecognised or nothing is linked.
+  const kegColors = useKegContentColors();
+  const recipeColor = recipe ? getRecipeColor(recipe, kegColors) : null;
+  const recipeMatch = recipe ? matchContentOption(recipe.name, recipe.style) : null;
   const status = useFermentStatus(devices);
   // Which metric the compact (phone) card is expanded to. Ignored on desktop.
   const [tab, setTab] = useState<'overview' | 'pressure' | 'temp' | 'gravity'>('overview');
@@ -646,7 +671,10 @@ function FermenterCommandCenter({
         <div className="flex shrink-0 items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
           <FermenterIcon className="h-8 w-8 shrink-0 text-white" strokeWidth={2.6} />
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-semibold uppercase tracking-wide text-white">{name}</h2>
+            <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-white">
+              <span className="truncate">{name}</span>
+              <BeerStyleDot color={recipeColor} label={recipeMatch} />
+            </h2>
             {recipe ? (
               controllable ? (
                 <Link
@@ -942,8 +970,9 @@ function FermenterCommandCenter({
         <div className="flex min-w-0 shrink-0 items-center gap-3">
           <FermenterIcon className="h-11 w-11 shrink-0 text-white" strokeWidth={2.6} />
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold uppercase tracking-wide text-white">
-              {name}
+            <h2 className="flex items-center gap-2 text-base font-semibold uppercase tracking-wide text-white">
+              <span className="truncate">{name}</span>
+              <BeerStyleDot color={recipeColor} label={recipeMatch} />
             </h2>
             {recipe ? (
               controllable ? (

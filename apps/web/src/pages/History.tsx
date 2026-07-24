@@ -16,6 +16,7 @@ const ENTITY_CHIP: Record<string, string> = {
   'To-do': 'bg-emerald-500/15 text-emerald-300',
   Recipe: 'bg-violet-500/15 text-violet-300',
   Keg: 'bg-amber-500/15 text-amber-300',
+  Alert: 'bg-red-500/15 text-red-300',
   Settings: CHIP_NEUTRAL,
   Device: 'bg-cyan-500/15 text-cyan-300',
   Account: 'bg-rose-500/15 text-rose-300',
