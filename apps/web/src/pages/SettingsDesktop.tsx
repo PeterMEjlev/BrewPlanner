@@ -30,6 +30,7 @@ import {
   FERMENT_SG,
   KEG_OLD_DAYS,
   KEG_WARN_DAYS,
+  TEMP_MIN_SPAN,
   clampStep,
   resetSettings,
   setSetting,
@@ -351,7 +352,7 @@ function EyeOffIcon(): JSX.Element {
 // --- Display ---------------------------------------------------------------
 
 function DisplaySection(): JSX.Element {
-  const { pressureUnit, dashboardZoom } = useSettings();
+  const { pressureUnit, dashboardZoom, tempMinSpanC } = useSettings();
   return (
     <Card title="Display" hint="Applies to this browser only — the kiosk and other computers keep their own.">
       <div className="divide-y divide-zinc-800/70">
@@ -372,6 +373,18 @@ function DisplaySection(): JSX.Element {
             bounds={DASHBOARD_ZOOM}
             onChange={(v) => setSetting('dashboardZoom', v)}
             ariaLabel="Dashboard zoom"
+          />
+        </Row>
+        <Row
+          label="Temp chart min span"
+          hint="Smallest range the Overview temperature graphs show, so a fridge holding within a fraction of a degree doesn't look like a big swing."
+        >
+          <Stepper
+            value={tempMinSpanC}
+            format={(v) => `${v.toFixed(1)} °C`}
+            bounds={TEMP_MIN_SPAN}
+            onChange={(v) => setSetting('tempMinSpanC', v)}
+            ariaLabel="Temperature chart minimum span"
           />
         </Row>
       </div>

@@ -16,6 +16,7 @@ import {
   ForecastSparkline,
   MultiLineSparkline,
   Sparkline,
+  withMinSpan,
 } from '../components/charts';
 import { DashboardShell } from '../components/DashboardShell';
 import { FitScale } from '../components/FitScale';
@@ -544,7 +545,7 @@ function FermenterCommandCenter({
   /** Phone layout: a tabbed, single-chart-at-a-time card instead of the 3-up grid. */
   compact?: boolean;
 }): JSX.Element {
-  const { pressureUnit, fermentStableDays, fermentThresholdSg } = useSettings();
+  const { pressureUnit, fermentStableDays, fermentThresholdSg, tempMinSpanC } = useSettings();
   const colors = useGraphColors();
   const status = useFermentStatus(devices);
   // Which metric the compact (phone) card is expanded to. Ignored on desktop.
@@ -628,7 +629,7 @@ function FermenterCommandCenter({
   ];
   const tempRange =
     tempDrawable && tempValues.length > 0
-      ? { min: Math.min(...tempValues), max: Math.max(...tempValues) }
+      ? withMinSpan(Math.min(...tempValues), Math.max(...tempValues), tempMinSpanC)
       : null;
 
   // --- Phone layout: a tabbed card so only one chart is tall at a time. --------
@@ -753,6 +754,7 @@ function FermenterCommandCenter({
                         ...(fridge ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dashed: true }] : []),
                       ]}
                       height={28}
+                      minSpan={tempMinSpanC}
                     />
                   )}
                 </div>
@@ -869,6 +871,7 @@ function FermenterCommandCenter({
                         ]}
                         refLine={setpoint ? { value: setpoint.reading.value, stroke: colors.setpoint } : undefined}
                         grow
+                        minSpan={tempMinSpanC}
                       />
                     </MiniChartFrame>
                   </div>
@@ -1112,6 +1115,7 @@ function FermenterCommandCenter({
                       ]}
                       refLine={setpoint ? { value: setpoint.reading.value, stroke: colors.setpoint } : undefined}
                       grow
+                      minSpan={tempMinSpanC}
                     />
                   </MiniChartFrame>
                 </button>
@@ -1332,6 +1336,16 @@ function NotConnected({ label, compact }: { label?: string; compact?: boolean })
 function minMax(data: number[]): { min: number; max: number } | null {
   if (data.length < 2) return null;
   return { min: Math.min(...data), max: Math.max(...data) };
+}
+
+/**
+ * Like {@link minMax}, but widened to at least `minSpanC` so the axis labels
+ * match a temperature sparkline drawn with the same `minSpan` floor. The floor
+ * is the user's "Temp chart min span" setting (see {@link useSettings}).
+ */
+function tempRangeOf(data: number[], minSpanC: number): { min: number; max: number } | null {
+  const r = minMax(data);
+  return r ? withMinSpan(r.min, r.max, minSpanC) : null;
 }
 
 /** Caption for a windowed preview, e.g. "Last 24h" — tracks the chosen range. */
@@ -1581,6 +1595,7 @@ function BreweryTempCard({
 }): JSX.Element {
   const series = useMetricSeries(device?.id ?? null, 'temp_c', useChartRange(device?.id ?? null, 'temp_c'));
   const colors = useGraphColors();
+  const { tempMinSpanC } = useSettings();
   if (!device || !device.online) {
     return compact ? (
       <CompactUtilityPlaceholder
@@ -1598,7 +1613,7 @@ function BreweryTempCard({
   }
   const temp = device.latest.find((r) => r.metric === 'temp_c');
   const setpoint = device.latest.find((r) => r.metric === 'setpoint_c');
-  const range = minMax(series);
+  const range = tempRangeOf(series, tempMinSpanC);
   if (compact) {
     return (
       <CompactUtilityTile
@@ -1609,7 +1624,7 @@ function BreweryTempCard({
         sub={setpoint ? `Target ${setpoint.value.toFixed(1)}°` : undefined}
         onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Brewery ambient temperature' })}
       >
-        <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={24} />
+        <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={24} minSpan={tempMinSpanC} />
       </CompactUtilityTile>
     );
   }
@@ -1638,7 +1653,7 @@ function BreweryTempCard({
           )}
         </div>
         <div className="mt-3">
-          <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} />
+          <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} minSpan={tempMinSpanC} />
         </div>
         {range && (
           <p className="mt-3 text-xs text-zinc-500">
@@ -2005,12 +2020,13 @@ function KegFridgeCard({
   compact?: boolean;
 }): JSX.Element {
   const colors = useGraphColors();
+  const { tempMinSpanC } = useSettings();
   const series = useMetricSeries(device?.id ?? null, 'temp_c', useChartRange(device?.id ?? null, 'temp_c'));
   const temp = device?.latest.find((r) => r.metric === 'temp_c');
   const setpoint = device?.latest.find((r) => r.metric === 'setpoint_c');
   const state = device?.latest.find((r) => r.metric === 'hvac_state');
   const offline = !device || !device.online;
-  const range = minMax(series);
+  const range = tempRangeOf(series, tempMinSpanC);
   // Tighter rhythm on phones; the desktop rail keeps its roomier spacing.
   const gap = compact ? 'mt-2' : 'mt-3';
 
@@ -2073,7 +2089,7 @@ function KegFridgeCard({
             onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Keg fridge temperature' })}
             className={`block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500 ${gap}`}
           >
-            <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} />
+            <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} minSpan={tempMinSpanC} />
             {range && (
               <p className={`text-xs text-zinc-500 ${compact ? 'mt-1.5' : 'mt-3'}`}>
                 Min{' '}

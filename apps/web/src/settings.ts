@@ -24,6 +24,13 @@ export interface Settings {
    */
   dashboardZoom: number;
   /**
+   * Minimum Y-span, in °C, for the Overview temperature sparklines. The charts
+   * otherwise auto-fit to the exact min/max, so a fridge holding within a
+   * fraction of a degree looks like a dramatic swing; this floor keeps a small,
+   * well-controlled reading looking small.
+   */
+  tempMinSpanC: number;
+  /**
    * Keg-freshness indicator thresholds (days). A filled keg's date chip turns
    * amber once it's been stored at least `kegWarnDays`, then red past
    * `kegOldDays` — mirroring the brew sheet's yellow/red date highlight. Kept
@@ -45,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fermentStableDays: 2,
   fermentThresholdSg: 0.002,
   dashboardZoom: 1,
+  tempMinSpanC: 1,
   // ~2 months / ~6 months — the points at which a stored keg looks worth
   // watching, then likely past its best.
   kegWarnDays: 60,
@@ -60,6 +68,12 @@ export const FERMENT_SG = { min: 0.001, max: 0.01, step: 0.001 } as const;
 // Dashboard zoom range: half size up to double, in 10% clicks. The upper bound
 // matches the "enlarge at most 2×" guidance for large monitors.
 export const DASHBOARD_ZOOM = { min: 0.5, max: 2, step: 0.1 } as const;
+
+// Temperature-chart minimum span: from a tight half-degree up to 10 °C, in
+// half-degree clicks. 1 °C (the default) keeps a well-controlled fridge from
+// looking like it's swinging wildly, while a brewer tracking a wide ferment
+// ramp can widen it.
+export const TEMP_MIN_SPAN = { min: 0.5, max: 10, step: 0.5 } as const;
 
 // Keg-freshness thresholds move in 5-day clicks — fine enough to land on a "this
 // many months" feel without making the touch steppers tedious. The amber mark

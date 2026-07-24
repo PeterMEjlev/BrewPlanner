@@ -5,6 +5,19 @@
  * plain numbers, so it renders the same against mock and live telemetry.
  */
 
+/**
+ * Widen a value range so it spans at least `minSpan`, keeping the data centred.
+ * Charts otherwise auto-fit to the exact min/max, which stretches a tiny wobble
+ * (e.g. a 0.3 °C swing) to fill the whole height and read as a big move; a floor
+ * on the span keeps small changes looking small. A no-op when `minSpan` is unset
+ * or the data already spans at least that much.
+ */
+export function withMinSpan(min: number, max: number, minSpan?: number): { min: number; max: number } {
+  if (minSpan == null || max - min >= minSpan) return { min, max };
+  const mid = (min + max) / 2;
+  return { min: mid - minSpan / 2, max: mid + minSpan / 2 };
+}
+
 /** A thin line sparkline that stretches to fill its box (width comes from CSS). */
 export function Sparkline({
   data,
@@ -12,6 +25,7 @@ export function Sparkline({
   fill,
   height = 44,
   grow = false,
+  minSpan,
   className,
 }: {
   data: number[];
@@ -22,6 +36,8 @@ export function Sparkline({
   height?: number;
   /** Fill the parent's height instead of a fixed one (parent must size it). */
   grow?: boolean;
+  /** Floor on the Y-span (see {@link withMinSpan}) so a tiny swing stays small. */
+  minSpan?: number;
   className?: string;
 }): JSX.Element {
   const w = 100;
@@ -29,8 +45,7 @@ export function Sparkline({
   if (data.length < 2) {
     return <div className={className} style={{ height: renderedHeight }} aria-hidden />;
   }
-  const min = Math.min(...data);
-  const max = Math.max(...data);
+  const { min, max } = withMinSpan(Math.min(...data), Math.max(...data), minSpan);
   const range = max - min || 1;
   // Leave 8% padding top and bottom so peaks/troughs aren't clipped.
   const pad = height * 0.08;
@@ -263,6 +278,7 @@ export function MultiLineSparkline({
   refLine,
   height = 44,
   grow = false,
+  minSpan,
   className,
 }: {
   series: SparkSeries[];
@@ -270,6 +286,8 @@ export function MultiLineSparkline({
   refLine?: { value: number; stroke: string };
   height?: number;
   grow?: boolean;
+  /** Floor on the Y-span (see {@link withMinSpan}) so a tiny swing stays small. */
+  minSpan?: number;
   className?: string;
 }): JSX.Element {
   const w = 100;
@@ -280,8 +298,7 @@ export function MultiLineSparkline({
   if (allValues.length === 0 || drawable.length === 0) {
     return <div className={className} style={{ height: renderedHeight }} aria-hidden />;
   }
-  const min = Math.min(...allValues);
-  const max = Math.max(...allValues);
+  const { min, max } = withMinSpan(Math.min(...allValues), Math.max(...allValues), minSpan);
   const range = max - min || 1;
   const pad = height * 0.1;
   const toY = (v: number): number => height - pad - ((v - min) / range) * (height - pad * 2);

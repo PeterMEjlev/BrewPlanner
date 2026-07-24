@@ -2,6 +2,8 @@ import { REPORTING_INTERVAL_OPTIONS, type DeviceStatus, type DeviceType } from '
 import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import inkbirdIcon from '../assets/inkbird.png';
+import tiltIcon from '../assets/tilt.png';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { listPollMs } from '../useDeviceData';
@@ -27,9 +29,21 @@ const TYPE_ICON: Record<DeviceType, string> = {
   pressure_sensor: '📈',
   brew_controller: '🎛️',
   power_meter: '⚡',
-  water_meter: '🚰',
+  water_meter: '💧',
   hydrometer: '🍷',
   other: '📡',
+};
+
+/**
+ * Product photos for the device types we have real hardware artwork for
+ * (see the repo `Icons/` folder). When a type is listed here the card shows the
+ * photo instead of the generic {@link TYPE_ICON} emoji. The Inkbird image covers
+ * every brew_controller (fermenter, kegs fridge, and brewery ambient are all the
+ * same ITC-308-WIFI); the Tilt image covers the hydrometer.
+ */
+const TYPE_IMAGE: Partial<Record<DeviceType, string>> = {
+  brew_controller: inkbirdIcon,
+  hydrometer: tiltIcon,
 };
 
 /** Generic kind shown as a secondary subtitle next to the location name. */
@@ -97,6 +111,69 @@ function formatCount(n: number | null | undefined): string {
   return n == null ? '—' : n.toLocaleString();
 }
 
+// --- Fleet grouping ---------------------------------------------------------
+// The grid is laid out as labelled rows rather than one alphabetical run: the
+// fermenter station (pressure, controller, Tilt) on top, then the brewery &
+// kegs controllers, then the water & power meters. These mirror the Overview's
+// own device grouping (see Dashboard.tsx).
+
+/** The brewery ambient thermometer — a brew_controller named brewery/ambient. */
+function isBreweryTempDevice(d: DeviceStatus): boolean {
+  return d.type === 'brew_controller' && /brewery|ambient/i.test(d.name);
+}
+
+/** The filled-keg fridge controller — a brew_controller named for kegs. */
+function isKegsTempDevice(d: DeviceStatus): boolean {
+  return d.type === 'brew_controller' && /keg/i.test(d.name);
+}
+
+/** A fermenter-station device: pressure/gravity sensor, or the ferment controller. */
+function isFermenterDevice(d: DeviceStatus): boolean {
+  return (
+    d.type === 'pressure_sensor' ||
+    d.type === 'hydrometer' ||
+    (d.type === 'brew_controller' && !isBreweryTempDevice(d) && !isKegsTempDevice(d))
+  );
+}
+
+/** Order inside the fermenter row: pressure, then controller, then Tilt. */
+const FERMENTER_TYPE_RANK: Partial<Record<DeviceType, number>> = {
+  pressure_sensor: 0,
+  brew_controller: 1,
+  hydrometer: 2,
+};
+
+function byNameId(a: DeviceStatus, b: DeviceStatus): number {
+  return a.name.localeCompare(b.name) || a.id - b.id;
+}
+
+/**
+ * Split the fleet into the rows the grid renders top-to-bottom. Each returned
+ * group is drawn as its own responsive grid, so a group always begins on a new
+ * row (a two-card row leaves its trailing cell empty rather than pulling the
+ * next group's first card up). Empty groups are dropped; anything that fits none
+ * of the named rows falls into a trailing catch-all so no device is hidden.
+ */
+function fleetRows(devices: DeviceStatus[]): DeviceStatus[][] {
+  const fermenter = devices
+    .filter(isFermenterDevice)
+    .sort(
+      (a, b) =>
+        (FERMENTER_TYPE_RANK[a.type] ?? 9) - (FERMENTER_TYPE_RANK[b.type] ?? 9) || byNameId(a, b),
+    );
+  // Brewery ambient before the kegs fridge.
+  const breweryKegs = devices
+    .filter((d) => isBreweryTempDevice(d) || isKegsTempDevice(d))
+    .sort((a, b) => Number(isKegsTempDevice(a)) - Number(isKegsTempDevice(b)) || byNameId(a, b));
+  // Water before power.
+  const waterPower = devices
+    .filter((d) => d.type === 'water_meter' || d.type === 'power_meter')
+    .sort((a, b) => (a.type === 'water_meter' ? 0 : 1) - (b.type === 'water_meter' ? 0 : 1) || byNameId(a, b));
+  const claimed = new Set([...fermenter, ...breweryKegs, ...waterPower]);
+  const rest = devices.filter((d) => !claimed.has(d)).sort(byNameId);
+  return [fermenter, breweryKegs, waterPower, rest].filter((g) => g.length > 0);
+}
+
 /** A flat list of every registered device, linking to each detail/chart page. */
 export function DevicesPage(): JSX.Element {
   const [devices, setDevices] = useState<DeviceStatus[] | null>(null);
@@ -136,7 +213,7 @@ export function DevicesPage(): JSX.Element {
   const list = devices ?? [];
   const online = list.filter((d) => d.online).length;
   const lastUpdate = latestDeviceTimestamp(list);
-  const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+  const rows = fleetRows(list);
 
   return (
     <DashboardShell active="devices" lastUpdate={lastUpdate}>
@@ -175,14 +252,24 @@ export function DevicesPage(): JSX.Element {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {sorted.map((d) => (
-              <DeviceCard
-                key={d.id}
-                device={d}
-                editable={editable && d.id < MOCK_ID_BASE}
-                onSetInterval={saveInterval}
-              />
+          // One responsive grid per row-group (fermenter, brewery & kegs, water
+          // & power) so each group starts on its own row. The row gap between
+          // groups matches the card gap within a group, so it reads as one grid.
+          <div className="space-y-4">
+            {rows.map((group) => (
+              <div
+                key={group[0]!.id}
+                className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
+              >
+                {group.map((d) => (
+                  <DeviceCard
+                    key={d.id}
+                    device={d}
+                    editable={editable && d.id < MOCK_ID_BASE}
+                    onSetInterval={saveInterval}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         )}
@@ -213,13 +300,28 @@ function DeviceCard({
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="text-2xl" aria-hidden>
-            {TYPE_ICON[device.type]}
-          </span>
+          {TYPE_IMAGE[device.type] ? (
+            <img
+              src={TYPE_IMAGE[device.type]}
+              alt=""
+              aria-hidden
+              className="h-11 w-11 shrink-0 object-contain"
+            />
+          ) : (
+            <span className="text-2xl" aria-hidden>
+              {TYPE_ICON[device.type]}
+            </span>
+          )}
           <div className="min-w-0">
-            <h3 className="truncate font-semibold text-zinc-100">{deviceTitle(device.type)}</h3>
+            {/* Lead with the human-friendly name the device was registered under
+                (e.g. "Brewery Ambient") so the several Inkbird controllers, which
+                share one make/model, are told apart at a glance. Make/model moves
+                to the subtitle alongside the generic kind. */}
+            <h3 className="truncate font-semibold text-zinc-100" title={device.name}>
+              {device.name}
+            </h3>
             <p className="mt-0.5 truncate text-xs text-zinc-500">
-              <span className="font-medium text-zinc-400">{device.name}</span>
+              <span className="font-medium text-zinc-400">{deviceTitle(device.type)}</span>
               <span className="text-zinc-600"> · </span>
               {TYPE_LABEL[device.type]}
             </p>
@@ -229,9 +331,10 @@ function DeviceCard({
       </div>
 
       <dl className="mt-4 grid flex-1 grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+        {/* Full-width and first so the whole 17-char MAC fits without clipping;
+            only shown when reported (mock/older agents leave it null). */}
+        {device.mac && <InfoRow label="MAC address" value={device.mac} mono wide />}
         <InfoRow label="IP address" value={device.lastIp ?? '—'} mono />
-        {/* Only shown when the device reported a MAC (mock/older agents leave it null). */}
-        {device.mac && <InfoRow label="MAC address" value={device.mac} mono />}
         <InfoRow label="Protocol" value={model.connectivity} />
         <InfoRow
           label="Last fetch"
@@ -271,18 +374,30 @@ function InfoRow({
   label,
   value,
   mono = false,
+  wide = false,
   title,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  /**
+   * Span both grid columns and never truncate the value — for long values like
+   * a MAC address that don't fit a half-width cell (they'd otherwise clip).
+   */
+  wide?: boolean;
   title?: string;
 }): JSX.Element {
   return (
-    <div className="flex items-baseline justify-between gap-2 border-b border-zinc-800/60 py-0.5">
+    <div
+      className={`flex items-baseline justify-between gap-2 border-b border-zinc-800/60 py-0.5 ${
+        wide ? 'sm:col-span-2' : ''
+      }`}
+    >
       <dt className="text-xs font-medium uppercase tracking-wider text-zinc-500">{label}</dt>
       <dd
-        className={`truncate text-right text-sm text-zinc-200 ${mono ? 'font-mono tabular-nums' : ''}`}
+        className={`text-right text-sm text-zinc-200 ${wide ? '' : 'truncate'} ${
+          mono ? 'font-mono tabular-nums' : ''
+        }`}
         title={title ?? value}
       >
         {value}
