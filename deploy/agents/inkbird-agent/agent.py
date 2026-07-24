@@ -133,6 +133,15 @@ def connect():
     dev.set_version(INKBIRD_VERSION)
     dev.set_socketPersistent(False)
     dev.set_socketTimeout(5)
+    # A transiently-unreachable ITC-308-WIFI must fail *fast*. By default tinytuya
+    # retries the connection several times (socketRetryLimit=5, socketRetryDelay=5),
+    # so a single bad read can block this single-threaded loop for tens of seconds
+    # — long enough to skip several cycles and flap the dashboard tile Offline even
+    # though the controller is basically fine. Cap it to one quick retry: a dropped
+    # poll is given up on in ~10s and simply retried next cycle, and the hub now
+    # tolerates a few missed reads before showing Offline (DEVICE_ONLINE_MISS_CYCLES).
+    dev.set_socketRetryLimit(2)
+    dev.set_socketRetryDelay(1)
     return dev
 
 

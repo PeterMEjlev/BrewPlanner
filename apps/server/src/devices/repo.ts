@@ -14,11 +14,26 @@ import { deviceCommands, devices, readings, settings } from '../db/schema.js';
 import { getSetting } from '../repo.js';
 
 /**
- * A device is considered online when its last push arrived within this window.
- * Sized for a ~30s push interval with a couple of misses tolerated; override
- * with DEVICE_ONLINE_WINDOW_SECONDS.
+ * How many of a device's own reporting cycles it may miss before it's shown
+ * offline. Online/offline is derived from the freshest *reading* (see
+ * {@link isOnline}), so this is literally "how many consecutive readings the
+ * sensor may drop before we flag a problem". Sized so a flaky poll — the
+ * Inkbird's local Tuya read fails now and then — rides through a couple of
+ * misses, while a controller that has genuinely stopped reporting goes offline.
+ * Override with DEVICE_ONLINE_MISS_CYCLES.
  */
-const ONLINE_WINDOW_MS =
+const ONLINE_MISS_CYCLES = Math.max(
+  1,
+  Number(process.env.DEVICE_ONLINE_MISS_CYCLES ?? 3),
+);
+
+/**
+ * Floor for the online window (ms). The reporting interval is operator-settable
+ * down to 5s, so the miss-cycle window alone could be as short as 15s and flap on
+ * ordinary scheduling jitter; never let it fall below this. Kept under the name
+ * DEVICE_ONLINE_WINDOW_SECONDS for back-compat with existing hub configs.
+ */
+const ONLINE_WINDOW_FLOOR_MS =
   Number(process.env.DEVICE_ONLINE_WINDOW_SECONDS ?? 90) * 1000;
 
 const nowIso = () => new Date().toISOString();
@@ -244,9 +259,44 @@ function latestForAllDevices(): Map<number, LatestReading[]> {
   return byDevice;
 }
 
-function isOnline(lastSeenAt: string | null): boolean {
-  if (!lastSeenAt) return false;
-  return Date.now() - Date.parse(lastSeenAt) <= ONLINE_WINDOW_MS;
+/** Epoch-ms of the most recent reading among `latest`, or null when there are none. */
+function newestReadingMs(latest: LatestReading[]): number | null {
+  let newest: number | null = null;
+  for (const r of latest) {
+    const t = Date.parse(r.recordedAt);
+    if (!Number.isNaN(t) && (newest === null || t > newest)) newest = t;
+  }
+  return newest;
+}
+
+/**
+ * Whether a device is currently online.
+ *
+ * Online means "we've received an actual reading from this device within its
+ * tolerance window" — {@link ONLINE_MISS_CYCLES} of the device's own reporting
+ * interval, never shorter than {@link ONLINE_WINDOW_FLOOR_MS}. Deriving this from
+ * the freshest *reading* rather than the last time the agent contacted the hub is
+ * deliberate: an agent keeps chatting to the hub every cycle to poll for commands
+ * even while its sensor read is failing, so a contact-based signal would show a
+ * silent controller as online. Reading-freshness instead flips a controller
+ * offline after a few genuinely missed reads — the real-problem signal we want —
+ * while tolerating the odd dropped poll.
+ *
+ * A device that has contacted the hub but never produced a reading falls back to
+ * `lastSeenAt`, so a brand-new or heartbeat-only device isn't wrongly greyed out.
+ */
+function isOnline(
+  latest: LatestReading[],
+  reportingIntervalSec: number,
+  lastSeenAt: string | null,
+): boolean {
+  const windowMs = Math.max(
+    ONLINE_WINDOW_FLOOR_MS,
+    ONLINE_MISS_CYCLES * reportingIntervalSec * 1000,
+  );
+  const ref = newestReadingMs(latest) ?? (lastSeenAt ? Date.parse(lastSeenAt) : NaN);
+  if (Number.isNaN(ref)) return false;
+  return Date.now() - ref <= windowMs;
 }
 
 /** Stored readings for a device (all metrics), from the in-memory counts. */
@@ -256,10 +306,11 @@ function readingCount(deviceId: number): number {
 
 /** Enrich a real device row with the live/derived fields the dashboards need. */
 function enrich(device: Device): DeviceStatus {
+  const latest = latestPerMetric(device.id);
   return {
     ...device,
-    online: isOnline(device.lastSeenAt),
-    latest: latestPerMetric(device.id),
+    online: isOnline(latest, device.reportingIntervalSec, device.lastSeenAt),
+    latest,
     readingCount: readingCount(device.id),
     pendingSetpointC: pendingSetpoint(device.id),
   };
@@ -291,13 +342,16 @@ export function listDeviceStatus(): DeviceStatus[] {
   const latest = latestForAllDevices();
   const counts = ensureReadingCounts();
   const pending = pendingSetpointsForAll();
-  return listDevices().map((device) => ({
-    ...device,
-    online: isOnline(device.lastSeenAt),
-    latest: latest.get(device.id) ?? [],
-    readingCount: counts.get(device.id) ?? 0,
-    pendingSetpointC: pending.get(device.id) ?? null,
-  }));
+  return listDevices().map((device) => {
+    const deviceLatest = latest.get(device.id) ?? [];
+    return {
+      ...device,
+      online: isOnline(deviceLatest, device.reportingIntervalSec, device.lastSeenAt),
+      latest: deviceLatest,
+      readingCount: counts.get(device.id) ?? 0,
+      pendingSetpointC: pending.get(device.id) ?? null,
+    };
+  });
 }
 
 export function getDeviceStatus(id: number): DeviceStatus | null {

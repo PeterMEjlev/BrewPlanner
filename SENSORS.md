@@ -174,8 +174,13 @@ wiring, but it needs a Bluetooth adapter on the host. Rough steps:
   agent logs (`journalctl -u <agent> -f`), confirm `HUB_URL` is reachable, and
   that `DEVICE_KEY` matches a registered device (a `401` in the logs means a
   bad/empty key — re-issue with `npm run device -- rotate "<name>"`).
-- **Online window**: a device shows Offline if it hasn't pushed within ~90s
-  (override on the hub with `DEVICE_ONLINE_WINDOW_SECONDS`).
+- **Online window**: online/offline is derived from the freshness of the last
+  *reading*, not merely the last time the agent contacted the hub. A device shows
+  Offline once it has missed several of its own reporting cycles with no new
+  reading — `DEVICE_ONLINE_MISS_CYCLES` (default 3) × the device's reporting
+  interval, but never less than a `DEVICE_ONLINE_WINDOW_SECONDS` floor (default
+  90s). This tolerates the odd dropped poll (e.g. an Inkbird's flaky Tuya read)
+  while still flagging a controller that has genuinely stopped reporting.
 - **Lost a device key?** `npm run device -- rotate "<name>"` issues a new one
   (the old one stops working). `npm run device -- list` shows all devices and
   when each was last seen.

@@ -278,5 +278,7 @@ confirms the change. Set it to `0` to keep the agent strictly read-only.
 | Temperature looks wrong by a constant offset | The agent always reports °C, converting if the controller is set to °F — that part's automatic. Check the **probe placement** (taped vs. dangling). |
 | Hub was briefly down | No action needed — readings are buffered in memory (~12h) and flushed on reconnect. |
 
-A device shows Offline if it hasn't pushed within ~90s; override on the hub with
-`DEVICE_ONLINE_WINDOW_SECONDS` if a 30s interval is too tight for you.
+A device shows Offline only after it has missed several reads in a row — the hub
+tolerates `DEVICE_ONLINE_MISS_CYCLES` (default 3) missed reporting cycles, floored
+at `DEVICE_ONLINE_WINDOW_SECONDS` (default 90s). Raise `DEVICE_ONLINE_MISS_CYCLES`
+if the controller's Tuya reads are flaky enough that the tile still flickers.

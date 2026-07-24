@@ -220,9 +220,12 @@ export interface MetricTotal {
 }
 
 /**
- * A device enriched for the dashboard: whether it is currently considered
- * online (a fresh push within the staleness window) and its latest value per
- * metric. `online` is derived server-side from `lastSeenAt`.
+ * A device enriched for the dashboard: whether it is currently considered online
+ * and its latest value per metric. `online` is derived server-side from the
+ * freshness of the device's most recent *reading* — it flips offline only after
+ * several of the device's own reporting cycles pass with no new reading, so a
+ * sensor whose local read fails intermittently rides through the odd miss but a
+ * genuinely silent one is flagged.
  */
 export interface DeviceStatus extends Device {
   online: boolean;

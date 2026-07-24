@@ -122,14 +122,20 @@ journalctl -u inkbird-agent.service -f
   and keep the agent read-only.
 - **Reliability**: the ITC-308-WIFI is known to drop frequent pollers with an
   "Err 914" if a socket is held open. The agent opens a fresh, non-persistent
-  connection each cycle and defaults to a gentle 30s interval to avoid this. If
-  reads start failing, power-cycling the controller clears it.
+  connection each cycle, caps `tinytuya`'s connection retries so one unreachable
+  read fails fast (~10s) instead of stalling the loop for tens of seconds, and
+  defaults to a gentle 30s interval. If reads start failing, power-cycling the
+  controller clears it. Don't push the interval below 30s — polling faster makes
+  the drop-outs worse.
 - **Protocol version**: defaults to `3.4` (correct for the ITC-308-WIFI). If
   every read fails immediately with a decode/key error, try `INKBIRD_VERSION=3.3`.
 - **°C / °F**: the agent reads the controller's unit setting and always reports
   `temp_c`/`setpoint_c` in Celsius, converting if the controller is set to °F.
-- **Online/offline** on the dashboard is derived from the last push time (default
-  90s window, override with `DEVICE_ONLINE_WINDOW_SECONDS` on the hub). A 30s
-  interval tolerates a couple of missed reads.
+- **Online/offline** on the dashboard is derived from the freshness of the last
+  *reading*: the tile flips Offline only after several missed reads in a row
+  (`DEVICE_ONLINE_MISS_CYCLES`, default 3, × the reporting interval; floored at
+  `DEVICE_ONLINE_WINDOW_SECONDS`, default 90s — both hub-side). So an occasional
+  failed Tuya read rides through, while a controller that has genuinely stopped
+  reporting is flagged.
 - **Outages**: if the hub is briefly unreachable, readings are buffered in memory
   (~12h) and flushed on reconnect.
