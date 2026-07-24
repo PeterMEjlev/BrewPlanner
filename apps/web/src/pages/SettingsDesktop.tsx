@@ -377,7 +377,7 @@ function DisplaySection(): JSX.Element {
         </Row>
         <Row
           label="Temp chart min span"
-          hint="Smallest range the Overview temperature graphs show, so a fridge holding within a fraction of a degree doesn't look like a big swing."
+          hint="Smallest range the temperature graphs show — sparklines and the charts they open — so a fridge holding within a fraction of a degree doesn't look like a big swing."
         >
           <Stepper
             value={tempMinSpanC}

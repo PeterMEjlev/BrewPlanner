@@ -24,10 +24,11 @@ export interface Settings {
    */
   dashboardZoom: number;
   /**
-   * Minimum Y-span, in °C, for the Overview temperature sparklines. The charts
-   * otherwise auto-fit to the exact min/max, so a fridge holding within a
-   * fraction of a degree looks like a dramatic swing; this floor keeps a small,
-   * well-controlled reading looking small.
+   * Minimum Y-span, in °C, for every temperature chart: the Overview sparklines
+   * and the enlarged/device charts they open. The charts otherwise auto-fit to
+   * the exact min/max, so a fridge holding within a fraction of a degree looks
+   * like a dramatic swing; this floor keeps a small, well-controlled reading
+   * looking small. (Zooming an enlarged chart can still go finer.)
    */
   tempMinSpanC: number;
   /**
