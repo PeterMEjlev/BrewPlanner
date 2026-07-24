@@ -4,10 +4,10 @@ export function asMessage(e: unknown): string {
 }
 
 /**
- * Where an in-app "Home" button should land. Several subpages (Kegs, Settings,
- * Recipes, …) only exist as `/kiosk/*` routes but are reachable from the desktop
- * Overview too, so a hardcoded `/kiosk` home link would strand a desktop visitor
- * on the touch hub. The physical Pi kiosk tags `<html class="kiosk">` (see
+ * Where an in-app "Home" button should land. Some `/kiosk/*` pages are reachable
+ * from the desktop UI too (or by direct URL), so a hardcoded `/kiosk` home link
+ * would strand a desktop visitor on the touch hub. The physical Pi kiosk tags
+ * `<html class="kiosk">` (see
  * main.tsx) — the codebase's dependable "this is the kiosk" signal — so route
  * Home to the kiosk hub there and to the desktop Overview everywhere else.
  */

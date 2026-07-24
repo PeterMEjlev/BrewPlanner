@@ -650,7 +650,7 @@ function FermenterCommandCenter({
             {recipe ? (
               controllable ? (
                 <Link
-                  to="/kiosk/recipes"
+                  to="/recipes"
                   className="block truncate text-xs text-zinc-500 transition hover:text-white"
                 >
                   {recipe.name}
@@ -664,7 +664,7 @@ function FermenterCommandCenter({
               )
             ) : controllable ? (
               <Link
-                to="/kiosk/recipes"
+                to="/recipes"
                 className="text-xs font-semibold text-zinc-400 transition hover:text-white"
               >
                 + Link recipe
@@ -948,7 +948,7 @@ function FermenterCommandCenter({
             {recipe ? (
               controllable ? (
                 <Link
-                  to="/kiosk/recipes"
+                  to="/recipes"
                   className="block truncate text-sm text-zinc-500 transition hover:text-white"
                   title="Change recipe"
                 >
@@ -963,7 +963,7 @@ function FermenterCommandCenter({
               )
             ) : controllable ? (
               <Link
-                to="/kiosk/recipes"
+                to="/recipes"
                 className="mt-1 inline-flex items-center gap-1 rounded-lg border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-white/20"
               >
                 <span className="text-sm leading-none" aria-hidden>

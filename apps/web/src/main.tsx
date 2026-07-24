@@ -23,6 +23,7 @@ import { KioskMusicPage } from './pages/KioskMusic';
 import { KioskTodosPage } from './pages/KioskTodos';
 import { LoginPage } from './pages/Login';
 import { RecipesPage } from './pages/Recipes';
+import { RecipesDesktopPage } from './pages/RecipesDesktop';
 import { SettingsDesktopPage } from './pages/SettingsDesktop';
 import { TodosPage } from './pages/Todos';
 import { WaterCalculatorPage } from './pages/WaterCalculator';
@@ -150,6 +151,16 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <KegsDesktopPage />
+      </RequireAuth>
+    ),
+  },
+  // Desktop (mouse/keyboard) recipe picker, linked from the Overview's fermenter
+  // card. The kiosk keeps its touch variant at /kiosk/recipes.
+  {
+    path: '/recipes',
+    element: (
+      <RequireAuth>
+        <RecipesDesktopPage />
       </RequireAuth>
     ),
   },

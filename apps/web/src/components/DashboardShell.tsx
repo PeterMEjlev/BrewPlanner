@@ -30,6 +30,9 @@ export type ShellPage =
   | 'alerts'
   | 'settings'
   | 'kegs'
+  // Reached from the Overview's fermenter card rather than the nav rail, so no
+  // item lights up — the shell just keeps its chrome around the page.
+  | 'recipes'
   | 'checklists'
   | 'todos'
   | 'history';
