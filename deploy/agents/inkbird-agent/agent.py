@@ -329,13 +329,19 @@ def ack_commands(ids: list[int]) -> None:
         log(f"command ack failed (will retry): {e}")
 
 
-def process_commands() -> None:
+def process_commands() -> int:
     """
     Pull, apply, and ack any commands queued for this device. A command that
     fails to apply is left un-acked so the hub re-offers it next cycle; an
     unrecognised command is acked (drained) so it can't wedge the queue.
+
+    Returns the number of setpoint changes actually applied, so the caller can
+    re-read the controller immediately and push the confirmed value — otherwise
+    the dashboard's target keeps showing the old reading (taken at the top of
+    this cycle) until the next read, ~one interval later.
     """
     applied: list[int] = []
+    applied_setpoints = 0
     for cmd in fetch_commands():
         cmd_id = cmd.get("id")
         if not isinstance(cmd_id, int):
@@ -345,12 +351,46 @@ def process_commands() -> None:
             try:
                 apply_setpoint(float(cmd["value"]))
                 applied.append(cmd_id)
+                applied_setpoints += 1
             except Exception as e:  # leave un-acked → retried next cycle
                 log(f"failed to apply command {cmd_id} ({kind}): {e}")
         else:
             log(f"draining unknown command {kind!r} (id {cmd_id})")
             applied.append(cmd_id)
     ack_commands(applied)
+    return applied_setpoints
+
+
+def collect_reading(buffer: deque[dict]) -> None:
+    """
+    Read the controller once and append its metrics to the send buffer. A flaky
+    controller/network must never kill the agent, so a failed read is logged and
+    left for the next attempt rather than raised.
+    """
+    try:
+        now = utc_now_iso()
+        for metric, value in read_inkbird().items():
+            buffer.append({"metric": metric, "value": value, "recordedAt": now})
+    except Exception as e:
+        log(f"read failed (will retry): {e}")
+
+
+def flush_buffer(buffer: deque[dict], interval: float) -> float:
+    """
+    Push the whole backlog at once, keeping it on failure. A successful push
+    echoes the hub's current per-device logging interval — adopt it so a change
+    made from the dashboard takes effect without a redeploy. Returns the interval
+    to use for the next cycle (unchanged on an empty buffer or a failed push).
+    """
+    if not buffer:
+        return interval
+    advised = push(list(buffer), interval)
+    if advised is not None:
+        buffer.clear()
+        if advised != interval:
+            log(f"hub set logging interval to {advised:g}s")
+            interval = advised
+    return interval
 
 
 def _stop(_signum, _frame) -> None:
@@ -379,29 +419,20 @@ def main() -> int:
 
     while _running:
         cycle_start = time.monotonic()
-        try:
-            now = utc_now_iso()
-            for metric, value in read_inkbird().items():
-                buffer.append({"metric": metric, "value": value, "recordedAt": now})
-        except Exception as e:  # a flaky controller/network shouldn't kill the agent
-            log(f"read failed (will retry): {e}")
+        collect_reading(buffer)
+        interval = flush_buffer(buffer, interval)
 
-        # Flush the whole backlog at once; keep it on failure. A successful push
-        # echoes the hub's current per-device logging interval — adopt it so a
-        # change made from the dashboard takes effect without a redeploy.
-        if buffer:
-            advised = push(list(buffer), interval)
-            if advised is not None:
-                buffer.clear()
-                if advised != interval:
-                    log(f"hub set logging interval to {advised:g}s")
-                    interval = advised
-
-        # Apply any setpoint changes the operator queued from the dashboard. A
-        # flaky controller/network here must never kill the agent either.
+        # Apply any setpoint changes the operator queued from the dashboard. When
+        # one is applied, re-read and push straight away so the controller's new
+        # setpoint reaches the hub this cycle — otherwise the dashboard target
+        # keeps showing the pre-change reading until the next read (~one interval
+        # later). A flaky controller/network here must never kill the agent.
         if ALLOW_SETPOINT_WRITE:
             try:
-                process_commands()
+                if process_commands() > 0:
+                    time.sleep(1.0)  # let the controller settle after the write
+                    collect_reading(buffer)
+                    interval = flush_buffer(buffer, interval)
             except Exception as e:
                 log(f"command processing failed (will retry): {e}")
 
