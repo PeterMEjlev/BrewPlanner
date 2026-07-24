@@ -58,12 +58,6 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
 
   return (
     <div className="w-full max-w-3xl p-6">
-      <h2 className="text-xl font-semibold">Brewery To-Do</h2>
-      <p className="mt-1 text-sm text-zinc-500">
-        A standalone task list, separate from procedure checklists. Add and edit tasks
-        here; the touchscreen can tick them off.
-      </p>
-
       {/* Add task */}
       {controllable && (
         <form
@@ -79,11 +73,11 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Add a brewery task…"
-            className="flex-1 rounded-md border border-zinc-700 px-3 py-2 focus:border-blue-500 focus:outline-none"
+            className="flex-1 rounded-md border border-zinc-700 px-3 py-2 focus:border-[#f87a68] focus:outline-none"
           />
           <button
             type="submit"
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-md bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-4 py-2 text-sm font-medium text-white shadow transition hover:brightness-110"
           >
             Add
           </button>
@@ -163,7 +157,7 @@ function TodoRow({
             onBlur={() => {
               if (controllable && value.trim() && value.trim() !== todo.text) onSave({ text: value.trim() });
             }}
-            className={`flex-1 rounded border border-transparent px-2 py-1 focus:border-blue-500 focus:outline-none ${
+            className={`flex-1 rounded border border-transparent px-2 py-1 focus:border-[#f87a68] focus:outline-none ${
               todo.done ? 'text-zinc-400 line-through' : ''
             }`}
           />
@@ -188,7 +182,7 @@ function TodoRow({
             }}
             rows={desc ? 2 : 1}
             placeholder="Add a description (optional)…"
-            className="resize-y rounded border border-transparent px-2 py-1 text-sm text-zinc-300 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none"
+            className="resize-y rounded border border-transparent px-2 py-1 text-sm text-zinc-300 placeholder:text-zinc-400 focus:border-[#f87a68] focus:outline-none"
           />
         )}
       </div>

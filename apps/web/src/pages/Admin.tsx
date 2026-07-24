@@ -103,7 +103,7 @@ export function AdminPage() {
               <button
                 type="button"
                 onClick={() => void createChecklist()}
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                className="rounded-md bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-3 py-1.5 text-sm font-medium text-white shadow transition hover:brightness-110"
               >
                 + New
               </button>

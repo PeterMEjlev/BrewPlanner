@@ -267,7 +267,9 @@ export function SetpointControl({
             onClick={() => void apply()}
             disabled={!canApply}
             className={`rounded-xl font-semibold text-white transition active:scale-[0.98] disabled:opacity-40 ${applyBtn} ${
-              canApply ? 'bg-blue-600 active:bg-blue-500' : 'bg-zinc-700'
+              canApply
+                ? 'bg-gradient-to-br from-[#f87a68] to-[#e0463f] shadow active:brightness-110'
+                : 'bg-zinc-700'
             }`}
           >
             {busy ? 'Applying…' : 'Apply'}

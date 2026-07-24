@@ -172,13 +172,6 @@ export function BrucePage(): JSX.Element {
   return (
     <DashboardShell active="bruce">
       <main className="w-full max-w-[1100px] px-5 py-5">
-        <div className="mb-5">
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-50">Bruce</h1>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            The brewery voice assistant — live status, conversation, and remote speech.
-          </p>
-        </div>
-
         {status == null && <p className="text-sm text-zinc-500">Loading…</p>}
 
         {status != null && !status.online && (

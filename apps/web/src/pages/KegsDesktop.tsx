@@ -171,57 +171,21 @@ export function KegsDesktopPage(): JSX.Element {
   return (
     <DashboardShell active="kegs">
       <main className="w-full max-w-[1580px] px-3 py-4 sm:px-5 sm:py-5">
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight text-zinc-50">Kegs</h1>
-            <p className="mt-0.5 truncate text-sm text-zinc-500">
-              {loading ? (
-                'Loading keg data…'
-              ) : error ? (
-                <span className="text-red-400">{error}</span>
-              ) : selecting ? (
-                `${selected.size} selected — Ctrl-click to toggle, Shift-click for a range`
-              ) : (
-                `Current inventory — ${filled} of ${kegs.length} kegs filled${
-                  controllable ? ' · click to edit, Ctrl/Shift-click to select' : ''
-                }`
-              )}
-            </p>
-          </div>
-          {controllable && (
-            <div className="flex shrink-0 items-center gap-2">
-              {selecting ? (
-                <button
-                  type="button"
-                  onClick={exitSelect}
-                  className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
-                >
-                  Cancel
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setSelectMode(true)}
-                  disabled={loading || kegs.length === 0}
-                  className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50"
-                >
-                  Select
-                </button>
-              )}
-              <a
-                href={SHEETS_VIEW_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
-              >
-                Inventory sheet ↗
-              </a>
-            </div>
-          )}
-        </div>
+        {(loading || error || selecting) && (
+          <p className="mb-3 truncate text-sm text-zinc-500">
+            {loading ? (
+              'Loading keg data…'
+            ) : error ? (
+              <span className="text-red-400">{error}</span>
+            ) : (
+              `${selected.size} selected — Ctrl-click to toggle, Shift-click for a range`
+            )}
+          </p>
+        )}
 
-        {/* Sort bar — the active key gets the coral pill, with a direction arrow. */}
-        <div className="mb-5 flex flex-wrap gap-2">
+        {/* Sort bar — the active key gets the coral pill, with a direction arrow.
+            The page actions share the row, pushed to the right. */}
+        <div className="mb-5 flex flex-wrap items-center gap-2">
           {SORT_OPTIONS.map(({ key, label }) => {
             const active = key === sortKey;
             return (
@@ -241,6 +205,36 @@ export function KegsDesktopPage(): JSX.Element {
               </button>
             );
           })}
+          {controllable && (
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {selecting ? (
+                <button
+                  type="button"
+                  onClick={exitSelect}
+                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setSelectMode(true)}
+                  disabled={loading || kegs.length === 0}
+                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  Select
+                </button>
+              )}
+              <a
+                href={SHEETS_VIEW_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg border border-zinc-800 px-3 py-1.5 text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+              >
+                Inventory sheet ↗
+              </a>
+            </div>
+          )}
         </div>
 
         {/* Two columns on a phone (there's room for it); auto-fill wider tiles

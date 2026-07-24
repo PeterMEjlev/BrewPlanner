@@ -211,25 +211,12 @@ export function DevicesPage(): JSX.Element {
   usePoll(load, pollMs, [load]);
 
   const list = devices ?? [];
-  const online = list.filter((d) => d.online).length;
   const lastUpdate = latestDeviceTimestamp(list);
   const rows = fleetRows(list);
 
   return (
     <DashboardShell active="devices" lastUpdate={lastUpdate}>
       <main className="w-full max-w-[1580px] px-5 py-5">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-zinc-50">Devices</h1>
-            <p className="mt-0.5 text-sm text-zinc-500">Every sensor and controller registered on the hub.</p>
-          </div>
-          {list.length > 0 && (
-            <span className="rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400">
-              <span className="font-semibold text-zinc-100">{online}</span> / {list.length} online
-            </span>
-          )}
-        </div>
-
         {error && (
           <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}

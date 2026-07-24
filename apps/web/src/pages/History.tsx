@@ -2,7 +2,6 @@ import type { AuditEntry } from '@checklist/shared';
 import { useCallback, useState } from 'react';
 import { api } from '../api';
 import { DashboardShell } from '../components/DashboardShell';
-import { HistoryIcon } from '../components/icons';
 import { usePoll } from '../usePoll';
 import { relativeTime } from '../util';
 
@@ -52,16 +51,7 @@ export function HistoryPage(): JSX.Element {
   return (
     <DashboardShell active="history">
       <main className="w-full max-w-[1100px] px-5 py-5">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <HistoryIcon className="h-7 w-7 text-white" />
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight text-zinc-50">History</h1>
-              <p className="mt-0.5 text-sm text-zinc-500">
-                Every change made on the server, and who made it.
-              </p>
-            </div>
-          </div>
+        <div className="mb-5 flex items-center justify-end gap-3">
           {list.length > 0 && (
             <span className="rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400">
               <span className="font-semibold text-zinc-100">{list.length}</span> recent change

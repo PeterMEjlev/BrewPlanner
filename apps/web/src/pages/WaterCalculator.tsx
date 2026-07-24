@@ -123,74 +123,64 @@ export function WaterCalculatorPage(): JSX.Element {
   return (
     <DashboardShell active="water">
       <main className="w-full max-w-[1280px] px-5 py-5">
-        <div className="mb-5">
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-50">Water Calculator</h1>
-          <p className="mt-0.5 max-w-3xl text-sm text-zinc-500">
-            Work out how much gypsum, Epsom salt, calcium chloride and table salt to add to your
-            brewing water to move it toward a target profile. Enter amounts by hand and watch the
-            result, or hit Auto-suggest for a best-fit starting point.
-          </p>
-        </div>
-
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_30rem]">
           {/* Inputs ----------------------------------------------------------- */}
           <div className="space-y-5">
-            <Card title="Brewing water">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Total water" hint="Mash + sparge, all the water you treat.">
-                  <NumField
-                    value={volumeL}
-                    min={0}
-                    step={0.5}
-                    ariaLabel="Total water (litres)"
-                    onChange={(v) => setState((s) => ({ ...s, volumeL: v }))}
-                  />
-                  <UnitSuffix>L</UnitSuffix>
-                </Field>
-              </div>
-            </Card>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Card title="Total brewing water">
+                <div className="grid gap-4">
+                  <Field>
+                    <NumField
+                      value={volumeL}
+                      min={0}
+                      step={0.5}
+                      ariaLabel="Total water (litres)"
+                      onChange={(v) => setState((s) => ({ ...s, volumeL: v }))}
+                    />
+                    <UnitSuffix>L</UnitSuffix>
+                  </Field>
+                </div>
+              </Card>
 
-            <Card title="Source water" hint="Where your brewing water starts before adding salts.">
-              <div className="mb-4 inline-flex rounded-lg border border-zinc-700 p-0.5">
-                {(['ro', 'tap'] as SourceMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    aria-pressed={sourceMode === mode}
-                    onClick={() => setState((s) => ({ ...s, sourceMode: mode }))}
-                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                      sourceMode === mode ? 'bg-blue-600 text-white' : 'text-zinc-300 hover:bg-zinc-800'
-                    }`}
-                  >
-                    {mode === 'ro' ? 'RO / distilled' : 'Tap water'}
-                  </button>
-                ))}
-              </div>
+              <Card title="Source water">
+                <div className="mb-4 inline-flex rounded-lg border border-zinc-700 p-0.5">
+                  {(['ro', 'tap'] as SourceMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={sourceMode === mode}
+                      onClick={() => setState((s) => ({ ...s, sourceMode: mode }))}
+                      className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                        sourceMode === mode
+                          ? 'bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
+                          : 'text-zinc-300 hover:bg-zinc-800'
+                      }`}
+                    >
+                      {mode === 'ro' ? 'RO / distilled' : 'Tap water'}
+                    </button>
+                  ))}
+                </div>
 
-              {sourceMode === 'ro' ? (
-                <p className="text-sm text-zinc-400">
-                  Starting from pure RO / distilled water — all ions 0. Build the whole profile from
-                  the salts below.
-                </p>
-              ) : (
-                <>
-                  <p className="mb-4 text-xs leading-snug text-zinc-500">
-                    Pre-filled estimate for the brewery's area — your utility report only lists
-                    hardness (≈20 °dH) and trace metals, so replace these with a full ion analysis
-                    when you have one.
-                  </p>
-                  <IonGrid profile={source} onChange={setSourceIon} idPrefix="src" />
-                  <MetricsLine
-                    items={[
-                      { label: 'Hardness', value: `${Math.round(hardnessCaCO3(source))} ppm` },
-                      { label: '', value: `${caco3ToDH(hardnessCaCO3(source)).toFixed(1)} °dH` },
-                      { label: 'Alkalinity', value: `${Math.round(alkalinityCaCO3(source))} ppm CaCO₃` },
-                      { label: 'pH', value: DEFAULT_SOURCE_PH.toFixed(1) },
-                    ]}
-                  />
-                </>
-              )}
-            </Card>
+                {sourceMode === 'ro' ? null : (
+                  <>
+                    <p className="mb-4 text-xs leading-snug text-zinc-500">
+                      Pre-filled estimate for the brewery's area — your utility report only lists
+                      hardness (≈20 °dH) and trace metals, so replace these with a full ion analysis
+                      when you have one.
+                    </p>
+                    <IonGrid profile={source} onChange={setSourceIon} idPrefix="src" />
+                    <MetricsLine
+                      items={[
+                        { label: 'Hardness', value: `${Math.round(hardnessCaCO3(source))} ppm` },
+                        { label: '', value: `${caco3ToDH(hardnessCaCO3(source)).toFixed(1)} °dH` },
+                        { label: 'Alkalinity', value: `${Math.round(alkalinityCaCO3(source))} ppm CaCO₃` },
+                        { label: 'pH', value: DEFAULT_SOURCE_PH.toFixed(1) },
+                      ]}
+                    />
+                  </>
+                )}
+              </Card>
+            </div>
 
             <Card title="Target profile" hint="The water you want to brew with. Pick a preset to start, then tweak.">
               <div className="mb-4 flex flex-wrap gap-1.5">
@@ -199,8 +189,13 @@ export function WaterCalculatorPage(): JSX.Element {
                     key={preset.name}
                     type="button"
                     title={preset.note}
+                    aria-pressed={IONS.every((ion) => target[ion] === preset.profile[ion])}
                     onClick={() => setState((s) => ({ ...s, target: { ...preset.profile } }))}
-                    className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:bg-zinc-800"
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                      IONS.every((ion) => target[ion] === preset.profile[ion])
+                        ? 'border-transparent bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
+                        : 'border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800'
+                    }`}
                   >
                     {preset.name}
                   </button>
@@ -214,7 +209,7 @@ export function WaterCalculatorPage(): JSX.Element {
                 <button
                   type="button"
                   onClick={autoSuggest}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-blue-500"
+                  className="rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-3 py-1.5 text-sm font-semibold text-white shadow transition hover:brightness-110"
                 >
                   Auto-suggest
                 </button>
@@ -258,7 +253,7 @@ export function WaterCalculatorPage(): JSX.Element {
 
           {/* Results --------------------------------------------------------- */}
           <div className="space-y-5 xl:sticky xl:top-5 xl:self-start">
-            <Card title="Salts to add" hint={`Grams for ${trimNum(volumeL)} L of total water.`}>
+            <Card title="Salts to add">
               {SALTS.some((salt) => salts[salt.id] > 0) ? (
                 <ul className="space-y-2.5">
                   {SALTS.filter((salt) => salts[salt.id] > 0).map((salt) => (
@@ -375,7 +370,7 @@ function Card({
 }
 
 const fieldClass =
-  'w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-right text-sm tabular-nums text-zinc-100 outline-none transition focus:border-blue-500';
+  'w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-right text-sm tabular-nums text-zinc-100 outline-none transition focus:border-[#f87a68]';
 
 /** A label/hint stacked over a control (control passed as children). */
 function Field({
@@ -383,15 +378,15 @@ function Field({
   hint,
   children,
 }: {
-  label: string;
+  label?: string;
   hint?: string;
   children: React.ReactNode;
 }): JSX.Element {
   return (
     <label className="block">
-      <span className="block text-sm font-medium text-zinc-200">{label}</span>
+      {label && <span className="block text-sm font-medium text-zinc-200">{label}</span>}
       {hint && <span className="block text-xs text-zinc-500">{hint}</span>}
-      <span className="mt-1.5 flex items-center">{children}</span>
+      <span className="flex items-center">{children}</span>
     </label>
   );
 }

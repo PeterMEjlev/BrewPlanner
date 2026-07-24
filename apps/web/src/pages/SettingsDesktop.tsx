@@ -106,13 +106,6 @@ export function SettingsDesktopPage(): JSX.Element {
   return (
     <DashboardShell active="settings">
       <main className="w-full max-w-6xl px-5 py-6">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-50">Settings</h1>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            Tune the dashboard for this computer, plus the shared graph colours and your account.
-          </p>
-        </div>
-
         <div className="grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
           <aside className="lg:sticky lg:top-6 lg:self-start">
             {/* Phones get a compact dropdown — the horizontal button rail below
@@ -122,7 +115,7 @@ export function SettingsDesktopPage(): JSX.Element {
               <select
                 value={activeCategory}
                 onChange={(e) => setActiveCategory(e.target.value as SettingsCategoryId)}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 outline-none transition focus:border-blue-500"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 outline-none transition focus:border-[#f87a68]"
               >
                 {SETTINGS_CATEGORIES.map((category) => (
                   <option key={category.id} value={category.id}>
@@ -150,7 +143,7 @@ export function SettingsDesktopPage(): JSX.Element {
                     role="tab"
                     className={`min-w-44 rounded-lg border px-3 py-2 text-left transition lg:min-w-0 ${
                       selected
-                        ? 'border-blue-500/60 bg-blue-500/10 text-zinc-50'
+                        ? 'border-[#f87a68]/60 bg-[#f87a68]/10 text-zinc-50'
                         : 'border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-950 hover:text-zinc-200'
                     }`}
                   >
@@ -290,7 +283,9 @@ function Segmented<T extends string | number>({
             onClick={() => onChange(o.value)}
             aria-pressed={active}
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-              active ? 'bg-blue-600 text-white' : 'text-zinc-300 hover:bg-zinc-800'
+              active
+                ? 'bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
+                : 'text-zinc-300 hover:bg-zinc-800'
             }`}
           >
             {o.label}
@@ -302,10 +297,10 @@ function Segmented<T extends string | number>({
 }
 
 const inputClass =
-  'rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-100 outline-none transition focus:border-blue-500';
+  'rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-100 outline-none transition focus:border-[#f87a68]';
 
 const btnPrimary =
-  'rounded-lg bg-blue-600 px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-40';
+  'rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-3.5 py-1.5 text-sm font-semibold text-white shadow transition hover:brightness-110 disabled:opacity-40';
 const btnGhost =
   'rounded-lg border border-zinc-700 px-3.5 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-40';
 

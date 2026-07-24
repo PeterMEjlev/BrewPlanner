@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
-import { BellIcon, CloseIcon } from '../components/icons';
+import { CloseIcon } from '../components/icons';
 import { usePoll } from '../usePoll';
 import { relativeTime } from './Dashboard';
 
@@ -94,16 +94,7 @@ export function AlertsPage(): JSX.Element {
   return (
     <DashboardShell active="alerts">
       <main className="w-full max-w-[1100px] px-5 py-5">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <BellIcon className="h-7 w-7 text-white" />
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight text-zinc-50">Alerts</h1>
-              <p className="mt-0.5 text-sm text-zinc-500">
-                A history of every alert the hub has recorded.
-              </p>
-            </div>
-          </div>
+        <div className="mb-5 flex items-center justify-end gap-3">
           {list.length > 0 && (
             <span className="rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400">
               <span className="font-semibold text-zinc-100">{activeCount}</span> active ·{' '}
