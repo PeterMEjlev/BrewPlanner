@@ -810,8 +810,14 @@ export type SetSetpointInput = z.infer<typeof setSetpointSchema>;
  */
 export const REPORTING_INTERVAL_SEC = { min: 5, max: 3600 } as const;
 
-/** Cadences offered in the dashboard's per-device interval picker, in seconds. */
-export const REPORTING_INTERVAL_OPTIONS = [5, 10, 30, 60, 300, 600] as const;
+/**
+ * Cadences offered in the dashboard's per-device interval picker, in seconds.
+ * Starts at 30s: sub-minute logging buries the history table in readings a
+ * fridge or fermenter never moves fast enough to justify. The 5s/10s floor stays
+ * legal in {@link REPORTING_INTERVAL_SEC} so devices already set that way keep
+ * working — the picker just lists their current value alongside these.
+ */
+export const REPORTING_INTERVAL_OPTIONS = [30, 60, 300, 600] as const;
 
 /** Body for `PATCH /api/devices/:id` — the device's new logging cadence (seconds). */
 export const setReportingIntervalSchema = z.object({

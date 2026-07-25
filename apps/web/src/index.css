@@ -6,6 +6,12 @@ html,
 body,
 #root {
   height: 100%;
+  /* A phone browser resolves `100%` (and `100vh`) against the tall URL-bar-hidden
+     viewport, so a page that exactly fills the screen was still ~75px taller than
+     what you can see — scrolling revealed a strip of empty background. `dvh`
+     tracks the visible viewport instead; on desktop and in the Android app the
+     two never differ. The `100%` above stays as the fallback. */
+  height: 100dvh;
 }
 
 /* Kiosk app: never let a horizontal overscroll/drag trigger Chromium's built-in

@@ -227,6 +227,20 @@ export default function MetricChart({
       : null;
   const formatXTick = useMemo(() => timeTickFormat(zoom.xDomain ?? xExtent), [zoom.xDomain, xExtent]);
 
+  // The visible window's extremes, spelled out under the live value. The phone's
+  // overview cards are too tight to carry a Min/Max line of their own, so opening
+  // the chart is where a brewer reads how far a fridge or fermenter drifted.
+  // Follows the zoom, so it always describes the slice actually on screen.
+  const visibleExtremes = useMemo<Span | null>(() => {
+    if (stateMetric) return null;
+    const x = zoom.xDomain;
+    const values = chartData
+      .filter((d) => !x || (d.t >= x.min && d.t <= x.max))
+      .map((d) => d.value);
+    if (values.length < 2) return null;
+    return { min: Math.min(...values), max: Math.max(...values) };
+  }, [chartData, stateMetric, zoom.xDomain]);
+
   // Draw only what's on screen, thinned to about one point per pixel: a day of
   // 30s readings is ~2,900 points, and redrawing all of them each frame is what
   // makes a drag drag.
@@ -271,6 +285,18 @@ export default function MetricChart({
                 </span>
               )}
             </>
+          )}
+          {chartMetric && visibleExtremes && (
+            <p className="mt-2 text-sm text-zinc-400">
+              Min{' '}
+              <span className="font-semibold tabular-nums text-zinc-200">
+                {formatValue({ metric: chartMetric, value: visibleExtremes.min, recordedAt: '' })}
+              </span>
+              {'  ·  Max '}
+              <span className="font-semibold tabular-nums text-zinc-200">
+                {formatValue({ metric: chartMetric, value: visibleExtremes.max, recordedAt: '' })}
+              </span>
+            </p>
           )}
           {totalMetric && total != null && (
             <p className="mt-2 text-sm text-zinc-400">

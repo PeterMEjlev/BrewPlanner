@@ -243,6 +243,42 @@ function hvacColor(value: number): string {
 }
 
 
+/** Which metric the phone's fermenter card is expanded to. */
+type FermenterTab = 'overview' | 'pressure' | 'temp' | 'gravity';
+
+/**
+ * Floor (in rem, per fermenter station) on the height the phone layout hands the
+ * fermenter card while it shows the Overview tab. The card is the only flexible
+ * row on that screen, so it gets whatever the utilities and keg-fridge cards
+ * leave over — without a floor it can be squeezed below its own chrome, and its
+ * `overflow-hidden` shell then clips the tab strip and charts. `flex-1` still
+ * stretches it past the floor on a screen with room to spare.
+ *
+ * Sized for the card's fixed rows — header 61px, setpoint 77px, tab strip 50px,
+ * body padding 32px — plus the Overview list. The utilities (156px) and
+ * keg-fridge (118px) cards below are trimmed to fit alongside it, so a viewport
+ * down to ~706px seats all three without scrolling; a phone in the browser (URL
+ * bar showing) has ~722px, the Android app ~800px. Below that the floor holds
+ * and the page scrolls rather than clipping the card.
+ */
+const COMPACT_FERMENTER_MIN_REM = 20;
+
+/**
+ * The same floor while a chart tab (Pressure / Temp / Gravity) is open. Those
+ * tabs stack readings, a state badge and a legend above their chart, which in the
+ * Overview's height left the chart a few pixels tall — drawn, but invisible. The
+ * card grows to seat the tallest of them (Temp: ~109px of readings above a 112px
+ * chart) so the page scrolls rather than the chart hiding inside the card, and
+ * all three tabs share one height so switching between them doesn't jump.
+ */
+const COMPACT_FERMENTER_TAB_MIN_REM = 28;
+
+/**
+ * Floor on the plot area inside a phone tab, so a chart is never squeezed to
+ * nothing on a short screen — the card is sized to give it more than this.
+ */
+const COMPACT_TAB_CHART = 'min-h-[7rem]';
+
 /** A metric the user clicked to enlarge in the chart overlay. */
 interface ChartTarget {
   deviceId: number;
@@ -298,6 +334,9 @@ export function DashboardPage(): JSX.Element {
   const [recipe, setRecipe] = useState<Recipe | null>(() => cachedDashboard?.recipe ?? null);
   const [error, setError] = useState<string | null>(null);
   const [chart, setChart] = useState<ChartTarget | null>(null);
+  // Which tab each fermenter card has open, by station name. The page owns this
+  // (rather than the card) because the card's height on a phone follows its tab.
+  const [fermenterTabs, setFermenterTabs] = useState<Record<string, FermenterTab>>({});
   const { dashboardZoom } = useSettings();
   const { auth } = useAuth();
   const isMobile = useIsMobile();
@@ -350,6 +389,8 @@ export function DashboardPage(): JSX.Element {
   const utilityOnline = [brewery, power, water].filter((d) => d?.online).length;
   const utilityTotal = [brewery, power, water].filter(Boolean).length;
 
+  const fermenterTab = (station: string): FermenterTab => fermenterTabs[station] ?? 'overview';
+
   const renderFermenter = (compact: boolean): JSX.Element =>
     devices === null ? (
       <LoadingPanel label="Loading fermenter…" />
@@ -373,11 +414,31 @@ export function DashboardPage(): JSX.Element {
               onRefresh={load}
               onOpen={openChart}
               compact={compact}
+              tab={compact ? fermenterTab(group[0]!.name) : undefined}
+              onTabChange={
+                compact
+                  ? (t) => setFermenterTabs((tabs) => ({ ...tabs, [group[0]!.name]: t }))
+                  : undefined
+              }
             />
           </div>
         ))}
       </div>
     );
+
+  // The phone section's height depends on which tab each card has open, so add up
+  // what the open tabs need (plus the gap-4 between stacked cards).
+  const compactFermenterMinRem =
+    stationGroups.reduce(
+      (rem, group) =>
+        rem +
+        (fermenterTab(group[0]!.name) === 'overview'
+          ? COMPACT_FERMENTER_MIN_REM
+          : COMPACT_FERMENTER_TAB_MIN_REM),
+      0,
+    ) +
+    stationGroups.length -
+    1;
 
   const overviewBody = (
       <main className={isMobile ? 'flex h-full flex-col gap-3 overflow-y-auto px-3 py-3' : 'w-full px-5 py-5'}>
@@ -389,12 +450,22 @@ export function DashboardPage(): JSX.Element {
 
         {isMobile ? (
           // Compact phone layout (Android app + mobile web): a flex column that
-          // fills the screen. The fermenter card grows to absorb the slack, so
-          // its height — and the whole page — stays put as you switch its tabs,
-          // and nothing is scaled so the full width is used. Keg inventory and
-          // operations live in the bottom nav, not here.
+          // fills the screen — nothing is scaled, so the full width is used. The
+          // fermenter card absorbs the slack, and on the Overview tab all three
+          // cards seat inside one screen with no scrolling. Opening a chart tab
+          // grows the card past the viewport and `main` scrolls; that's the deal
+          // the floors below strike. Keg inventory and operations live in the
+          // bottom nav, not here.
           <>
-            <section id="fermenter" className="min-h-0 flex-1">
+            <section
+              id="fermenter"
+              className="flex-1"
+              style={
+                stationGroups.length > 0
+                  ? { minHeight: `${compactFermenterMinRem}rem` }
+                  : undefined
+              }
+            >
               {renderFermenter(true)}
             </section>
             <div className="shrink-0">
@@ -553,6 +624,8 @@ function FermenterCommandCenter({
   onRefresh,
   onOpen,
   compact = false,
+  tab: tabProp,
+  onTabChange,
 }: {
   name: string;
   devices: DeviceStatus[];
@@ -563,6 +636,14 @@ function FermenterCommandCenter({
   onOpen: OpenChart;
   /** Phone layout: a tabbed, single-chart-at-a-time card instead of the 3-up grid. */
   compact?: boolean;
+  /**
+   * The open tab, when the page owns it. The phone layout lifts this state up
+   * because the card's height follows the tab — a chart needs more room than the
+   * Overview list — and only the page's flex row can hand that height out. Left
+   * out (desktop), the card just keeps the tab to itself.
+   */
+  tab?: FermenterTab;
+  onTabChange?: (tab: FermenterTab) => void;
 }): JSX.Element {
   const { pressureUnit, fermentStableDays, fermentThresholdSg, tempMinSpanC } = useSettings();
   const colors = useGraphColors();
@@ -574,7 +655,9 @@ function FermenterCommandCenter({
   const recipeMatch = recipe ? matchContentOption(recipe.name, recipe.style) : null;
   const status = useFermentStatus(devices);
   // Which metric the compact (phone) card is expanded to. Ignored on desktop.
-  const [tab, setTab] = useState<'overview' | 'pressure' | 'temp' | 'gravity'>('overview');
+  const [ownTab, setOwnTab] = useState<FermenterTab>('overview');
+  const tab = tabProp ?? ownTab;
+  const setTab = onTabChange ?? setOwnTab;
   const pressure = findReading(devices, 'pressure_bar');
   const beer = findReading(devices, 'temp_c', 'hydrometer');
   const fridge = findReading(devices, 'temp_c', 'brew_controller');
@@ -656,6 +739,10 @@ function FermenterCommandCenter({
     tempDrawable && tempValues.length > 0
       ? withMinSpan(Math.min(...tempValues), Math.max(...tempValues), tempMinSpanC)
       : null;
+  // Spelled-out extremes under the temp chart, for the fridge line only: that's
+  // the one the Inkbird actually holds, so it's the one worth reading how far it
+  // drifted. Unwidened — these are real readings, not the axis the chart drew.
+  const fridgeRange = minMax(fridgeSeries);
 
   // --- Phone layout: a tabbed card so only one chart is tall at a time. --------
   if (compact) {
@@ -825,11 +912,11 @@ function FermenterCommandCenter({
               ) : pressureFmt ? (
                 <>
                   <BigValue value={pressureFmt.value} unit={pressureFmt.unit} />
-                  <div className="mt-3 min-h-0 flex-1">
+                  <div className={`mt-3 flex-1 ${COMPACT_TAB_CHART}`}>
                     <MiniChartFrame
                       max={pressureRange ? formatPressure(pressureRange.max, pressureUnit).value : undefined}
                       min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
-                      caption={pressureRange ? rangeCaption(pressureRangeMs) : undefined}
+                      caption={pressureRange ? <RangeCaption rangeMs={pressureRangeMs} /> : undefined}
                     >
                       <Sparkline data={pressureSeries} stroke={colors.pressure} fill={withAlpha(colors.pressure, 0.1)} grow />
                     </MiniChartFrame>
@@ -886,11 +973,16 @@ function FermenterCommandCenter({
                     {fridge && <LegendSwatch color={colors.fridgeTemp} label="Fridge" dashed />}
                     {setpoint && <LegendSwatch color={colors.setpoint} label="Target" dotted />}
                   </div>
-                  <div className="mt-2 min-h-0 flex-1">
+                  <div className={`mt-2 flex-1 ${COMPACT_TAB_CHART}`}>
                     <MiniChartFrame
                       max={tempRange ? `${tempRange.max.toFixed(1)}°` : undefined}
                       min={tempRange ? `${tempRange.min.toFixed(1)}°` : undefined}
-                      caption={tempRange ? rangeCaption(tempRangeMs) : undefined}
+                      caption={
+                        fridgeRange ? (
+                          <TempMinMax range={fridgeRange} label="Fridge" />
+                        ) : undefined
+                      }
+                      captionRight={tempRange ? <RangeCaption rangeMs={tempRangeMs} /> : undefined}
                     >
                       <MultiLineSparkline
                         series={[
@@ -928,13 +1020,25 @@ function FermenterCommandCenter({
                       )}
                     </div>
                   </div>
-                  <div className="mt-3 min-h-0 flex-1">
+                  <div className={`mt-3 flex-1 ${COMPACT_TAB_CHART}`}>
                     {gravityValues.length > 1 ? (
                       <MiniChartFrame
                         max={gravityRange ? gravityRange.max.toFixed(3) : undefined}
                         min={gravityRange ? gravityRange.min.toFixed(3) : undefined}
-                        caption={gravityForecast != null ? 'Last 48h' : 'Recent trend'}
-                        captionRight={gravityForecast != null ? '2-day forecast' : undefined}
+                        caption={
+                          gravityForecast != null ? (
+                            <PreviewCaption label="Last" value="48h" />
+                          ) : (
+                            <PreviewCaption label="Recent trend" />
+                          )
+                        }
+                        captionRight={
+                          gravityForecast != null ? (
+                            <span>
+                              <span className={CAPTION_VALUE}>2-day</span> forecast
+                            </span>
+                          ) : undefined
+                        }
                       >
                         {gravityForecast ? (
                           <ForecastSparkline
@@ -1051,7 +1155,7 @@ function FermenterCommandCenter({
                 <MiniChartFrame
                   max={pressureRange ? formatPressure(pressureRange.max, pressureUnit).value : undefined}
                   min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
-                  caption={pressureRange ? rangeCaption(pressureRangeMs) : undefined}
+                  caption={pressureRange ? <RangeCaption rangeMs={pressureRangeMs} /> : undefined}
                 >
                   <Sparkline data={pressureSeries} stroke={colors.pressure} fill={withAlpha(colors.pressure, 0.1)} grow />
                 </MiniChartFrame>
@@ -1135,7 +1239,12 @@ function FermenterCommandCenter({
                   <MiniChartFrame
                     max={tempRange ? `${tempRange.max.toFixed(1)}°` : undefined}
                     min={tempRange ? `${tempRange.min.toFixed(1)}°` : undefined}
-                    caption={tempRange ? rangeCaption(tempRangeMs) : undefined}
+                    caption={
+                      fridgeRange ? (
+                        <TempMinMax range={fridgeRange} label="Fridge" />
+                      ) : undefined
+                    }
+                    captionRight={tempRange ? <RangeCaption rangeMs={tempRangeMs} /> : undefined}
                   >
                     <MultiLineSparkline
                       series={[
@@ -1188,8 +1297,20 @@ function FermenterCommandCenter({
                   <MiniChartFrame
                     max={gravityRange ? gravityRange.max.toFixed(3) : undefined}
                     min={gravityRange ? gravityRange.min.toFixed(3) : undefined}
-                    caption={gravityForecast != null ? 'Last 48h' : 'Recent trend'}
-                    captionRight={gravityForecast != null ? '2-day forecast' : undefined}
+                    caption={
+                      gravityForecast != null ? (
+                        <PreviewCaption label="Last" value="48h" />
+                      ) : (
+                        <PreviewCaption label="Recent trend" />
+                      )
+                    }
+                    captionRight={
+                      gravityForecast != null ? (
+                        <span>
+                          <span className={CAPTION_VALUE}>2-day</span> forecast
+                        </span>
+                      ) : undefined
+                    }
                   >
                     {gravityForecast ? (
                       <ForecastSparkline
@@ -1377,9 +1498,74 @@ function tempRangeOf(data: number[], minSpanC: number): { min: number; max: numb
   return r ? withMinSpan(r.min, r.max, minSpanC) : null;
 }
 
-/** Caption for a windowed preview, e.g. "Last 24h" — tracks the chosen range. */
-function rangeCaption(rangeMs: number): string {
-  return `Last ${RANGES.find((r) => r.ms === rangeMs)?.label ?? '24h'}`;
+/** The window a preview covers, e.g. "24h" — tracks the chosen range. */
+function rangeLabel(rangeMs: number): string {
+  return RANGES.find((r) => r.ms === rangeMs)?.label ?? '24h';
+}
+
+/** Weight/colour every preview footer picks its values out in. */
+const CAPTION_VALUE = 'font-semibold tabular-nums text-zinc-300';
+
+/**
+ * A caption under a preview chart — a plain lead-in and, where there is one, the
+ * value it introduces picked out: "Last **24h**". Same treatment as the Min/Max
+ * labels beside it, so a glance lands on the numbers rather than the words.
+ */
+function PreviewCaption({ label, value }: { label: string; value?: string }): JSX.Element {
+  return (
+    <span>
+      {value == null ? label : `${label} `}
+      {value != null && <span className={CAPTION_VALUE}>{value}</span>}
+    </span>
+  );
+}
+
+/** "Last 24h" for a preview windowed by the shared range picker. */
+function RangeCaption({ rangeMs }: { rangeMs: number }): JSX.Element {
+  return <PreviewCaption label="Last" value={rangeLabel(rangeMs)} />;
+}
+
+/**
+ * "Min 17.4 °C · Max 19.2 °C" — the extremes of one temperature series, spelled
+ * out under its preview chart. Shared by the three Overview temp charts so they
+ * read alike.
+ */
+function TempMinMax({
+  range,
+  label,
+}: {
+  range: { min: number; max: number };
+  /** Names the series when the chart draws more than one, e.g. "Fridge". */
+  label?: string;
+}): JSX.Element {
+  return (
+    <span>
+      {label ? `${label} Min ` : 'Min '}
+      <span className={CAPTION_VALUE}>{range.min.toFixed(1)} °C</span>
+      {'  ·  Max '}
+      <span className={CAPTION_VALUE}>{range.max.toFixed(1)} °C</span>
+    </span>
+  );
+}
+
+/**
+ * The full line under a utility temp sparkline: extremes on the left, the window
+ * they were measured over on the right. The fermenter card gets the same pair
+ * through {@link MiniChartFrame}'s caption row instead, since it already has one.
+ */
+function TempRangeLine({
+  range,
+  rangeMs,
+}: {
+  range: { min: number; max: number };
+  rangeMs: number;
+}): JSX.Element {
+  return (
+    <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-xs text-zinc-500">
+      <TempMinMax range={range} />
+      <RangeCaption rangeMs={rangeMs} />
+    </div>
+  );
 }
 
 /** The predicted-finish line shown under the status pill (white, prominent). */
@@ -1405,9 +1591,9 @@ function MiniChartFrame({
   children: React.ReactNode;
   max?: string;
   min?: string;
-  caption?: string;
-  /** Optional second caption pinned to the right — e.g. a forecast-tail label. */
-  captionRight?: string;
+  caption?: React.ReactNode;
+  /** Optional second caption pinned to the right — e.g. the window it covers. */
+  captionRight?: React.ReactNode;
 }): JSX.Element {
   return (
     <div className="flex h-full flex-col">
@@ -1425,7 +1611,7 @@ function MiniChartFrame({
         )}
       </div>
       {(caption != null || captionRight != null) && (
-        <div className="mt-1 flex items-baseline justify-between gap-2 text-xs font-medium leading-none text-white">
+        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-xs leading-none text-zinc-500">
           <span>{caption}</span>
           {captionRight != null && <span>{captionRight}</span>}
         </div>
@@ -1477,7 +1663,11 @@ function BreweryUtilities({
   );
 }
 
-/** Slim utility tile for the phone 3-across row: title, current value, mini chart. */
+/**
+ * Slim utility tile for the phone 3-across row: title, current value, and a
+ * secondary line. No mini chart — the phone screen has to seat this row, the keg
+ * fridge and a full-height fermenter card, and tapping a tile opens its chart.
+ */
 function CompactUtilityTile({
   icon,
   title,
@@ -1485,7 +1675,6 @@ function CompactUtilityTile({
   unit,
   sub,
   onClick,
-  children,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -1494,8 +1683,6 @@ function CompactUtilityTile({
   /** A small secondary line, e.g. "Today 143 kWh" or "Target 6.0°". */
   sub?: string;
   onClick: () => void;
-  /** The mini chart (rendered at a fixed small height). */
-  children?: React.ReactNode;
 }): JSX.Element {
   return (
     <button
@@ -1512,7 +1699,6 @@ function CompactUtilityTile({
         {unit && <span className="text-[10px] font-medium text-zinc-500">{unit}</span>}
       </div>
       {sub && <p className="truncate text-[10px] text-zinc-500">{sub}</p>}
-      {children && <div className="mt-1.5">{children}</div>}
     </button>
   );
 }
@@ -1622,7 +1808,8 @@ function BreweryTempCard({
   onOpen: OpenChart;
   compact?: boolean;
 }): JSX.Element {
-  const series = useMetricSeries(device?.id ?? null, 'temp_c', useChartRange(device?.id ?? null, 'temp_c'));
+  const rangeMs = useChartRange(device?.id ?? null, 'temp_c');
+  const series = useMetricSeries(device?.id ?? null, 'temp_c', rangeMs);
   const colors = useGraphColors();
   const { tempMinSpanC } = useSettings();
   if (!device || !device.online) {
@@ -1652,9 +1839,7 @@ function BreweryTempCard({
         unit="°C"
         sub={setpoint ? `Target ${setpoint.value.toFixed(1)}°` : undefined}
         onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Brewery ambient temperature' })}
-      >
-        <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={24} minSpan={tempMinSpanC} />
-      </CompactUtilityTile>
+      />
     );
   }
   return (
@@ -1684,14 +1869,7 @@ function BreweryTempCard({
         <div className="mt-3">
           <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} minSpan={tempMinSpanC} />
         </div>
-        {range && (
-          <p className="mt-3 text-xs text-zinc-500">
-            Min{' '}
-            <span className="font-semibold tabular-nums text-zinc-300">{range.min.toFixed(1)} °C</span>
-            {'  ·  Max '}
-            <span className="font-semibold tabular-nums text-zinc-300">{range.max.toFixed(1)} °C</span>
-          </p>
-        )}
+        {range && <TempRangeLine range={range} rangeMs={rangeMs} />}
       </UtilityShell>
     </UtilityCardButton>
   );
@@ -1727,9 +1905,7 @@ function PowerCard({
         unit={cur?.unit}
         sub={today ? `Today ${formatValue(today)}` : undefined}
         onClick={() => onOpen({ deviceId: device.id, metric: 'power_w', title: 'Power draw' })}
-      >
-        <BarSpark data={series} fill={colors.power} height={24} />
-      </CompactUtilityTile>
+      />
     );
   }
   return (
@@ -1787,9 +1963,7 @@ function WaterCard({
         unit={cur?.unit}
         sub={today ? `Today ${formatValue(today)}` : undefined}
         onClick={() => onOpen({ deviceId: device.id, metric: 'flow_lpm', title: 'Water flow' })}
-      >
-        <Sparkline data={series} stroke={colors.water} fill={withAlpha(colors.water, 0.1)} height={24} />
-      </CompactUtilityTile>
+      />
     );
   }
   return (
@@ -2033,6 +2207,11 @@ function AppLink({
  * cooling/heating state with the current target, a temp sparkline, and an inline
  * setpoint control. Separate from the fermenter station cards — this fridge holds
  * the finished beer, not an active ferment. Greys out when the controller is offline.
+ *
+ * On a phone the card is cut back to the reading and its target: the sparkline,
+ * the Min/Max line and the setpoint control all cost more height than the screen
+ * has to give, and tapping the card opens the chart overlay — which carries the
+ * same detail, Min/Max included, plus a setpoint control of its own.
  */
 function KegFridgeCard({
   device,
@@ -2050,14 +2229,14 @@ function KegFridgeCard({
 }): JSX.Element {
   const colors = useGraphColors();
   const { tempMinSpanC } = useSettings();
-  const series = useMetricSeries(device?.id ?? null, 'temp_c', useChartRange(device?.id ?? null, 'temp_c'));
+  const rangeMs = useChartRange(device?.id ?? null, 'temp_c');
+  // The phone card draws no sparkline, so it doesn't pull the history behind one.
+  const series = useMetricSeries(compact ? null : device?.id ?? null, 'temp_c', rangeMs);
   const temp = device?.latest.find((r) => r.metric === 'temp_c');
   const setpoint = device?.latest.find((r) => r.metric === 'setpoint_c');
   const state = device?.latest.find((r) => r.metric === 'hvac_state');
   const offline = !device || !device.online;
   const range = tempRangeOf(series, tempMinSpanC);
-  // Tighter rhythm on phones; the desktop rail keeps its roomier spacing.
-  const gap = compact ? 'mt-2' : 'mt-3';
 
   return (
     <section className={`rounded-xl border border-zinc-800 bg-zinc-900 ${compact ? 'p-3' : 'p-5'}`}>
@@ -2100,43 +2279,41 @@ function KegFridgeCard({
               )}
             </div>
           </button>
+          {/* Desktop rail only: the state/target row, the sparkline with its
+              Min/Max, and the inline setpoint. On a phone these live one tap
+              away, in the chart overlay the card above opens. */}
           {!compact && (
-            <div className={`flex flex-wrap items-center gap-3 ${gap}`}>
-              {state && <StateBadge value={state.value} />}
-              {setpoint && (
-                <span className="text-sm text-zinc-400">
-                  Target{' '}
-                  <span className="font-semibold tabular-nums text-zinc-200">
-                    {setpoint.value.toFixed(1)} °C
+            <>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                {state && <StateBadge value={state.value} />}
+                {setpoint && (
+                  <span className="text-sm text-zinc-400">
+                    Target{' '}
+                    <span className="font-semibold tabular-nums text-zinc-200">
+                      {setpoint.value.toFixed(1)} °C
+                    </span>
                   </span>
-                </span>
-              )}
-            </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Keg fridge temperature' })}
+                className="mt-3 block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500"
+              >
+                <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} minSpan={tempMinSpanC} />
+                {range && <TempRangeLine range={range} rangeMs={rangeMs} />}
+              </button>
+              <div className="mt-3">
+                <SetpointControl
+                  deviceId={device.id}
+                  setpointC={setpoint?.value ?? null}
+                  pendingC={device.pendingSetpointC ?? null}
+                  onApplied={onRefresh}
+                  variant="inline"
+                />
+              </div>
+            </>
           )}
-          <button
-            type="button"
-            onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Keg fridge temperature' })}
-            className={`block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500 ${gap}`}
-          >
-            <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} minSpan={tempMinSpanC} />
-            {range && (
-              <p className={`text-xs text-zinc-500 ${compact ? 'mt-1.5' : 'mt-3'}`}>
-                Min{' '}
-                <span className="font-semibold tabular-nums text-zinc-300">{range.min.toFixed(1)} °C</span>
-                {'  ·  Max '}
-                <span className="font-semibold tabular-nums text-zinc-300">{range.max.toFixed(1)} °C</span>
-              </p>
-            )}
-          </button>
-          <div className={gap}>
-            <SetpointControl
-              deviceId={device.id}
-              setpointC={setpoint?.value ?? null}
-              pendingC={device.pendingSetpointC ?? null}
-              onApplied={onRefresh}
-              variant="inline"
-            />
-          </div>
         </>
       )}
     </section>

@@ -369,8 +369,12 @@ export function DashboardShell({
   useEscapeToOverview(active);
   useArrowPageNav(active);
   return (
+    // `100dvh`, not `min-h-screen`: on a phone `100vh` is the tall URL-bar-hidden
+    // viewport, so a page that exactly fills the visible area still stretched ~75px
+    // past it and scrolled into empty background. `dvh` tracks what's on screen
+    // (and equals `vh` on desktop, where the two never differ).
     <div
-      className={`flex min-h-screen bg-zinc-950 text-zinc-100 ${
+      className={`flex min-h-[100dvh] bg-zinc-950 text-zinc-100 ${
         fit ? 'xl:h-screen xl:overflow-hidden' : ''
       }`}
     >
