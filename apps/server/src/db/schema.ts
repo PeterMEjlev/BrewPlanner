@@ -133,6 +133,14 @@ export const devices = sqliteTable('devices', {
    */
   mac: text('mac'),
   /**
+   * The name the device carries in its manufacturer's app (e.g. what an Inkbird
+   * controller is called in the Inkbird/Tuya app), as reported by its agent on
+   * push. Kept apart from `name` — the name it's registered under here, which the
+   * Overview page matches on — so the two can differ freely. Null until an agent
+   * reports one, or for devices that have no such name.
+   */
+  vendorName: text('vendor_name'),
+  /**
    * How often (seconds) this device should log a reading. The operator sets it
    * per device from the dashboard; the hub hands it back to the agent on every
    * push (the `/api/ingest` response) so the agent self-adjusts its sample/push

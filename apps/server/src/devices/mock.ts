@@ -202,6 +202,8 @@ export function mockStatus(
     lastSeenAt: nowIso,
     lastIp: mockIp(profile),
     mac: mockMac(profile),
+    // No manufacturer app behind a simulated device, so nothing to report.
+    vendorName: null,
     online: true,
     latest: latestReadings(profile, id, nowIso),
     reportingIntervalSec: MOCK_PUSH_INTERVAL_SEC,

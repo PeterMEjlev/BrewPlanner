@@ -30,6 +30,13 @@ Configuration (all via environment, see inkbird-agent.service):
   INKBIRD_IP         Controller's LAN IP (from the wizard / your router)
   INKBIRD_LOCAL_KEY  Tuya local key    (from the wizard)
   INKBIRD_VERSION    Tuya protocol version (default: 3.4)
+  INKBIRD_NAME       What this controller is called in the Inkbird/Tuya app, shown
+                     on the hub's Devices page. Optional: left unset, the agent
+                     looks the name up by INKBIRD_DEVICE_ID in the tinytuya
+                     wizard's devices.json (see INKBIRD_DEVICES_JSON).
+  INKBIRD_DEVICES_JSON
+                     Path to that wizard output. Unset, the agent looks beside
+                     itself and then in ~/devices.json.
   BP_SIMULATE        If "1" (the default until you've paired the controller),
                      report synthetic values so the whole pipeline can be
                      verified before you have real credentials.
@@ -69,6 +76,17 @@ INKBIRD_DEVICE_ID = os.environ.get("INKBIRD_DEVICE_ID", "")
 INKBIRD_IP = os.environ.get("INKBIRD_IP", "")
 INKBIRD_LOCAL_KEY = os.environ.get("INKBIRD_LOCAL_KEY", "")
 INKBIRD_VERSION = float(os.environ.get("INKBIRD_VERSION", "3.4"))
+INKBIRD_NAME = os.environ.get("INKBIRD_NAME", "").strip()
+INKBIRD_DEVICES_JSON = os.environ.get("INKBIRD_DEVICES_JSON", "").strip()
+
+# Where to look for the tinytuya wizard's output when INKBIRD_DEVICES_JSON is
+# unset, in order: next to this agent, then the home directory the wizard is
+# normally run from. The unit file sets no WorkingDirectory (so a bare relative
+# path would resolve against `/`), hence the explicit candidates.
+DEVICES_JSON_CANDIDATES = (
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "devices.json"),
+    os.path.expanduser("~/devices.json"),
+)
 
 # Defensive bounds for a setpoint written to the hardware (mirrors the hub's
 # validation): even if a bad value slips through, never command something wild.
@@ -256,6 +274,47 @@ def controller_mac() -> str | None:
     return None
 
 
+def vendor_name() -> str | None:
+    """
+    What this controller is called in the Inkbird/Tuya app, reported so the hub's
+    Devices page can show which physical box a card is (it never replaces the name
+    the device is registered under on the hub).
+
+    The name is an account-side attribute: the Tuya local protocol serves only
+    data points, so no LAN read can ever see it. But the tinytuya wizard already
+    captured it when it fetched the device id and local key, so we read it back
+    from that same devices.json instead of calling the cloud every cycle.
+
+    INKBIRD_NAME wins when set — for a host without the wizard output, or when the
+    app name isn't what you want on the dashboard. Returns None when neither is
+    available, and the hub then keeps whatever it last stored.
+    """
+    if INKBIRD_NAME:
+        return INKBIRD_NAME
+    if not INKBIRD_DEVICE_ID:
+        return None
+    paths = [INKBIRD_DEVICES_JSON] if INKBIRD_DEVICES_JSON else DEVICES_JSON_CANDIDATES
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                entries = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("id") == INKBIRD_DEVICE_ID:
+                name = entry.get("name")
+                if isinstance(name, str) and name.strip():
+                    return name.strip()
+    return None
+
+
+# Resolved once at startup: neither the env var nor the wizard's file changes
+# while the agent runs, so renaming the controller in the app takes a restart.
+VENDOR_NAME = vendor_name()
+
+
 def device_identity() -> tuple[str | None, str | None]:
     """
     (mac, ip) describing the *controlled device* to report on each push, so the
@@ -286,6 +345,8 @@ def push(samples: list[dict], current_interval: float) -> float | None:
         payload["mac"] = mac
     if ip:
         payload["ip"] = ip
+    if VENDOR_NAME:
+        payload["vendorName"] = VENDOR_NAME
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"{HUB_URL}/api/ingest",
@@ -467,7 +528,8 @@ def main() -> int:
 
     log(
         f"starting: hub={HUB_URL} interval={INTERVAL}s simulate={SIMULATE} "
-        f"writes={ALLOW_SETPOINT_WRITE} target={INKBIRD_IP or '(unset)'}"
+        f"writes={ALLOW_SETPOINT_WRITE} target={INKBIRD_IP or '(unset)'} "
+        f"name={VENDOR_NAME or '(unknown)'}"
     )
 
     buffer: deque[dict] = deque(maxlen=MAX_BUFFER)

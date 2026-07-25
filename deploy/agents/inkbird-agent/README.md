@@ -53,6 +53,14 @@ project, and link the Inkbird app via "Link Tuya App Account"). The wizard
 writes `devices.json` listing each device's `id`, `ip`, `key` (the local key),
 and `version`. Find the ITC-308-WIFI entry and note those four values.
 
+**Keep that `devices.json`.** It also carries each controller's `name` — what
+you called it in the Inkbird app — which the agent reports to the hub so the
+Devices page can show which physical box a card is. That name lives in your Tuya
+account, not on the controller (a local read returns only data points), so this
+file is the only offline copy of it. Leave it beside `agent.py` or in the home
+directory and the agent finds it; otherwise point `INKBIRD_DEVICES_JSON` at it,
+or just set `INKBIRD_NAME` by hand.
+
 > The Inkbird/InkbirdPro and Tuya "Smart Life" apps share the same backend, so
 > if the controller is already in the Inkbird app it'll appear here.
 

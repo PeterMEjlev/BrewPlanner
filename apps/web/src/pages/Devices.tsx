@@ -320,6 +320,11 @@ function DeviceCard({
       <dl className="mt-4 grid flex-1 grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
         {/* Full-width and first so the whole 17-char MAC fits without clipping;
             only shown when reported (mock/older agents leave it null). */}
+        {/* What the box calls itself in its own manufacturer app (e.g. an
+            Inkbird's name in the Inkbird app) — the label on the physical unit,
+            where the title above is the name it's registered under here. Only
+            shown when an agent reports one. */}
+        {device.vendorName && <InfoRow label="App name" value={device.vendorName} wide />}
         {device.mac && <InfoRow label="MAC address" value={device.mac} mono wide />}
         <InfoRow label="IP address" value={device.lastIp ?? '—'} mono />
         <InfoRow label="Protocol" value={model.connectivity} />

@@ -41,6 +41,7 @@ function placeholderStatus(profile: mock.MockProfile): DeviceStatus {
     lastSeenAt: null,
     lastIp: null,
     mac: null,
+    vendorName: null,
     online: false,
     latest: [],
     // No real device behind this placeholder; show the agents' default cadence.

@@ -44,6 +44,9 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
     // Record the device's self-reported MAC (heartbeat metadata) when sent — a
     // no-op once stored, since it doesn't change.
     if (body.mac) devices.recordDeviceMac(req.device!.id, body.mac);
+    // Same for the name the device carries in its manufacturer's app, when the
+    // agent knows it — shown on the Devices page beside the registered name.
+    if (body.vendorName) devices.recordDeviceVendorName(req.device!.id, body.vendorName);
     // Record the device's LAN IP: the agent-declared device address when present
     // (an agent polling a separate networked device — e.g. the Inkbird controller
     // — reports the controller's own IP), else the push's source IP.

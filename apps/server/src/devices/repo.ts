@@ -63,6 +63,7 @@ function toPublic(row: typeof devices.$inferSelect): Device {
     lastSeenAt: row.lastSeenAt,
     lastIp: row.lastIp,
     mac: row.mac,
+    vendorName: row.vendorName,
     reportingIntervalSec: row.reportingIntervalSec,
     createdAt: row.createdAt,
   };
@@ -117,6 +118,25 @@ export function recordDeviceMac(id: number, mac: string): void {
   db.update(devices)
     .set({ mac })
     .where(and(eq(devices.id, id), or(isNull(devices.mac), ne(devices.mac, mac))))
+    .run();
+}
+
+/**
+ * Record the name the device carries in its manufacturer's app, reported by the
+ * agent on push (see {@link recordDeviceMac} — same heartbeat-metadata path).
+ * It changes only when someone renames the device in that app, so like the MAC
+ * the write is skipped while the value is unchanged. Never touches `name`: the
+ * registered name is what the Overview page matches on.
+ */
+export function recordDeviceVendorName(id: number, vendorName: string): void {
+  db.update(devices)
+    .set({ vendorName })
+    .where(
+      and(
+        eq(devices.id, id),
+        or(isNull(devices.vendorName), ne(devices.vendorName, vendorName)),
+      ),
+    )
     .run();
 }
 

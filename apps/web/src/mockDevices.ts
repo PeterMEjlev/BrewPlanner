@@ -204,6 +204,7 @@ function toStatus(d: MockDevice): DeviceStatus {
     lastSeenAt: nowIso,
     lastIp: null,
     mac: null,
+    vendorName: null,
     reportingIntervalSec: 30,
     online: true,
     latest: latestReadings(d, nowIso),

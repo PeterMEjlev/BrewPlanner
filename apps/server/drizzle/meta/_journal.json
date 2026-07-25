@@ -113,6 +113,13 @@
       "when": 1783082328999,
       "tag": "0015_bouncy_gideon",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1784971366239,
+      "tag": "0016_hot_lockjaw",
+      "breakpoints": true
     }
   ]
 }

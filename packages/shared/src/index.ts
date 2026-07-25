@@ -182,6 +182,20 @@ export interface Device {
    */
   mac: string | null;
   /**
+   * The name the device carries in its own manufacturer app — e.g. what an
+   * Inkbird controller is called in the Inkbird/Tuya app ("Birdy Boi"). Reported
+   * by the agent, because the name is an account-side attribute the device never
+   * exposes on the LAN (the Tuya local protocol returns only data points).
+   *
+   * Deliberately separate from {@link Device.name}, the name the device was
+   * registered under here: that one is load-bearing on the Overview page, which
+   * picks out the brewery and keg-fridge controllers by name and groups a
+   * fermenter station from the devices sharing one. This is the physical label,
+   * shown so an operator can tell which box on the shelf a card refers to. Null
+   * until an agent reports one (and for mock/placeholder devices).
+   */
+  vendorName: string | null;
+  /**
    * How often (seconds) this device should log a reading — the single cadence
    * the operator tunes per device from the dashboard. The hub returns it to the
    * agent on every push so the agent matches its sample/push rate to it, and the
@@ -775,6 +789,21 @@ export const ingestSchema = z.object({
     .trim()
     .optional()
     .transform((v) => (v && z.string().ip().safeParse(v).success ? v : undefined)),
+  /**
+   * The name the device carries in its manufacturer's app (see
+   * {@link DeviceStatus.vendorName}) — heartbeat metadata, optional. An agent
+   * that knows it (the Inkbird agent reads it from the tinytuya wizard's
+   * `devices.json`) sends it so the Devices page can show which physical box a
+   * card is. Never touches the device's registered `name`.
+   *
+   * An empty or over-long value is dropped rather than rejecting the push:
+   * cosmetic metadata must never cost telemetry.
+   */
+  vendorName: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v && v.length <= 64 ? v : undefined)),
 });
 export type IngestInput = z.infer<typeof ingestSchema>;
 

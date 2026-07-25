@@ -1,0 +1,1 @@
+ALTER TABLE `devices` ADD `vendor_name` text;
