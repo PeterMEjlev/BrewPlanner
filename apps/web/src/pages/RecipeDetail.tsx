@@ -348,16 +348,22 @@ export function RecipeDetailPage(): JSX.Element {
           />
           {recipe.mashTemp && <Stat label="Mash" value={recipe.mashTemp} />}
           {recipe.fermentationTemp && <Stat label="Fermentation" value={recipe.fermentationTemp} />}
+          {/* Grid auto-flow puts this beside EBC (its usual neighbour once the
+              gravity/ABV/IBU stats fill the row above); a col-span this wide
+              only fits when there's room left in the current row — otherwise it
+              wraps to its own row below, which is the same graceful fallback the
+              narrower breakpoints already rely on. */}
+          {costs && (
+            <div className="col-span-2 sm:col-span-2 lg:col-span-4">
+              <CostSummary
+                recipe={recipe}
+                fermentables={costs.fermentables}
+                hops={costs.hops}
+                yeast={costs.yeast}
+              />
+            </div>
+          )}
         </div>
-
-        {costs && (
-          <CostSummary
-            recipe={recipe}
-            fermentables={costs.fermentables}
-            hops={costs.hops}
-            yeast={costs.yeast}
-          />
-        )}
 
         <div className="mt-4 space-y-3">
           {recipe.fermentables.length > 0 && totals && costs && (
@@ -685,7 +691,7 @@ function CostSummary({
     .join('\n');
 
   return (
-    <section className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
+    <section className="h-full rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
         <div>
           <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">

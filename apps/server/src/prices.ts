@@ -34,6 +34,8 @@ interface MaltEntry {
   producer?: string;
   ebc_min?: number | null;
   ebc_max?: number | null;
+  /** True when the shop lists it as out of stock. */
+  soldout?: boolean | null;
   price_per_kg_dkk?: number | null;
   price_per_100g_dkk?: number | null;
   package_size_g?: number | null;
@@ -87,6 +89,8 @@ interface PricedItem {
   /** Colour range the shop states, EBC. Null for hops and yeast. */
   ebcMin: number | null;
   ebcMax: number | null;
+  /** Out of stock at the shop; used only to break ties, never to hide a price. */
+  soldout: boolean;
 }
 
 /**
@@ -102,9 +106,7 @@ const NOISE = new Set([
   'malt', 'malted', 'malting', 'hop', 'humle', 'gaer', 'yeast', 'torgaer', 'pellet',
   'pellets', 'leaf', 'whole', 'cone', 'cones',
   // Marketing / qualifiers that don't identify the ingredient
-  'type', 'premium', 'organic', 'okologisk', 'oko', 'eco', 'bio', 'special',
-  // Preparation, not identity
-  'flaked', 'flakes', 'torrefied', 'unmalted', 'raw', 'naked', 'dehusked', 'husked',
+  'type', 'premium', 'organic', 'okologisk', 'oko', 'eco', 'bio',
   // Format and packaging
   'dry', 'liquid', 'slant', 'purepitch', 'next', 'gen', 'g', 'gram', 'kg', 'stk',
   'pkg', 'pack', 'sachet',
@@ -120,6 +122,18 @@ const NOISE = new Set([
  * them. Dropping them anywhere would maul strain codes — "US-05" would lose its
  * "us" and match on a bare "05".
  */
+/**
+ * How the grain was prepared rather than which grain it is: flaked, torrefied,
+ * dehusked. These are kept as real tokens so "Torrefied Wheat" finds the
+ * unmalted product rather than the cheaper wheat malt — but they're dropped in a
+ * final fallback pass, so a recipe asking for a preparation the shop doesn't
+ * stock still lands on the same grain instead of going unpriced.
+ */
+const PREPARATION = new Set([
+  'flake', 'torrefied', 'unmalted', 'umaltet', 'raw', 'naked', 'dehusked',
+  'husked', 'skaller', 'med', 'uden',
+]);
+
 const ORIGIN_CODES = new Set([
   'us', 'usa', 'uk', 'de', 'ger', 'nz', 'cz', 'sl', 'si', 'es', 'au', 'pl', 'fr',
   'be', 'dk', 'at',
@@ -159,13 +173,33 @@ const SYNONYMS: Record<string, string> = {
   sauer: 'acidulated',
   sauermalz: 'acidulated',
   saurermalz: 'acidulated',
+  rauch: 'smoked',
+  rauchmalz: 'smoked',
+  rav: 'amber',
+  // The shop's closed-up Danish flake names, opened up to the grain inside.
+  havreflager: 'oat',
+  majsflager: 'maize',
+  risflager: 'rice',
+  // Preparation spellings that vary in the wild.
+  torrified: 'torrefied',
+  torified: 'torrefied',
+  flaked: 'flake',
   // Malt aliases
   acid: 'acidulated',
+  aromatic: 'arome',
   crystal: 'caramel',
   pils: 'pilsner',
   pilsener: 'pilsner',
   peated: 'peat',
   beechwood: 'beech',
+  // British spelling, against the shop's American "Low Color Chocolate"
+  colour: 'color',
+  // Roman numerals for malt grades: "Munich I" is the shop's "Munich Type 1",
+  // "Carafa II" its "Carafa Type 2".
+  i: '1',
+  ii: '2',
+  iii: '3',
+  iv: '4',
   // Hop aliases
   hallertauer: 'hallertau',
   mittelfrueh: 'mittelfruh',
@@ -182,16 +216,42 @@ const SYNONYMS: Record<string, string> = {
 };
 
 /**
- * Split a name into comparable tokens: lowercased, de-accented (including the
- * Danish ø/æ/å), punctuation dropped, canonicalised through {@link SYNONYMS},
- * lightly singularised so "Oats" matches "Oat", stripped of {@link NOISE}, and
- * finally relieved of any trailing origin code.
+ * Whole-product equivalences that the word-by-word rules can't express: a malt
+ * the trade names two different things, or a brand name for the same product.
+ * Keyed on the ingredient's tokens, sorted so word order doesn't matter, and
+ * resolved to the name the shop uses.
  *
- * Synonyms are consulted both before and after singularising, because the two
- * steps interfere: "Pils" would otherwise be trimmed to "pil" and never reach its
- * "pilsner" alias. Noise is likewise checked on both forms.
+ * Applied to the *recipe* side only — these translate what a brewer wrote into
+ * what the shop calls it, and rewriting catalogue names too would be actively
+ * harmful: it would re-file Gyrup's "Karamel Munich" as Weyermann's Caramunich
+ * and lose it from every plain caramel-malt match.
+ *
+ * A mapping here only prices if the target is actually stocked. The malt
+ * catalogue currently has no Carapils, so dextrine malt resolves correctly but
+ * still comes back unpriced until that product is in `prices/`.
  */
-function tokenize(name: string): string[] {
+const PRODUCT_ALIASES: Record<string, string> = {
+  // Dextrine malt is Carapils; Carafoam is Weyermann's name for the same thing.
+  dextrine: 'carapils',
+  dextrin: 'carapils',
+  carafoam: 'carapils',
+  // "Caramel Wheat" is what Weyermann sells as Carawheat, and so on — the shop
+  // writes the closed-up brand name. ("Caramel Munich" deliberately has no entry:
+  // it matches Gyrup's "Karamel Munich" word-for-word already.)
+  'caramel wheat': 'carawheat',
+  'caramel rye': 'cararye',
+  'caramel red': 'carared',
+  // Maltsters' names for the palest chocolate malt.
+  'chocolate pale': 'low color chocolate',
+  'chocolate light': 'low color chocolate',
+  // Rice hulls are a mash aid, and the shop's word for them shares nothing with
+  // the English name.
+  'hull rice': 'risskaller',
+  'husk rice': 'risskaller',
+};
+
+/** The bare tokenising pass, without alias resolution (which re-enters it). */
+function tokenizeWords(name: string): string[] {
   const words = name
     .toLowerCase()
     .replace(/ø/g, 'o')
@@ -216,7 +276,36 @@ function tokenize(name: string): string[] {
   }
 
   while (tokens.length > 1 && ORIGIN_CODES.has(tokens[tokens.length - 1]!)) tokens.pop();
+
+  // "Cara Red" and "Carared" are the same malt — the shop writes the brand
+  // prefix closed up, recipes often don't.
+  for (let i = 0; i < tokens.length - 1; i++) {
+    if (tokens[i] === 'cara') {
+      tokens.splice(i, 2, `cara${tokens[i + 1]!}`);
+      i--;
+    }
+  }
   return tokens;
+}
+
+/**
+ * Split a name into comparable tokens: lowercased, de-accented (including the
+ * Danish ø/æ/å), punctuation dropped, canonicalised through {@link SYNONYMS},
+ * lightly singularised so "Oats" matches "Oat", stripped of {@link NOISE}, and
+ * relieved of any trailing origin code — then resolved through
+ * {@link PRODUCT_ALIASES} if the whole thing names a product the shop calls
+ * something else.
+ *
+ * Synonyms are consulted both before and after singularising, because the two
+ * steps interfere: "Pils" would otherwise be trimmed to "pil" and never reach its
+ * "pilsner" alias. Noise is likewise checked on both forms.
+ */
+function tokenize(name: string): string[] {
+  const tokens = tokenizeWords(name);
+  if (tokens.length === 0) return tokens;
+  // Sorted key, so "Caramel Wheat" and "Wheat Caramel" resolve alike.
+  const alias = PRODUCT_ALIASES[[...tokens].sort().join(' ')];
+  return alias ? tokenizeWords(alias) : tokens;
 }
 
 /**
@@ -270,12 +359,13 @@ function catalogue(): Catalogue {
           // Producer included so "Pilsner Malt" is identifiable when three
           // different maltsters sell one.
           label: [m.producer, m.name].filter(Boolean).join(' '),
-          tokens: tokenize(m.name),
+          tokens: tokenizeWords(m.name),
           pricePerKgDkk: perKg,
           packagePriceDkk: num(m.price_per_100g_dkk) ?? (perKg * size) / 1000,
           packageSizeG: size,
           ebcMin: num(m.ebc_min),
           ebcMax: num(m.ebc_max),
+          soldout: m.soldout === true,
         },
       ];
     }),
@@ -287,12 +377,13 @@ function catalogue(): Catalogue {
         {
           id: h.id ?? `hop:${h.name}`,
           label: h.name,
-          tokens: tokenize(h.name),
+          tokens: tokenizeWords(h.name),
           pricePerKgDkk: perKg,
           packagePriceDkk: num(h.price_dkk) ?? (perKg * size) / 1000,
           packageSizeG: size,
           ebcMin: null,
           ebcMax: null,
+          soldout: false,
         },
       ];
     }),
@@ -310,12 +401,13 @@ function catalogue(): Catalogue {
         {
           id: y.id ?? `yeast:${y.manufacturer ?? ''}:${y.name}`,
           label: [y.manufacturer, y.name].filter(Boolean).join(' '),
-          tokens: tokenize(y.name),
+          tokens: tokenizeWords(y.name),
           pricePerKgDkk: size == null ? null : (price / size) * 1000,
           packagePriceDkk: price,
           packageSizeG: size,
           ebcMin: null,
           ebcMax: null,
+          soldout: false,
         },
       ];
     }),
@@ -345,7 +437,30 @@ function money(n: number): number {
 function candidates(items: PricedItem[], name: string): PricedItem[] {
   const wanted = tokenize(name);
   if (wanted.length === 0) return [];
-  return items.filter((item) => wanted.every((t) => item.tokens.includes(t)));
+
+  const matching = (tokens: string[]): PricedItem[] =>
+    items.filter((item) => tokens.every((t) => item.tokens.includes(t)));
+
+  const strict = matching(wanted);
+  if (strict.length > 0) return strict;
+
+  // Second pass without a trailing grade number. Maltsters number colour grades
+  // ("Caramunich II", "Crystal 60", "Munich I") where the shop often stocks just
+  // one of them under the bare name — so an exact match is preferred, and this is
+  // the fallback rather than the rule. The colour check still applies afterwards,
+  // which is what stops a pale grade being costed as a dark one.
+  const noGrade = [...wanted];
+  while (noGrade.length > 1 && /^\d+$/.test(noGrade[noGrade.length - 1]!)) noGrade.pop();
+  if (noGrade.length !== wanted.length) {
+    const found = matching(noGrade);
+    if (found.length > 0) return found;
+  }
+
+  // Last resort: ignore how the grain was prepared. "Flaked Barley" will settle
+  // for barley malt if the shop has no barley flakes.
+  const noPrep = noGrade.filter((t) => !PREPARATION.has(t));
+  if (noPrep.length > 0 && noPrep.length !== noGrade.length) return matching(noPrep);
+  return [];
 }
 
 /**
@@ -415,10 +530,15 @@ function priceLine(
     .filter((m): m is { item: PricedItem; fraction: number } => m.fraction != null && m.fraction > 0);
   if (matches.length === 0) return null;
 
+  // A cheaper price on something the shop has run out of is not a better price,
+  // so in-stock listings win outright; sold-out ones are only a last resort.
+  const inStock = matches.filter((m) => !m.item.soldout);
+  const usable = inStock.length > 0 ? inStock : matches;
+
   const buyIn = (m: { item: PricedItem; fraction: number }): number =>
     Math.ceil(m.fraction) * m.item.packagePriceDkk;
 
-  const best = matches.reduce((cheapest, m) => (buyIn(m) < buyIn(cheapest) ? m : cheapest));
+  const best = usable.reduce((cheapest, m) => (buyIn(m) < buyIn(cheapest) ? m : cheapest));
 
   return {
     // Pro-rata on the package, which is equivalent to grams × price-per-kg for
@@ -431,7 +551,7 @@ function priceLine(
     matchedName: best.item.label,
     catalogueId: best.item.id,
     // How many listings shared the name; the cheapest was taken.
-    alternatives: matches.length - 1,
+    alternatives: usable.length - 1,
   };
 }
 
