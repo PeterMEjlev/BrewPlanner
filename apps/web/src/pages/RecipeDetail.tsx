@@ -1,9 +1,12 @@
 import type {
+  HopStage,
   Recipe,
   RecipeDetail,
   RecipeHop,
   RecipeWaterProfile,
+  RecipeYeast,
 } from '@checklist/shared';
+import { HOP_STAGE_ORDER } from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
@@ -85,12 +88,20 @@ function toG(amount: string, unit: string): number {
 }
 
 /**
- * A 60-minute addition is the bittering charge. It's excluded from the hop-rate
- * figure because that number is about aroma intensity — a big first-wort charge
- * would inflate it without making the beer smell of anything.
+ * The stages that actually put aroma in the beer. Boil (and mash/first-wort)
+ * additions are excluded from the hop-rate figure — that number describes aroma
+ * intensity, and a big bittering charge would inflate it without making the beer
+ * smell of anything.
  */
-function isBittering(hop: RecipeHop): boolean {
-  return Number.parseFloat(hop.time) === 60;
+const AROMA_STAGES: HopStage[] = ['Whirlpool', 'Dry Hop'];
+
+/** "20 min", "5 days", or '' when the addition states no time. */
+function hopTiming(hop: RecipeHop): string {
+  if (!hop.time || !hop.timeUnit) return '';
+  if (hop.timeUnit === 'day') {
+    return `${hop.time} ${Number.parseFloat(hop.time) === 1 ? 'day' : 'days'}`;
+  }
+  return `${hop.time} min`;
 }
 
 export function RecipeDetailPage(): JSX.Element {
@@ -176,7 +187,7 @@ export function RecipeDetailPage(): JSX.Element {
     const grainKg = recipe.fermentables.reduce((sum, f) => sum + toKg(f.amount, f.unit), 0);
     const hopsG = recipe.hops.reduce((sum, h) => sum + toG(h.amount, h.unit), 0);
     const aromaG = recipe.hops
-      .filter((h) => !isBittering(h))
+      .filter((h) => AROMA_STAGES.includes(h.stage))
       .reduce((sum, h) => sum + toG(h.amount, h.unit), 0);
     return {
       grainKg,
@@ -285,7 +296,20 @@ export function RecipeDetailPage(): JSX.Element {
           <Stat label="FG" value={fmt(recipe.fg, 3)} />
           <Stat label="ABV" value={`${fmt(recipe.abv, 1)}%`} />
           <Stat label="IBU" value={fmt(recipe.ibu, 1)} />
-          <Stat label="EBC" value={fmt(recipe.ebc, 1)} swatch={color} ebc={recipe.ebc} />
+          {/* Brewer's Friend reports 0 for this account's recipes, so the server
+              falls back to calculating from the grain bill — flagged as "est."
+              rather than passed off as the recipe's own figure. */}
+          <Stat
+            label={recipe.ebcEstimated ? 'EBC (est.)' : 'EBC'}
+            value={fmt(recipe.ebc, 1)}
+            swatch={color}
+            ebc={recipe.ebc}
+            title={
+              recipe.ebcEstimated
+                ? "Calculated from the grain bill (Morey) — the recipe didn't report a colour"
+                : undefined
+            }
+          />
           {recipe.mashTemp && <Stat label="Mash" value={recipe.mashTemp} />}
           {recipe.fermentationTemp && <Stat label="Fermentation" value={recipe.fermentationTemp} />}
         </div>
@@ -306,7 +330,7 @@ export function RecipeDetailPage(): JSX.Element {
                     <span className="min-w-0 flex-1 truncate text-sm text-zinc-100">{f.name}</span>
                     <span className="shrink-0 text-sm text-zinc-400">
                       {f.amount} {f.unit}
-                      {f.percent && <span className="text-zinc-500"> · {f.percent}%</span>}
+                      {f.percent && <span className="text-zinc-500"> · {fmt(f.percent, 1)}%</span>}
                       {f.ebc != null && <span className="text-zinc-500"> · {f.ebc} EBC</span>}
                     </span>
                   </li>
@@ -324,38 +348,11 @@ export function RecipeDetailPage(): JSX.Element {
                   ? `${totals.hopsG.toFixed(0)} g · ${totals.aromaRate.toFixed(1)} g/L aroma`
                   : `${totals.hopsG.toFixed(0)} g`
               }
-              metaTitle="Aroma hop rate — grams per litre, excluding the 60 min bittering charge"
+              metaTitle="Aroma hop rate — grams per litre of whirlpool and dry hops (the bittering charge doesn't add aroma)"
               open={!collapsed.hops}
               onToggle={() => toggle('hops')}
             >
-              <ul className="divide-y divide-zinc-800">
-                {recipe.hops.map((h, i) => (
-                  <li key={`${h.name}-${i}`} className="flex items-center gap-3 px-4 py-2.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm text-zinc-100">{h.name}</span>
-                        {h.aa && (
-                          <span className="shrink-0 rounded border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-400">
-                            {h.aa}% AA
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-0.5 truncate text-xs text-zinc-500">
-                        {[
-                          `${h.amount}${h.unit ? ` ${h.unit}` : ''}`,
-                          h.use && h.temp ? `${h.use} @ ${h.temp}°C` : h.use,
-                          h.time && `${h.time} min`,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </div>
-                    </div>
-                    {h.ibu && (
-                      <span className="shrink-0 text-sm text-zinc-400">{fmt(h.ibu, 1)} IBU</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <HopSchedule hops={recipe.hops} />
             </Section>
           )}
 
@@ -396,18 +393,7 @@ export function RecipeDetailPage(): JSX.Element {
             >
               <ul className="divide-y divide-zinc-800">
                 {recipe.yeast.map((y, i) => (
-                  <li key={`${y.name}-${i}`} className="flex items-center gap-3 px-4 py-2.5">
-                    <span className="min-w-0 flex-1 truncate text-sm text-zinc-100">{y.name}</span>
-                    <span className="shrink-0 text-sm text-zinc-400">
-                      {[
-                        y.amount && `${y.amount}${y.amountUnit ? ` ${y.amountUnit}` : ''}`,
-                        y.lab,
-                        y.attenuation && `${y.attenuation}% attenuation`,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                  </li>
+                  <YeastRow key={`${y.name}-${i}`} yeast={y} />
                 ))}
               </ul>
             </Section>
@@ -505,14 +491,17 @@ function Stat({
   value,
   swatch,
   ebc,
+  title,
 }: {
   label: string;
   value: string;
   swatch?: string | null;
   ebc?: string;
+  /** Tooltip, for a figure that needs a caveat. */
+  title?: string;
 }): JSX.Element {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-3.5 py-2.5">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-3.5 py-2.5" title={title}>
       <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">{label}</div>
       <div className="mt-0.5 flex items-center gap-2 text-lg font-semibold text-zinc-50">
         {value}
@@ -566,6 +555,124 @@ function Section({
       </button>
       {open && <div className="border-t border-zinc-800">{children}</div>}
     </section>
+  );
+}
+
+/**
+ * The hop schedule, split into the stages of brew day — bittering in the boil,
+ * then whirlpool, then dry hops — because that's how the additions are actually
+ * used, and a flat list of seven rows makes "what goes in when" hard to read.
+ * Each stage carries its own weight subtotal.
+ *
+ * Only stages this recipe uses get a heading; within a stage, additions run
+ * longest contact time first (boil order for the kettle, and for dry hops the
+ * earliest/longest steep first).
+ */
+function HopSchedule({ hops }: { hops: RecipeHop[] }): JSX.Element {
+  const stages = HOP_STAGE_ORDER.map((stage) => ({
+    stage,
+    additions: hops
+      .filter((h) => h.stage === stage)
+      .sort((a, b) => (Number.parseFloat(b.time) || 0) - (Number.parseFloat(a.time) || 0)),
+  })).filter((group) => group.additions.length > 0);
+
+  return (
+    <div>
+      {stages.map(({ stage, additions }) => {
+        const grams = additions.reduce((sum, h) => sum + toG(h.amount, h.unit), 0);
+        const ibu = additions.reduce((sum, h) => sum + (Number.parseFloat(h.ibu) || 0), 0);
+        return (
+          <div key={stage} className="border-b border-zinc-800 last:border-b-0">
+            <div className="flex items-center gap-2 bg-zinc-950/50 px-4 py-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
+                {stage}
+              </span>
+              <span className="text-[11px] text-zinc-500">
+                {grams.toFixed(0)} g
+                {ibu > 0 && ` · ${ibu.toFixed(1)} IBU`}
+              </span>
+            </div>
+            <ul className="divide-y divide-zinc-800/60">
+              {additions.map((h, i) => (
+                <li key={`${h.name}-${i}`} className="flex items-center gap-3 px-4 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm text-zinc-100">{h.name}</span>
+                      {h.aa && (
+                        <span className="shrink-0 rounded border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-400">
+                          {h.aa}% AA
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 truncate text-xs text-zinc-500">
+                      {[
+                        `${h.amount}${h.unit ? ` ${h.unit}` : ''}`,
+                        hopTiming(h),
+                        h.temp && `@ ${h.temp}°C`,
+                        // The recipe's own wording, but only when it says more
+                        // than the stage heading already does.
+                        h.use !== stage ? h.use : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </div>
+                  </div>
+                  {h.ibu && Number.parseFloat(h.ibu) > 0 && (
+                    <span className="shrink-0 text-sm text-zinc-400">{fmt(h.ibu, 1)} IBU</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * One yeast pitch, with whatever the producer's data includes — the temperature
+ * range matters most (it's the number you set the fermenter's Inkbird to), so it
+ * gets its own line rather than being buried in the meta list.
+ */
+function YeastRow({ yeast: y }: { yeast: RecipeYeast }): JSX.Element {
+  const range =
+    y.minTempC != null && y.maxTempC != null
+      ? `${y.minTempC}–${y.maxTempC}°C`
+      : y.minTempC != null
+        ? `from ${y.minTempC}°C`
+        : y.maxTempC != null
+          ? `up to ${y.maxTempC}°C`
+          : null;
+
+  const facts = [
+    y.amount && `${y.amount}${y.amountUnit ? ` ${y.amountUnit}` : ''}`,
+    y.lab,
+    y.form,
+    y.type,
+    y.attenuation && `${y.attenuation}% attenuation`,
+    y.flocculation && `${y.flocculation} flocculation`,
+    y.alcoholTolerance && `${y.alcoholTolerance} alcohol tolerance`,
+    y.starter ? 'starter' : '',
+  ].filter(Boolean);
+
+  return (
+    <li className="px-4 py-2.5">
+      <div className="flex items-center gap-3">
+        <span className="min-w-0 flex-1 truncate text-sm text-zinc-100">{y.name}</span>
+        {range && (
+          <span
+            className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs font-semibold text-zinc-200"
+            title="Producer's recommended fermentation temperature"
+          >
+            {range}
+          </span>
+        )}
+      </div>
+      {facts.length > 0 && (
+        <div className="mt-0.5 text-xs text-zinc-500">{facts.join(' · ')}</div>
+      )}
+    </li>
   );
 }
 

@@ -149,20 +149,50 @@ export interface RecipeFermentable {
   ebc: number | null;
 }
 
+/**
+ * How a hop addition gets used, normalized into the stages a brewer works in.
+ * Brewer's Friend's own `hopuse` strings carry qualifiers ("Dry Hop (High
+ * Krausen)"), so they're grouped down to these to drive the hop schedule's
+ * sub-sections; the original string stays on the addition as `use`.
+ */
+export type HopStage = 'Mash' | 'First Wort' | 'Boil' | 'Whirlpool' | 'Dry Hop' | 'Other';
+
+/** Hop stages in the order they happen on brew day, for grouped display. */
+export const HOP_STAGE_ORDER: HopStage[] = [
+  'Mash',
+  'First Wort',
+  'Boil',
+  'Whirlpool',
+  'Dry Hop',
+  'Other',
+];
+
 /** One hop addition. */
 export interface RecipeHop {
   name: string;
   amount: string;
   unit: string;
-  /** Where it goes in: "Boil", "Dry Hop", "Whirlpool"… */
+  /** The recipe's own wording, e.g. "Dry Hop (High Krausen)". */
   use: string;
-  /** Contact time in minutes, as a bare number string. */
+  /** `use` reduced to a brew-day stage, for grouping. */
+  stage: HopStage;
+  /** Contact time as a bare number string; the unit is `timeUnit`. */
   time: string;
+  /**
+   * What `time` is measured in. Boil and whirlpool additions are minutes; dry
+   * hops are days (Brewer's Friend stores them that way, so rendering them as
+   * minutes turns a 5-day dry hop into "5 min"). Empty when there's no time.
+   */
+  timeUnit: 'min' | 'day' | '';
   /** Alpha acid %, as a bare number string. */
   aa: string;
   /** This addition's own IBU contribution. */
   ibu: string;
-  /** Whirlpool/hopstand temperature in °C, when the addition has one. */
+  /**
+   * Whirlpool/hopstand temperature in °C — only set where it means something
+   * (a whirlpool/hopstand). Empty elsewhere, including for the boiling-point
+   * placeholder the API returns on additions that have no hopstand.
+   */
   temp: string;
 }
 
@@ -175,6 +205,20 @@ export interface RecipeYeast {
   attenuation: string;
   amount: string;
   amountUnit: string;
+  /** "Ale", "Lager", "Brett"…; empty when the recipe doesn't say. */
+  type: string;
+  /** "Dry", "Liquid", "Slant"…; empty when unknown. */
+  form: string;
+  /** "Low", "Medium", "High"…; empty when unknown. */
+  flocculation: string;
+  /** Bottom of the producer's recommended range, °C; null when unknown. */
+  minTempC: number | null;
+  /** Top of the producer's recommended range, °C; null when unknown. */
+  maxTempC: number | null;
+  /** Alcohol tolerance as the producer states it (often "%" or "high"). */
+  alcoholTolerance: string;
+  /** Whether the recipe calls for a starter. */
+  starter: boolean;
 }
 
 /** Anything that isn't malt, hops or yeast: salts, finings, spices, sugar. */
@@ -257,6 +301,12 @@ export interface RecipeDetail {
   ibu: string;
   /** Colour in EBC. */
   ebc: string;
+  /**
+   * True when `ebc` was calculated here from the grain bill because the recipe
+   * carried no usable colour figure — surfaced in the UI so an estimate isn't
+   * mistaken for the recipe's own number.
+   */
+  ebcEstimated: boolean;
   /** Public Brewer's Friend recipe page URL. */
   url: string;
   /** Batch size in litres (converted from gallons if needed); null if unknown. */

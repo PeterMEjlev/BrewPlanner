@@ -29,7 +29,12 @@ import * as bf from '../brewersfriend.js';
 import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
 import * as telegram from '../notify/telegram.js';
 import * as repo from '../repo.js';
-import { UpdateInProgressError, readUpdateStatus, triggerUpdate } from '../system/update.js';
+import {
+  UpdateInProgressError,
+  UpdateUnsupportedError,
+  readUpdateStatus,
+  triggerUpdate,
+} from '../system/update.js';
 
 /** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
 function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T | null {
@@ -417,6 +422,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       if (err instanceof UpdateInProgressError) {
         return reply.status(409).send({ error: err.message });
+      }
+      if (err instanceof UpdateUnsupportedError) {
+        return reply.status(501).send({ error: err.message });
       }
       req.log.error(err, 'Failed to start software update');
       return reply

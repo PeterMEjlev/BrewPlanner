@@ -61,6 +61,17 @@ export class UpdateInProgressError extends Error {
   }
 }
 
+/** Thrown by {@link triggerUpdate} when this host has no systemd to drive. */
+export class UpdateUnsupportedError extends Error {
+  constructor() {
+    super(
+      `Remote update only works on the Pi — this server is running on ${process.platform}, ` +
+        'which has no systemd. Point the dashboard at the Pi and press Update there.',
+    );
+    this.name = 'UpdateUnsupportedError';
+  }
+}
+
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -112,6 +123,12 @@ export async function readUpdateStatus(): Promise<UpdateStatusResponse> {
  * instead of hanging on a password prompt.
  */
 export async function triggerUpdate(): Promise<UpdateStatus> {
+  // Dev boxes have no systemd, and on Windows `sudo` is a different program
+  // entirely (it rejects `-n`), so the raw error is pure confusion. Bail before
+  // touching the status file so a dev-machine click can't leave a bogus
+  // "failed" deploy behind.
+  if (process.platform !== 'linux') throw new UpdateUnsupportedError();
+
   const current = await readStatusFile();
   if (current.state === 'running') throw new UpdateInProgressError();
 
