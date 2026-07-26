@@ -9,12 +9,11 @@ import type {
   RecipeWaterProfile,
   RecipeYeast,
 } from '@checklist/shared';
-import { HOP_STAGE_ORDER, sumCost } from '@checklist/shared';
+import { HOP_STAGE_ORDER, ebcColor, predictBeerColor, sumCost } from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
-import { ebcColor } from '../beerColor';
 import { DashboardShell } from '../components/DashboardShell';
 import { loadRecipeDetail } from '../recipeStore';
 import { asCleanMessage } from '../util';
@@ -265,7 +264,16 @@ export function RecipeDetailPage(): JSX.Element {
     );
   }
 
-  const color = ebcColor(recipe.ebc);
+  // What the beer actually pours: the malt colour, restained by any fruit in
+  // the other-ingredients list. The swatch means "what's in the glass", so a
+  // fruited sour shows red here rather than the straw its grain bill implies.
+  const predicted = predictBeerColor({
+    ebc: recipe.ebc,
+    batchSizeL: recipe.batchSizeL,
+    additions: recipe.otherIngredients,
+  });
+  const color = predicted?.hex ?? ebcColor(recipe.ebc);
+  const colorTitle = predicted?.fruit?.note;
   const sorted = [...recipe.fermentables].sort(
     (a, b) => toKg(b.amount, b.unit) - toKg(a.amount, a.unit),
   );
@@ -285,7 +293,7 @@ export function RecipeDetailPage(): JSX.Element {
         <header className="mt-4 flex flex-wrap items-start justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
-              <Swatch color={color} className="h-4 w-4" ebc={recipe.ebc} />
+              <Swatch color={color} className="h-4 w-4" ebc={recipe.ebc} title={colorTitle} />
               <h1 className="min-w-0 text-xl font-semibold tracking-tight text-zinc-50">
                 {recipe.name}
               </h1>
@@ -351,6 +359,10 @@ export function RecipeDetailPage(): JSX.Element {
                 ? "Calculated from the grain bill (Morey) — the recipe didn't report a colour"
                 : undefined
             }
+            // The figure is the malt's EBC; the swatch beside it is the pour,
+            // fruit included, so it says so on hover rather than reading as a
+            // swatch that disagrees with its own number.
+            swatchTitle={colorTitle}
           />
           {recipe.mashTemp && <Stat label="Mash" value={recipe.mashTemp} />}
           {recipe.fermentationTemp && <Stat label="Fermentation" value={recipe.fermentationTemp} />}
@@ -539,16 +551,19 @@ function Swatch({
   color,
   ebc,
   className,
+  title,
 }: {
   color: string | null;
   ebc: string | number | null;
   className: string;
+  /** Overrides the plain "12 EBC" tooltip — used to explain a fruited colour. */
+  title?: string;
 }): JSX.Element {
   return (
     <span
       className={`${className} shrink-0 rounded-full ${color ? '' : 'border border-zinc-600'}`}
       style={color ? { backgroundColor: color } : undefined}
-      title={color ? `${ebc} EBC` : 'Colour unknown'}
+      title={title ?? (color ? `${ebc} EBC` : 'Colour unknown')}
       aria-hidden
     />
   );
@@ -561,6 +576,7 @@ function Stat({
   swatch,
   ebc,
   title,
+  swatchTitle,
 }: {
   label: string;
   value: string;
@@ -568,13 +584,17 @@ function Stat({
   ebc?: string;
   /** Tooltip, for a figure that needs a caveat. */
   title?: string;
+  /** Tooltip for the swatch alone, when it says more than the figure does. */
+  swatchTitle?: string;
 }): JSX.Element {
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-3.5 py-2.5" title={title}>
       <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">{label}</div>
       <div className="mt-0.5 flex items-center gap-2 text-lg font-semibold text-zinc-50">
         {value}
-        {swatch !== undefined && <Swatch color={swatch} ebc={ebc ?? null} className="h-3.5 w-3.5" />}
+        {swatch !== undefined && (
+          <Swatch color={swatch} ebc={ebc ?? null} className="h-3.5 w-3.5" title={swatchTitle} />
+        )}
       </div>
     </div>
   );

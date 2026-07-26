@@ -212,6 +212,9 @@ const SYNONYMS: Record<string, string> = {
   jordbaer: 'strawberry',
   solbaer: 'blackcurrant',
   ribs: 'redcurrant',
+  // "blåbær" folds to "blabaer" (å→a); the doubled-a spelling is what people
+  // type when they can't be bothered with the Danish letter, so both map.
+  blabaer: 'blueberry',
   blaabaer: 'blueberry',
   brombaer: 'blackberry',
   kirsebaer: 'cherry',

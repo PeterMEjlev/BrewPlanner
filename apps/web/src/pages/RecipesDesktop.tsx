@@ -1,6 +1,7 @@
 import type { KegContentColors, Recipe } from '@checklist/shared';
 import {
   RECIPE_STYLE_CATEGORIES,
+  ebcColor,
   getRecipeColor,
   matchContentOption,
   styleCategory,
@@ -9,7 +10,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
-import { ebcColor } from '../beerColor';
 import { DashboardShell } from '../components/DashboardShell';
 import { FermenterIcon } from '../components/icons';
 import { useKegContentColors } from '../kegContentColors';
@@ -125,6 +125,9 @@ function saveOrder(order: SortOrder): SortOrder {
 interface Stats {
   usedDkk: number | null;
   hopsPerL: number | null;
+  /** Predicted pour colour where fruit shifted it; null leaves the malt colour. */
+  fruitColor: string | null;
+  fruitNote: string | null;
 }
 
 /**
@@ -291,7 +294,17 @@ export function RecipesDesktopPage(): JSX.Element {
     try {
       const { stats: list } = await loadRecipeStats(refresh);
       setStats(
-        new Map(list.map((s) => [s.id, { usedDkk: s.usedDkk, hopsPerL: s.hopsPerL }])),
+        new Map(
+          list.map((s) => [
+            s.id,
+            {
+              usedDkk: s.usedDkk,
+              hopsPerL: s.hopsPerL,
+              fruitColor: s.fruitColor,
+              fruitNote: s.fruitNote,
+            },
+          ]),
+        ),
       );
       setStatsError(null);
     } catch (e) {
@@ -303,9 +316,14 @@ export function RecipesDesktopPage(): JSX.Element {
     }
   }
 
+  // The cards' fruit colours come from the same pass as the price and hop-rate
+  // sorts, so it's fetched on every visit rather than only when those sorts are
+  // picked. It doesn't block the grid — cards draw their malt colour first and
+  // the fruited ones re-tint when it lands — and both caches make repeat visits
+  // free.
   useEffect(() => {
-    if (STATS_SORTS.includes(sort) && stats === null) void loadStats();
-  }, [sort, stats]);
+    if (stats === null) void loadStats();
+  }, [stats]);
 
   /** Take the current beer out of the fermenter. */
   async function clearActive(): Promise<void> {
@@ -548,12 +566,16 @@ function RecipeCard({
   /** Show the hop rate rather than leave the card silent about what it sorted on. */
   showHopRate: boolean;
 }): JSX.Element {
-  const color = ebcColor(recipe.ebc);
+  // The edge shows what the beer pours: its malt colour until the ingredient
+  // pass reports fruit in it, which for a sour is the difference between straw
+  // and deep red.
+  const color = stats?.fruitColor ?? ebcColor(recipe.ebc);
   const styleMatch = matchContentOption(recipe.name, recipe.style);
   const ibu = num(recipe.ibu, 0);
   return (
     <Link
       to={`/recipes/${encodeURIComponent(recipe.id)}`}
+      title={stats?.fruitNote ?? undefined}
       style={color ? { borderLeftColor: color, borderLeftWidth: 3 } : undefined}
       className={`flex h-full flex-col gap-1 rounded-xl border px-4 py-3.5 transition ${
         inFermenter

@@ -11,6 +11,7 @@ import type {
   RecipeWaterProfile,
   RecipeYeast,
 } from '@checklist/shared';
+import { predictBeerColor } from '@checklist/shared';
 import {
   priceFermentable,
   priceHop,
@@ -355,8 +356,17 @@ async function fetchAllStats(apiKey: string): Promise<RecipeStats[]> {
  */
 function recipeStats(r: BrewersFriendRecipe): RecipeStats {
   const hopLines = hops(r);
-  const cost = recipeCost([...fermentables(r), ...hopLines, ...yeasts(r), ...otherIngredients(r)]);
+  const others = otherIngredients(r);
+  const cost = recipeCost([...fermentables(r), ...hopLines, ...yeasts(r), ...others]);
   const batchSizeL = batchSizeLiters(r);
+  // The grid's cards can't work this out for themselves — the recipe *list* has
+  // no ingredients — so the colour a fruited beer pours is computed here, off
+  // the same ingredient walk the costs come from.
+  const predicted = predictBeerColor({
+    ebc: recipeColorEbc(r, batchSizeL).ebc,
+    batchSizeL,
+    additions: others,
+  });
   // Only sum lines whose weight could be read; a recipe with none has no rate
   // rather than a rate of zero.
   const weighed = hopLines.filter((h) => h.grams != null);
@@ -372,6 +382,10 @@ function recipeStats(r: BrewersFriendRecipe): RecipeStats {
       hopGrams == null || batchSizeL == null || batchSizeL <= 0
         ? null
         : Math.round((hopGrams / batchSizeL) * 100) / 100,
+    // Only travels when fruit actually moved the colour; without it the card
+    // keeps drawing the malt colour it already has.
+    fruitColor: predicted?.fruit ? predicted.hex : null,
+    fruitNote: predicted?.fruit?.note ?? null,
   };
 }
 
