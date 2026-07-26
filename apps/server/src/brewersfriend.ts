@@ -7,10 +7,18 @@ import type {
   RecipeMashGuidelines,
   RecipeMashStep,
   RecipeOtherIngredient,
+  RecipeStats,
   RecipeWaterProfile,
   RecipeYeast,
 } from '@checklist/shared';
-import { priceFermentable, priceHop, priceYeast, pricingInfo, recipeCost } from './prices.js';
+import {
+  priceFermentable,
+  priceHop,
+  priceOther,
+  priceYeast,
+  pricingInfo,
+  recipeCost,
+} from './prices.js';
 
 /**
  * Brewer's Friend integration. The user's read-only API key is held server-side
@@ -86,8 +94,17 @@ interface BrewersFriendRecipe {
   fermentables?: Record<string, unknown>[];
   hops?: Record<string, unknown>[];
   yeasts?: Record<string, unknown>[];
+  // "Other ingredients" has travelled under several names across API versions.
   others?: Record<string, unknown>[];
   miscs?: Record<string, unknown>[];
+  misc?: Record<string, unknown>[];
+  other_ingredients?: Record<string, unknown>[];
+  otheringredients?: Record<string, unknown>[];
+  /** Creation date, as whichever of these the account's response carries. */
+  created_at?: string;
+  created?: string;
+  date_created?: string;
+  createdat?: string;
   mashnotes?: string;
   notes_mash?: string;
   waterprofile?: string;
@@ -158,7 +175,13 @@ function toRecipe(r: BrewersFriendRecipe): Recipe {
     // an empty swatch — an honest "unknown" rather than the palest straw.
     ebc: recipeColorEbc(r, null).ebc,
     url: publicUrl(r),
+    createdAt: createdAt(r),
   };
+}
+
+/** The recipe's creation date, under whichever key this account's plan uses. */
+function createdAt(r: BrewersFriendRecipe): string {
+  return str(r.created_at) || str(r.created) || str(r.date_created) || str(r.createdat);
 }
 
 /**
@@ -203,22 +226,33 @@ export async function listRecipes(force = false): Promise<Recipe[]> {
   return inFlight;
 }
 
+async function fetchAllRecipes(apiKey: string): Promise<Recipe[]> {
+  return (await fetchAllRaw(apiKey)).map(toRecipe);
+}
+
 /**
  * Walk every page of the account's recipes. The API caps a page at 100 and the
  * previous implementation took only the first page, so accounts past that many
  * recipes silently lost the tail. When the response reports a total, the
  * remaining pages are fetched concurrently; otherwise we page until a short one.
+ *
+ * `extra` carries per-caller query params — the costs pass asks for
+ * `ingredients=true`, which is the same walk against a much bigger payload.
  */
-async function fetchAllRecipes(apiKey: string): Promise<Recipe[]> {
+async function fetchAllRaw(
+  apiKey: string,
+  extra: Record<string, string> = {},
+): Promise<BrewersFriendRecipe[]> {
   const page = (offset: number): Record<string, string> => ({
     sort: 'created_at:-1',
     limit: String(PAGE_SIZE),
     offset: String(offset),
+    ...extra,
   });
 
   const first = await get(page(0), apiKey);
   const firstBatch = first.recipes ?? [];
-  const all = firstBatch.map(toRecipe);
+  const all = [...firstBatch];
   if (firstBatch.length < PAGE_SIZE) return all;
 
   const total = Number(first.count);
@@ -226,16 +260,108 @@ async function fetchAllRecipes(apiKey: string): Promise<Recipe[]> {
     const offsets: number[] = [];
     for (let o = PAGE_SIZE; o < total; o += PAGE_SIZE) offsets.push(o);
     const pages = await Promise.all(offsets.map((o) => get(page(o), apiKey)));
-    for (const p of pages) all.push(...(p.recipes ?? []).map(toRecipe));
+    for (const p of pages) all.push(...(p.recipes ?? []));
     return all;
   }
 
   // Total unknown — walk serially until a page comes back short.
   for (let offset = PAGE_SIZE; ; offset += PAGE_SIZE) {
     const batch = (await get(page(offset), apiKey)).recipes ?? [];
-    all.push(...batch.map(toRecipe));
+    all.push(...batch);
     if (batch.length < PAGE_SIZE) return all;
   }
+}
+
+// Costing and weighing every recipe means pulling every ingredient list, so this
+// is cached harder than the list itself: the prices come from a catalogue
+// scraped days apart, and a recipe's grain bill doesn't move between two sorts.
+const STATS_TTL_MS = 30 * 60 * 1000;
+let statsCache: { stats: RecipeStats[]; fetchedAt: number } | null = null;
+let statsInFlight: Promise<RecipeStats[]> | null = null;
+
+/** How many single-recipe fallback fetches may be in flight at once. */
+const STATS_FETCH_CONCURRENCY = 4;
+
+/**
+ * Per-recipe figures that need the ingredients — cost and hop rate — for the
+ * whole account, so the Recipes grid can sort by them. Only the totals travel;
+ * the shopping list behind a cost is a detail-page concern.
+ *
+ * One walk of the list with `ingredients=true` covers this in the same one or
+ * two upstream calls the plain list takes. Accounts whose plan doesn't return
+ * ingredients on a list query come back without them, so anything still missing
+ * is fetched one recipe at a time, a few at once; a recipe whose fetch fails is
+ * reported as unknown rather than failing the whole set.
+ */
+export async function listRecipeStats(force = false): Promise<RecipeStats[]> {
+  const apiKey = process.env.BREWERS_FRIEND_API_KEY;
+  if (!apiKey) throw new BrewersFriendNotConfiguredError();
+
+  if (!force && statsCache && Date.now() - statsCache.fetchedAt < STATS_TTL_MS) {
+    return statsCache.stats;
+  }
+  if (statsInFlight) return statsInFlight;
+
+  statsInFlight = fetchAllStats(apiKey)
+    .then((stats) => {
+      statsCache = { stats, fetchedAt: Date.now() };
+      return stats;
+    })
+    .finally(() => {
+      statsInFlight = null;
+    });
+  return statsInFlight;
+}
+
+async function fetchAllStats(apiKey: string): Promise<RecipeStats[]> {
+  const raw = await fetchAllRaw(apiKey, { ingredients: 'true' });
+  const stats = raw.map(recipeStats);
+
+  // Fill in the ones the list query returned without any ingredients at all.
+  const missing = stats
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => s.usedDkk == null && s.unpriced === 0 && s.hopGrams == null);
+  for (let i = 0; i < missing.length; i += STATS_FETCH_CONCURRENCY) {
+    const batch = missing.slice(i, i + STATS_FETCH_CONCURRENCY);
+    await Promise.all(
+      batch.map(async ({ s, i: index }) => {
+        try {
+          const body = await get({ id: s.id, ingredients: 'true' }, apiKey);
+          const one = (body.recipes ?? [])[0];
+          if (one) stats[index] = recipeStats(one);
+        } catch {
+          // Leave this recipe unknown; one bad id shouldn't cost the rest.
+        }
+      }),
+    );
+  }
+  return stats;
+}
+
+/**
+ * One recipe's cost and hop rate, over the same ingredient parsing and pricing
+ * the detail page uses, so the grid and the brew sheet can't disagree.
+ */
+function recipeStats(r: BrewersFriendRecipe): RecipeStats {
+  const hopLines = hops(r);
+  const cost = recipeCost([...fermentables(r), ...hopLines, ...yeasts(r), ...otherIngredients(r)]);
+  const batchSizeL = batchSizeLiters(r);
+  // Only sum lines whose weight could be read; a recipe with none has no rate
+  // rather than a rate of zero.
+  const weighed = hopLines.filter((h) => h.grams != null);
+  const hopGrams = weighed.length > 0 ? weighed.reduce((sum, h) => sum + (h.grams ?? 0), 0) : null;
+  return {
+    id: str(r.id),
+    // No priced line at all is "unknown", not "free" — the grid sorts those last.
+    usedDkk: cost.priced > 0 ? cost.usedDkk : null,
+    unpriced: cost.unpriced,
+    hopGrams: hopGrams == null ? null : Math.round(hopGrams * 10) / 10,
+    batchSizeL,
+    hopsPerL:
+      hopGrams == null || batchSizeL == null || batchSizeL <= 0
+        ? null
+        : Math.round((hopGrams / batchSizeL) * 100) / 100,
+  };
 }
 
 /**
@@ -254,8 +380,14 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
   const batchSizeL = batchSizeLiters(r);
   const color = recipeColorEbc(r, batchSizeL);
   // Costed once over every ingredient, so repeats of the same product pool into
-  // one purchase (see recipeCost).
-  const ingredients = { fermentables: fermentables(r), hops: hops(r), yeast: yeasts(r) };
+  // one purchase (see recipeCost). Purées count: they're often the largest single
+  // line in a sour, and a total that left them out would understate the batch.
+  const ingredients = {
+    fermentables: fermentables(r),
+    hops: hops(r),
+    yeast: yeasts(r),
+    other: otherIngredients(r),
+  };
 
   return {
     id: str(r.id),
@@ -276,7 +408,7 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
     fermentables: ingredients.fermentables,
     hops: ingredients.hops,
     yeast: ingredients.yeast,
-    otherIngredients: otherIngredients(r),
+    otherIngredients: ingredients.other,
     mashGuidelines: mashGuidelines(r),
     waterProfile: waterProfile(r),
     pricing: pricingInfo(),
@@ -284,6 +416,7 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
       ...ingredients.fermentables,
       ...ingredients.hops,
       ...ingredients.yeast,
+      ...ingredients.other,
     ]),
   };
 }
@@ -619,19 +752,58 @@ function yeasts(r: BrewersFriendRecipe): RecipeYeast[] {
 }
 
 /** Salts, finings, spices and sugars — whichever key this account's plan uses. */
+/**
+ * The recipe's "Other Ingredients" — the fruit purées in the sours, plus salts,
+ * spices and finings. Which key these arrive under varies with the account's
+ * plan and the API version, so every spelling the endpoint has been seen to use
+ * is tried before giving up.
+ */
 function otherIngredients(r: BrewersFriendRecipe): RecipeOtherIngredient[] {
-  const source = (r.others ?? []).length > 0 ? (r.others ?? []) : (r.miscs ?? []);
+  const source =
+    [r.others, r.miscs, r.misc, r.other_ingredients, r.otheringredients].find(
+      (list) => Array.isArray(list) && list.length > 0,
+    ) ?? [];
   return source
-    .map((m) => ({
-      name: str(m.name),
-      amount: str(m.amount),
-      unit: str(m.unit),
-      use: str(m.otheruse) || str(m.miscuse) || str(m.use),
-      time: str(m.othertime) || str(m.misctime) || str(m.time),
-      type: str(m.othertype) || str(m.type),
-    }))
+    .map((m) => {
+      const name = str(m.name);
+      const grams = otherGrams(m.amount, m.unit);
+      const units = toUnits(m.amount, m.unit);
+      return {
+        name,
+        amount: str(m.amount),
+        unit: str(m.unit),
+        use: str(m.otheruse) || str(m.miscuse) || str(m.use),
+        time: str(m.othertime) || str(m.misctime) || str(m.time),
+        type: str(m.othertype) || str(m.type),
+        grams,
+        price: grams == null && units == null ? null : priceOther(name, { grams, units }),
+      };
+    })
     // An unnamed row is a blank line in the brewer's recipe, not an ingredient.
     .filter((m) => m.name !== '');
+}
+
+/**
+ * Weight of an "other ingredient" line. Same conversions as everything else,
+ * except that a volume counts as a weight here: purée is bought by the kilo and
+ * written up either way, and 1 ml of it is near enough 1 g. Anything the shop
+ * sells by weight but the recipe measures by the spoonful stays unconvertible.
+ */
+function otherGrams(amount: unknown, unit: unknown): number | null {
+  const direct = toGrams(amount, unit);
+  if (direct != null) return direct;
+  const n = Number(str(amount));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  switch (str(unit).toLowerCase()) {
+    case 'ml':
+      return n;
+    case 'l':
+    case 'liter':
+    case 'litre':
+      return n * 1000;
+    default:
+      return null;
+  }
 }
 
 function mashGuidelines(r: BrewersFriendRecipe): RecipeMashGuidelines | null {

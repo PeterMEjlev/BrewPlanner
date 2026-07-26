@@ -22,6 +22,7 @@ import type {
   Reading,
   Recipe,
   RecipeDetail,
+  RecipeStatsResponse,
   Step,
   Todo,
   User,
@@ -230,6 +231,11 @@ export const api = {
   // re-read the account (the Recipes page's refresh button).
   listRecipes: (refresh = false) =>
     request<Recipe[]>(refresh ? '/recipes?refresh=1' : '/recipes'),
+  // Every recipe's cost and hop rate, for the Recipes grid's price and hops/L
+  // sorts. Heavy upstream and cached server-side for half an hour, so it's
+  // fetched only when one of those sorts is actually chosen.
+  listRecipeStats: (refresh = false) =>
+    request<RecipeStatsResponse>(refresh ? '/recipes/stats?refresh=1' : '/recipes/stats'),
   // One recipe's full brew sheet (ingredients, mash, water), for the detail page.
   getRecipe: (id: string) => request<RecipeDetail>(`/recipes/${encodeURIComponent(id)}`),
   getActiveRecipe: () => request<ActiveRecipe>('/recipe').then((r) => r.recipe),

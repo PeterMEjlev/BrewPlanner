@@ -27,6 +27,7 @@ import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
 import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
+import { pricingInfo } from '../prices.js';
 import * as telegram from '../notify/telegram.js';
 import * as repo from '../repo.js';
 import {
@@ -268,6 +269,22 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const { refresh } = req.query as { refresh?: string };
     try {
       return await bf.listRecipes(refresh === '1' || refresh === 'true');
+    } catch (err) {
+      return recipeError(err, req, reply);
+    }
+  });
+
+  // Per-recipe cost and hop rate for the whole account, for the grid's price and
+  // hops/L sorts. Registered before /recipes/:id, and matched ahead of it
+  // regardless — a static segment beats a parametric one in Fastify's router.
+  //
+  // Heavy upstream (every recipe's ingredient list) but cached for half an hour,
+  // so the Recipes page only asks for it when one of those sorts is chosen.
+  app.get('/recipes/stats', async (req, reply) => {
+    const { refresh } = req.query as { refresh?: string };
+    try {
+      const stats = await bf.listRecipeStats(refresh === '1' || refresh === 'true');
+      return { stats, pricing: pricingInfo() };
     } catch (err) {
       return recipeError(err, req, reply);
     }

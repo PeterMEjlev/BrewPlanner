@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { IngredientPrice, PurchaseLine, RecipeCost, RecipePricing } from '@checklist/shared';
@@ -67,6 +67,30 @@ interface YeastEntry {
   package_size_g?: number | null;
 }
 
+/**
+ * Anything that isn't malt, hops or yeast — in practice the fruit purées the
+ * sours are built on, but salts, spices and finings price the same way.
+ *
+ * Read from any file in `prices/` whose name mentions what it holds (see
+ * {@link OTHERS_FILE_PATTERN}), so a new scrape can be dropped in as
+ * `fruit_purees.json` without touching the code. Field names follow the
+ * existing catalogues; a per-kg price is derived from the pack when absent, so
+ * an entry only has to state a package size and what it costs.
+ */
+interface OtherEntry {
+  id?: string;
+  name: string;
+  display_name?: string;
+  producer?: string;
+  brand?: string;
+  /** Skipped when present and not 'other' — lets one file hold several kinds. */
+  category?: string;
+  price_dkk?: number | null;
+  price_per_kg_dkk?: number | null;
+  package_size_g?: number | null;
+  soldout?: boolean | null;
+}
+
 interface CatalogueFile<T> {
   currency?: string;
   last_checked?: string;
@@ -132,6 +156,10 @@ const NOISE = new Set([
 const PREPARATION = new Set([
   'flake', 'torrefied', 'unmalted', 'umaltet', 'raw', 'naked', 'dehusked',
   'husked', 'skaller', 'med', 'uden',
+  // Purée and its neighbours belong here for the same reason: a recipe's "Mango
+  // Puree" should still find a catalogue "Mango" (and vice versa), while an
+  // exact "Mango Puree" listing is preferred when the shop has one.
+  'puree', 'pulp', 'juice', 'concentrate', 'frozen', 'aseptic',
 ]);
 
 const ORIGIN_CODES = new Set([
@@ -176,6 +204,29 @@ const SYNONYMS: Record<string, string> = {
   rauch: 'smoked',
   rauchmalz: 'smoked',
   rav: 'amber',
+  // Danish fruit names, for the purées the sours are built on. The tokeniser has
+  // already folded ø/æ/å, so these are the folded spellings.
+  frugt: 'fruit',
+  pure: 'puree',
+  hindbaer: 'raspberry',
+  jordbaer: 'strawberry',
+  solbaer: 'blackcurrant',
+  ribs: 'redcurrant',
+  blaabaer: 'blueberry',
+  brombaer: 'blackberry',
+  kirsebaer: 'cherry',
+  fersken: 'peach',
+  abrikos: 'apricot',
+  blomme: 'plum',
+  ananas: 'pineapple',
+  passionsfrugt: 'passionfruit',
+  passion: 'passionfruit',
+  aeble: 'apple',
+  paere: 'pear',
+  citron: 'lemon',
+  appelsin: 'orange',
+  hyldeblomst: 'elderflower',
+  rabarber: 'rhubarb',
   // The shop's closed-up Danish flake names, opened up to the grain inside.
   havreflager: 'oat',
   majsflager: 'maize',
@@ -331,10 +382,22 @@ function readCatalogue<T>(file: string, keys: string[]): { items: T[]; lastCheck
   }
 }
 
+/**
+ * Which files in `prices/` hold non-malt/hop/yeast ingredients. Matched on the
+ * filename rather than fixed, because these come from wherever the brewery buys
+ * purée — one file per shop is normal, and a new one shouldn't need a code change.
+ */
+const OTHERS_FILE_PATTERN = /(other|puree|pure|fruit|adjunct|misc|spice|sugar|salt)/i;
+
+/** Array keys accepted inside a catalogue file, tried in order. */
+const OTHERS_KEYS = ['others', 'products', 'items', 'ingredients', 'purees', 'fruits'];
+
 interface Catalogue {
   fermentables: PricedItem[];
   hops: PricedItem[];
   yeasts: PricedItem[];
+  /** Fruit purées and the rest of the "other ingredients" list. */
+  others: PricedItem[];
   lastChecked: string;
 }
 
@@ -347,6 +410,7 @@ function catalogue(): Catalogue {
   const malts = readCatalogue<MaltEntry>('humlecentralen_malts_100g.json', ['malts', 'products']);
   const hops = readCatalogue<HopEntry>('humlecentralen_hops_100g.json', ['hops', 'products']);
   const yeasts = readCatalogue<YeastEntry>('humlecentralen_yeasts.json', ['products', 'yeasts']);
+  const others = readOtherCatalogues();
 
   cache = {
     fermentables: malts.items.flatMap((m) => {
@@ -411,9 +475,70 @@ function catalogue(): Catalogue {
         },
       ];
     }),
-    lastChecked: malts.lastChecked || hops.lastChecked || yeasts.lastChecked,
+    others: others.items.flatMap((o) => {
+      // One file may hold several kinds; anything explicitly filed as malt, hop
+      // or yeast belongs to those catalogues and their matching rules.
+      const category = (o.category ?? 'other').toLowerCase();
+      if (['malt', 'fermentable', 'hop', 'yeast'].includes(category)) return [];
+      const perKg = num(o.price_per_kg_dkk);
+      const packPrice = num(o.price_dkk);
+      const size = num(o.package_size_g);
+      // Priced by the kilo with no pack stated: cost a kilo as the "package", so
+      // 2.5 kg of purée is 2.5 of them rather than nothing.
+      const pack =
+        packPrice != null
+          ? { price: packPrice, sizeG: size }
+          : perKg != null
+            ? { price: perKg, sizeG: 1000 }
+            : null;
+      if (pack == null) return [];
+      return [
+        {
+          id: o.id ?? `other:${o.producer ?? o.brand ?? ''}:${o.name}`,
+          label: [o.producer ?? o.brand, o.name].filter(Boolean).join(' '),
+          tokens: tokenizeWords(o.name),
+          pricePerKgDkk:
+            perKg ?? (pack.sizeG == null ? null : (pack.price / pack.sizeG) * 1000),
+          packagePriceDkk: pack.price,
+          packageSizeG: pack.sizeG,
+          ebcMin: null,
+          ebcMax: null,
+          soldout: o.soldout === true,
+        },
+      ];
+    }),
+    lastChecked:
+      malts.lastChecked || hops.lastChecked || yeasts.lastChecked || others.lastChecked,
   };
   return cache;
+}
+
+/**
+ * Read every "other ingredients" catalogue in `prices/` and merge them, so the
+ * brewery can keep one file per shop. A missing directory, an unreadable file or
+ * one with no recognised array is simply no prices — the same supported state as
+ * having no catalogue at all.
+ */
+function readOtherCatalogues(): { items: OtherEntry[]; lastChecked: string } {
+  let files: string[] = [];
+  try {
+    files = readdirSync(PRICES_DIR).filter(
+      (f) => f.toLowerCase().endsWith('.json') && OTHERS_FILE_PATTERN.test(f),
+    );
+  } catch {
+    return { items: [], lastChecked: '' };
+  }
+
+  const items: OtherEntry[] = [];
+  let lastChecked = '';
+  for (const file of files) {
+    const read = readCatalogue<OtherEntry>(file, OTHERS_KEYS);
+    // A malt/hop/yeast scrape that happens to match the filename pattern (say a
+    // "sugar" file listing malts) is filtered per entry by `category` below.
+    items.push(...read.items.filter((i) => typeof i?.name === 'string' && i.name !== ''));
+    if (!lastChecked) lastChecked = read.lastChecked;
+  }
+  return { items, lastChecked };
 }
 
 /** A finite positive number, or null. */
@@ -583,6 +708,15 @@ export function priceHop(name: string, grams: number): IngredientPrice | null {
  */
 export function priceYeast(name: string, qty: Quantity): IngredientPrice | null {
   return priceLine(catalogue().yeasts, name, qty);
+}
+
+/**
+ * Cost an "other ingredient" — mostly the fruit purées in the sours, which are
+ * bought by weight and can outweigh the grain bill in cost. Takes a weight or a
+ * pack count, since a recipe may say "3 kg" or "1 each".
+ */
+export function priceOther(name: string, qty: Quantity): IngredientPrice | null {
+  return priceLine(catalogue().others, name, qty);
 }
 
 /** An ingredient line as the costing sees it. */

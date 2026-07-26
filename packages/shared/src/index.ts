@@ -127,6 +127,13 @@ export interface Recipe {
   ibu?: string;
   /** Colour in EBC as a bare number string; empty if unknown. */
   ebc?: string;
+  /**
+   * When the recipe was created on Brewer's Friend, as the API states it
+   * (ISO-ish, "2026-03-14 09:12:00"). Empty when the account's response
+   * doesn't carry a date; optional for the same reason as `ibu`/`ebc` — an
+   * active-recipe selection saved by an older build won't have it.
+   */
+  createdAt?: string;
 }
 
 /**
@@ -204,6 +211,33 @@ export interface RecipeCost {
   unpriced: number;
   /** The shopping list behind `buyDkk`. */
   purchase: PurchaseLine[];
+}
+
+/**
+ * The figures the Recipes list can't get from the list response, because they
+ * need the ingredients (GET /api/recipes/stats): what a recipe costs and how
+ * heavily it's hopped. One heavy pass covers both, so the grid can sort by
+ * either. Every field is null when it can't be worked out — an unknown, which
+ * the grid sorts last, rather than a zero.
+ */
+export interface RecipeStats {
+  id: string;
+  /** Ingredient cost of the amounts the recipe uses, DKK. */
+  usedDkk: number | null;
+  /** Lines with an amount but no catalogue price — why a total may be short. */
+  unpriced: number;
+  /** Total hops, grams. */
+  hopGrams: number | null;
+  /** Batch size in litres, as the cost/hop rates are per-batch figures. */
+  batchSizeL: number | null;
+  /** `hopGrams / batchSizeL` — the brewery's shorthand for how hoppy a beer is. */
+  hopsPerL: number | null;
+}
+
+/** GET /api/recipes/stats — one entry per recipe in the account. */
+export interface RecipeStatsResponse {
+  stats: RecipeStats[];
+  pricing: RecipePricing;
 }
 
 /** Where a recipe's prices came from, shown as a note under the cost. */
@@ -311,7 +345,11 @@ export interface RecipeYeast {
   price: IngredientPrice | null;
 }
 
-/** Anything that isn't malt, hops or yeast: salts, finings, spices, sugar. */
+/**
+ * Anything that isn't malt, hops or yeast: fruit purées, salts, finings, spices,
+ * sugar. Priced like any other line where the catalogue covers it — a 3 kg tub of
+ * mango purée is a real part of what a sour costs, and often the largest.
+ */
 export interface RecipeOtherIngredient {
   name: string;
   amount: string;
@@ -322,6 +360,9 @@ export interface RecipeOtherIngredient {
   time: string;
   /** "Water Agt", "Fining", "Spice"… */
   type: string;
+  /** Weight in grams, normalized from `amount`/`unit`; null if unreadable. */
+  grams: number | null;
+  price: IngredientPrice | null;
 }
 
 /** One rest in the mash schedule. */
@@ -818,6 +859,63 @@ export function matchContentOption(recipeName: string, recipeStyle = ''): KegCon
     if (t.includes('stout') || t.includes('porter')) return 'Stout';
   }
   return null;
+}
+
+/**
+ * Broad style families, in the order the Recipes page sorts them: pale and hoppy
+ * first, then malty, dark, and the odd ones out. Wider than the keg palette's
+ * content types on purpose — a "Berliner Weisse" and a "Gose" wear different keg
+ * colours but belong in one group when sorting a recipe list by type.
+ */
+export const RECIPE_STYLE_CATEGORIES = [
+  'IPA',
+  'Pale Ale',
+  'Lager',
+  'Wheat',
+  'Belgian & Strong',
+  'Sour',
+  'Amber & Brown',
+  'Stout & Porter',
+  'Other',
+] as const;
+export type RecipeStyleCategory = (typeof RECIPE_STYLE_CATEGORIES)[number];
+
+/**
+ * Terms that place a style in a family, checked in this order — the first hit
+ * wins, so the more specific rule has to come first. Sour leads because "Sour
+ * IPA" and "Berliner Weisse" name a second family too; wheat beats lager so a
+ * Weizenbock isn't filed under \bbock\b.
+ *
+ * Word boundaries matter: bare "alt" would otherwise match "Altbier" *and*
+ * "Salted Caramel Stout".
+ */
+const STYLE_CATEGORY_RULES: [RecipeStyleCategory, RegExp][] = [
+  ['Sour', /\b(sour|gose|berliner|lambic|gueuze|geuze|kriek|flanders|oud bruin|wild ale|brett\w*|funk)\b/],
+  ['Stout & Porter', /\b(stout|porter)\b/],
+  ['IPA', /\b(ipa|neipa|iipa|india pale ale|hazy)\b/],
+  ['Wheat', /\b(wheat|weizen|weiss\w*|weisse|wit|witbier|hefe\w*|dunkelweizen|weizenbock)\b/],
+  ['Pale Ale', /\b(pale ale|apa|xpa|blonde|golden ale|k(ö|o)lsch|cream ale|summer ale)\b/],
+  // German compounds glue the style onto a modifier — \w*bock catches Doppel-,
+  // Eis- and Maibock, while Weizenbock is already claimed by the wheat rule above.
+  ['Lager', /\b(lager|pilsner|pils|helles|m(ä|a)rzen|marzen|oktoberfest|festbier|\w*bock|schwarzbier|vienna|dunkel\w*|rauchbier|steam beer)\b/],
+  ['Belgian & Strong', /\b(belgian|saison|farmhouse|tripel|dubbel|quad\w*|abbey|abbaye|trappist|barley ?wine|strong ale|old ale|wee heavy|imperial)\b/],
+  ['Amber & Brown', /\b(amber|brown|red ale|irish red|alt|altbier|mild|scottish|bitter|esb)\b/],
+];
+
+/**
+ * The style family a recipe belongs to, read from its style first and its name
+ * second (a recipe with no style set often says "Galaxy NEIPA" in the title).
+ * Never null — anything unrecognised sorts under "Other".
+ */
+export function styleCategory(recipe: { name: string; style: string }): RecipeStyleCategory {
+  for (const text of [recipe.style, recipe.name]) {
+    if (!text) continue;
+    const t = text.toLowerCase();
+    for (const [category, pattern] of STYLE_CATEGORY_RULES) {
+      if (pattern.test(t)) return category;
+    }
+  }
+  return 'Other';
 }
 
 /** Colour for a keg's contents, or null when the content is unrecognised. */

@@ -213,6 +213,7 @@ export function RecipeDetailPage(): JSX.Element {
             fermentables: sumCost(recipe.fermentables),
             hops: sumCost(recipe.hops),
             yeast: sumCost(recipe.yeast),
+            other: sumCost(recipe.otherIngredients),
           }
         : null,
     [recipe],
@@ -360,6 +361,7 @@ export function RecipeDetailPage(): JSX.Element {
                 fermentables={costs.fermentables}
                 hops={costs.hops}
                 yeast={costs.yeast}
+                other={costs.other}
               />
             </div>
           )}
@@ -412,11 +414,15 @@ export function RecipeDetailPage(): JSX.Element {
             </Section>
           )}
 
-          {recipe.otherIngredients.length > 0 && (
+          {/* Fruit purées live here, and in a sour they can outweigh the grain
+              bill in cost — so this section is costed like any other. */}
+          {recipe.otherIngredients.length > 0 && costs && (
             <Section
               title="Other ingredients"
               icon="🧪"
-              meta={`${recipe.otherIngredients.length}`}
+              meta={[`${recipe.otherIngredients.length}`, costMeta(costs.other)]
+                .filter(Boolean)
+                .join(' · ')}
               open={!collapsed.other}
               onToggle={() => toggle('other')}
             >
@@ -434,6 +440,7 @@ export function RecipeDetailPage(): JSX.Element {
                         .filter(Boolean)
                         .join(' · ')}
                     </span>
+                    <Price price={m.price} />
                   </li>
                 ))}
               </ul>
@@ -666,11 +673,14 @@ function CostSummary({
   fermentables,
   hops,
   yeast,
+  other,
 }: {
   recipe: RecipeDetail;
   fermentables: CostTotal;
   hops: CostTotal;
   yeast: CostTotal;
+  /** Fruit purées and the rest — often the biggest line in a sour. */
+  other: CostTotal;
 }): JSX.Element | null {
   const pricing: RecipePricing = recipe.pricing;
   // The recipe-wide figures come from the server, which pools repeats of one
@@ -727,6 +737,7 @@ function CostSummary({
               fermentables.priced > 0 && `Malt ${kr(fermentables.usedDkk, 0)}`,
               hops.priced > 0 && `Hops ${kr(hops.usedDkk, 0)}`,
               yeast.priced > 0 && `Yeast ${kr(yeast.usedDkk, 0)}`,
+              other.priced > 0 && `Other ${kr(other.usedDkk, 0)}`,
             ]
               .filter(Boolean)
               .join(' · ') || 'Nothing priced'}

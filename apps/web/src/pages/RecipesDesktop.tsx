@@ -1,5 +1,10 @@
 import type { KegContentColors, Recipe } from '@checklist/shared';
-import { getRecipeColor, matchContentOption } from '@checklist/shared';
+import {
+  RECIPE_STYLE_CATEGORIES,
+  getRecipeColor,
+  matchContentOption,
+  styleCategory,
+} from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -10,10 +15,139 @@ import { FermenterIcon } from '../components/icons';
 import { useKegContentColors } from '../kegContentColors';
 import { asCleanMessage } from '../util';
 
+/**
+ * A bare number string from the API as a fixed-decimal string, or null when the
+ * field is empty or not a number — the API hands back full float precision
+ * ("5.64756"), which is noise on a card.
+ */
+function num(value: string | number | null | undefined, decimals: number): string | null {
+  const n = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
+  return Number.isFinite(n) ? n.toFixed(decimals) : null;
+}
+
+/** The same value as a number, for sorting; null when the field is empty. */
+function numeric(value: string | number | null | undefined): number | null {
+  const n = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
+  return Number.isFinite(n) ? n : null;
+}
+
 /** "West Coast IPA · 6.2%" — whichever of the two the recipe actually has. */
 function describeRecipe(recipe: Recipe): string {
-  const abv = recipe.abv ? `${recipe.abv}%` : '';
-  return [recipe.style, abv].filter(Boolean).join(' · ') || 'No style set';
+  const abv = num(recipe.abv, 1);
+  return [recipe.style, abv && `${abv}%`].filter(Boolean).join(' · ') || 'No style set';
+}
+
+/** What the grid can be ordered by, in the order the picker lists them. */
+type SortKey = 'name' | 'created' | 'type' | 'ebc' | 'ibu' | 'abv' | 'hopsPerL' | 'price';
+
+const SORT_LABELS: Record<SortKey, string> = {
+  name: 'Name',
+  created: 'Date created',
+  type: 'Type',
+  ebc: 'Colour (EBC)',
+  ibu: 'IBU',
+  abv: 'ABV',
+  hopsPerL: 'Hops / L',
+  price: 'Price',
+};
+
+/** Ascending reads differently per key, so each says what its arrow means. */
+const SORT_DIRECTION_LABELS: Record<SortKey, { asc: string; desc: string }> = {
+  name: { asc: 'A → Z', desc: 'Z → A' },
+  created: { asc: 'Oldest first', desc: 'Newest first' },
+  type: { asc: 'Pale → dark', desc: 'Dark → pale' },
+  ebc: { asc: 'Light → dark', desc: 'Dark → light' },
+  ibu: { asc: 'Low → high', desc: 'High → low' },
+  abv: { asc: 'Weak → strong', desc: 'Strong → weak' },
+  hopsPerL: { asc: 'Low → high', desc: 'High → low' },
+  price: { asc: 'Cheap → dear', desc: 'Dear → cheap' },
+};
+
+/** The two sorts that need the extra per-recipe fetch to mean anything. */
+const STATS_SORTS: SortKey[] = ['price', 'hopsPerL'];
+
+/**
+ * Which way round each key is worth reading first. Newest recipes are what a
+ * brewer wants to see when sorting by date; everything else reads naturally
+ * ascending. Applied on picking a key, and freely flipped afterwards.
+ */
+const SORT_DEFAULT_DIRECTION: Record<SortKey, 'asc' | 'desc'> = {
+  name: 'asc',
+  created: 'desc',
+  type: 'asc',
+  ebc: 'asc',
+  ibu: 'asc',
+  abv: 'asc',
+  hopsPerL: 'asc',
+  price: 'asc',
+};
+
+/** What a recipe's ingredients say about it, once the stats pass has run. */
+interface Stats {
+  usedDkk: number | null;
+  hopsPerL: number | null;
+}
+
+/**
+ * Creation date as a timestamp. Brewer's Friend writes "2026-03-14 09:12:00",
+ * which Safari won't parse as-is, so the space becomes a T before it's read.
+ */
+function createdTime(recipe: Recipe): number | null {
+  const raw = (recipe.createdAt ?? '').trim();
+  if (raw === '') return null;
+  const t = Date.parse(raw.includes('T') ? raw : raw.replace(' ', 'T'));
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * Order the grid. Whatever the key and direction, a recipe the value is unknown
+ * for (no EBC, no IBU, no date, nothing priceable) sinks to the bottom rather
+ * than riding to the top on a reversal, and ties fall back to the name so the
+ * grid never reshuffles between renders.
+ */
+function sortRecipes(
+  recipes: Recipe[],
+  key: SortKey,
+  dir: 'asc' | 'desc',
+  stats: Map<string, Stats> | null,
+): Recipe[] {
+  const sign = dir === 'asc' ? 1 : -1;
+  const byName = (a: Recipe, b: Recipe): number =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+
+  const byNumber =
+    (pick: (r: Recipe) => number | null) =>
+    (a: Recipe, b: Recipe): number => {
+      const x = pick(a);
+      const y = pick(b);
+      if (x == null || y == null) {
+        if (x == null && y == null) return byName(a, b);
+        return x == null ? 1 : -1;
+      }
+      return x === y ? byName(a, b) : (x - y) * sign;
+    };
+
+  const comparators: Record<SortKey, (a: Recipe, b: Recipe) => number> = {
+    name: (a, b) => byName(a, b) * sign,
+    created: byNumber(createdTime),
+    type: (a, b) => {
+      // Family first, then the specific style inside it — "IPA" groups
+      // American/New England/Imperial together, alphabetically within.
+      const family =
+        RECIPE_STYLE_CATEGORIES.indexOf(styleCategory(a)) -
+        RECIPE_STYLE_CATEGORIES.indexOf(styleCategory(b));
+      if (family !== 0) return family * sign;
+      const style = a.style.localeCompare(b.style, undefined, { sensitivity: 'base' });
+      return (style !== 0 ? style : byName(a, b)) * sign;
+    },
+    ebc: byNumber((r) => numeric(r.ebc)),
+    ibu: byNumber((r) => numeric(r.ibu)),
+    abv: byNumber((r) => numeric(r.abv)),
+    hopsPerL: byNumber((r) => stats?.get(r.id)?.hopsPerL ?? null),
+    price: byNumber((r) => stats?.get(r.id)?.usedDkk ?? null),
+  };
+
+  return [...recipes].sort(comparators[key]);
 }
 
 /**
@@ -66,6 +200,13 @@ export function RecipesDesktopPage(): JSX.Element {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [sort, setSort] = useState<SortKey>('name');
+  const [dir, setDir] = useState<'asc' | 'desc'>('asc');
+  // Recipe id → cost and hop rate. Null until a sort that needs them asks:
+  // working these out means pulling every recipe's ingredient list upstream.
+  const [stats, setStats] = useState<Map<string, Stats> | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   /** Load (or reload) the list plus the current fermenter selection. */
   async function load(refresh = false): Promise<void> {
@@ -91,6 +232,33 @@ export function RecipesDesktopPage(): JSX.Element {
   useEffect(() => {
     void load();
   }, []);
+
+  /**
+   * Cost and weigh the whole account, once, the first time a sort needs it.
+   * Until it lands every recipe reads as unknown, so the grid stays in a stable
+   * order and simply re-sorts when the numbers arrive.
+   */
+  async function loadStats(refresh = false): Promise<void> {
+    if (statsLoading) return;
+    setStatsLoading(true);
+    try {
+      const { stats: list } = await api.listRecipeStats(refresh);
+      setStats(
+        new Map(list.map((s) => [s.id, { usedDkk: s.usedDkk, hopsPerL: s.hopsPerL }])),
+      );
+      setStatsError(null);
+    } catch (e) {
+      // An empty map, not null, so a failed pass isn't retried on every render.
+      setStats((prev) => prev ?? new Map());
+      setStatsError(asCleanMessage(e));
+    } finally {
+      setStatsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (STATS_SORTS.includes(sort) && stats === null) void loadStats();
+  }, [sort, stats]);
 
   /** Take the current beer out of the fermenter. */
   async function clearActive(): Promise<void> {
@@ -120,6 +288,11 @@ export function RecipesDesktopPage(): JSX.Element {
     );
   }, [recipes, search]);
 
+  const sorted = useMemo(
+    () => sortRecipes(filtered, sort, dir, stats),
+    [filtered, sort, dir, stats],
+  );
+
   return (
     <DashboardShell active="recipes">
       <main className="w-full max-w-[1100px] px-5 py-5">
@@ -131,7 +304,9 @@ export function RecipesDesktopPage(): JSX.Element {
               is in the fermenter — that&rsquo;s the beer shown on the Overview and the kiosk.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          {/* Search, sort and refresh; wraps rather than overflowing once the
+              sort picker joins them on a narrow window. */}
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {recipes != null && recipes.length > 0 && (
               <>
                 <input
@@ -140,8 +315,35 @@ export function RecipesDesktopPage(): JSX.Element {
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search recipes…"
                   aria-label="Search recipes"
-                  className="w-56 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#f87a68]"
+                  className="w-48 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#f87a68]"
                 />
+                {/* Sort key + direction. Price is the one that costs an extra
+                    round trip, so it's fetched on selection, not on load. */}
+                <select
+                  value={sort}
+                  onChange={(e) => {
+                    const key = e.target.value as SortKey;
+                    setSort(key);
+                    setDir(SORT_DEFAULT_DIRECTION[key]);
+                  }}
+                  aria-label="Sort recipes by"
+                  className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-[#f87a68]"
+                >
+                  {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+                    <option key={key} value={key}>
+                      Sort: {SORT_LABELS[key]}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+                  title={`Sorted ${SORT_DIRECTION_LABELS[sort][dir]}`}
+                  aria-label={`Sorted ${SORT_DIRECTION_LABELS[sort][dir]}. Reverse the order.`}
+                  className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100"
+                >
+                  {dir === 'asc' ? '↑' : '↓'}
+                </button>
                 <span className="hidden rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400 sm:inline">
                   <span className="font-semibold text-zinc-100">{filtered.length}</span> recipe
                   {filtered.length === 1 ? '' : 's'}
@@ -149,10 +351,14 @@ export function RecipesDesktopPage(): JSX.Element {
               </>
             )}
             {/* The server caches the list for a few minutes; this forces a
-                re-read after editing a recipe on Brewer's Friend. */}
+                re-read after editing a recipe on Brewer's Friend. Prices are
+                cached separately and only re-read once they're on the page. */}
             <button
               type="button"
-              onClick={() => void load(true)}
+              onClick={() => {
+                void load(true);
+                if (stats) void loadStats(true);
+              }}
               disabled={refreshing}
               title="Refresh from Brewer's Friend"
               aria-label="Refresh from Brewer's Friend"
@@ -237,13 +443,36 @@ export function RecipesDesktopPage(): JSX.Element {
             No recipes match “{search.trim()}”.
           </div>
         ) : (
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((r) => (
-              <li key={r.id}>
-                <RecipeCard recipe={r} inFermenter={r.id === active?.id} colors={colors} />
-              </li>
-            ))}
-          </ul>
+          <>
+            {/* Only for the sorts that depend on the second fetch — the orders
+                that can be visibly incomplete. */}
+            {STATS_SORTS.includes(sort) && (statsLoading || statsError) && (
+              <div
+                className={`mb-3 rounded-lg border px-4 py-2 text-sm ${
+                  statsError
+                    ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                    : 'border-zinc-800 bg-zinc-900 text-zinc-400'
+                }`}
+              >
+                {statsError
+                  ? `Ingredient figures unavailable — ${statsError}`
+                  : 'Reading every recipe’s ingredients…'}
+              </div>
+            )}
+            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {sorted.map((r) => (
+                <li key={r.id}>
+                  <RecipeCard
+                    recipe={r}
+                    inFermenter={r.id === active?.id}
+                    colors={colors}
+                    stats={stats?.get(r.id) ?? null}
+                    showHopRate={sort === 'hopsPerL'}
+                  />
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </main>
     </DashboardShell>
@@ -260,13 +489,20 @@ function RecipeCard({
   recipe,
   inFermenter,
   colors,
+  stats,
+  showHopRate,
 }: {
   recipe: Recipe;
   inFermenter: boolean;
   colors: KegContentColors;
+  /** Cost and hop rate; null until a sort that needs them has fetched them. */
+  stats: Stats | null;
+  /** Show the hop rate rather than leave the card silent about what it sorted on. */
+  showHopRate: boolean;
 }): JSX.Element {
   const color = ebcColor(recipe.ebc);
   const styleMatch = matchContentOption(recipe.name, recipe.style);
+  const ibu = num(recipe.ibu, 0);
   return (
     <Link
       to={`/recipes/${encodeURIComponent(recipe.id)}`}
@@ -285,7 +521,13 @@ function RecipeCard({
       </span>
       <span className="w-full truncate pl-[18px] text-xs text-zinc-500">
         {describeRecipe(recipe)}
-        {recipe.ibu && ` · ${recipe.ibu} IBU`}
+        {ibu && ` · ${ibu} IBU`}
+        {/* Only once known, so the line doesn't shift about on every load. The
+            hop rate is shown when it's what the grid is ordered by; the cost is
+            worth keeping visible either way, since it's the harder number to
+            find elsewhere. */}
+        {showHopRate && stats?.hopsPerL != null && ` · ${stats.hopsPerL.toFixed(1)} g/L`}
+        {stats?.usedDkk != null && ` · ${Math.round(stats.usedDkk)} kr`}
       </span>
       <span className="mt-auto pl-[18px] pt-2 text-xs font-semibold text-[#f87a68]">
         {inFermenter ? '✓ In the fermenter' : ' '}
