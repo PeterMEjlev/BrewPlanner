@@ -763,20 +763,14 @@ function FermenterCommandCenter({
               <BeerStyleDot color={recipeColor} label={recipeMatch} />
             </h2>
             {recipe ? (
-              controllable ? (
-                <Link
-                  to="/recipes"
-                  className="block truncate text-xs text-zinc-500 transition hover:text-white"
-                >
-                  {recipe.name}
-                  {recipe.style ? ` (${recipe.style})` : ''}
-                </Link>
-              ) : (
-                <span className="block truncate text-xs text-zinc-500">
-                  {recipe.name}
-                  {recipe.style ? ` (${recipe.style})` : ''}
-                </span>
-              )
+              <Link
+                to={`/recipes/${encodeURIComponent(recipe.id)}`}
+                className="block truncate text-xs text-zinc-500 transition hover:text-white"
+                title="Open this recipe's brew sheet"
+              >
+                {recipe.name}
+                {recipe.style ? ` (${recipe.style})` : ''}
+              </Link>
             ) : controllable ? (
               <Link
                 to="/recipes"
@@ -1078,22 +1072,17 @@ function FermenterCommandCenter({
               <span className="truncate">{name}</span>
               <BeerStyleDot color={recipeColor} label={recipeMatch} />
             </h2>
+            {/* The beer's name opens its brew sheet — readable by guests too,
+                even though only an admin can change what's in the fermenter. */}
             {recipe ? (
-              controllable ? (
-                <Link
-                  to="/recipes"
-                  className="block truncate text-sm text-zinc-500 transition hover:text-white"
-                  title="Change recipe"
-                >
-                  {recipe.name}
-                  {recipe.style ? ` (${recipe.style})` : ''}
-                </Link>
-              ) : (
-                <span className="block truncate text-sm text-zinc-500">
-                  {recipe.name}
-                  {recipe.style ? ` (${recipe.style})` : ''}
-                </span>
-              )
+              <Link
+                to={`/recipes/${encodeURIComponent(recipe.id)}`}
+                className="block truncate text-sm text-zinc-500 transition hover:text-white"
+                title="Open this recipe's brew sheet"
+              >
+                {recipe.name}
+                {recipe.style ? ` (${recipe.style})` : ''}
+              </Link>
             ) : controllable ? (
               <Link
                 to="/recipes"

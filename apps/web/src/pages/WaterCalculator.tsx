@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { DashboardShell } from '../components/DashboardShell';
 import {
   DEFAULT_SOURCE,
@@ -83,8 +84,41 @@ function loadState(): CalcState {
   }
 }
 
+/**
+ * A recipe's target profile, handed over from its brew sheet as query params
+ * (`/water?ca=80&…&volume=30&recipe=Hazy%20IPA`). Overlaid on the saved state so
+ * the calculator opens on that recipe's numbers, with best-fit salts already
+ * solved — the same "answer on screen immediately" treatment as a first visit.
+ *
+ * Only the ions actually present are applied; anything the recipe leaves blank
+ * keeps its saved value rather than silently becoming zero.
+ */
+function applyQueryParams(base: CalcState, params: URLSearchParams): CalcState {
+  const target = { ...base.target };
+  let sawIon = false;
+  for (const ion of IONS) {
+    const raw = params.get(ion);
+    if (raw === null) continue;
+    const n = Number.parseFloat(raw);
+    if (!Number.isFinite(n) || n < 0) continue;
+    target[ion] = n;
+    sawIon = true;
+  }
+  if (!sawIon) return base;
+
+  const volume = Number.parseFloat(params.get('volume') ?? '');
+  const volumeL = Number.isFinite(volume) && volume > 0 ? volume : base.volumeL;
+  const source = base.sourceMode === 'ro' ? EMPTY_PROFILE : base.source;
+  return { ...base, target, volumeL, salts: suggestSalts(source, target, volumeL) };
+}
+
 export function WaterCalculatorPage(): JSX.Element {
-  const [state, setState] = useState<CalcState>(loadState);
+  const [params] = useSearchParams();
+  // Read once on mount: the recipe hand-off seeds the page, then it behaves like
+  // any other visit (edits persist to localStorage as usual).
+  const [state, setState] = useState<CalcState>(() => applyQueryParams(loadState(), params));
+  const fromRecipe = params.get('recipe');
+  const fromRecipeId = params.get('recipeId');
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -123,6 +157,29 @@ export function WaterCalculatorPage(): JSX.Element {
   return (
     <DashboardShell active="water">
       <main className="w-full max-w-[1280px] px-5 py-5">
+        {/* Arrived from a recipe's brew sheet. The volume warning matters: a
+            recipe's batch size is what goes into the fermenter, while the salts
+            have to be dosed into the whole mash + sparge volume, which is
+            larger — so the pre-filled figure is a starting point, not the answer. */}
+        {fromRecipe && (
+          <div className="mb-5 rounded-xl border border-[#f87a68]/40 bg-[#f87a68]/10 px-4 py-3 text-sm text-zinc-200">
+            <span className="font-semibold">Target profile from {fromRecipe}.</span>{' '}
+            {params.get('volume')
+              ? `Water volume is set to the recipe's ${params.get('volume')} L batch size — raise it to your actual total mash + sparge water.`
+              : 'Check the water volume below before dosing.'}
+            {fromRecipeId && (
+              <>
+                {' '}
+                <Link
+                  to={`/recipes/${encodeURIComponent(fromRecipeId)}`}
+                  className="font-semibold text-[#f87a68] underline-offset-2 hover:underline"
+                >
+                  Back to recipe
+                </Link>
+              </>
+            )}
+          </div>
+        )}
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_30rem]">
           {/* Inputs ----------------------------------------------------------- */}
           <div className="space-y-5">

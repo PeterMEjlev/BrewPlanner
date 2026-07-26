@@ -42,6 +42,19 @@ function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T |
 }
 
 /**
+ * Shared failure handling for the two Brewer's Friend proxy routes: a missing
+ * API key is a configuration problem the user can fix (503, message shown on the
+ * page), anything else is an upstream failure (502).
+ */
+function recipeError(err: unknown, req: FastifyRequest, reply: FastifyReply): FastifyReply {
+  if (err instanceof bf.BrewersFriendNotConfiguredError) {
+    return reply.status(503).send({ error: err.message });
+  }
+  req.log.error(err, 'Brewer\'s Friend recipe fetch failed');
+  return reply.status(502).send({ error: 'Could not reach Brewer\'s Friend' });
+}
+
+/**
  * Route options that add the admin-or-local guard on top of the plugin-wide
  * requireAuth hook. Applied to every mutating route below so a logged-in guest
  * (read-only) is refused with 403 while the kiosk/LAN and admins pass. GET
@@ -243,16 +256,30 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   // --- Brewer's Friend recipes -----------------------------------------
   // List the account's recipes (server-side proxy; the API key stays on the
-  // server). 503 when no key is configured; 502 if the upstream call fails.
+  // server). Served from a short server-side cache; `?refresh=1` (the Recipes
+  // page's refresh button) forces a re-walk of the upstream pages.
+  // 503 when no key is configured; 502 if the upstream call fails.
   app.get('/recipes', async (req, reply) => {
+    const { refresh } = req.query as { refresh?: string };
     try {
-      return await bf.listRecipes();
+      return await bf.listRecipes(refresh === '1' || refresh === 'true');
     } catch (err) {
-      if (err instanceof bf.BrewersFriendNotConfiguredError) {
-        return reply.status(503).send({ error: err.message });
+      return recipeError(err, req, reply);
+    }
+  });
+
+  // One recipe's full brew sheet — ingredients, mash schedule and water targets.
+  // A separate (much heavier) upstream call than the list, so the Recipes page
+  // only makes it when a detail view is opened.
+  app.get('/recipes/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      return await bf.getRecipe(id);
+    } catch (err) {
+      if (err instanceof bf.RecipeNotFoundError) {
+        return reply.status(404).send({ error: err.message });
       }
-      req.log.error(err, 'Brewer\'s Friend recipe fetch failed');
-      return reply.status(502).send({ error: 'Could not reach Brewer\'s Friend' });
+      return recipeError(err, req, reply);
     }
   });
 
@@ -268,6 +295,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       style: body.style ?? '',
       abv: body.abv ?? '',
       url: body.url ?? '',
+      ibu: body.ibu ?? '',
+      ebc: body.ebc ?? '',
     });
     return { recipe };
   });

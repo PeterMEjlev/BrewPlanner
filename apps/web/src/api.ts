@@ -21,6 +21,7 @@ import type {
   NowPlaying,
   Reading,
   Recipe,
+  RecipeDetail,
   Step,
   Todo,
   User,
@@ -225,7 +226,12 @@ export const api = {
   // Brewer's Friend recipes. listRecipes proxies the user's account via the
   // server (the API key stays server-side); the active recipe is the one shown
   // on the kiosk fermenter card.
-  listRecipes: () => request<Recipe[]>('/recipes'),
+  // The server caches the list for a few minutes — `refresh` forces it to
+  // re-read the account (the Recipes page's refresh button).
+  listRecipes: (refresh = false) =>
+    request<Recipe[]>(refresh ? '/recipes?refresh=1' : '/recipes'),
+  // One recipe's full brew sheet (ingredients, mash, water), for the detail page.
+  getRecipe: (id: string) => request<RecipeDetail>(`/recipes/${encodeURIComponent(id)}`),
   getActiveRecipe: () => request<ActiveRecipe>('/recipe').then((r) => r.recipe),
   setActiveRecipe: (recipe: Recipe) =>
     request<ActiveRecipe>('/recipe', {

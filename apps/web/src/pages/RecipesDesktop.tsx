@@ -1,21 +1,14 @@
-import type { KegContentColors, Recipe } from '@checklist/shared';
+import type { Recipe } from '@checklist/shared';
 import { getRecipeColor, matchContentOption } from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
+import { ebcColor } from '../beerColor';
 import { DashboardShell } from '../components/DashboardShell';
 import { FermenterIcon } from '../components/icons';
 import { useKegContentColors } from '../kegContentColors';
-import { hexToRgb } from '../kegs';
-import { asMessage } from '../util';
-
-/** Sentinel for the page's `saving` id while the choice is being cleared. */
-const CLEARING = '\0clear';
-
-/** Strip the leading "<status>: " our api client prefixes onto error messages. */
-function cleanError(err: unknown): string {
-  return asMessage(err).replace(/^\d{3}:\s*/, '');
-}
+import { asCleanMessage } from '../util';
 
 /** "West Coast IPA · 6.2%" — whichever of the two the recipe actually has. */
 function describeRecipe(recipe: Recipe): string {
@@ -48,71 +41,69 @@ function StyleDot({
 }
 
 /**
- * Desktop Recipes — the mouse-and-keyboard counterpart to the kiosk's touch
- * recipe picker ([Recipes.tsx]). The Overview's fermenter card links here to set
- * (or change) the beer currently fermenting; the list comes from the user's
- * Brewer's Friend account, proxied by the server so the API key stays
- * server-side.
+ * Desktop Recipes — the brewery's Brewer's Friend account, browsable from the
+ * sidebar. The list comes from the server (the API key stays server-side); each
+ * card opens that recipe's full brew sheet at /recipes/:id, where the grain bill,
+ * hop schedule, mash steps and water targets live, and where a recipe can be put
+ * in the fermenter.
  *
- * Unlike the kiosk — which picks a recipe and bounces straight back to the home
- * screen, because a touchscreen operator only ever wants the one tap — this page
- * stays put: it's browsable (search, a link out to each recipe's Brewer's Friend
- * page), so the choice lands in place and the user leaves when they're done.
+ * Two colour systems meet on this page, deliberately: the "In the fermenter"
+ * block below uses the brewery's own style palette (the colour that style wears
+ * on the kegs and the Overview), while the recipe cards use the beer's physical
+ * colour computed from its EBC — which is what a brewer reading a recipe expects
+ * to see, and what the detail page shows.
  */
 export function RecipesDesktopPage(): JSX.Element {
   const { auth } = useAuth();
-  // Setting the fermenter's recipe is admin-only server-side (PUT/DELETE
-  // /api/recipe), so a read-only guest gets the same list without the controls.
+  // Clearing the fermenter's recipe is admin-only server-side (DELETE
+  // /api/recipe), so a read-only guest gets the same list without the control.
   const controllable = canControl(auth);
-  // Shared beer-style palette (same one the kegs use), so a style wears its
-  // colour here too.
   const colors = useKegContentColors();
 
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [active, setActive] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  // The recipe id being written (or CLEARING), so only that card goes busy.
-  const [saving, setSaving] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const [list, current] = await Promise.all([api.listRecipes(), api.getActiveRecipe()]);
-        if (cancelled) return;
-        setRecipes(list);
-        setActive(current);
-        setError(null);
-      } catch (e) {
-        // The list is the page — a failure here (no API key, upstream down)
-        // leaves the empty state with the reason on it.
-        if (!cancelled) {
-          setRecipes([]);
-          setError(cleanError(e));
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  /** Persist the fermenter's recipe (or clear it) and reflect it in place. */
-  async function choose(recipe: Recipe | null): Promise<void> {
-    if (saving) return;
-    setSaving(recipe?.id ?? CLEARING);
+  /** Load (or reload) the list plus the current fermenter selection. */
+  async function load(refresh = false): Promise<void> {
+    if (refresh) setRefreshing(true);
     try {
-      if (recipe) setActive(await api.setActiveRecipe(recipe));
-      else {
-        await api.clearActiveRecipe();
-        setActive(null);
-      }
+      const [list, current] = await Promise.all([
+        api.listRecipes(refresh),
+        api.getActiveRecipe(),
+      ]);
+      setRecipes(list);
+      setActive(current);
       setError(null);
     } catch (e) {
-      setError(cleanError(e));
+      // The list is the page — a failure here (no API key, upstream down)
+      // leaves the empty state with the reason on it.
+      setRecipes((prev) => prev ?? []);
+      setError(asCleanMessage(e));
     } finally {
-      setSaving(null);
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  /** Take the current beer out of the fermenter. */
+  async function clearActive(): Promise<void> {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      await api.clearActiveRecipe();
+      setActive(null);
+      setError(null);
+    } catch (e) {
+      setError(asCleanMessage(e));
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -136,26 +127,40 @@ export function RecipesDesktopPage(): JSX.Element {
           <div className="min-w-0">
             <h1 className="text-lg font-semibold tracking-tight text-zinc-50">Recipes</h1>
             <p className="mt-0.5 text-sm text-zinc-500">
-              Your Brewer&rsquo;s Friend recipes. Pick the one in the fermenter — it sets the
-              beer shown on the Overview and the kiosk.
+              Your Brewer&rsquo;s Friend recipes. Open one for the full brew sheet, or set what
+              is in the fermenter — that&rsquo;s the beer shown on the Overview and the kiosk.
             </p>
           </div>
-          {recipes != null && recipes.length > 0 && (
-            <div className="flex items-center gap-3">
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search recipes…"
-                aria-label="Search recipes"
-                className="w-56 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#f87a68]"
-              />
-              <span className="hidden rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400 sm:inline">
-                <span className="font-semibold text-zinc-100">{filtered.length}</span> recipe
-                {filtered.length === 1 ? '' : 's'}
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {recipes != null && recipes.length > 0 && (
+              <>
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search recipes…"
+                  aria-label="Search recipes"
+                  className="w-56 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#f87a68]"
+                />
+                <span className="hidden rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400 sm:inline">
+                  <span className="font-semibold text-zinc-100">{filtered.length}</span> recipe
+                  {filtered.length === 1 ? '' : 's'}
+                </span>
+              </>
+            )}
+            {/* The server caches the list for a few minutes; this forces a
+                re-read after editing a recipe on Brewer's Friend. */}
+            <button
+              type="button"
+              onClick={() => void load(true)}
+              disabled={refreshing}
+              title="Refresh from Brewer's Friend"
+              aria-label="Refresh from Brewer's Friend"
+              className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
+            >
+              {refreshing ? '…' : '↻'}
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -164,9 +169,8 @@ export function RecipesDesktopPage(): JSX.Element {
           </div>
         )}
 
-        {/* What's fermenting right now — the reason this page exists, so it sits
-            above the list rather than being inferred from a highlighted card. The
-            icon takes the beer's own colour when the style is recognised. */}
+        {/* What's fermenting right now — set from a recipe's own page, shown here
+            so the page answers "what's in the tank?" without a detour. */}
         <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
           <FermenterIcon
             className="h-10 w-10 shrink-0 text-white"
@@ -181,13 +185,20 @@ export function RecipesDesktopPage(): JSX.Element {
               <>
                 <div className="flex items-center gap-2">
                   <StyleDot color={activeColor} label={activeMatch} />
-                  <span className="truncate text-base font-semibold text-zinc-50">{active.name}</span>
+                  <Link
+                    to={`/recipes/${encodeURIComponent(active.id)}`}
+                    className="truncate text-base font-semibold text-zinc-50 transition hover:text-[#f87a68]"
+                  >
+                    {active.name}
+                  </Link>
                 </div>
                 <div className="truncate text-sm text-zinc-400">{describeRecipe(active)}</div>
               </>
             ) : (
               <div className="mt-0.5 text-sm text-zinc-500">
-                {controllable ? 'Nothing linked yet — pick a recipe below.' : 'No recipe linked.'}
+                {controllable
+                  ? 'Nothing linked yet — open a recipe below and set it in the fermenter.'
+                  : 'No recipe linked.'}
               </div>
             )}
           </div>
@@ -204,11 +215,11 @@ export function RecipesDesktopPage(): JSX.Element {
           {active && controllable && (
             <button
               type="button"
-              onClick={() => void choose(null)}
-              disabled={saving != null}
+              onClick={() => void clearActive()}
+              disabled={clearing}
               className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
             >
-              {saving === CLEARING ? 'Clearing…' : 'Clear'}
+              {clearing ? 'Clearing…' : 'Clear'}
             </button>
           )}
         </section>
@@ -229,15 +240,7 @@ export function RecipesDesktopPage(): JSX.Element {
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((r) => (
               <li key={r.id}>
-                <RecipeCard
-                  recipe={r}
-                  colors={colors}
-                  selected={r.id === active?.id}
-                  selectable={controllable}
-                  busy={saving === r.id}
-                  disabled={saving != null}
-                  onSelect={() => void choose(r)}
-                />
+                <RecipeCard recipe={r} inFermenter={r.id === active?.id} />
               </li>
             ))}
           </ul>
@@ -248,81 +251,46 @@ export function RecipesDesktopPage(): JSX.Element {
 }
 
 /**
- * One recipe in the grid. The whole card selects it; the Brewer's Friend link is
- * a sibling pinned to the corner rather than a child, since a link nested in a
- * button is invalid markup (and would swallow the click). A recognised beer
- * style tints the card with its palette colour (a left edge + faint wash),
- * matching the keg cards.
+ * One recipe in the grid — a link to its brew sheet. The colour bar down the left
+ * is the beer's own colour from its EBC, so the grid reads as a row of beers; the
+ * one in the fermenter keeps the coral highlight.
  */
 function RecipeCard({
   recipe,
-  colors,
-  selected,
-  selectable,
-  busy,
-  disabled,
-  onSelect,
+  inFermenter,
 }: {
   recipe: Recipe;
-  colors: KegContentColors;
-  selected: boolean;
-  /** False for read-only guests: the card renders, but picking is off. */
-  selectable: boolean;
-  busy: boolean;
-  disabled: boolean;
-  onSelect: () => void;
+  inFermenter: boolean;
 }): JSX.Element {
-  const color = getRecipeColor(recipe, colors);
-  const match = matchContentOption(recipe.name, recipe.style);
-  // The selected card keeps the coral highlight; an unselected one with a known
-  // style gets a subtle tint of the beer's colour (left edge + faint wash).
-  const tint: React.CSSProperties =
-    !selected && color
-      ? {
-          borderLeftColor: color,
-          borderLeftWidth: 3,
-          background: `linear-gradient(135deg, rgba(${hexToRgb(color)}, 0.1), rgb(24 24 27))`,
-        }
-      : {};
+  const color = ebcColor(recipe.ebc);
   return (
-    <div className="relative h-full">
-      <button
-        type="button"
-        onClick={onSelect}
-        disabled={!selectable || disabled}
-        aria-pressed={selected}
-        style={tint}
-        className={`flex h-full w-full flex-col items-start gap-1 rounded-xl border px-4 py-3.5 pr-12 text-left transition disabled:cursor-default ${
-          selected
-            ? 'border-[#f87a68] bg-gradient-to-br from-[#f87a68]/25 to-[#e0463f]/25'
-            : 'border-zinc-800 bg-zinc-900 enabled:hover:border-zinc-700 enabled:hover:bg-zinc-800/60'
-        } ${disabled && !busy ? 'opacity-60' : ''}`}
-      >
-        <span className="flex w-full items-center gap-2">
-          <StyleDot color={color} label={match} />
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
-            {recipe.name}
-          </span>
+    <Link
+      to={`/recipes/${encodeURIComponent(recipe.id)}`}
+      style={color ? { borderLeftColor: color, borderLeftWidth: 3 } : undefined}
+      className={`flex h-full flex-col gap-1 rounded-xl border px-4 py-3.5 transition ${
+        inFermenter
+          ? 'border-[#f87a68] bg-gradient-to-br from-[#f87a68]/25 to-[#e0463f]/25'
+          : 'border-zinc-800 bg-zinc-900 hover:border-zinc-700 hover:bg-zinc-800/60'
+      }`}
+    >
+      <span className="flex w-full items-center gap-2">
+        <span
+          className={`h-2.5 w-2.5 shrink-0 rounded-full ${color ? '' : 'border border-zinc-600'}`}
+          style={color ? { backgroundColor: color } : undefined}
+          title={recipe.ebc ? `${recipe.ebc} EBC` : 'Colour unknown'}
+          aria-hidden
+        />
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
+          {recipe.name}
         </span>
-        <span className="w-full truncate pl-[18px] text-xs text-zinc-500">
-          {describeRecipe(recipe)}
-        </span>
-        <span className="mt-auto pl-[18px] pt-2 text-xs font-semibold text-[#f87a68]">
-          {busy ? 'Saving…' : selected ? '✓ In the fermenter' : ' '}
-        </span>
-      </button>
-      {recipe.url && (
-        <a
-          href={recipe.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Open on Brewer's Friend"
-          aria-label={`Open ${recipe.name} on Brewer's Friend`}
-          className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-100"
-        >
-          ↗
-        </a>
-      )}
-    </div>
+      </span>
+      <span className="w-full truncate pl-[18px] text-xs text-zinc-500">
+        {describeRecipe(recipe)}
+        {recipe.ibu && ` · ${recipe.ibu} IBU`}
+      </span>
+      <span className="mt-auto pl-[18px] pt-2 text-xs font-semibold text-[#f87a68]">
+        {inFermenter ? '✓ In the fermenter' : ' '}
+      </span>
+    </Link>
   );
 }

@@ -105,9 +105,10 @@ export interface AuthState {
 // ---------------------------------------------------------------------------
 
 /**
- * A recipe from the user's Brewer's Friend account, normalized down to just the
- * fields the kiosk needs. The server proxies the Brewer's Friend API (key held
- * server-side) and maps each recipe to this shape.
+ * A recipe from the user's Brewer's Friend account, normalized down to the
+ * fields the list views need. The server proxies the Brewer's Friend API (key
+ * held server-side) and maps each recipe to this shape. The full brew sheet —
+ * ingredients, mash, water — is a separate, heavier fetch: {@link RecipeDetail}.
  */
 export interface Recipe {
   id: string;
@@ -118,6 +119,14 @@ export interface Recipe {
   abv: string;
   /** Public Brewer's Friend recipe page URL; empty if unknown. */
   url: string;
+  /**
+   * Bitterness (Tinseth IBU) as a bare number string; empty if unknown.
+   * Optional because the stored "active recipe" predates these two fields —
+   * a selection saved by an older build won't have them.
+   */
+  ibu?: string;
+  /** Colour in EBC as a bare number string; empty if unknown. */
+  ebc?: string;
 }
 
 /**
@@ -126,6 +135,144 @@ export interface Recipe {
  */
 export interface ActiveRecipe {
   recipe: Recipe | null;
+}
+
+/** One malt/sugar in a recipe's grain bill. */
+export interface RecipeFermentable {
+  name: string;
+  /** Amount as written in the recipe, with `unit` (kg, g, lb, oz). */
+  amount: string;
+  unit: string;
+  /** Share of the total grain bill, as a bare number string; may be empty. */
+  percent: string;
+  /** Grain colour in EBC, converted from the API's Lovibond; null if unknown. */
+  ebc: number | null;
+}
+
+/** One hop addition. */
+export interface RecipeHop {
+  name: string;
+  amount: string;
+  unit: string;
+  /** Where it goes in: "Boil", "Dry Hop", "Whirlpool"… */
+  use: string;
+  /** Contact time in minutes, as a bare number string. */
+  time: string;
+  /** Alpha acid %, as a bare number string. */
+  aa: string;
+  /** This addition's own IBU contribution. */
+  ibu: string;
+  /** Whirlpool/hopstand temperature in °C, when the addition has one. */
+  temp: string;
+}
+
+/** A yeast (or bacteria/brett) pitch. */
+export interface RecipeYeast {
+  name: string;
+  /** Producer, e.g. "Fermentis". */
+  lab: string;
+  /** Expected apparent attenuation %, as a bare number string. */
+  attenuation: string;
+  amount: string;
+  amountUnit: string;
+}
+
+/** Anything that isn't malt, hops or yeast: salts, finings, spices, sugar. */
+export interface RecipeOtherIngredient {
+  name: string;
+  amount: string;
+  unit: string;
+  /** "Mash", "Boil", "Primary"… */
+  use: string;
+  /** Time in minutes, as a bare number string. */
+  time: string;
+  /** "Water Agt", "Fining", "Spice"… */
+  type: string;
+}
+
+/** One rest in the mash schedule. */
+export interface RecipeMashStep {
+  /** Step name or type ("Infusion", "Sacc rest"); may be empty. */
+  name: string;
+  /** Temperature with unit, pre-formatted (e.g. "67°C"); null if unset. */
+  temp: string | null;
+  /** Rest length in minutes, as a bare number string; may be empty. */
+  time: string;
+  /** Infusion/strike amount with unit, when the step lists one. */
+  amount?: string;
+}
+
+export interface RecipeMashGuidelines {
+  steps: RecipeMashStep[];
+  notes: string | null;
+}
+
+/**
+ * A recipe's *target* brewing-water profile: ion concentrations in ppm (mg/L),
+ * as entered on Brewer's Friend. Deliberately just the targets — turning them
+ * into salt additions is the water calculator's job (see `apps/web/src/water.ts`),
+ * which solves for actual salt masses rather than pretending ppm × litres is a
+ * weight of gypsum.
+ */
+export interface RecipeWaterProfile {
+  /** Profile name ("Balanced", "Burton"…); null when unnamed. */
+  name: string | null;
+  /** Target mash pH; null when unset. */
+  ph: string | null;
+  notes: string | null;
+  /** Ca²⁺, ppm. Null when the recipe leaves it blank. */
+  calcium: string | null;
+  /** Mg²⁺, ppm. */
+  magnesium: string | null;
+  /** Na⁺, ppm. */
+  sodium: string | null;
+  /** Cl⁻, ppm. */
+  chloride: string | null;
+  /** SO₄²⁻, ppm. */
+  sulfate: string | null;
+  /** HCO₃⁻, ppm. */
+  bicarbonate: string | null;
+}
+
+/**
+ * The full brew sheet for one recipe (GET /api/recipes/:id) — everything the
+ * Recipes detail page shows. Numbers stay strings in the shape Brewer's Friend
+ * returns them; the UI formats them, so a value we can't parse still displays
+ * rather than becoming NaN.
+ */
+export interface RecipeDetail {
+  id: string;
+  name: string;
+  style: string;
+  /** Original gravity, e.g. "1.062". */
+  og: string;
+  /** Pre-boil gravity; null when the recipe doesn't state one. */
+  preBoilGravity: string | null;
+  /** Post-boil gravity; null when the recipe doesn't state one. */
+  postBoilGravity: string | null;
+  /** Final gravity. */
+  fg: string;
+  abv: string;
+  /** Tinseth IBU. */
+  ibu: string;
+  /** Colour in EBC. */
+  ebc: string;
+  /** Public Brewer's Friend recipe page URL. */
+  url: string;
+  /** Batch size in litres (converted from gallons if needed); null if unknown. */
+  batchSizeL: number | null;
+  /** Headline mash temperature, pre-formatted (e.g. "67°C"); null if unknown. */
+  mashTemp: string | null;
+  /** Primary fermentation temperature, pre-formatted; null if unknown. */
+  fermentationTemp: string | null;
+  fermentables: RecipeFermentable[];
+  hops: RecipeHop[];
+  yeast: RecipeYeast[];
+  otherIngredients: RecipeOtherIngredient[];
+  /** Null when the recipe has neither mash steps nor mash notes. */
+  mashGuidelines: RecipeMashGuidelines | null;
+  /** Null when the recipe specifies no water targets at all. */
+  waterProfile: RecipeWaterProfile | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -892,6 +1039,11 @@ export const setActiveRecipeSchema = z.object({
   style: z.string().trim().max(300).default(''),
   abv: z.string().trim().max(20).default(''),
   url: z.string().trim().max(500).default(''),
+  // Carried through so the stored selection is a complete Recipe. Optional
+  // rather than defaulted: a client that doesn't send them (or a selection
+  // saved by an older build) leaves them absent instead of storing ''.
+  ibu: z.string().trim().max(20).optional(),
+  ebc: z.string().trim().max(20).optional(),
 });
 export type SetActiveRecipeInput = z.infer<typeof setActiveRecipeSchema>;
 

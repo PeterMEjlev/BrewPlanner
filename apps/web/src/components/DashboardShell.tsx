@@ -6,6 +6,7 @@ import { isUnknownContents } from '../kegs';
 import { usePoll } from '../usePoll';
 import {
   BellIcon,
+  BookIcon,
   ChecklistIcon,
   ClockIcon,
   FlaskIcon,
@@ -30,8 +31,8 @@ export type ShellPage =
   | 'alerts'
   | 'settings'
   | 'kegs'
-  // Reached from the Overview's fermenter card rather than the nav rail, so no
-  // item lights up — the shell just keeps its chrome around the page.
+  // Both the recipe list and a single recipe's brew sheet, so the nav item stays
+  // lit while browsing into a recipe.
   | 'recipes'
   | 'checklists'
   | 'todos'
@@ -51,6 +52,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { key: 'overview', label: 'Overview', Icon: HomeIcon, to: '/', page: 'overview' },
   { key: 'kegs', label: 'Kegs', Icon: KegIcon, to: '/kegs', page: 'kegs' },
+  { key: 'recipes', label: 'Recipes', Icon: BookIcon, to: '/recipes', page: 'recipes' },
   { key: 'alerts', label: 'Alerts', Icon: BellIcon, to: '/alerts', page: 'alerts' },
   { key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
   { key: 'brewSystem', label: 'Brew System', Icon: SlidersIcon, to: '/brew-system', page: 'brewSystem' },

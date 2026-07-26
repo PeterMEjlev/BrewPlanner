@@ -4,6 +4,15 @@ export function asMessage(e: unknown): string {
 }
 
 /**
+ * As {@link asMessage}, minus the leading "<status>: " that the api client
+ * prefixes onto failures — for places that show the server's own message to the
+ * user, where a bare HTTP code adds nothing they can act on.
+ */
+export function asCleanMessage(e: unknown): string {
+  return asMessage(e).replace(/^\d{3}:\s*/, '');
+}
+
+/**
  * Where an in-app "Home" button should land. Some `/kiosk/*` pages are reachable
  * from the desktop UI too (or by direct URL), so a hardcoded `/kiosk` home link
  * would strand a desktop visitor on the touch hub. The physical Pi kiosk tags

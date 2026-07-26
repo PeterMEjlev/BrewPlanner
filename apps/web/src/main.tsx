@@ -22,7 +22,7 @@ import { KioskHomePage } from './pages/KioskHome';
 import { KioskMusicPage } from './pages/KioskMusic';
 import { KioskTodosPage } from './pages/KioskTodos';
 import { LoginPage } from './pages/Login';
-import { RecipesPage } from './pages/Recipes';
+import { RecipeDetailPage } from './pages/RecipeDetail';
 import { RecipesDesktopPage } from './pages/RecipesDesktop';
 import { SettingsDesktopPage } from './pages/SettingsDesktop';
 import { TodosPage } from './pages/Todos';
@@ -154,13 +154,22 @@ const router = createBrowserRouter([
       </RequireAuth>
     ),
   },
-  // Desktop (mouse/keyboard) recipe picker, linked from the Overview's fermenter
-  // card. The kiosk keeps its touch variant at /kiosk/recipes.
+  // The Brewer's Friend recipe library, reached from the sidebar: the list, then
+  // one recipe's full brew sheet. Desktop/phone only — the kiosk deliberately has
+  // no recipe screen (its fermenter card just shows what's currently in the tank).
   {
     path: '/recipes',
     element: (
       <RequireAuth>
         <RecipesDesktopPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/recipes/:id',
+    element: (
+      <RequireAuth>
+        <RecipeDetailPage />
       </RequireAuth>
     ),
   },
@@ -203,16 +212,6 @@ const router = createBrowserRouter([
       <RequireAuth>
         <KioskFrame>
           <KioskTodosPage />
-        </KioskFrame>
-      </RequireAuth>
-    ),
-  },
-  {
-    path: '/kiosk/recipes',
-    element: (
-      <RequireAuth>
-        <KioskFrame>
-          <RecipesPage />
         </KioskFrame>
       </RequireAuth>
     ),

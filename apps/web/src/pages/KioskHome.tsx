@@ -526,21 +526,20 @@ function StationTile({
 
   return (
     <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-5">
-      {/* Header: tank icon, name + recipe style, fermentation status. Tapping the
-          icon/name opens the recipe picker (the style comes from the choice). */}
+      {/* Header: tank icon, name + recipe style, fermentation status. Read-only —
+          the recipe library lives on the desktop/phone dashboard (sidebar →
+          Recipes), which is also where the fermenter's beer gets set; the kiosk
+          just displays whatever is in the tank. */}
       <div className="flex shrink-0 items-center gap-4">
-        <Link
-          to="/kiosk/recipes"
-          className="flex min-w-0 flex-1 touch-manipulation items-center gap-4 rounded-2xl py-1 transition active:bg-zinc-800/60"
-        >
+        <div className="flex min-w-0 flex-1 items-center gap-4 py-1">
           <FermenterIcon strokeWidth={2.6} className="h-12 w-12 shrink-0 text-white" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-3xl font-bold leading-tight tracking-tight">{name}</div>
             <div className="truncate text-base text-white">
-              {recipeStyle || 'Tap to select recipe'}
+              {recipeStyle || 'No recipe linked'}
             </div>
           </div>
-        </Link>
+        </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className={`h-2.5 w-2.5 rounded-full ${status.dotClass}`} aria-hidden />
           <span className={`text-sm font-semibold uppercase tracking-wide ${status.textClass}`}>

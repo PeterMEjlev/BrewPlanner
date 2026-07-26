@@ -164,6 +164,17 @@ export function ChecklistIcon(props: IconProps): JSX.Element {
   );
 }
 
+/** An open recipe book — the Recipes nav item. */
+export function BookIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M12 6.5 4 4v14l8 2.5" />
+      <path d="M12 6.5 20 4v14l-8 2.5" />
+      <path d="M12 6.5v14" />
+    </Svg>
+  );
+}
+
 export function ClockIcon(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>
