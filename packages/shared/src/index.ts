@@ -137,6 +137,87 @@ export interface ActiveRecipe {
   recipe: Recipe | null;
 }
 
+/**
+ * What one ingredient line costs, priced against the local catalogue in
+ * `prices/`. Null on an ingredient the catalogue doesn't stock or hasn't priced —
+ * never a guess.
+ */
+export interface IngredientPrice {
+  /**
+   * Cost of the amount the recipe actually uses (grams × price per kg). The true
+   * cost of this line in the finished beer, and the only figure that can be
+   * summed across lines — see {@link RecipeCost.buyDkk} for why buying can't.
+   */
+  usedDkk: number;
+  /** Catalogue price per kg; null for anything not sold by weight. */
+  pricePerKgDkk: number | null;
+  /**
+   * The package the shop sells it in. Null for a pitchable unit with no stated
+   * weight — a liquid yeast pack is one pitch, not a number of grams.
+   */
+  packageSizeG: number | null;
+  packagePriceDkk: number;
+  /**
+   * How many packages this line consumes, fractionally (3.8 kg of malt in 100 g
+   * bags is 38; 40 g of hops from a 100 g bag is 0.4). Repeats of one product sum
+   * these before rounding up, which is how the buying figure stays honest.
+   */
+  packageFraction: number;
+  /** The catalogue entry this was priced against, so a match can be checked. */
+  matchedName: string;
+  /**
+   * Catalogue id. Repeats of one product across several additions (Citra in the
+   * whirlpool and twice as a dry hop) pool under this before being rounded up to
+   * whole packages.
+   */
+  catalogueId: string;
+  /** How many other listings matched the name; the cheapest was used. */
+  alternatives: number;
+}
+
+/** One product to buy, pooling every addition of it in the recipe. */
+export interface PurchaseLine {
+  catalogueId: string;
+  name: string;
+  /** Total the recipe needs across all its additions; null if not sold by weight. */
+  grams: number | null;
+  /** Whole packages that covers. */
+  packages: number;
+  packageSizeG: number | null;
+  /** `packages` × package price. */
+  totalDkk: number;
+}
+
+/**
+ * A recipe's ingredient cost. Computed server-side because `buyDkk` is not a sum
+ * of the per-line figures: 3 × 30 g of Citra is one 100 g bag, not three, so the
+ * grams have to be pooled per product before rounding up.
+ */
+export interface RecipeCost {
+  /** Cost of the amounts used, over every priced line. */
+  usedDkk: number;
+  /** Cost of the packages to buy, pooled per product. */
+  buyDkk: number;
+  /** Ingredient lines that were priced. */
+  priced: number;
+  /** Lines with an amount but no catalogue price. */
+  unpriced: number;
+  /** The shopping list behind `buyDkk`. */
+  purchase: PurchaseLine[];
+}
+
+/** Where a recipe's prices came from, shown as a note under the cost. */
+export interface RecipePricing {
+  /** ISO 4217 code; the catalogue is Danish, so DKK. */
+  currency: string;
+  /** Date the catalogue was scraped, e.g. "2026-07-26". */
+  lastChecked: string;
+  /** Shop the catalogue came from. */
+  source: string;
+  /** False when no catalogue could be read at all. */
+  available: boolean;
+}
+
 /** One malt/sugar in a recipe's grain bill. */
 export interface RecipeFermentable {
   name: string;
@@ -147,6 +228,9 @@ export interface RecipeFermentable {
   percent: string;
   /** Grain colour in EBC, converted from the API's Lovibond; null if unknown. */
   ebc: number | null;
+  /** Weight in grams, normalized from `amount`/`unit`; null if unreadable. */
+  grams: number | null;
+  price: IngredientPrice | null;
 }
 
 /**
@@ -194,6 +278,9 @@ export interface RecipeHop {
    * placeholder the API returns on additions that have no hopstand.
    */
   temp: string;
+  /** Weight in grams, normalized from `amount`/`unit`; null if unreadable. */
+  grams: number | null;
+  price: IngredientPrice | null;
 }
 
 /** A yeast (or bacteria/brett) pitch. */
@@ -219,6 +306,9 @@ export interface RecipeYeast {
   alcoholTolerance: string;
   /** Whether the recipe calls for a starter. */
   starter: boolean;
+  /** Weight in grams, normalized from `amount`/`amountUnit`; null if unreadable. */
+  grams: number | null;
+  price: IngredientPrice | null;
 }
 
 /** Anything that isn't malt, hops or yeast: salts, finings, spices, sugar. */
@@ -323,6 +413,44 @@ export interface RecipeDetail {
   mashGuidelines: RecipeMashGuidelines | null;
   /** Null when the recipe specifies no water targets at all. */
   waterProfile: RecipeWaterProfile | null;
+  /** Where the ingredient prices came from. */
+  pricing: RecipePricing;
+  /** What the batch costs in ingredients. */
+  cost: RecipeCost;
+}
+
+/** A costed group of ingredient lines — one section of a recipe, or one stage. */
+export interface CostTotal {
+  /** Cost of the amounts used, summed over the lines that could be priced. */
+  usedDkk: number;
+  /** Lines that were priced. */
+  priced: number;
+  /** Lines with an amount but no catalogue price — why a total may be short. */
+  unpriced: number;
+}
+
+/**
+ * Sum what a group of ingredient lines consumes. Kept here so the recipe page,
+ * its section headers and its hop stages all total the same way — and so
+ * `unpriced` travels with the figure, since a total over partial coverage has to
+ * say so rather than read as complete.
+ *
+ * Only ever sums `usedDkk`: buying cost isn't additive per line (see
+ * {@link RecipeCost}), so it's computed once, server-side, for the whole recipe.
+ */
+export function sumCost(lines: { price: IngredientPrice | null }[]): CostTotal {
+  let usedDkk = 0;
+  let priced = 0;
+  let unpriced = 0;
+  for (const line of lines) {
+    if (line.price) {
+      usedDkk += line.price.usedDkk;
+      priced++;
+    } else {
+      unpriced++;
+    }
+  }
+  return { usedDkk: Math.round(usedDkk * 100) / 100, priced, unpriced };
 }
 
 // ---------------------------------------------------------------------------

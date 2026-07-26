@@ -1,12 +1,15 @@
 import type {
+  CostTotal,
   HopStage,
+  IngredientPrice,
   Recipe,
   RecipeDetail,
   RecipeHop,
+  RecipePricing,
   RecipeWaterProfile,
   RecipeYeast,
 } from '@checklist/shared';
-import { HOP_STAGE_ORDER } from '@checklist/shared';
+import { HOP_STAGE_ORDER, sumCost } from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
@@ -95,6 +98,26 @@ function toG(amount: string, unit: string): number {
  */
 const AROMA_STAGES: HopStage[] = ['Whirlpool', 'Dry Hop'];
 
+/**
+ * Danish kroner. Small amounts keep øre (a 20.80 kr hop addition), totals round
+ * to whole kroner — nobody cares about øre on a 1,247 kr batch, and the grouping
+ * makes the figure readable at a glance.
+ */
+function kr(amount: number, decimals = 2): string {
+  return `${amount.toLocaleString('en-GB', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })} kr`;
+}
+
+/** A section's cost for its header: "254 kr", plus a note when coverage is short. */
+function costMeta(cost: CostTotal): string {
+  const parts: string[] = [];
+  if (cost.priced > 0) parts.push(kr(cost.usedDkk, 0));
+  if (cost.unpriced > 0) parts.push(`${cost.unpriced} unpriced`);
+  return parts.join(' · ');
+}
+
 /** "20 min", "5 days", or '' when the addition states no time. */
 function hopTiming(hop: RecipeHop): string {
   if (!hop.time || !hop.timeUnit) return '';
@@ -181,6 +204,19 @@ export function RecipeDetailPage(): JSX.Element {
       setSaving(false);
     }
   }
+
+  // Section costs, summed the same way everywhere via the shared helper.
+  const costs = useMemo(
+    () =>
+      recipe
+        ? {
+            fermentables: sumCost(recipe.fermentables),
+            hops: sumCost(recipe.hops),
+            yeast: sumCost(recipe.yeast),
+          }
+        : null,
+    [recipe],
+  );
 
   const totals = useMemo(() => {
     if (!recipe) return null;
@@ -314,12 +350,23 @@ export function RecipeDetailPage(): JSX.Element {
           {recipe.fermentationTemp && <Stat label="Fermentation" value={recipe.fermentationTemp} />}
         </div>
 
+        {costs && (
+          <CostSummary
+            recipe={recipe}
+            fermentables={costs.fermentables}
+            hops={costs.hops}
+            yeast={costs.yeast}
+          />
+        )}
+
         <div className="mt-4 space-y-3">
-          {recipe.fermentables.length > 0 && totals && (
+          {recipe.fermentables.length > 0 && totals && costs && (
             <Section
               title="Fermentables"
               icon="🌾"
-              meta={`${totals.grainKg.toFixed(2)} kg`}
+              meta={[`${totals.grainKg.toFixed(2)} kg`, costMeta(costs.fermentables)]
+                .filter(Boolean)
+                .join(' · ')}
               open={!collapsed.fermentables}
               onToggle={() => toggle('fermentables')}
             >
@@ -333,21 +380,24 @@ export function RecipeDetailPage(): JSX.Element {
                       {f.percent && <span className="text-zinc-500"> · {fmt(f.percent, 1)}%</span>}
                       {f.ebc != null && <span className="text-zinc-500"> · {f.ebc} EBC</span>}
                     </span>
+                    <Price price={f.price} />
                   </li>
                 ))}
               </ul>
             </Section>
           )}
 
-          {recipe.hops.length > 0 && totals && (
+          {recipe.hops.length > 0 && totals && costs && (
             <Section
               title="Hops"
               icon="🌿"
-              meta={
-                totals.aromaRate != null
-                  ? `${totals.hopsG.toFixed(0)} g · ${totals.aromaRate.toFixed(1)} g/L aroma`
-                  : `${totals.hopsG.toFixed(0)} g`
-              }
+              meta={[
+                `${totals.hopsG.toFixed(0)} g`,
+                totals.aromaRate != null ? `${totals.aromaRate.toFixed(1)} g/L aroma` : '',
+                costMeta(costs.hops),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
               metaTitle="Aroma hop rate — grams per litre of whirlpool and dry hops (the bittering charge doesn't add aroma)"
               open={!collapsed.hops}
               onToggle={() => toggle('hops')}
@@ -384,10 +434,11 @@ export function RecipeDetailPage(): JSX.Element {
             </Section>
           )}
 
-          {recipe.yeast.length > 0 && (
+          {recipe.yeast.length > 0 && costs && (
             <Section
               title="Yeast"
               icon="🧫"
+              meta={costMeta(costs.yeast)}
               open={!collapsed.yeast}
               onToggle={() => toggle('yeast')}
             >
@@ -559,21 +610,160 @@ function Section({
 }
 
 /**
+ * One ingredient line's cost. Shows what the recipe consumes; the tooltip carries
+ * the rest — which catalogue entry it matched (so a wrong match is visible), the
+ * per-kg rate, and what the packages actually cost at the till.
+ *
+ * An em dash rather than a zero for an unpriced line: the catalogue prices every
+ * malt but only some hops and almost no yeast, and a 0 would quietly understate
+ * the batch.
+ */
+function Price({ price }: { price: IngredientPrice | null }): JSX.Element {
+  if (!price) {
+    return (
+      <span
+        className="w-20 shrink-0 text-right text-sm text-zinc-600"
+        title="Not in the price catalogue"
+      >
+        —
+      </span>
+    );
+  }
+  const alts = price.alternatives > 0 ? ` · cheapest of ${price.alternatives + 1} listings` : '';
+  const perKg = price.pricePerKgDkk != null ? ` · ${kr(price.pricePerKgDkk, 0)}/kg` : '';
+  // Liquid yeast is sold as a pitch, with no weight on the pack.
+  const pack =
+    price.packageSizeG != null
+      ? ` · sold in ${price.packageSizeG} g packs at ${kr(price.packagePriceDkk)}`
+      : ` · ${kr(price.packagePriceDkk)} per pack`;
+  return (
+    <span
+      className="w-20 shrink-0 text-right text-sm tabular-nums text-zinc-300"
+      title={`${price.matchedName}${perKg}${pack}${alts}`}
+    >
+      {kr(price.usedDkk)}
+    </span>
+  );
+}
+
+/**
+ * What the batch costs in ingredients. Two figures, because they answer different
+ * questions: the headline is what the recipe consumes (the true cost of the beer,
+ * with leftover hops carried into the next batch), while the buy-in is what the
+ * shop charges when a 40 g addition still means a 100 g bag.
+ *
+ * Coverage is stated plainly — the catalogue doesn't price everything, and a
+ * total drawn from part of the ingredients has to say so.
+ */
+function CostSummary({
+  recipe,
+  fermentables,
+  hops,
+  yeast,
+}: {
+  recipe: RecipeDetail;
+  fermentables: CostTotal;
+  hops: CostTotal;
+  yeast: CostTotal;
+}): JSX.Element | null {
+  const pricing: RecipePricing = recipe.pricing;
+  // The recipe-wide figures come from the server, which pools repeats of one
+  // product before rounding to packages — summing the per-line prices here would
+  // charge three bags for three small additions of the same hop.
+  const { usedDkk, buyDkk, priced, unpriced, purchase } = recipe.cost;
+  if (!pricing.available || priced + unpriced === 0) return null;
+
+  const perLitre = recipe.batchSizeL ? usedDkk / recipe.batchSizeL : null;
+  const shoppingList = purchase
+    .map(
+      (p) =>
+        `${p.packages}×${p.packageSizeG != null ? `${p.packageSizeG} g ` : ''}${p.name} — ${kr(
+          p.totalDkk,
+          0,
+        )}`,
+    )
+    .join('\n');
+
+  return (
+    <section className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
+      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+            Ingredient cost
+          </div>
+          <div className="text-2xl font-semibold tabular-nums text-zinc-50">
+            {priced > 0 ? kr(usedDkk, 0) : '—'}
+          </div>
+        </div>
+        {perLitre != null && priced > 0 && (
+          <div>
+            <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+              Per litre
+            </div>
+            <div className="text-lg font-semibold tabular-nums text-zinc-200">
+              {kr(perLitre, 2)}
+            </div>
+          </div>
+        )}
+        {priced > 0 && buyDkk > usedDkk && (
+          <div
+            title={`What the shop charges — whole packages, pooled per product:\n\n${shoppingList}`}
+          >
+            <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+              To buy
+            </div>
+            <div className="text-lg font-semibold tabular-nums text-zinc-200">{kr(buyDkk, 0)}</div>
+          </div>
+        )}
+        <div className="ml-auto text-right text-xs text-zinc-500">
+          <div>
+            {[
+              fermentables.priced > 0 && `Malt ${kr(fermentables.usedDkk, 0)}`,
+              hops.priced > 0 && `Hops ${kr(hops.usedDkk, 0)}`,
+              yeast.priced > 0 && `Yeast ${kr(yeast.usedDkk, 0)}`,
+            ]
+              .filter(Boolean)
+              .join(' · ') || 'Nothing priced'}
+          </div>
+          <div className="mt-0.5">
+            {unpriced > 0 && (
+              <span className="text-amber-500/80">
+                {unpriced} of {priced + unpriced} ingredient{priced + unpriced === 1 ? '' : 's'} not
+                in the catalogue
+                {' · '}
+              </span>
+            )}
+            {pricing.source} prices
+            {pricing.lastChecked && `, checked ${pricing.lastChecked}`}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
  * The hop schedule, split into the stages of brew day — bittering in the boil,
  * then whirlpool, then dry hops — because that's how the additions are actually
  * used, and a flat list of seven rows makes "what goes in when" hard to read.
  * Each stage carries its own weight subtotal.
  *
- * Only stages this recipe uses get a heading; within a stage, additions run
- * longest contact time first (boil order for the kettle, and for dry hops the
- * earliest/longest steep first).
+ * Only stages this recipe uses get a heading, and within a stage the additions
+ * run in the order the brewer performs them. For the kettle that's longest
+ * contact first — a 60 min charge goes in before a 20 min one. Dry hops sort the
+ * other way: their shorter contact times are the high-krausen charges dropped in
+ * during active fermentation, so ascending puts those ahead of the longer
+ * post-fermentation dry hop that follows.
  */
 function HopSchedule({ hops }: { hops: RecipeHop[] }): JSX.Element {
   const stages = HOP_STAGE_ORDER.map((stage) => ({
     stage,
     additions: hops
       .filter((h) => h.stage === stage)
-      .sort((a, b) => (Number.parseFloat(b.time) || 0) - (Number.parseFloat(a.time) || 0)),
+      .sort((a, b) => {
+        const byTime = (Number.parseFloat(a.time) || 0) - (Number.parseFloat(b.time) || 0);
+        return stage === 'Dry Hop' ? byTime : -byTime;
+      }),
   })).filter((group) => group.additions.length > 0);
 
   return (
@@ -581,6 +771,7 @@ function HopSchedule({ hops }: { hops: RecipeHop[] }): JSX.Element {
       {stages.map(({ stage, additions }) => {
         const grams = additions.reduce((sum, h) => sum + toG(h.amount, h.unit), 0);
         const ibu = additions.reduce((sum, h) => sum + (Number.parseFloat(h.ibu) || 0), 0);
+        const cost = sumCost(additions);
         return (
           <div key={stage} className="border-b border-zinc-800 last:border-b-0">
             <div className="flex items-center gap-2 bg-zinc-950/50 px-4 py-1.5">
@@ -591,6 +782,11 @@ function HopSchedule({ hops }: { hops: RecipeHop[] }): JSX.Element {
                 {grams.toFixed(0)} g
                 {ibu > 0 && ` · ${ibu.toFixed(1)} IBU`}
               </span>
+              {cost.priced > 0 && (
+                <span className="ml-auto text-[11px] tabular-nums text-zinc-400">
+                  {kr(cost.usedDkk, 0)}
+                </span>
+              )}
             </div>
             <ul className="divide-y divide-zinc-800/60">
               {additions.map((h, i) => (
@@ -620,6 +816,7 @@ function HopSchedule({ hops }: { hops: RecipeHop[] }): JSX.Element {
                   {h.ibu && Number.parseFloat(h.ibu) > 0 && (
                     <span className="shrink-0 text-sm text-zinc-400">{fmt(h.ibu, 1)} IBU</span>
                   )}
+                  <Price price={h.price} />
                 </li>
               ))}
             </ul>
@@ -668,6 +865,7 @@ function YeastRow({ yeast: y }: { yeast: RecipeYeast }): JSX.Element {
             {range}
           </span>
         )}
+        <Price price={y.price} />
       </div>
       {facts.length > 0 && (
         <div className="mt-0.5 text-xs text-zinc-500">{facts.join(' · ')}</div>

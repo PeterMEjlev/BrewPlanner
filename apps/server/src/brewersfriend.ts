@@ -10,6 +10,7 @@ import type {
   RecipeWaterProfile,
   RecipeYeast,
 } from '@checklist/shared';
+import { priceFermentable, priceHop, priceYeast, pricingInfo, recipeCost } from './prices.js';
 
 /**
  * Brewer's Friend integration. The user's read-only API key is held server-side
@@ -252,6 +253,9 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
 
   const batchSizeL = batchSizeLiters(r);
   const color = recipeColorEbc(r, batchSizeL);
+  // Costed once over every ingredient, so repeats of the same product pool into
+  // one purchase (see recipeCost).
+  const ingredients = { fermentables: fermentables(r), hops: hops(r), yeast: yeasts(r) };
 
   return {
     id: str(r.id),
@@ -269,12 +273,18 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
     batchSizeL,
     mashTemp: mashTemp(r),
     fermentationTemp: fermentationTemp(r),
-    fermentables: fermentables(r),
-    hops: hops(r),
-    yeast: yeasts(r),
+    fermentables: ingredients.fermentables,
+    hops: ingredients.hops,
+    yeast: ingredients.yeast,
     otherIngredients: otherIngredients(r),
     mashGuidelines: mashGuidelines(r),
     waterProfile: waterProfile(r),
+    pricing: pricingInfo(),
+    cost: recipeCost([
+      ...ingredients.fermentables,
+      ...ingredients.hops,
+      ...ingredients.yeast,
+    ]),
   };
 }
 
@@ -431,14 +441,78 @@ function lovibondToEbc(lovibond: unknown): number | null {
   return Math.max(0, Math.round((l * 1.3546 - 0.76) * 1.97 * 10) / 10);
 }
 
+/**
+ * An ingredient weight in grams, for costing. Returns null for an amount we
+ * can't read, which leaves that line unpriced rather than free.
+ */
+function toGrams(amount: unknown, unit: unknown): number | null {
+  const n = Number(str(amount));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  switch (str(unit).toLowerCase()) {
+    case 'g':
+    case 'gram':
+    case 'grams':
+      return n;
+    case 'kg':
+      return n * 1000;
+    case 'oz':
+      return n * 28.3495;
+    case 'lb':
+    case 'lbs':
+      return n * 453.592;
+    case 'mg':
+      return n / 1000;
+    // Countable units (packets, vials) can't be converted to a weight — see
+    // toUnits, which costs them per pack instead.
+    case 'pkg':
+    case 'pkgs':
+    case 'each':
+    case 'items':
+    case 'vial':
+      return null;
+    default:
+      // Brewer's Friend defaults these recipes to metric weights.
+      return str(unit) === '' ? n : null;
+  }
+}
+
+/**
+ * A count of packs, for a recipe that measures an ingredient in whole units
+ * rather than grams — "1 pkg" of liquid yeast, which the shop also sells without
+ * a stated weight. Null for anything expressed as a weight.
+ */
+function toUnits(amount: unknown, unit: unknown): number | null {
+  const n = Number(str(amount));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  switch (str(unit).toLowerCase()) {
+    case 'pkg':
+    case 'pkgs':
+    case 'each':
+    case 'items':
+    case 'vial':
+      return n;
+    default:
+      return null;
+  }
+}
+
 function fermentables(r: BrewersFriendRecipe): RecipeFermentable[] {
-  return (r.fermentables ?? []).map((f) => ({
-    name: str(f.name),
-    amount: str(f.amount),
-    unit: str(f.unit),
-    percent: str(f.percent),
-    ebc: lovibondToEbc(f.lovibond),
-  }));
+  return (r.fermentables ?? []).map((f) => {
+    const name = str(f.name);
+    const grams = toGrams(f.amount, f.unit);
+    const ebc = lovibondToEbc(f.lovibond);
+    return {
+      name,
+      amount: str(f.amount),
+      unit: str(f.unit),
+      percent: str(f.percent),
+      ebc,
+      grams,
+      // The grain's colour goes into the match, so a pale malt can't be costed
+      // as a roasted one that happens to share a word in its name.
+      price: grams == null ? null : priceFermentable(name, grams, ebc),
+    };
+  });
 }
 
 /**
@@ -481,8 +555,12 @@ function hops(r: BrewersFriendRecipe): RecipeHop[] {
     const use = str(h.hopuse);
     const stage = hopStage(use);
     const time = str(h.hoptime);
+    const name = str(h.name);
+    const grams = toGrams(h.amount, h.unit);
     return {
-      name: str(h.name),
+      grams,
+      price: grams == null ? null : priceHop(name, grams),
+      name,
       amount: str(h.amount),
       unit: str(h.unit),
       use,
@@ -515,8 +593,15 @@ function yeasts(r: BrewersFriendRecipe): RecipeYeast[] {
   return (r.yeasts ?? []).map((y) => {
     const tempUnit = (str(y.temperatureunit) || str(y.tempunit) || str(y.unittemp))
       .toLowerCase();
+    const name = str(y.name);
+    const grams = toGrams(y.amount, y.unit);
+    const units = toUnits(y.amount, y.unit);
     return {
-      name: str(y.name),
+      grams,
+      // Match on the strain name; the lab is only used for display. A pitch given
+      // as "1 pkg" is costed per pack rather than being dropped as weightless.
+      price: grams == null && units == null ? null : priceYeast(name, { grams, units }),
+      name,
       lab: str(y.laboratory) || str(y.lab),
       attenuation: str(y.attenuation),
       amount: str(y.amount),
