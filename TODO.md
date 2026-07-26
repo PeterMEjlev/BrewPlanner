@@ -1,8 +1,10 @@
+- fermenter temp graph doesnt show target temp when opened.
 
+- edit recipes and have them update in brewersfriend
 
-- Make the sonos page work again. the new fixed ip for the sonos speaker is 192.168.3.7
+- review if water calc math is correct
 
-
+- write with bruce in the bruce tab (change icon away from a mic to reflect this). Give specific GPT with the J. Palmer books (as .md files)
 
 - ## Add support for
   - Electricity (Watt) usage

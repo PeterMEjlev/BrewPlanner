@@ -484,6 +484,18 @@
       "soldout": false
     },
     {
+      "name": "Rolled Oats Havregryn",
+      "producer": "Grocery",
+      "organic": false,
+      "ebc_min": 3.0,
+      "ebc_max": 5.0,
+      "price_per_100g_dkk": 1.0,
+      "id": "rolled-oats-havregryn",
+      "package_size_g": 100,
+      "price_per_kg_dkk": 10.0,
+      "soldout": false
+    },
+    {
       "name": "Hvede",
       "producer": "Castle Malting",
       "organic": false,

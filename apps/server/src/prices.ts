@@ -134,6 +134,9 @@ const NOISE = new Set([
   // Format and packaging
   'dry', 'liquid', 'slant', 'purepitch', 'next', 'gen', 'g', 'gram', 'kg', 'stk',
   'pkg', 'pack', 'sachet',
+  // Bare unit letters — 'l' shows up both as litres and as the degrees-Lovibond
+  // suffix ("Crystal 80 L"), and carries no identity either way.
+  'l',
   // Danish shop boilerplate on order-only lines
   'bestillingsvare', 'dages', 'leveringstid', 'til', 'lav', 'alkohol', 'ol',
 ]);
@@ -601,8 +604,12 @@ function candidates(items: PricedItem[], name: string): PricedItem[] {
   // one of them under the bare name — so an exact match is preferred, and this is
   // the fallback rather than the rule. The colour check still applies afterwards,
   // which is what stops a pale grade being costed as a dark one.
+  //
+  // A degrees-Lovibond suffix counts as a grade number too — "Dark Crystal 80L"
+  // tokenizes to a single trailing "80l" (no space before the unit), which a
+  // bare \d+ pattern wouldn't strip.
   const noGrade = [...wanted];
-  while (noGrade.length > 1 && /^\d+$/.test(noGrade[noGrade.length - 1]!)) noGrade.pop();
+  while (noGrade.length > 1 && /^\d+l?$/.test(noGrade[noGrade.length - 1]!)) noGrade.pop();
   if (noGrade.length !== wanted.length) {
     const found = matching(noGrade);
     if (found.length > 0) return found;

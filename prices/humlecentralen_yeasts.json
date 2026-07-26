@@ -5,7 +5,7 @@
   "last_checked": "2026-07-26",
   "catalogue_complete": true,
   "price_coverage": "complete_for_included_entries",
-  "item_count": 95,
+  "item_count": 96,
   "products": [
     {
       "id": "fermentis-saflager-sh-45-11-5-g-trgr",
@@ -1167,6 +1167,21 @@
       "manufacturer": "White Labs",
       "name": "WLP521 Hornindal Kveik Ale Yeast - PurePitch Next Gen",
       "display_name": "White Labs - WLP521 Hornindal Kveik Ale Yeast - PurePitch Next Gen",
+      "category": "yeast",
+      "format": "liquid",
+      "package_size_g": null,
+      "organic": false,
+      "special_order": false,
+      "price_dkk": 99.0,
+      "regular_price_dkk": null,
+      "on_sale": false,
+      "in_stock": null
+    },
+    {
+      "id": "imperial-yeast-a43-loki-kveik-ale-yeast",
+      "manufacturer": "Imperial Yeast",
+      "name": "A43 Loki Kveik Ale Yeast",
+      "display_name": "Imperial Yeast - A43 Loki Kveik Ale Yeast",
       "category": "yeast",
       "format": "liquid",
       "package_size_g": null,

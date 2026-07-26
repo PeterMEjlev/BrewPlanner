@@ -1,4 +1,4 @@
-import type { KegContentColors, Recipe } from '@checklist/shared';
+import type { KegContentColors, Recipe, RecipeStats } from '@checklist/shared';
 import {
   RECIPE_STYLE_CATEGORIES,
   ebcColor,
@@ -13,7 +13,12 @@ import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { FermenterIcon } from '../components/icons';
 import { useKegContentColors } from '../kegContentColors';
-import { invalidateRecipes, loadRecipeStats, loadRecipes } from '../recipeStore';
+import {
+  invalidateRecipes,
+  loadRecipeStats,
+  loadRecipes,
+  revalidateRecipes,
+} from '../recipeStore';
 import { asCleanMessage } from '../util';
 
 /**
@@ -128,6 +133,21 @@ interface Stats {
   /** Predicted pour colour where fruit shifted it; null leaves the malt colour. */
   fruitColor: string | null;
   fruitNote: string | null;
+}
+
+/** The stats payload keyed by recipe, as the grid holds it. */
+function toStatsMap(list: RecipeStats[]): Map<string, Stats> {
+  return new Map(
+    list.map((s) => [
+      s.id,
+      {
+        usedDkk: s.usedDkk,
+        hopsPerL: s.hopsPerL,
+        fruitColor: s.fruitColor,
+        fruitNote: s.fruitNote,
+      },
+    ]),
+  );
 }
 
 /**
@@ -279,33 +299,19 @@ export function RecipesDesktopPage(): JSX.Element {
     }
   }
 
-  useEffect(() => {
-    void load();
-  }, []);
-
   /**
-   * Cost and weigh the whole account, once, the first time a sort needs it.
-   * Until it lands every recipe reads as unknown, so the grid stays in a stable
-   * order and simply re-sorts when the numbers arrive.
+   * Cost and weigh the whole account. The cards' fruit colours come from the
+   * same pass as the price and hop-rate sorts, so it runs on every visit rather
+   * than only when those sorts are picked. It doesn't block the grid — cards
+   * draw their malt colour first and the fruited ones re-tint when it lands —
+   * and both caches make repeat visits free.
    */
   async function loadStats(refresh = false): Promise<void> {
     if (statsLoading) return;
     setStatsLoading(true);
     try {
       const { stats: list } = await loadRecipeStats(refresh);
-      setStats(
-        new Map(
-          list.map((s) => [
-            s.id,
-            {
-              usedDkk: s.usedDkk,
-              hopsPerL: s.hopsPerL,
-              fruitColor: s.fruitColor,
-              fruitNote: s.fruitNote,
-            },
-          ]),
-        ),
-      );
+      setStats(toStatsMap(list));
       setStatsError(null);
     } catch (e) {
       // An empty map, not null, so a failed pass isn't retried on every render.
@@ -316,14 +322,29 @@ export function RecipesDesktopPage(): JSX.Element {
     }
   }
 
-  // The cards' fruit colours come from the same pass as the price and hop-rate
-  // sorts, so it's fetched on every visit rather than only when those sorts are
-  // picked. It doesn't block the grid — cards draw their malt colour first and
-  // the fruited ones re-tint when it lands — and both caches make repeat visits
-  // free.
+  // Draw what's cached, then quietly check upstream for edits — a recipe
+  // renamed, re-costed or re-hopped on Brewer's Friend lands on its own rather
+  // than waiting for someone to think of pressing refresh. Deliberately silent:
+  // nothing spins, and a check that fails leaves the cached grid alone. Only
+  // what actually changed comes back, so an unchanged account never redraws.
+  //
+  // The check is sequenced after the cached read rather than run alongside it,
+  // so a slow fermenter lookup can't let fresh data land first and then be
+  // overwritten by the cached copy it was meant to replace.
   useEffect(() => {
-    if (stats === null) void loadStats();
-  }, [stats]);
+    let cancelled = false;
+    void (async () => {
+      await Promise.all([load(), loadStats()]);
+      if (cancelled) return;
+      const fresh = await revalidateRecipes();
+      if (cancelled) return;
+      if (fresh.recipes) setRecipes(fresh.recipes);
+      if (fresh.stats) setStats(toStatsMap(fresh.stats.stats));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** Take the current beer out of the fermenter. */
   async function clearActive(): Promise<void> {
