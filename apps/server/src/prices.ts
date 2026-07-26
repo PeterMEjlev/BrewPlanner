@@ -301,6 +301,18 @@ const PRODUCT_ALIASES: Record<string, string> = {
   'husk rice': 'risskaller',
 };
 
+/**
+ * Light, English-only singularisation — just enough to fold the plurals that
+ * actually turn up in a grain bill or a fruit addition. "-ies" gets its own rule
+ * ("Blackberries" → "blackberry", "Cherries" → "cherry"); a bare trailing 's'
+ * would otherwise strip to "blackberrie", which matches nothing in the catalogue.
+ */
+function singularize(word: string): string {
+  if (word.length > 4 && word.endsWith('ies')) return `${word.slice(0, -3)}y`;
+  if (word.length > 3 && word.endsWith('s')) return word.slice(0, -1);
+  return word;
+}
+
 /** The bare tokenising pass, without alias resolution (which re-enters it). */
 function tokenizeWords(name: string): string[] {
   const words = name
@@ -319,8 +331,7 @@ function tokenizeWords(name: string): string[] {
     // Crop years ("2025 pellets") say nothing about which hop this is.
     if (word === '' || NOISE.has(word) || /^\d{4}$/.test(word)) continue;
     const canonical = SYNONYMS[word] ?? word;
-    const singular =
-      canonical.length > 3 && canonical.endsWith('s') ? canonical.slice(0, -1) : canonical;
+    const singular = singularize(canonical);
     const token = SYNONYMS[singular] ?? singular;
     if (NOISE.has(token)) continue;
     tokens.push(token);

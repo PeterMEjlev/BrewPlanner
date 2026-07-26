@@ -16,6 +16,7 @@ import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { ebcColor } from '../beerColor';
 import { DashboardShell } from '../components/DashboardShell';
+import { loadRecipeDetail } from '../recipeStore';
 import { asCleanMessage } from '../util';
 
 /**
@@ -25,7 +26,9 @@ import { asCleanMessage } from '../util';
  * recipe can be narrowed to the section in use.
  *
  * The data is a separate (heavier) server call than the recipe list — Brewer's
- * Friend only returns ingredients when asked — so this page fetches on open.
+ * Friend only returns ingredients when asked — so this page fetches on open and
+ * keeps what it fetched for the session (see recipeStore): moving between
+ * recipes, or back to the grid and in again, then costs nothing.
  */
 
 /** Which sections are folded away. Persisted so a preference survives reloads. */
@@ -159,7 +162,9 @@ export function RecipeDetailPage(): JSX.Element {
         // The active-recipe read is what decides whether this recipe shows as
         // "in the fermenter"; a failure there shouldn't hide the brew sheet.
         const [detail, current] = await Promise.all([
-          api.getRecipe(id),
+          // From the session cache when this recipe has been opened before —
+          // reopening a brew sheet mid-brew shouldn't wait on Brewer's Friend.
+          loadRecipeDetail(id),
           api.getActiveRecipe().catch(() => null),
         ]);
         if (cancelled) return;

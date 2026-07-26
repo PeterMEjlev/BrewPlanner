@@ -166,7 +166,7 @@ function toRecipe(r: BrewersFriendRecipe): Recipe {
   return {
     id: str(r.id),
     name: str(r.title) || 'Untitled recipe',
-    style: str(r.stylename),
+    style: styleName(r),
     // Normalize to a bare number string and drop any "%" the API includes.
     abv: str(r.abv).replace(/%/g, ''),
     ibu: str(r.ibutinseth),
@@ -177,6 +177,17 @@ function toRecipe(r: BrewersFriendRecipe): Recipe {
     url: publicUrl(r),
     createdAt: createdAt(r),
   };
+}
+
+/**
+ * The recipe's style, with BJCP's category prefix dropped. The guidelines file
+ * every hoppy variant under one entry — "Specialty IPA: New England IPA",
+ * "Specialty IPA: Black IPA" — which is how a style *is catalogued*, not what
+ * the beer is called. The prefix costs a card half its width and tells a brewer
+ * nothing, so a NEIPA reads as "New England IPA".
+ */
+function styleName(r: BrewersFriendRecipe): string {
+  return str(r.stylename).replace(/^\s*specialty\s+ipa\s*[:–-]\s*/i, '');
 }
 
 /** The recipe's creation date, under whichever key this account's plan uses. */
@@ -392,7 +403,7 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
   return {
     id: str(r.id),
     name: str(r.title) || 'Untitled recipe',
-    style: str(r.stylename),
+    style: styleName(r),
     og: str(r.og),
     preBoilGravity: strOrNull(r.boilgravity),
     postBoilGravity: strOrNull(r.post_boilgravity),

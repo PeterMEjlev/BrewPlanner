@@ -13,6 +13,7 @@ import { ebcColor } from '../beerColor';
 import { DashboardShell } from '../components/DashboardShell';
 import { FermenterIcon } from '../components/icons';
 import { useKegContentColors } from '../kegContentColors';
+import { invalidateRecipes, loadRecipeStats, loadRecipes } from '../recipeStore';
 import { asCleanMessage } from '../util';
 
 /**
@@ -81,6 +82,44 @@ const SORT_DEFAULT_DIRECTION: Record<SortKey, 'asc' | 'desc'> = {
   hopsPerL: 'asc',
   price: 'asc',
 };
+
+interface SortOrder {
+  key: SortKey;
+  dir: 'asc' | 'desc';
+}
+
+/** Newest first — what a brewer wants to see on opening the page. */
+const DEFAULT_ORDER: SortOrder = { key: 'created', dir: 'desc' };
+
+const ORDER_KEY = 'brewplanner.recipeSort';
+
+/**
+ * The order the grid was last left in. Persisted rather than held in state
+ * because opening a recipe unmounts this page — and a preference that survives a
+ * reload is no worse for it.
+ */
+function loadOrder(): SortOrder {
+  try {
+    const raw = localStorage.getItem(ORDER_KEY);
+    if (!raw) return DEFAULT_ORDER;
+    const saved = JSON.parse(raw) as Partial<SortOrder>;
+    // A key from a build that has since renamed or dropped it falls back rather
+    // than leaving the grid with no comparator at all.
+    if (!saved.key || !(saved.key in SORT_LABELS)) return DEFAULT_ORDER;
+    return { key: saved.key, dir: saved.dir === 'desc' ? 'desc' : 'asc' };
+  } catch {
+    return DEFAULT_ORDER;
+  }
+}
+
+function saveOrder(order: SortOrder): SortOrder {
+  try {
+    localStorage.setItem(ORDER_KEY, JSON.stringify(order));
+  } catch {
+    // Per-browser convenience only.
+  }
+  return order;
+}
 
 /** What a recipe's ingredients say about it, once the stats pass has run. */
 interface Stats {
@@ -200,20 +239,28 @@ export function RecipesDesktopPage(): JSX.Element {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [sort, setSort] = useState<SortKey>('name');
-  const [dir, setDir] = useState<'asc' | 'desc'>('asc');
+  // Restored from the last visit, so opening a recipe and coming back finds the
+  // grid in the order it was left in.
+  const [{ key: sort, dir }, setOrder] = useState<SortOrder>(loadOrder);
   // Recipe id → cost and hop rate. Null until a sort that needs them asks:
   // working these out means pulling every recipe's ingredient list upstream.
   const [stats, setStats] = useState<Map<string, Stats> | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
 
-  /** Load (or reload) the list plus the current fermenter selection. */
+  /**
+   * Load (or reload) the list plus the current fermenter selection. The list
+   * comes from the session cache, so returning from a recipe is instant; a
+   * refresh drops that cache first, brew sheets included.
+   */
   async function load(refresh = false): Promise<void> {
-    if (refresh) setRefreshing(true);
+    if (refresh) {
+      setRefreshing(true);
+      invalidateRecipes();
+    }
     try {
       const [list, current] = await Promise.all([
-        api.listRecipes(refresh),
+        loadRecipes(refresh),
         api.getActiveRecipe(),
       ]);
       setRecipes(list);
@@ -242,7 +289,7 @@ export function RecipesDesktopPage(): JSX.Element {
     if (statsLoading) return;
     setStatsLoading(true);
     try {
-      const { stats: list } = await api.listRecipeStats(refresh);
+      const { stats: list } = await loadRecipeStats(refresh);
       setStats(
         new Map(list.map((s) => [s.id, { usedDkk: s.usedDkk, hopsPerL: s.hopsPerL }])),
       );
@@ -323,8 +370,7 @@ export function RecipesDesktopPage(): JSX.Element {
                   value={sort}
                   onChange={(e) => {
                     const key = e.target.value as SortKey;
-                    setSort(key);
-                    setDir(SORT_DEFAULT_DIRECTION[key]);
+                    setOrder(saveOrder({ key, dir: SORT_DEFAULT_DIRECTION[key] }));
                   }}
                   aria-label="Sort recipes by"
                   className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-[#f87a68]"
@@ -337,7 +383,9 @@ export function RecipesDesktopPage(): JSX.Element {
                 </select>
                 <button
                   type="button"
-                  onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+                  onClick={() =>
+                    setOrder(saveOrder({ key: sort, dir: dir === 'asc' ? 'desc' : 'asc' }))
+                  }
                   title={`Sorted ${SORT_DIRECTION_LABELS[sort][dir]}`}
                   aria-label={`Sorted ${SORT_DIRECTION_LABELS[sort][dir]}. Reverse the order.`}
                   className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100"
