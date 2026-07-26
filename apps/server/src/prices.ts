@@ -227,6 +227,19 @@ const SYNONYMS: Record<string, string> = {
   appelsin: 'orange',
   hyldeblomst: 'elderflower',
   rabarber: 'rhubarb',
+  grapefrugt: 'grapefruit',
+  banan: 'banana',
+  kokos: 'coconut',
+  tangerin: 'tangerine',
+  litchi: 'lychee',
+  figen: 'fig',
+  // Colour/taste qualifiers a Ponthier listing hangs off a fruit name ("Rabarber
+  // Rød", "Sød Hindbær") — folded the same way the fruit names above are: the
+  // tokeniser turns ø into o and å into a before this table is consulted.
+  gron: 'green',
+  rod: 'red',
+  hvid: 'white',
+  sod: 'sweet',
   // The shop's closed-up Danish flake names, opened up to the grain inside.
   havreflager: 'oat',
   majsflager: 'maize',
