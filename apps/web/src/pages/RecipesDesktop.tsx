@@ -1,4 +1,4 @@
-import type { Recipe } from '@checklist/shared';
+import type { KegContentColors, Recipe } from '@checklist/shared';
 import { getRecipeColor, matchContentOption } from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -47,11 +47,11 @@ function StyleDot({
  * hop schedule, mash steps and water targets live, and where a recipe can be put
  * in the fermenter.
  *
- * Two colour systems meet on this page, deliberately: the "In the fermenter"
- * block below uses the brewery's own style palette (the colour that style wears
- * on the kegs and the Overview), while the recipe cards use the beer's physical
- * colour computed from its EBC — which is what a brewer reading a recipe expects
- * to see, and what the detail page shows.
+ * Two colour systems meet on this page, deliberately: dots come from the
+ * brewery's own style palette (the colour that style wears on the kegs and the
+ * Overview), on the "In the fermenter" block and on every card alike, while a
+ * card's left edge is the beer's physical colour computed from its EBC — which
+ * is what a brewer reading a recipe expects to see, and what the detail page shows.
  */
 export function RecipesDesktopPage(): JSX.Element {
   const { auth } = useAuth();
@@ -240,7 +240,7 @@ export function RecipesDesktopPage(): JSX.Element {
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((r) => (
               <li key={r.id}>
-                <RecipeCard recipe={r} inFermenter={r.id === active?.id} />
+                <RecipeCard recipe={r} inFermenter={r.id === active?.id} colors={colors} />
               </li>
             ))}
           </ul>
@@ -252,17 +252,21 @@ export function RecipesDesktopPage(): JSX.Element {
 
 /**
  * One recipe in the grid — a link to its brew sheet. The colour bar down the left
- * is the beer's own colour from its EBC, so the grid reads as a row of beers; the
- * one in the fermenter keeps the coral highlight.
+ * is the beer's own colour from its EBC, so the grid reads as a row of beers, while
+ * the dot by the name is the style's colour from the keg palette, matching how that
+ * beer looks on the keg boards. The one in the fermenter keeps the coral highlight.
  */
 function RecipeCard({
   recipe,
   inFermenter,
+  colors,
 }: {
   recipe: Recipe;
   inFermenter: boolean;
+  colors: KegContentColors;
 }): JSX.Element {
   const color = ebcColor(recipe.ebc);
+  const styleMatch = matchContentOption(recipe.name, recipe.style);
   return (
     <Link
       to={`/recipes/${encodeURIComponent(recipe.id)}`}
@@ -274,12 +278,7 @@ function RecipeCard({
       }`}
     >
       <span className="flex w-full items-center gap-2">
-        <span
-          className={`h-2.5 w-2.5 shrink-0 rounded-full ${color ? '' : 'border border-zinc-600'}`}
-          style={color ? { backgroundColor: color } : undefined}
-          title={recipe.ebc ? `${recipe.ebc} EBC` : 'Colour unknown'}
-          aria-hidden
-        />
+        <StyleDot color={getRecipeColor(recipe, colors)} label={styleMatch} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
           {recipe.name}
         </span>
