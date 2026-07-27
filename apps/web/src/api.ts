@@ -8,11 +8,14 @@ import type {
   BrewPump,
   BrewSystemConfig,
   BrewSystemStatus,
+  BruceBook,
+  BruceChatEvent,
   BruceChatReply,
   BruceChatState,
   BruceConversation,
   BruceInstructions,
   BruceKnowledgeState,
+  BrucePhase,
   BruceServiceStatus,
   ChecklistSummary,
   ChecklistWithSteps,
@@ -91,6 +94,90 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // 204 No Content
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/**
+ * Ask Bruce a question, following what he's doing while he does it.
+ *
+ * The one streaming call in this client. `POST /api/bruce/chat` answers with
+ * server-sent events: `phase` while he reads the library, searches the web or
+ * pulls up a recipe, then a single `done` carrying the finished answer. The
+ * answer itself is not streamed token by token — only the progress is — so the
+ * caller still gets one reply object, just later than the first phase.
+ *
+ * Written on `fetch` + a reader rather than EventSource, which can only GET and
+ * cannot carry the bearer token the native app authenticates with.
+ */
+async function askBruce(
+  message: string,
+  conversationId: number,
+  onPhase?: (phase: BrucePhase) => void,
+): Promise<BruceChatReply> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${getApiBase()}/api/bruce/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ message, conversationId }),
+  });
+
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error('401: Authentication required');
+  }
+  // Everything that can be refused outright — no API key, a deleted thread — is
+  // refused before the stream starts, so it still arrives as JSON with a status.
+  if (!res.ok || !res.body) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body?.error ?? JSON.stringify(body);
+    } catch {
+      /* keep the status text */
+    }
+    throw new Error(`${res.status}: ${detail}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let reply: BruceChatReply | null = null;
+  let failure: string | null = null;
+
+  const handle = (payload: string): void => {
+    let event: BruceChatEvent;
+    try {
+      event = JSON.parse(payload) as BruceChatEvent;
+    } catch {
+      return;
+    }
+    if (event.type === 'phase') onPhase?.(event);
+    else if (event.type === 'done') reply = event.reply;
+    else if (event.type === 'error') failure = event.message;
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // Frames are separated by a blank line; a partial one waits for its rest.
+    let split = buffer.indexOf('\n\n');
+    while (split !== -1) {
+      for (const line of buffer.slice(0, split).split('\n')) {
+        if (line.startsWith('data:')) handle(line.slice(5).trim());
+      }
+      buffer = buffer.slice(split + 2);
+      split = buffer.indexOf('\n\n');
+    }
+  }
+
+  if (failure) throw new Error(failure);
+  // A stream that ends with neither is a dropped connection — the tunnel, or
+  // the server restarting mid-answer.
+  if (!reply) throw new Error('The connection to Bruce dropped before he answered.');
+  return reply;
 }
 
 /**
@@ -454,11 +541,8 @@ export const api = {
     request<BruceChatState>(
       conversationId ? `/bruce/chat?conversation=${conversationId}` : '/bruce/chat',
     ),
-  askBruce: (message: string, conversationId: number) =>
-    request<BruceChatReply>('/bruce/chat', {
-      method: 'POST',
-      body: JSON.stringify({ message, conversationId }),
-    }),
+  askBruce: (message: string, conversationId: number, onPhase?: (phase: BrucePhase) => void) =>
+    askBruce(message, conversationId, onPhase),
   clearBruceChat: (conversationId: number) =>
     request<void>(`/bruce/chat?conversation=${conversationId}`, { method: 'DELETE' }),
   setBruceChatModel: (model: string) =>
@@ -498,6 +582,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ force }),
     }),
+  // Read a book on the shelf. A chapter at a time — the books are ~600 KB of
+  // markdown each, and the table of contents comes back with every chapter.
+  getBruceBook: (file: string, chapter?: number) =>
+    request<BruceBook>(
+      `/bruce/knowledge/files/${encodeURIComponent(file)}${chapter != null ? `?chapter=${chapter}` : ''}`,
+    ),
 
   // Bruce's persona (knowledge/PROMPT.md). Saving empty text reverts to the
   // built-in instructions.

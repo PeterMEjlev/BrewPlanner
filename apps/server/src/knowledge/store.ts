@@ -20,9 +20,10 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { BruceKnowledgeStatus } from '@checklist/shared';
+import type { BruceBook, BruceBookChapter, BruceKnowledgeStatus } from '@checklist/shared';
 import { databasePath } from '../db/index.js';
 import type { KnowledgeChunk } from './chunk.js';
+import { readableMarkdown } from './chunk.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -122,6 +123,70 @@ export function writeKnowledgeFile(file: string, content: string): void {
 
 export function hashContent(content: string): string {
   return createHash('sha256').update(content).digest('hex');
+}
+
+/**
+ * Open a book for reading, one chapter at a time.
+ *
+ * Chapters, not the whole file, because the books here are ~600 KB of markdown
+ * each: sending one whole is a slow request over the tunnel and a slower render
+ * on the kiosk, to show a page nobody reads end to end. The table of contents
+ * always comes back, so the reader can offer the rest without asking again.
+ *
+ * Only files actually in knowledge/ can be opened — the name is matched against
+ * the directory listing rather than being resolved, so no path can escape it
+ * however it is spelled.
+ *
+ * @param file Name as it appears in knowledge/
+ * @param wanted Chapter id (its position in the file); the first when omitted
+ */
+export function readKnowledgeBook(file: string, wanted?: number): BruceBook | null {
+  const name = knowledgeFiles().find((f) => f.toLowerCase() === file.toLowerCase());
+  if (!name) return null;
+
+  let markdown: string;
+  try {
+    markdown = readFileSync(join(knowledgeDir(), name), 'utf-8');
+  } catch {
+    return null;
+  }
+
+  const lines = readableMarkdown(markdown).split('\n');
+  const title = lines.find((l) => /^#\s+\S/.test(l))?.replace(/^#\s+/, '').trim() ?? name;
+
+  // Split on `# ` chapters. A book with only `## ` headings (or none at all —
+  // a hand-written note) falls back so it still opens, as one piece if need be.
+  const level = countHeadings(lines, 1) > 1 ? 1 : countHeadings(lines, 2) > 1 ? 2 : 0;
+  const heading = new RegExp(`^#{${level || 1}}\\s+(.*\\S)\\s*$`);
+
+  const chapters: { title: string; lines: string[] }[] = [];
+  for (const line of lines) {
+    const match = level > 0 ? line.match(heading) : null;
+    if (match) chapters.push({ title: match[1] ?? title, lines: [] });
+    // Text before the first heading is the front matter, and belongs to
+    // something — a chapter of its own rather than silently dropped.
+    if (chapters.length === 0) chapters.push({ title, lines: [] });
+    chapters[chapters.length - 1]?.lines.push(line);
+  }
+
+  const toc: BruceBookChapter[] = chapters.map((chapter, id) => ({
+    id,
+    title: chapter.title,
+    chars: chapter.lines.join('\n').trim().length,
+  }));
+
+  const id = wanted != null && wanted >= 0 && wanted < chapters.length ? wanted : 0;
+  const chapter = chapters[id];
+  const entry = toc[id];
+  if (!chapter || !entry) return null;
+
+  return { file: name, title, chapters: toc, chapter: { ...entry, content: chapter.lines.join('\n').trim() } };
+}
+
+/** How many headings of exactly this level the document has. */
+function countHeadings(lines: string[], level: number): number {
+  const heading = new RegExp(`^#{${level}}\\s+\\S`);
+  return lines.filter((line) => heading.test(line)).length;
 }
 
 /**

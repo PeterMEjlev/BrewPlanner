@@ -13,13 +13,33 @@ import type { ReactNode } from 'react';
  * Everything is built as React nodes, never `dangerouslySetInnerHTML` — model
  * output is untrusted text and this way it can never become markup.
  *
- * Not supported (and deliberately so): links, images, blockquotes, nested
- * lists. Unrecognised syntax falls through as plain text rather than
- * disappearing.
+ * It also renders the books themselves in the library reader, which is why
+ * blockquotes and heading levels are here: an answer rarely needs them, a
+ * transcribed chapter does.
+ *
+ * Not supported (and deliberately so): images, nested lists, reference links.
+ * Unrecognised syntax falls through as plain text rather than disappearing.
  */
 
-/** Inline: `**bold**`, `*italic*`/`_italic_`, `` `code` ``. */
-const INLINE = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*|_[^_\n]+_)/g;
+/**
+ * Inline: `***both***`, `**bold**`, `*italic*`/`_italic_`, `` `code` ``, and
+ * `[text](url)` links. Ordered longest-marker first, so `***x***` is matched
+ * whole rather than as bold followed by a stray asterisk.
+ */
+const INLINE =
+  /(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^)\s]+\))/g;
+
+/** A markdown link, split into its text and target. */
+const LINK = /^\[([^\]]+)\]\(([^)\s]+)\)$/;
+
+/**
+ * Only http(s) links become anchors. The text being rendered is model output,
+ * so a `javascript:` or `data:` target is not a link this app should offer to
+ * follow — those fall through and are shown as the plain text they are.
+ */
+function isSafeHref(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
 
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -27,7 +47,14 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   parts.forEach((part, i) => {
     if (!part) return;
     const key = `${keyPrefix}-${i}`;
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+    const link = part.match(LINK);
+    if (part.startsWith('***') && part.endsWith('***') && part.length > 6) {
+      nodes.push(
+        <strong key={key} className="font-semibold italic text-zinc-50">
+          {part.slice(3, -3)}
+        </strong>,
+      );
+    } else if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
       nodes.push(
         <strong key={key} className="font-semibold text-zinc-50">
           {part.slice(2, -2)}
@@ -38,6 +65,18 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
         <code key={key} className="rounded bg-zinc-950/70 px-1 py-0.5 font-mono text-[0.85em] text-emerald-300">
           {part.slice(1, -1)}
         </code>,
+      );
+    } else if (link && isSafeHref(link[2] ?? '')) {
+      nodes.push(
+        <a
+          key={key}
+          href={link[2]}
+          target="_blank"
+          rel="noreferrer"
+          className="text-sky-400 underline decoration-sky-400/40 underline-offset-2 transition hover:text-sky-300"
+        >
+          {link[1]}
+        </a>,
       );
     } else if (
       ((part.startsWith('*') && part.endsWith('*')) || (part.startsWith('_') && part.endsWith('_'))) &&
@@ -66,6 +105,20 @@ function tableCells(line: string): string[] {
 }
 
 const TABLE_DIVIDER = /^\|?[\s:|-]+\|[\s:|-]*$/;
+
+/**
+ * Heading weight by level. Sizes stay close together on purpose: this renders
+ * inside a chat bubble as often as it renders a book page, and a `#` set at
+ * display size would dwarf the answer it belongs to.
+ */
+const HEADING_LOOK: Record<number, string> = {
+  1: 'mt-4 text-base font-semibold text-zinc-50',
+  2: 'mt-3 text-[0.95rem] font-semibold text-zinc-100',
+  3: 'mt-2 font-semibold text-zinc-100',
+  4: 'mt-2 font-semibold text-zinc-200',
+  5: 'mt-2 font-medium text-zinc-300',
+  6: 'mt-2 font-medium text-zinc-400',
+};
 
 export function Markdown({ text }: { text: string }): JSX.Element {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
@@ -142,15 +195,32 @@ export function Markdown({ text }: { text: string }): JSX.Element {
       continue;
     }
 
-    // Heading
+    // Heading. The level is kept rather than flattened, so a book chapter reads
+    // as a chapter — an answer's occasional `##` looks much the same either way.
     const heading = trimmed.match(/^(#{1,6})\s+(.*)$/);
     if (heading) {
+      const level = (heading[1] ?? '#').length;
       blocks.push(
-        <p key={key++} className="mt-2 font-semibold text-zinc-100">
+        <p key={key++} className={`${HEADING_LOOK[level] ?? HEADING_LOOK[3]} first:mt-0`}>
           {renderInline(heading[2] ?? '', `h-${key}`)}
         </p>,
       );
       i++;
+      continue;
+    }
+
+    // Blockquote: consecutive `> ` lines, joined into one quoted paragraph.
+    if (/^>\s?/.test(trimmed)) {
+      const quoted: string[] = [];
+      while (i < lines.length && /^>\s?/.test((lines[i] ?? '').trim())) {
+        quoted.push((lines[i] ?? '').trim().replace(/^>\s?/, ''));
+        i++;
+      }
+      blocks.push(
+        <blockquote key={key++} className="border-l-2 border-zinc-700 pl-3 italic text-zinc-400">
+          {renderInline(quoted.join(' '), `q-${key}`)}
+        </blockquote>,
+      );
       continue;
     }
 
@@ -189,6 +259,7 @@ export function Markdown({ text }: { text: string }): JSX.Element {
         current === '' ||
         current.startsWith('```') ||
         /^#{1,6}\s/.test(current) ||
+        /^>\s?/.test(current) ||
         bullet.test(current) ||
         numbered.test(current)
       ) {

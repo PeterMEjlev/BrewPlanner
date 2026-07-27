@@ -171,3 +171,28 @@ html.kiosk *::after {
 .icon-accent [stroke='currentColor'] {
   stroke: url(#icon-accent);
 }
+
+/* Bruce's "working on it" dots: three that rise and fall in turn, staggered by
+   an inline animation-delay. Used in the chat's progress bubble and on the
+   sidebar's Bruce tab while an answer is still coming. */
+@keyframes thinking-dot {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  35% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+.thinking-dot {
+  animation: thinking-dot 1.1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dot {
+    animation: none;
+    opacity: 0.7;
+  }
+}

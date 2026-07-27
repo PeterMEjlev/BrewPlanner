@@ -107,3 +107,109 @@ export async function openaiPost<T>(path: string, body: unknown): Promise<T> {
 
   throw lastError ?? new OpenAIError(0, 'OpenAI request failed.');
 }
+
+/** One event off a streamed response: `{ type: 'response.…', … }`. */
+export interface StreamEvent {
+  type?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * POST with `stream: true` and walk the server-sent events OpenAI answers with,
+ * returning the final response object.
+ *
+ * Used for exactly one thing: knowing what the model is *doing* while it does
+ * it. A plain POST only says what happened once it is over, so a question that
+ * makes the model go and search the web looks identical to one it answered from
+ * the retrieved passages — the page can only shrug and say "working…". Streamed,
+ * `response.web_search_call.*` arrives the moment the search starts, and the
+ * page can say so honestly.
+ *
+ * Not retried, unlike openaiPost: a stream that fails halfway has already
+ * emitted events the caller acted on, and re-running it would replay them.
+ * Failures here surface to the brewer, who can ask again.
+ *
+ * @param onEvent Called for every event; the final response is returned, not passed here.
+ */
+export async function openaiStream<T>(
+  path: string,
+  body: unknown,
+  onEvent: (event: StreamEvent) => void,
+): Promise<T> {
+  const key = openaiKey();
+  if (!key) throw new OpenAIError(401, 'OPENAI_API_KEY is not set on the server.');
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({ ...(body as object), stream: true }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    throw new OpenAIError(0, 'Could not reach OpenAI (network or timeout).');
+  }
+
+  if (!res.ok || !res.body) {
+    let detail = `OpenAI answered ${res.status}`;
+    try {
+      const data = (await res.json()) as { error?: { message?: string } };
+      if (typeof data?.error?.message === 'string') detail = data.error.message;
+    } catch {
+      /* keep the generic message */
+    }
+    throw new OpenAIError(res.status, detail);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let completed: T | null = null;
+  let failure: string | null = null;
+
+  /** One `data:` payload. Events arrive as blank-line-separated blocks. */
+  const handle = (payload: string): void => {
+    if (payload === '[DONE]') return;
+    let event: StreamEvent;
+    try {
+      event = JSON.parse(payload) as StreamEvent;
+    } catch {
+      return; // A malformed frame is not worth failing the whole answer over.
+    }
+    onEvent(event);
+    // `response.completed` carries the same object a non-streamed call returns,
+    // so everything downstream (text extraction, citations, usage) is unchanged.
+    if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+      completed = event.response as T;
+    } else if (event.type === 'response.failed' || event.type === 'error') {
+      const error = (event.response as { error?: { message?: string } } | undefined)?.error;
+      failure = error?.message ?? (event.message as string | undefined) ?? 'The model stopped early.';
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // Frames end at a blank line; anything after the last one is a partial
+    // frame and stays in the buffer until the rest of it arrives.
+    let split = buffer.indexOf('\n\n');
+    while (split !== -1) {
+      const frame = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('data:')) handle(line.slice(5).trim());
+      }
+      split = buffer.indexOf('\n\n');
+    }
+  }
+
+  if (failure) throw new OpenAIError(502, failure);
+  if (!completed) throw new OpenAIError(502, 'OpenAI ended the stream without an answer.');
+  return completed;
+}

@@ -23,14 +23,17 @@ import type {
   BruceChatModel,
   BruceChatSource,
   BruceInstructions,
+  BrucePhase,
 } from '@checklist/shared';
 import { pageLabel } from '../knowledge/chunk.js';
 import { embedQuery } from '../knowledge/embed.js';
 import { knowledgeDir, libraryOutline, search } from '../knowledge/store.js';
-import { openaiKey, OpenAIError, openaiGet, openaiPost } from '../openai.js';
+import type { StreamEvent } from '../openai.js';
+import { openaiKey, OpenAIError, openaiGet, openaiStream } from '../openai.js';
 import { getSetting, setSetting } from '../repo.js';
 import type { TokenUsage } from './cost.js';
 import { estimateCostUsd } from './cost.js';
+import { RECIPE_TOOL, recipeShelf, runRecipeTool } from './recipes.js';
 
 /**
  * Chat model, in order of precedence: whatever was picked on the Bruce page,
@@ -55,17 +58,23 @@ export function setChatModel(model: string): void {
 /**
  * Whether Bruce may search the web, stored alongside the model choice.
  *
- * Off unless switched on. The library is the whole point of this chat — a model
- * that can reach the open web will happily answer a mash-pH question from the
- * first forum post it finds instead of from Palmer, which is exactly the
- * failure the retrieval was built to avoid. It is also billed per search on top
- * of the tokens. So: opt-in, with the persona below telling him the books come
- * first either way.
+ * On unless switched off. It started opt-in, on the worry that a model with the
+ * open web in reach would answer a mash-pH question from the first forum post
+ * it finds instead of from Palmer. In practice the instructions below hold: the
+ * retrieved passages arrive with the question, and the model reaches for the web
+ * for what the books cannot know — a hop released after they were printed,
+ * current stock, a piece of kit. Leaving it off by default mostly meant asking a
+ * dated question, getting "the books don't cover it", and going to switch it on.
+ *
+ * It is still billed per search on top of the tokens, and still a switch in the
+ * chat header — this only decides where a fresh install starts.
  */
 const WEB_SEARCH_SETTING_KEY = 'bruce_web_search';
 
 export function webSearchEnabled(): boolean {
-  return getSetting(WEB_SEARCH_SETTING_KEY) === 'on';
+  // Unset means never touched, which is the default-on case; only an explicit
+  // "off" (the toggle) turns it off, so flipping it still sticks across restarts.
+  return getSetting(WEB_SEARCH_SETTING_KEY) !== 'off';
 }
 
 export function setWebSearchEnabled(enabled: boolean): void {
@@ -222,6 +231,16 @@ You are answering in writing, on a dashboard — not out loud. Write for the
 screen: get to the point, use short paragraphs, and use a list or a small table
 when comparing numbers, water profiles, or steps.
 
+Markdown is rendered, so use it where it earns its place:
+
+- **Bold** the figure or term the answer turns on — the target pH, the dose, the
+  name of the fault — so it can be found again at a glance. A few per answer.
+- *Italics* for a light emphasis or an aside, not for whole sentences.
+- \`Backticks\` for a unit, a formula or a value being quoted exactly.
+- Headings only when an answer genuinely has two or more parts.
+
+Don't bold everything: if half the answer is bold, none of it is.
+
 You have been given passages from the brewing books in this brewery's library.
 Answer from those passages.
 
@@ -322,12 +341,34 @@ You can search the web, and should when it genuinely helps:
 - The web is not the library. Where a brewing forum contradicts the books,
   prefer the books and say the two disagree.`;
 
-/** Persona + what's actually on the shelf, sent as `instructions` each turn. */
-export function chatPrompt(): string {
-  const web = webSearchEnabled() ? `\n\n${WEB_SEARCH_PROMPT}` : '';
+/**
+ * Appended when the brewery's recipes could be listed. Written here rather than
+ * in DEFAULT_PROMPT for the same reason as the web-search block: it describes a
+ * tool that isn't always attached (no Brewer's Friend key, upstream down), and a
+ * persona that claims to read recipes it cannot reach apologises instead of
+ * answering.
+ */
+const RECIPES_PROMPT = `--- This brewery's recipes
+
+The list below is every recipe on this brewery's Brewer's Friend account, with
+its headline numbers only.
+
+- When a question is about one of them — "is my saison under-hopped?", "what
+  should I change about the stout?" — call \`get_recipe\` first and answer from
+  the actual grain bill, hop schedule and water targets. Do not guess at a
+  recipe's contents from its name and style.
+- The list itself answers questions about the collection: how many there are,
+  which is strongest, what was brewed most recently.
+- Advice on a recipe is worth more when it is specific: name the addition or the
+  malt you would change, and say by how much.
+- These are the brewer's own recipes, not a book. Cite the books for the
+  principle, and the recipe for what it currently does.`;
+
+/** The shelf listing, or a note that there is nothing on it. */
+function libraryBlock(): string {
   const library = libraryOutline();
   if (library.length === 0) {
-    return `${personaPrompt()}${web}\n\n--- The brewery library\n\nThe library is empty — no books have been indexed yet. Say so if asked, and answer from general brewing knowledge.`;
+    return '--- The brewery library\n\nThe library is empty — no books have been indexed yet. Say so if asked, and answer from general brewing knowledge.';
   }
 
   const total = library.reduce((n, doc) => n + doc.chapters.length, 0);
@@ -340,7 +381,21 @@ export function chatPrompt(): string {
     )
     .join('\n');
 
-  return `${personaPrompt()}${web}\n\n--- The brewery library\n\nThese are the only books you have. This is the complete list${detailed ? ', with each book\'s chapters' : ''}:\n\n${shelf}`;
+  return `--- The brewery library\n\nThese are the only books you have. This is the complete list${detailed ? ", with each book's chapters" : ''}:\n\n${shelf}`;
+}
+
+/**
+ * Persona + what's actually on the shelf + what's in the recipe book, sent as
+ * `instructions` each turn.
+ *
+ * @param recipes Recipe list from recipeShelf(), or null when unavailable
+ */
+export function chatPrompt(recipes: string | null): string {
+  const blocks = [personaPrompt()];
+  if (webSearchEnabled()) blocks.push(WEB_SEARCH_PROMPT);
+  if (recipes) blocks.push(`${RECIPES_PROMPT}\n\n${recipes}`);
+  blocks.push(libraryBlock());
+  return blocks.join('\n\n');
 }
 
 /** One web page the model read, as attached to the text it informed. */
@@ -350,15 +405,22 @@ interface UrlCitation {
   title?: string;
 }
 
+/** One item in a response's output: a message, a reasoning step, a tool call. */
+interface OutputItem {
+  type: string;
+  content?: { type: string; text?: string; annotations?: UrlCitation[] }[];
+  /** Function calls only: which tool, with what, and the id to answer against. */
+  name?: string;
+  arguments?: string;
+  call_id?: string;
+}
+
 /** Response shape of POST /v1/responses, narrowed to what's read here. */
 interface ResponsesReply {
   status?: string;
   incomplete_details?: { reason?: string };
   output_text?: string;
-  output?: {
-    type: string;
-    content?: { type: string; text?: string; annotations?: UrlCitation[] }[];
-  }[];
+  output?: OutputItem[];
   /** Token counts for this call — priced by cost.ts. */
   usage?: TokenUsage;
 }
@@ -435,16 +497,71 @@ export interface ChatAnswer {
   costUsd: number | null;
 }
 
+/** Told what Bruce is doing, as he starts doing it. See BrucePhase. */
+export type PhaseReporter = (phase: BrucePhase) => void;
+
+/**
+ * Report only the *changes*, not every event that implies a phase.
+ *
+ * `response.output_text.delta` arrives per token, and each one means "writing" —
+ * relaying all of them would be hundreds of stream frames and hundreds of React
+ * renders to say the same thing. A phase can legitimately repeat (a search, an
+ * answer, then a second search), so only consecutive duplicates are dropped.
+ */
+function onlyChanges(report: PhaseReporter): PhaseReporter {
+  let last = '';
+  return (phase) => {
+    const key = `${phase.phase}|${phase.detail ?? ''}`;
+    if (key === last) return;
+    last = key;
+    report(phase);
+  };
+}
+
+/**
+ * How many times the model may call a tool and be asked again before the answer
+ * is forced. Each round is another billed request; two recipes is a fair
+ * question ("compare my two IPAs"), five is a loop.
+ */
+const MAX_TOOL_ROUNDS = 4;
+
+/** Bruce's own tools. `web_search` is OpenAI's and is added separately. */
+function functionTools(): unknown[] {
+  return [RECIPE_TOOL];
+}
+
+/**
+ * Turn one streamed OpenAI event into a phase, or nothing.
+ *
+ * This is the honest half of the progress line on the Bruce page: the web phase
+ * is reported because OpenAI said a search started, not because searching was
+ * *allowed*. With the switch on but the books answering the question, the page
+ * never claims he went to the web — because he didn't.
+ */
+function phaseForEvent(event: StreamEvent, report: PhaseReporter): void {
+  const type = event.type ?? '';
+  if (type === 'response.web_search_call.in_progress' || type === 'response.web_search_call.searching') {
+    report({ phase: 'web' });
+  } else if (type === 'response.output_text.delta') {
+    // First text token: the thinking and searching are over, prose is arriving.
+    report({ phase: 'writing' });
+  }
+}
+
 /**
  * Answer one question, grounded in the knowledge index.
  *
  * @param question What the brewer typed
  * @param history Prior turns, oldest first (the new question is not included)
+ * @param onPhase Called as each step begins, for the page's progress line
  */
 export async function answerQuestion(
   question: string,
   history: BruceChatMessage[],
+  report: PhaseReporter = () => {},
 ): Promise<ChatAnswer> {
+  const onPhase = onlyChanges(report);
+  onPhase({ phase: 'library' });
   const hits = search(await embedQuery(question), RETRIEVE_K, MIN_SCORE);
 
   const sources: BruceChatSource[] = [];
@@ -475,7 +592,9 @@ export async function answerQuestion(
         // in its instructions, so let it tell the two apart.
         'No individual passage matched this question. If it is a question about the library itself, answer from the library contents in your instructions. Otherwise answer from general brewing knowledge and say the books do not cover it.\n\n---\n\n';
 
-  const input = [
+  // Input grows across tool rounds: the model's own output items and the tool
+  // results are appended, so the next call sees what it asked for.
+  const input: unknown[] = [
     ...history.slice(-HISTORY_TURNS).map((m) => ({ role: m.role, content: m.content })),
     { role: 'user' as const, content: `${context}Question: ${question}` },
   ];
@@ -483,7 +602,7 @@ export async function answerQuestion(
   const model = chatModel();
   const body: Record<string, unknown> = {
     model,
-    instructions: chatPrompt(),
+    instructions: chatPrompt(await recipeShelf()),
     input,
     max_output_tokens: MAX_OUTPUT_TOKENS,
   };
@@ -495,35 +614,73 @@ export async function answerQuestion(
   const reasoningEffort = effort ?? (model.startsWith('gpt-5') || /^o[1-9]/.test(model) ? 'low' : undefined);
   if (reasoningEffort) body.reasoning = { effort: reasoningEffort };
 
-  // Let him off the shelf when the switch is on. `web_search` is run by OpenAI,
-  // not by us: the model decides whether a question needs it, searches, reads
-  // the results and cites them back as url_citation annotations — so there is
-  // no crawler, no scraping and no extra key here. It is billed per search on
-  // top of the tokens, which is why it is opt-in.
-  if (webSearchEnabled()) body.tools = [{ type: 'web_search' }];
+  // What he is allowed to reach for. `web_search` is run by OpenAI, not by us:
+  // the model decides whether a question needs it, searches, reads the results
+  // and cites them back as url_citation annotations — so there is no crawler,
+  // no scraping and no extra key here. `get_recipe` is ours, and is answered in
+  // the loop below.
+  body.tools = [...(webSearchEnabled() ? [{ type: 'web_search' }] : []), ...functionTools()];
 
-  let reply: ResponsesReply;
-  try {
-    reply = await openaiPost<ResponsesReply>('/responses', body);
-  } catch (err) {
-    // A 400 usually means this model doesn't take one of the optional
-    // parameters — an older one that has no reasoning step, or one that can't
-    // search. Retry bare before giving up, so swapping the model on the Bruce
-    // page to something older doesn't need a code change.
-    if (err instanceof OpenAIError && err.status === 400 && (body.reasoning || body.tools)) {
-      delete body.reasoning;
-      delete body.tools;
-      reply = await openaiPost<ResponsesReply>('/responses', body);
-    } else {
-      throw err;
+  /** Token counts summed over every round, so a tool call isn't billed as free. */
+  const usage: TokenUsage = { input_tokens: 0, output_tokens: 0 };
+  const webPages: BruceChatSource[] = [];
+  let reply: ResponsesReply | null = null;
+
+  for (let round = 1; round <= MAX_TOOL_ROUNDS; round++) {
+    onPhase({ phase: 'thinking' });
+
+    try {
+      reply = await openaiStream<ResponsesReply>('/responses', body, (event) =>
+        phaseForEvent(event, onPhase),
+      );
+    } catch (err) {
+      // A 400 usually means this model doesn't take one of the optional
+      // parameters — an older one with no reasoning step, or one that can't use
+      // tools. Retry bare before giving up, so swapping the model on the Bruce
+      // page to something older doesn't need a code change. Only on the first
+      // round: once a tool has answered, the input holds results that would be
+      // invalid with the tools removed.
+      if (round === 1 && err instanceof OpenAIError && err.status === 400 && (body.reasoning || body.tools)) {
+        delete body.reasoning;
+        delete body.tools;
+        reply = await openaiStream<ResponsesReply>('/responses', body, (event) =>
+          phaseForEvent(event, onPhase),
+        );
+      } else {
+        throw err;
+      }
     }
+
+    usage.input_tokens = (usage.input_tokens ?? 0) + (reply.usage?.input_tokens ?? 0);
+    usage.output_tokens = (usage.output_tokens ?? 0) + (reply.usage?.output_tokens ?? 0);
+    // Citations are collected per round: a page read while deciding to look up a
+    // recipe is still a page that informed the answer.
+    webPages.push(...webSources(reply));
+
+    const calls = (reply.output ?? []).filter((item) => item.type === 'function_call');
+    if (calls.length === 0) break;
+
+    // Everything the model produced goes back in — including its reasoning
+    // items, which the reasoning models need in order to pick up where they
+    // left off — followed by each tool's result.
+    input.push(...(reply.output ?? []));
+    for (const call of calls) {
+      input.push({
+        type: 'function_call_output',
+        call_id: call.call_id,
+        output: await runTool(call, onPhase),
+      });
+    }
+
+    // The last round has to produce prose, not another tool call.
+    if (round === MAX_TOOL_ROUNDS - 1) body.tool_choice = 'none';
   }
 
-  const text = extractText(reply);
+  const text = reply ? extractText(reply) : '';
   if (!text) {
     // Empty output with a reasoning model almost always means the token budget
     // was spent thinking. Say that, rather than showing a blank bubble.
-    const reason = reply.incomplete_details?.reason;
+    const reason = reply?.incomplete_details?.reason;
     throw new Error(
       reason === 'max_output_tokens'
         ? 'Bruce ran out of room before finishing the answer. Try a narrower question.'
@@ -531,13 +688,41 @@ export async function answerQuestion(
     );
   }
 
+  // Deduplicate web citations across rounds — one page read twice is one chip.
+  const uniqueWeb = [...new Map(webPages.map((page) => [page.url, page])).values()];
+
   // Priced from the counts OpenAI just reported, not from the request — a
   // retry, a reasoning step or a truncated answer all move the real number.
   // Note the per-search tool fee is *not* in `usage`, so a searched answer costs
   // a little more than this says; the page links the real bill for that reason.
   return {
     text,
-    sources: [...sources, ...webSources(reply)],
-    costUsd: estimateCostUsd(model, reply.usage),
+    sources: [...sources, ...uniqueWeb],
+    costUsd: estimateCostUsd(model, usage),
   };
+}
+
+/**
+ * Run one tool call and return what the model should read back.
+ *
+ * Errors become text rather than exceptions — see runRecipeTool. An unknown
+ * tool name is treated the same way: the model invented it, and being told so
+ * is more useful than a 500 on the brewer's screen.
+ */
+async function runTool(call: OutputItem, onPhase: PhaseReporter): Promise<string> {
+  if (call.name !== RECIPE_TOOL.name) {
+    return `There is no tool called ${call.name ?? 'that'}.`;
+  }
+
+  let wanted = '';
+  try {
+    wanted = (JSON.parse(call.arguments ?? '{}') as { name?: string }).name?.trim() ?? '';
+  } catch {
+    return 'The recipe name could not be read. Call get_recipe again with a plain name.';
+  }
+  if (!wanted) return 'No recipe name was given. Call get_recipe again with one.';
+
+  onPhase({ phase: 'recipes', detail: wanted });
+  const { text } = await runRecipeTool(wanted);
+  return text;
 }

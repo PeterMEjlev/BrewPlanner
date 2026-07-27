@@ -216,6 +216,29 @@ function splitLongText(text: string): string[] {
   return pieces;
 }
 
+/**
+ * Strip the transcription's scaffolding so a book can be *read* rather than
+ * retrieved: page markers, the per-page scan images, the placeholder left where
+ * a page held no text, and the rules that separate one page from the next.
+ *
+ * None of it means anything to a person — the images point at scans this server
+ * doesn't serve, and `---` between every page renders as a wall of dashes. The
+ * headings, paragraphs and tables are left exactly as they are.
+ */
+export function readableMarkdown(markdown: string): string {
+  const kept: string[] = [];
+  for (const raw of markdown.replace(/\r\n?/g, '\n').split('\n')) {
+    const trimmed = raw.trim();
+    if (PAGE_MARKER.test(trimmed) || IMAGE_ONLY.test(trimmed)) continue;
+    if (NO_TEXT_PLACEHOLDER.test(trimmed) || HORIZONTAL_RULE.test(trimmed)) continue;
+    // Runs of blank lines are left by what was just dropped; one is a paragraph
+    // break, three is a hole in the page.
+    if (trimmed === '' && kept[kept.length - 1] === '') continue;
+    kept.push(trimmed === '' ? '' : raw.trimEnd());
+  }
+  return kept.join('\n').trim();
+}
+
 /** Human-readable page reference for a passage: `142`, `142–144`, or undefined. */
 export function pageLabel(chunk: {
   pageStart?: number;

@@ -1,4 +1,5 @@
 import type {
+  BruceChatEvent,
   BruceChatModel,
   BruceChatReply,
   BruceChatState,
@@ -49,7 +50,12 @@ import {
 import { BuildError } from '../knowledge/build.js';
 import { chunkMarkdown } from '../knowledge/chunk.js';
 import { indexJob, startIndexJob } from '../knowledge/job.js';
-import { isReservedKnowledgeName, knowledgeStatus, writeKnowledgeFile } from '../knowledge/store.js';
+import {
+  isReservedKnowledgeName,
+  knowledgeStatus,
+  readKnowledgeBook,
+  writeKnowledgeFile,
+} from '../knowledge/store.js';
 import { isOpenAIConfigured } from '../openai.js';
 
 /**
@@ -238,6 +244,13 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /api/bruce/chat — ask Bruce a question. Admin-only: every call costs
   // OpenAI credit, and guests are read-only everywhere else in the dashboard.
+  //
+  // Answers as a server-sent event stream rather than one JSON body. Not to
+  // stream the prose — the answer still arrives whole, in the final `done`
+  // event — but to say what he is *doing* while he does it. A question that
+  // sends him to the web takes noticeably longer than one the books answer, and
+  // before this the page could only guess which was happening; now the phases
+  // come from the model's own tool calls (see bruce/chat.ts).
   app.post('/chat', { preHandler: requireAdmin }, async (req, reply) => {
     const body = parse(bruceChatSchema, req.body, reply);
     if (!body) return;
@@ -253,13 +266,36 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(404).send({ error: 'That conversation no longer exists.' });
     }
 
+    // Everything that could fail with a status code has now been checked, so
+    // the response can commit to being a stream. After this point a failure is
+    // an `error` event, not an HTTP status — the headers are long gone.
+    //
+    // `hijack` hands the socket over: Fastify stops expecting the handler to
+    // return a body, and stops trying to serialise one. Everything from here is
+    // written by hand and ended in the `finally`.
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      // Nginx and friends buffer event streams by default, which would hold
+      // every phase back until the answer landed and defeat the point.
+      'X-Accel-Buffering': 'no',
+    });
+
+    const send = (event: BruceChatEvent): void => {
+      if (!reply.raw.writableEnded) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+
     // The question is stored first so history is right for the model, then
     // rolled back if the answer fails: a thread ending in an unanswered
     // question would poison every following turn's context.
     const history = listMessages(conversationId);
     const question = addMessage(conversationId, 'user', body.message);
     try {
-      const answer = await answerQuestion(body.message, history);
+      const answer = await answerQuestion(body.message, history, (phase) =>
+        send({ type: 'phase', ...phase }),
+      );
       const stored = addMessage(
         conversationId,
         'assistant',
@@ -273,12 +309,13 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
       trimHistory(conversationId);
       const conversation = listConversations().find((c) => c.id === conversationId);
       if (!conversation) throw new Error('Conversation vanished mid-answer.');
-      return { question, answer: stored, conversation } satisfies BruceChatReply;
+      send({ type: 'done', reply: { question, answer: stored, conversation } satisfies BruceChatReply });
     } catch (err) {
       deleteMessage(question.id);
       req.log.error({ err }, 'Bruce chat failed');
-      const message = err instanceof Error ? err.message : 'Bruce could not answer that.';
-      return reply.status(502).send({ error: message });
+      send({ type: 'error', message: err instanceof Error ? err.message : 'Bruce could not answer that.' });
+    } finally {
+      reply.raw.end();
     }
   });
 
@@ -318,6 +355,17 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
   // Polled by the page's library card while a job runs.
   app.get('/knowledge', { preHandler: requireAuth }, async (): Promise<BruceKnowledgeState> => {
     return { knowledge: knowledgeStatus(), job: indexJob(), configured: isOpenAIConfigured() };
+  });
+
+  // GET /api/bruce/knowledge/files/:file?chapter=N — read a book on the shelf.
+  // Registered after the POST above, and distinct from it by method. A chapter
+  // at a time: see readKnowledgeBook for why the whole file doesn't travel.
+  app.get('/knowledge/files/:file', { preHandler: requireAuth }, async (req, reply) => {
+    const { file } = req.params as { file: string };
+    const wanted = Number((req.query as { chapter?: string })?.chapter);
+    const book = readKnowledgeBook(file, Number.isInteger(wanted) ? wanted : undefined);
+    if (!book) return reply.status(404).send({ error: 'No such book in the library.' });
+    return book;
   });
 
   // POST /api/bruce/knowledge/files — upload a book and index it. Admin-only:

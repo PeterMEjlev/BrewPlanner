@@ -430,3 +430,25 @@ export function VolumeIcon(props: IconProps): JSX.Element {
     </Svg>
   );
 }
+
+/**
+ * Three dots rising in turn — Bruce is working on something.
+ *
+ * Lives here rather than on the Bruce page because both ends of the app show
+ * it: the chat's progress bubble, and the sidebar's Bruce tab while an answer
+ * is still coming (see bruceActivity.ts). Inherits its colour, so the caller
+ * decides whether it reads as ordinary work or as "he's out on the web".
+ */
+export function ThinkingDots({ className = '' }: { className?: string }): JSX.Element {
+  return (
+    <span className={`inline-flex items-end gap-0.5 ${className}`} aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="thinking-dot h-1 w-1 rounded-full bg-current"
+          style={{ animationDelay: `${i * 0.16}s` }}
+        />
+      ))}
+    </span>
+  );
+}

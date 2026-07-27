@@ -2262,8 +2262,8 @@ export interface BruceChatState {
   models: BruceChatModel[];
   /**
    * Whether Bruce may search the web when the books don't cover a question.
-   * Off by default: the library is the point, and each search is billed on top
-   * of the tokens. Toggled on the Bruce page, stored server-side.
+   * On by default — the books still come first, the model only reaches for the
+   * web when they are silent. Toggled on the Bruce page, stored server-side.
    */
   webSearch: boolean;
 }
@@ -2275,6 +2275,35 @@ export interface BruceChatReply {
   /** The thread it landed in — its title may have just been set from the question. */
   conversation: BruceConversation;
 }
+
+/**
+ * What Bruce is doing *right now*, streamed to the page while it waits.
+ *
+ * These are observed, not guessed: `library` and `recipes` are work the server
+ * does itself, and `web` arrives because OpenAI told us the model started a
+ * search. So "searching the web" on screen means he really is on the web, which
+ * is the whole point of naming them separately.
+ */
+export type BrucePhaseName = 'library' | 'thinking' | 'web' | 'recipes' | 'writing';
+
+/** One progress event on the chat stream. */
+export interface BrucePhase {
+  phase: BrucePhaseName;
+  /** What it is working on — a search query, a recipe name, a passage count. */
+  detail?: string;
+}
+
+/**
+ * An event on the `POST /api/bruce/chat` stream (server-sent events).
+ *
+ * The answer is not streamed token by token: only progress is, followed by the
+ * finished reply in one `done` event. The page shows what he is doing while he
+ * does it, then swaps in the complete answer.
+ */
+export type BruceChatEvent =
+  | ({ type: 'phase' } & BrucePhase)
+  | { type: 'done'; reply: BruceChatReply }
+  | { type: 'error'; message: string };
 
 /** Body for POST /api/bruce/chat. Omit `conversationId` to use the newest thread. */
 export const bruceChatSchema = z.object({
@@ -2373,6 +2402,35 @@ export type BruceKnowledgeFileInput = z.infer<typeof bruceKnowledgeFileSchema>;
 /** Body for POST /api/bruce/knowledge/reindex — `force` re-embeds everything. */
 export const bruceReindexSchema = z.object({ force: z.boolean().optional() });
 export type BruceReindexInput = z.infer<typeof bruceReindexSchema>;
+
+/**
+ * One chapter of a book, as the reader lists it.
+ *
+ * `id` is the chapter's position in the file, not a slug: two chapters in a
+ * transcribed book can genuinely carry the same heading, and an index can't
+ * collide with itself.
+ */
+export interface BruceBookChapter {
+  id: number;
+  title: string;
+  /** Characters of markdown in it, so the reader can say how long it is. */
+  chars: number;
+}
+
+/**
+ * GET /api/bruce/knowledge/files/:file — a book opened for reading.
+ *
+ * Served a chapter at a time. The two books this was built against are ~600 KB
+ * of markdown each; sending one whole would be a slow request over the tunnel
+ * and a slower render on the kiosk, for a page nobody reads end to end.
+ */
+export interface BruceBook {
+  file: string;
+  title: string;
+  chapters: BruceBookChapter[];
+  /** The chapter asked for (the first one when `?chapter=` was omitted). */
+  chapter: BruceBookChapter & { content: string };
+}
 
 /** GET /api/bruce/instructions — the persona the chat runs with. */
 export interface BruceInstructions {

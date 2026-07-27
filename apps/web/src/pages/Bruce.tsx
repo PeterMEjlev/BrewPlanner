@@ -1,21 +1,25 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
+  BruceBook,
   BruceChatMessage,
   BruceChatState,
   BruceConversation,
   BruceIndexJob,
   BruceInstructions,
   BruceKnowledgeState,
+  BrucePhase,
+  BrucePhaseName,
   BruceServiceStatus,
   BruceState,
   BruceTranscriptEntry,
 } from '@checklist/shared';
 import { MAX_KNOWLEDGE_FILE_CHARS } from '@checklist/shared';
 import { api } from '../api';
+import { setBrucePhase } from '../bruceActivity';
 import { DashboardShell } from '../components/DashboardShell';
 import { Markdown } from '../components/Markdown';
 import { Popover } from '../components/Popover';
-import { GlobeIcon, MicIcon } from '../components/icons';
+import { BookIcon, ChatIcon, GlobeIcon, KegIcon, MicIcon, ThinkingDots } from '../components/icons';
 import { usePoll } from '../usePoll';
 import { relativeTime } from '../util';
 
@@ -32,6 +36,28 @@ import { relativeTime } from '../util';
 
 /** How often the voice-service rail refreshes. The chat is event-driven. */
 const POLL_MS = 2000;
+
+/**
+ * What each step of answering looks like while it is happening.
+ *
+ * These are reported by the server as they start — the web line appears because
+ * the model actually began a search, not because searching was permitted. That
+ * is the whole point of listing them separately: "reading the books" and "out on
+ * the web" cost different amounts of time and money, and used to be one
+ * indistinguishable spinner.
+ */
+const PHASE_LOOK: Record<
+  BrucePhaseName,
+  { label: string; Icon: (props: { className?: string }) => JSX.Element; tint: string }
+> = {
+  library: { label: 'Searching the library', Icon: BookIcon, tint: 'text-zinc-400' },
+  thinking: { label: 'Reading the books', Icon: BookIcon, tint: 'text-zinc-400' },
+  // The one that had to be told apart from the rest: it is slower, it is billed
+  // per search, and the answer stops being purely the brewery's own books.
+  web: { label: 'Searching the web', Icon: GlobeIcon, tint: 'text-sky-400' },
+  recipes: { label: 'Reading your recipe', Icon: KegIcon, tint: 'text-amber-400' },
+  writing: { label: 'Writing the answer', Icon: ChatIcon, tint: 'text-zinc-400' },
+};
 
 /** Look of each assistant state: label, dot colour, and whether it pulses. */
 const STATE_LOOK: Record<BruceState, { label: string; dot: string; pulse: boolean }> = {
@@ -143,9 +169,10 @@ function Sources({ message }: { message: BruceChatMessage }): JSX.Element | null
 /**
  * The web-search switch, in the chat header beside the model picker.
  *
- * Off by default and deliberately visible rather than buried in settings: it
+ * On by default, and deliberately visible rather than buried in settings: it
  * changes both where answers can come from and what each question costs, so it
- * should be as easy to see as it is to flip.
+ * should be as easy to see as it is to flip. The progress line says when a
+ * search actually happens, so leaving it on doesn't mean losing track of it.
  */
 function WebSearchToggle({
   enabled,
@@ -193,6 +220,28 @@ function WebSearchToggle({
       Web
       {error && <span className="text-red-400">!</span>}
     </button>
+  );
+}
+
+/**
+ * The bubble that stands in for the answer while it is being worked out, saying
+ * which of Bruce's two sources he is on.
+ *
+ * Not a generic spinner: "searching the web" here means the model really did
+ * start a web search a moment ago, which is worth knowing both because it is
+ * slower and because it is billed per search.
+ */
+function PhaseBubble({ phase }: { phase: BrucePhase | null }): JSX.Element {
+  const look = PHASE_LOOK[phase?.phase ?? 'library'];
+  return (
+    <div className="flex items-center gap-2 rounded-xl bg-zinc-800 px-3.5 py-2.5 text-sm">
+      <look.Icon className={`h-4 w-4 shrink-0 ${look.tint}`} />
+      <span className={look.tint}>
+        {look.label}
+        {phase?.detail && <span className="text-zinc-500"> — {phase.detail}</span>}
+      </span>
+      <ThinkingDots className={look.tint} />
+    </div>
   );
 }
 
@@ -557,6 +606,8 @@ function Chat(): JSX.Element {
   const [draft, setDraft] = useState('');
   /** The question already on screen while its answer is still being written. */
   const [pending, setPending] = useState<string | null>(null);
+  /** What he is doing about it, streamed from the server as each step starts. */
+  const [phase, setPhase] = useState<BrucePhase | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useAutoGrow(draft);
@@ -601,9 +652,23 @@ function Chat(): JSX.Element {
     if (!question || !canAsk || !state) return;
     setDraft('');
     setPending(question);
+    // Start on the library: it is what the server does first, and saying so
+    // straight away beats an empty bubble for the second before the stream
+    // opens. Every phase after this one is reported, not assumed.
+    setPhase({ phase: 'library' });
+    setBrucePhase({ phase: 'library' });
     setError(null);
     try {
-      const { question: asked, answer, conversation } = await api.askBruce(question, state.conversation.id);
+      const { question: asked, answer, conversation } = await api.askBruce(
+        question,
+        state.conversation.id,
+        (next) => {
+          setPhase(next);
+          // The nav tab shows it too, so wandering off mid-question still shows
+          // Bruce is working (and on what).
+          setBrucePhase(next);
+        },
+      );
       setState((prev) =>
         prev
           ? {
@@ -621,6 +686,8 @@ function Chat(): JSX.Element {
       setError(err instanceof Error ? err.message.replace(/^\d+:\s*/, '') : 'Bruce could not answer that.');
     } finally {
       setPending(null);
+      setPhase(null);
+      setBrucePhase(null);
     }
   };
 
@@ -758,13 +825,7 @@ function Chat(): JSX.Element {
               </div>
             </div>
             <div className="flex justify-start">
-              <div className="rounded-xl bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-500">
-                {/* Searching takes noticeably longer than retrieval alone, so
-                    say when it's a possibility rather than looking stuck. */}
-                <span className="animate-pulse">
-                  {state?.webSearch ? 'Reading the books, and the web…' : 'Reading the books…'}
-                </span>
-              </div>
+              <PhaseBubble phase={phase} />
             </div>
           </>
         )}
@@ -1189,6 +1250,151 @@ function InstructionsModal({ onClose }: { onClose: () => void }): JSX.Element {
 }
 
 /**
+ * A book off the shelf, opened for reading.
+ *
+ * Everything Bruce quotes lives in these files, and until now the only way to
+ * see what was actually in one was to SSH to the Pi and page through raw
+ * markdown. It reads a chapter at a time — the books are ~600 KB each, which is
+ * a slow request over the tunnel and slower still to render on the kiosk — with
+ * the table of contents down the side.
+ */
+function BookModal({ file, onClose }: { file: string; onClose: () => void }): JSX.Element {
+  const [book, setBook] = useState<BruceBook | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+
+  const open = (chapter?: number): void => {
+    setLoading(true);
+    setError(null);
+    api
+      .getBruceBook(file, chapter)
+      .then((next) => {
+        setBook(next);
+        // A new chapter starts at its top, not wherever the last one was left.
+        if (pageRef.current) pageRef.current.scrollTop = 0;
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message.replace(/^\d+:\s*/, '') : 'Could not open that book.');
+      })
+      .finally(() => setLoading(false));
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- opening is keyed on the file alone
+  useEffect(() => open(), [file]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
+
+  const current = book?.chapter.id ?? 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label={book?.title ?? file}
+    >
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 cursor-default bg-black/70 backdrop-blur-sm"
+      />
+
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-5xl flex-col rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50">
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-5 py-3.5">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold tracking-tight text-zinc-50">
+              {book?.title ?? file}
+            </h2>
+            <p className="truncate font-mono text-[10px] text-zinc-600">{file}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-200"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="flex min-h-0 flex-1">
+          {/* The contents list. Hidden on a phone, where it would take the whole
+              screen; the chapter itself is what you came for. */}
+          {book && book.chapters.length > 1 && (
+            <nav className="hidden w-56 shrink-0 overflow-y-auto border-r border-zinc-800 p-2 sm:block">
+              {book.chapters.map((chapter) => (
+                <button
+                  key={chapter.id}
+                  type="button"
+                  onClick={() => open(chapter.id)}
+                  title={chapter.title}
+                  className={`mb-0.5 block w-full rounded-lg px-2 py-1.5 text-left text-xs leading-snug transition ${
+                    chapter.id === current
+                      ? 'bg-zinc-800 text-zinc-100'
+                      : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200'
+                  }`}
+                >
+                  {chapter.title}
+                </button>
+              ))}
+            </nav>
+          )}
+
+          <div ref={pageRef} className="min-w-0 flex-1 overflow-y-auto px-5 py-4 sm:px-8 sm:py-6">
+            {loading && <p className="text-sm text-zinc-500">Opening…</p>}
+            {error && <p className="text-sm text-red-400">{error}</p>}
+            {!loading && book && (
+              // `max-w-prose`: a 900px-wide line of book text is unreadable, and
+              // this is the one place in the app with real prose in it.
+              <article className="max-w-prose text-sm text-zinc-300">
+                <Markdown text={book.chapter.content} />
+              </article>
+            )}
+          </div>
+        </div>
+
+        {/* Chapter paging, so the reader works without the contents list. */}
+        {book && book.chapters.length > 1 && (
+          <div className="flex items-center justify-between gap-2 border-t border-zinc-800 px-5 py-2.5 text-xs">
+            <button
+              type="button"
+              disabled={current === 0}
+              onClick={() => open(current - 1)}
+              className="rounded-lg border border-zinc-700 px-2.5 py-1 text-zinc-400 transition enabled:hover:border-zinc-600 enabled:hover:text-zinc-200 disabled:opacity-30"
+            >
+              ← Previous
+            </button>
+            <span className="truncate text-zinc-600">
+              {current + 1} of {book.chapters.length}
+            </span>
+            <button
+              type="button"
+              disabled={current >= book.chapters.length - 1}
+              onClick={() => open(current + 1)}
+              className="rounded-lg border border-zinc-700 px-2.5 py-1 text-zinc-400 transition enabled:hover:border-zinc-600 enabled:hover:text-zinc-200 disabled:opacity-30"
+            >
+              Next →
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * What Bruce has read, and the controls for changing it: add a book, rebuild
  * the index, rewrite his instructions.
  *
@@ -1201,6 +1407,8 @@ function LibraryCard(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  /** The book being read, by file name; null when the reader is closed. */
+  const [reading, setReading] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const running = state?.job?.state === 'running';
@@ -1270,18 +1478,25 @@ function LibraryCard(): JSX.Element {
 
       {knowledge != null &&
         (knowledge.documents.length > 0 ? (
-          <ul className="space-y-2">
+          <ul className="space-y-1">
             {knowledge.documents.map((doc) => (
               <li key={doc.file}>
-                <div className="text-xs font-medium leading-snug text-zinc-200">{doc.title}</div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate font-mono text-[10px] text-zinc-600" title={doc.file}>
-                    {doc.file}
-                  </span>
-                  <span className="shrink-0 text-[10px] text-zinc-600">
-                    {doc.passages.toLocaleString()} passages
-                  </span>
-                </div>
+                {/* Reading what Bruce read used to mean an SSH session; a book
+                    on a shelf you can't open isn't much of a library. */}
+                <button
+                  type="button"
+                  onClick={() => setReading(doc.file)}
+                  title={`Read ${doc.title}`}
+                  className="-mx-1.5 block w-full rounded-lg px-1.5 py-1 text-left transition hover:bg-zinc-800/60"
+                >
+                  <div className="text-xs font-medium leading-snug text-zinc-200">{doc.title}</div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate font-mono text-[10px] text-zinc-600">{doc.file}</span>
+                    <span className="shrink-0 text-[10px] text-zinc-600">
+                      {doc.passages.toLocaleString()} passages
+                    </span>
+                  </div>
+                </button>
               </li>
             ))}
           </ul>
@@ -1345,6 +1560,7 @@ function LibraryCard(): JSX.Element {
       {error && <p className="text-xs leading-relaxed text-red-400">{error}</p>}
 
       {editing && <InstructionsModal onClose={() => setEditing(false)} />}
+      {reading && <BookModal file={reading} onClose={() => setReading(null)} />}
     </section>
   );
 }

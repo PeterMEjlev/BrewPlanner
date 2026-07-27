@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
+import { useBrucePhase } from '../bruceActivity';
 import { isUnknownContents } from '../kegs';
 import { usePoll } from '../usePoll';
 import {
@@ -18,6 +19,7 @@ import {
   MonitorIcon,
   SettingsIcon,
   SlidersIcon,
+  ThinkingDots,
   TodoIcon,
 } from './icons';
 import { relativeTime } from '../util';
@@ -430,6 +432,7 @@ function Sidebar({
   lastUpdate?: string | null;
 }): JSX.Element {
   const { auth, refresh } = useAuth();
+  const brucePhase = useBrucePhase();
 
   // Guests are read-only and can't open the Brew System, Bruce, Settings or
   // History pages (History reveals who changed what, so it stays admin-only),
@@ -458,6 +461,16 @@ function Sidebar({
             accessory = <KegBadge filled={kegs.filled} total={kegs.total} />;
           else if (item.key === 'todos' && openTodos != null && openTodos > 0)
             accessory = <CountBadge count={openTodos} />;
+          // Bruce is off working on an answer. Shown on the tab so you can ask
+          // him something and go and look at the fermenter without wondering
+          // whether he's still at it — the phase's colour says whether he's in
+          // the library or out on the web (see bruceActivity.ts).
+          else if (item.key === 'bruce' && brucePhase)
+            accessory = (
+              <ThinkingDots
+                className={brucePhase.phase === 'web' ? 'text-sky-400' : 'text-zinc-400'}
+              />
+            );
           // Show the rig's health dot only once a rig URL is configured — an
           // install with no brewing rig shows nothing rather than a red "offline".
           else if (item.key === 'brewSystem' && brewSystem?.configured)
@@ -527,6 +540,7 @@ function BottomNav({
 }): JSX.Element {
   const { auth } = useAuth();
   const nav = visibleNav(canControl(auth));
+  const brucePhase = useBrucePhase();
   const scrollRef = useRef<HTMLElement>(null);
 
   // The primary four lead the strip; the remaining destinations follow in the
@@ -565,6 +579,9 @@ function BottomNav({
           const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
           const dot = item.key === 'devices' && fleet ? fleetDotColor(fleet) : undefined;
           const isActive = item.page === active;
+          // Same signal as the sidebar's Bruce row, in the shape this bar has
+          // room for: a dot rather than the three-dot animation.
+          const busy = item.key === 'bruce' && brucePhase != null;
           return (
             <Link
               key={item.key}
@@ -577,7 +594,7 @@ function BottomNav({
                 label={item.label}
                 active={isActive}
                 badge={badge}
-                dot={dot}
+                dot={busy ? `animate-pulse ${brucePhase?.phase === 'web' ? 'bg-sky-400' : 'bg-zinc-300'}` : dot}
               />
             </Link>
           );

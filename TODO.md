@@ -2,7 +2,7 @@
 
 - Recipe Page: edit recipes and have them update in brewersfriend
 
-- Bruce: Make web search on by default
+
 
 - Water Calculator page: review if water calc math is correct
 

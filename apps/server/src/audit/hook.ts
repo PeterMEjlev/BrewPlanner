@@ -284,6 +284,11 @@ const RULES: Rule[] = [
   { method: 'POST', re: /^\/api\/bruce\/speak$/, build: ({ body }) => ({ entity: 'Bruce', action: `Sent Bruce a message to speak${str(body, 'message') ? `: "${str(body, 'message')}"` : ''}` }) },
   // Volume nudges are operational noise (slider drags), not configuration.
   { method: 'POST', re: /^\/api\/bruce\/volume$/, build: () => null },
+  // Asking Bruce a question changes nothing but his own chat thread, which the
+  // Bruce page already shows in full. It also answers as a hijacked stream, so
+  // the `onResponse` hook this rule lives in never sees it — the rule is here so
+  // that reads as a decision rather than an oversight.
+  { method: 'POST', re: /^\/api\/bruce\/chat$/, build: () => null },
 
   // --- Accounts (never log the password itself) -----------------------------
   { method: 'POST', re: /^\/api\/accounts$/, build: ({ body }) => ({ entity: 'Account', action: `Created account${str(body, 'username') ? ` "${str(body, 'username')}"` : ''}${str(body, 'role') ? ` (${str(body, 'role')})` : ''}` }) },
