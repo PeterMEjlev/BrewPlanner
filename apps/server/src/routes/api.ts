@@ -5,6 +5,7 @@ import {
   createStepSchema,
   createTodoSchema,
   deviceDataSourcesSchema,
+  fermenterStateSchema,
   graphColorsSchema,
   idParamSchema,
   kegContentColorsSchema,
@@ -332,6 +333,18 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/recipe', adminOnly, async (_req, reply) => {
     repo.clearActiveRecipe();
     return reply.status(204).send();
+  });
+
+  // Whether the empty fermenter has been washed — the same clean/dirty question
+  // the keg board asks of an emptied keg. Deliberately a separate resource from
+  // the selection above: taking a beer out doesn't answer it, so clearing the
+  // recipe leaves whatever was last recorded (null until someone says).
+  app.get('/fermenter', async () => ({ state: repo.getFermenterState() }));
+
+  app.put('/fermenter', adminOnly, async (req, reply) => {
+    const body = parse(fermenterStateSchema, req.body, reply);
+    if (!body) return;
+    return { state: repo.setFermenterState(body.state) };
   });
 
   // --- Ingredient prices ------------------------------------------------

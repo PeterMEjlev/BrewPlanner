@@ -18,6 +18,8 @@ import type {
   ChecklistWithSteps,
   DeviceDataSources,
   DeviceStatus,
+  FermenterState,
+  FermenterStatus,
   GraphColors,
   IngredientKind,
   IngredientPriceOptions,
@@ -268,6 +270,15 @@ export const api = {
       body: JSON.stringify(recipe),
     }).then((r) => r.recipe),
   clearActiveRecipe: () => request<void>('/recipe', { method: 'DELETE' }),
+
+  // Whether the empty fermenter has been washed. Separate from the selection
+  // above — emptying the tank doesn't clean it — and null until someone says.
+  getFermenterState: () => request<FermenterStatus>('/fermenter').then((r) => r.state),
+  setFermenterState: (state: FermenterState) =>
+    request<FermenterStatus>('/fermenter', {
+      method: 'PUT',
+      body: JSON.stringify({ state }),
+    }).then((r) => r.state),
 
   // Ingredient prices. A decision is stored per ingredient name rather than per
   // recipe — pricing "Voss Kveik" once holds wherever it's pitched — so saving

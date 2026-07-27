@@ -1,9 +1,14 @@
-import type { KegContentColors, Recipe, RecipeStats } from '@checklist/shared';
+import type {
+  FermenterState,
+  KegContent,
+  KegContentColors,
+  Recipe,
+  RecipeStats,
+} from '@checklist/shared';
 import {
   RECIPE_STYLE_CATEGORIES,
   ebcColor,
   getRecipeColor,
-  matchContentOption,
   styleCategory,
 } from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
@@ -161,6 +166,17 @@ function createdTime(recipe: Recipe): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+/** That date as a card reads it, e.g. "14 Mar 2026"; null when it has none. */
+function createdLabel(recipe: Recipe): string | null {
+  const t = createdTime(recipe);
+  if (t == null) return null;
+  return new Date(t).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 /**
  * Order the grid. Whatever the key and direction, a recipe the value is unknown
  * for (no EBC, no IBU, no date, nothing priceable) sinks to the bottom rather
@@ -213,26 +229,102 @@ function sortRecipes(
 }
 
 /**
- * The beer's colour swatch, from the shared keg palette (so an IPA looks the
- * same here as on its keg). Hollow when the style doesn't map to a known type.
+ * What the beer pours — its colour computed from the recipe's EBC, or the
+ * shifted colour when there's fruit in it. Hollow when the recipe states no
+ * colour at all. The style's palette colour rides on the card's left edge
+ * instead, which is the pairing the keg board uses.
  */
-function StyleDot({
+function BeerDot({
   color,
   label,
   className = 'h-2.5 w-2.5',
 }: {
   color: string | null;
-  /** The matched content type, for the tooltip. */
+  /** What decided the colour (a fruit note), for the tooltip. */
   label: string | null;
   className?: string;
 }): JSX.Element {
   return (
     <span
       className={`${className} shrink-0 rounded-full ${color ? '' : 'border border-zinc-600'}`}
-      style={color ? { backgroundColor: color } : undefined}
-      title={label ?? 'Unrecognised style'}
+      title={label ?? (color ? 'Predicted colour' : 'No colour set')}
       aria-hidden
+      style={color ? { backgroundColor: color } : undefined}
     />
+  );
+}
+
+/**
+ * The two things an empty fermenter can be. The label doubles as the keg
+ * palette's key, so "Dirty" wears the same warning red it does on the keg board.
+ */
+const FERMENTER_STATES: { state: FermenterState; content: KegContent }[] = [
+  { state: 'clean', content: 'Clean' },
+  { state: 'dirty', content: 'Dirty' },
+];
+
+/**
+ * Whether the empty fermenter has been washed since the last beer left it —
+ * shown only while nothing is linked, since a full tank is neither.
+ *
+ * Two buttons rather than one toggle: a fermenter nobody has spoken for is in
+ * neither state, and shouldn't be pushed into one by whichever side the first
+ * click happens to land on. Read-only guests see the answer without the buttons.
+ */
+function FermenterStateControl({
+  state,
+  colors,
+  controllable,
+  busy,
+  onPick,
+}: {
+  state: FermenterState | null;
+  colors: KegContentColors;
+  controllable: boolean;
+  busy: boolean;
+  onPick: (state: FermenterState) => void;
+}): JSX.Element | null {
+  if (!controllable) {
+    const current = FERMENTER_STATES.find((f) => f.state === state);
+    if (!current) return null;
+    return (
+      <span className="flex items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-1.5 text-sm text-zinc-400">
+        <span
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ backgroundColor: colors[current.content] }}
+          aria-hidden
+        />
+        {current.content}
+      </span>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1 rounded-lg border border-zinc-800 p-1">
+      {FERMENTER_STATES.map(({ state: option, content }) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onPick(option)}
+          disabled={busy}
+          aria-pressed={state === option}
+          title={`Mark the fermenter ${option}`}
+          className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium transition disabled:opacity-40 ${
+            state === option
+              ? 'bg-zinc-800 text-zinc-100'
+              : 'text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300'
+          }`}
+        >
+          <span
+            className={`h-2 w-2 shrink-0 rounded-full transition ${
+              state === option ? '' : 'opacity-50'
+            }`}
+            style={{ backgroundColor: colors[content] }}
+            aria-hidden
+          />
+          {content}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -243,11 +335,12 @@ function StyleDot({
  * hop schedule, mash steps and water targets live, and where a recipe can be put
  * in the fermenter.
  *
- * Two colour systems meet on this page, deliberately: dots come from the
- * brewery's own style palette (the colour that style wears on the kegs and the
- * Overview), on the "In the fermenter" block and on every card alike, while a
- * card's left edge is the beer's physical colour computed from its EBC — which
- * is what a brewer reading a recipe expects to see, and what the detail page shows.
+ * Two colour systems meet on this page, deliberately, and they're paired the way
+ * the Kegs page pairs them: a card's left edge is the brewery's own style palette
+ * (the colour that style wears on the kegs and the Overview), while the dot by
+ * the name — on every card and on the "In the fermenter" block alike — is the
+ * beer's physical colour computed from its EBC, which is what a brewer reading a
+ * recipe expects to see, and what the detail page shows.
  */
 export function RecipesDesktopPage(): JSX.Element {
   const { auth } = useAuth();
@@ -262,6 +355,10 @@ export function RecipesDesktopPage(): JSX.Element {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [clearing, setClearing] = useState(false);
+  // Whether the tank has been washed, for while it's empty. Null until someone
+  // has said — clearing a recipe deliberately doesn't answer it.
+  const [fermenter, setFermenter] = useState<FermenterState | null>(null);
+  const [markingFermenter, setMarkingFermenter] = useState(false);
   // Restored from the last visit, so opening a recipe and coming back finds the
   // grid in the order it was left in.
   const [{ key: sort, dir }, setOrder] = useState<SortOrder>(loadOrder);
@@ -282,12 +379,14 @@ export function RecipesDesktopPage(): JSX.Element {
       invalidateRecipes();
     }
     try {
-      const [list, current] = await Promise.all([
+      const [list, current, state] = await Promise.all([
         loadRecipes(refresh),
         api.getActiveRecipe(),
+        api.getFermenterState(),
       ]);
       setRecipes(list);
       setActive(current);
+      setFermenter(state);
       setError(null);
     } catch (e) {
       // The list is the page — a failure here (no API key, upstream down)
@@ -361,9 +460,28 @@ export function RecipesDesktopPage(): JSX.Element {
     }
   }
 
-  // The active beer's palette colour + matched type, for the header dot/icon.
+  /** Record whether the empty fermenter has been washed. */
+  async function markFermenter(state: FermenterState): Promise<void> {
+    if (markingFermenter) return;
+    setMarkingFermenter(true);
+    try {
+      setFermenter(await api.setFermenterState(state));
+      setError(null);
+    } catch (e) {
+      setError(asCleanMessage(e));
+    } finally {
+      setMarkingFermenter(false);
+    }
+  }
+
+  // The tank's own colour: the style of the beer in it, or — once it's empty and
+  // someone has said — whether it still needs washing.
   const activeColor = active ? getRecipeColor(active, colors) : null;
-  const activeMatch = active ? matchContentOption(active.name, active.style) : null;
+  const emptyContent = FERMENTER_STATES.find((f) => f.state === fermenter)?.content ?? null;
+  const vesselColor = active ? activeColor : emptyContent && colors[emptyContent];
+  // What the beer in it pours, for the dot — the same reading as a card's.
+  const activePour = active ? (stats?.get(active.id)?.fruitColor ?? ebcColor(active.ebc)) : null;
+  const activeFruitNote = active ? (stats?.get(active.id)?.fruitNote ?? null) : null;
 
   const filtered = useMemo(() => {
     if (!recipes) return [];
@@ -468,7 +586,7 @@ export function RecipesDesktopPage(): JSX.Element {
           <FermenterIcon
             className="h-10 w-10 shrink-0 text-white"
             strokeWidth={2.6}
-            style={activeColor ? { color: activeColor } : undefined}
+            style={vesselColor ? { color: vesselColor } : undefined}
           />
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -477,7 +595,7 @@ export function RecipesDesktopPage(): JSX.Element {
             {active ? (
               <>
                 <div className="flex items-center gap-2">
-                  <StyleDot color={activeColor} label={activeMatch} />
+                  <BeerDot color={activePour} label={activeFruitNote} />
                   <Link
                     to={`/recipes/${encodeURIComponent(active.id)}`}
                     className="truncate text-base font-semibold text-zinc-50 transition hover:text-[#f87a68]"
@@ -495,6 +613,17 @@ export function RecipesDesktopPage(): JSX.Element {
               </div>
             )}
           </div>
+          {/* An empty tank's one open question: has it been washed since the
+              last beer came out? Only asked while nothing is linked. */}
+          {!active && (
+            <FermenterStateControl
+              state={fermenter}
+              colors={colors}
+              controllable={controllable}
+              busy={markingFermenter}
+              onPick={(state) => void markFermenter(state)}
+            />
+          )}
           {active?.url && (
             <a
               href={active.url}
@@ -568,9 +697,9 @@ export function RecipesDesktopPage(): JSX.Element {
 
 /**
  * One recipe in the grid — a link to its brew sheet. The colour bar down the left
- * is the beer's own colour from its EBC, so the grid reads as a row of beers, while
- * the dot by the name is the style's colour from the keg palette, matching how that
- * beer looks on the keg boards. The one in the fermenter keeps the coral highlight.
+ * is the style's colour from the keg palette, matching how that beer looks on the
+ * keg boards, while the dot by the name is the beer's own colour from its EBC. The
+ * one in the fermenter keeps the coral highlight.
  */
 function RecipeCard({
   recipe,
@@ -587,17 +716,18 @@ function RecipeCard({
   /** Show the hop rate rather than leave the card silent about what it sorted on. */
   showHopRate: boolean;
 }): JSX.Element {
-  // The edge shows what the beer pours: its malt colour until the ingredient
+  // The dot shows what the beer pours: its malt colour until the ingredient
   // pass reports fruit in it, which for a sour is the difference between straw
-  // and deep red.
-  const color = stats?.fruitColor ?? ebcColor(recipe.ebc);
-  const styleMatch = matchContentOption(recipe.name, recipe.style);
+  // and deep red. The edge carries the style, as the keg board does.
+  const pour = stats?.fruitColor ?? ebcColor(recipe.ebc);
+  const styleColor = getRecipeColor(recipe, colors);
   const ibu = num(recipe.ibu, 0);
+  const created = createdLabel(recipe);
   return (
     <Link
       to={`/recipes/${encodeURIComponent(recipe.id)}`}
       title={stats?.fruitNote ?? undefined}
-      style={color ? { borderLeftColor: color, borderLeftWidth: 3 } : undefined}
+      style={styleColor ? { borderLeftColor: styleColor, borderLeftWidth: 3 } : undefined}
       className={`flex h-full flex-col gap-1 rounded-xl border px-4 py-3.5 transition ${
         inFermenter
           ? 'border-[#f87a68] bg-gradient-to-br from-[#f87a68]/25 to-[#e0463f]/25'
@@ -605,7 +735,7 @@ function RecipeCard({
       }`}
     >
       <span className="flex w-full items-center gap-2">
-        <StyleDot color={getRecipeColor(recipe, colors)} label={styleMatch} />
+        <BeerDot color={pour} label={stats?.fruitNote ?? null} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
           {recipe.name}
         </span>
@@ -620,6 +750,13 @@ function RecipeCard({
         {showHopRate && stats?.hopsPerL != null && ` · ${stats.hopsPerL.toFixed(1)} g/L`}
         {stats?.usedDkk != null && ` · ${Math.round(stats.usedDkk)} kr`}
       </span>
+      {/* When it was written on Brewer's Friend — the one thing the figures
+          above don't say, and what the default sort orders the grid by. */}
+      {created && (
+        <span className="w-full truncate pl-[18px] text-xs text-zinc-600">
+          Created {created}
+        </span>
+      )}
       <span className="mt-auto pl-[18px] pt-2 text-xs font-semibold text-[#f87a68]">
         {inFermenter ? '✓ In the fermenter' : ' '}
       </span>

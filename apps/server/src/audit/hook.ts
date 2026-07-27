@@ -199,6 +199,7 @@ const RULES: Rule[] = [
   // --- Active recipe --------------------------------------------------------
   { method: 'PUT', re: /^\/api\/recipe$/, build: ({ body }) => ({ entity: 'Recipe', action: `Set the active recipe${str(body, 'name') ? ` to "${str(body, 'name')}"` : ''}` }) },
   { method: 'DELETE', re: /^\/api\/recipe$/, build: () => ({ entity: 'Recipe', action: 'Cleared the active recipe' }) },
+  { method: 'PUT', re: /^\/api\/fermenter$/, build: ({ body }) => ({ entity: 'Recipe', action: `Marked the fermenter ${str(body, 'state') === 'clean' ? 'clean' : 'dirty'}` }) },
 
   // --- Ingredient prices ----------------------------------------------------
   // Worth recording: a price decision is stored per ingredient, so it re-costs

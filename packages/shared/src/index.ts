@@ -145,6 +145,22 @@ export interface ActiveRecipe {
 }
 
 /**
+ * Whether the vessel has been washed since the last beer came out of it — the
+ * same distinction the keg board draws between an emptied keg and a ready one.
+ * Only meaningful while nothing is in the fermenter.
+ */
+export type FermenterState = 'clean' | 'dirty';
+
+/**
+ * The fermenter's cleanliness (GET/PUT /api/fermenter), kept apart from the
+ * recipe selection so emptying the tank doesn't silently claim it's been washed.
+ * `state` is null until someone says which it is.
+ */
+export interface FermenterStatus {
+  state: FermenterState | null;
+}
+
+/**
  * What one ingredient line costs, priced against the local catalogue in
  * `prices/`. Null on an ingredient the catalogue doesn't stock or hasn't priced —
  * never a guess.
@@ -1745,6 +1761,15 @@ export const setActiveRecipeSchema = z.object({
   ebc: z.string().trim().max(20).optional(),
 });
 export type SetActiveRecipeInput = z.infer<typeof setActiveRecipeSchema>;
+
+/**
+ * Body for `PUT /api/fermenter` — whether the empty fermenter has been washed.
+ * There's no "unknown" to send: that's only the state of never having been told.
+ */
+export const fermenterStateSchema = z.object({
+  state: z.enum(['clean', 'dirty']),
+});
+export type FermenterStateInput = z.infer<typeof fermenterStateSchema>;
 
 // --- Ingredient price overrides --------------------------------------------
 

@@ -5,6 +5,7 @@ import type {
   ChecklistWithSteps,
   DeviceDataSources,
   DisplayStep,
+  FermenterState,
   GraphColors,
   KegContentColors,
   NotificationSettings,
@@ -346,6 +347,7 @@ export function clearCompletedTodos(): Todo[] {
 // ---------------------------------------------------------------------------
 
 const ACTIVE_RECIPE_KEY = 'active_recipe';
+const FERMENTER_STATE_KEY = 'fermenter_state';
 const NOTIFY_SETTINGS_KEY = 'notify_settings';
 const GRAPH_COLORS_KEY = 'graph_colors';
 const KEG_CONTENT_COLORS_KEY = 'keg_content_colors';
@@ -469,4 +471,19 @@ export function setActiveRecipe(recipe: Recipe): Recipe {
 
 export function clearActiveRecipe(): void {
   db.delete(settings).where(eq(settings.key, ACTIVE_RECIPE_KEY)).run();
+}
+
+/**
+ * Whether the fermenter has been washed since the last beer left it. Null when
+ * nobody has said — a fresh install has no business claiming either, and neither
+ * has clearing the recipe, which is why this isn't touched by the calls above.
+ */
+export function getFermenterState(): FermenterState | null {
+  const raw = getSetting(FERMENTER_STATE_KEY);
+  return raw === 'clean' || raw === 'dirty' ? raw : null;
+}
+
+export function setFermenterState(state: FermenterState): FermenterState {
+  setSetting(FERMENTER_STATE_KEY, state);
+  return state;
 }
