@@ -273,3 +273,102 @@ export const runSteps = sqliteTable(
   },
   (t) => [unique('run_steps_run_step_unique').on(t.runId, t.stepId)],
 );
+
+/**
+ * One thread of Bruce's text chat — a brew day's water questions kept apart
+ * from last month's hop reading. Threads are shared, not per-account: this is
+ * one brewery with a kiosk and a couple of logins, and a question asked on the
+ * phone should still be there on the kiosk screen.
+ *
+ * `title` is seeded from the first question and can be renamed. `updatedAt` is
+ * bumped on every new message so the list can order by recent activity.
+ */
+export const bruceConversations = sqliteTable(
+  'bruce_conversations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    title: text('title').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+    updatedAt: text('updated_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+  },
+  (t) => [index('bruce_conversations_updated_idx').on(t.updatedAt)],
+);
+
+/**
+ * Turns within a thread. Persisted rather than kept in memory so a
+ * conversation survives a server restart and reads the same everywhere —
+ * unlike the voice assistant's transcript, which is a deliberately throwaway
+ * in-memory ring in apps/bruce.
+ *
+ * `sources` holds the JSON citation list for an assistant turn (which book,
+ * section and page the answer came from); it is null on user turns. Old turns
+ * are trimmed per thread by the repo on write, so this table stays small.
+ */
+export const bruceMessages = sqliteTable(
+  'bruce_messages',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    conversationId: integer('conversation_id')
+      .notNull()
+      .references(() => bruceConversations.id, { onDelete: 'cascade' }),
+    /** 'user' | 'assistant'. */
+    role: text('role').notNull(),
+    content: text('content').notNull(),
+    /** JSON array of { title, section?, page? } — assistant turns only. */
+    sources: text('sources'),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+  },
+  (t) => [
+    index('bruce_messages_created_idx').on(t.createdAt),
+    index('bruce_messages_conversation_idx').on(t.conversationId, t.id),
+  ],
+);
+
+/**
+ * The brewer's own pricing decisions, layered over the scraped catalogues in
+ * `prices/` (see prices.ts). Two kinds of decision share the row: pinning which
+ * listing an ingredient is priced against, and setting a price by hand for
+ * something the shop doesn't stock — or stocks at a price the brewery doesn't
+ * pay. Either may stand alone.
+ *
+ * Kept here rather than written back into `prices/*.json` on purpose: those files
+ * are scraped and version-controlled, so an edit there would be lost to the next
+ * scrape and would conflict on every deploy. This table is the layer that
+ * survives both.
+ *
+ * Keyed on the ingredient's *match key* — its name reduced to significant words
+ * by the same tokeniser that matches the catalogue — so "Voss Kveik" and "voss
+ * kveik yeast" are one decision, and pricing it once holds in every recipe that
+ * pitches it. `kind` is part of the key because the four catalogues are matched
+ * by different rules and a name may occur in more than one.
+ */
+export const ingredientPrices = sqliteTable(
+  'ingredient_prices',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    /** 'fermentable' | 'hop' | 'yeast' | 'other'. */
+    kind: text('kind').notNull(),
+    /** Normalized match key; see prices.ts `ingredientKey`. */
+    ingredient: text('ingredient').notNull(),
+    /** The name as the brewer last saw it, for display in the settings list. */
+    label: text('label').notNull(),
+    /** Pinned catalogue listing; null when the price is entirely the brewer's own. */
+    catalogueId: text('catalogue_id'),
+    /** The typed price; null when only the product was pinned. */
+    unitPriceDkk: real('unit_price_dkk'),
+    /** 'kg' | 'pack' — what `unitPriceDkk` is quoted per. Null without a price. */
+    priceUnit: text('price_unit'),
+    /** The package that price refers to; null means one pack of no stated weight. */
+    packageSizeG: real('package_size_g'),
+    updatedAt: text('updated_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+  },
+  (t) => [unique('ingredient_prices_kind_ingredient_unq').on(t.kind, t.ingredient)],
+);

@@ -180,6 +180,100 @@ export interface IngredientPrice {
   catalogueId: string;
   /** How many other listings matched the name; the cheapest was used. */
   alternatives: number;
+  /** Whether this price was matched automatically or decided by the brewer. */
+  source: PriceSource;
+  /**
+   * Why the price is what it is, when that isn't obvious from `source` alone —
+   * the wording of a built-in rule. Null for an ordinary catalogue match.
+   */
+  note: string | null;
+}
+
+/**
+ * Which catalogue an ingredient is priced against. The four lists are matched by
+ * different rules (a malt's colour is checked, a yeast's isn't), so a price
+ * override has to say which one it belongs to — two ingredients may share a name
+ * across kinds without being the same product.
+ */
+export type IngredientKind = 'fermentable' | 'hop' | 'yeast' | 'other';
+
+export const INGREDIENT_KINDS: IngredientKind[] = ['fermentable', 'hop', 'yeast', 'other'];
+
+/**
+ * Where a line's price came from, so an automatic guess is never mistaken for a
+ * decision the brewer made.
+ *
+ * - `catalogue` — the cheapest listing whose name matched.
+ * - `chosen` — a listing the brewer pinned for this ingredient.
+ * - `manual` — a price the brewer typed.
+ * - `rule` — a built-in rule, explained by {@link IngredientPrice.note}.
+ */
+export type PriceSource = 'catalogue' | 'chosen' | 'manual' | 'rule';
+
+/**
+ * What a manual price is quoted per. Weight-sold ingredients (malt, hops, purée)
+ * are priced per kilo the way the catalogue quotes them; a yeast pitch — and
+ * anything else the shop sells without a stated weight — is priced per pack.
+ */
+export type PriceUnit = 'kg' | 'pack';
+
+/**
+ * One catalogue listing offered as an alternative for an ingredient. Sold-out
+ * listings are left out: they aren't something the brewer can choose to buy.
+ */
+export interface PriceOption {
+  catalogueId: string;
+  /** Product name as the shop lists it, producer included. */
+  label: string;
+  pricePerKgDkk: number | null;
+  packagePriceDkk: number;
+  /** Null for a pitchable unit the shop sells without a stated weight. */
+  packageSizeG: number | null;
+  /** What this line would cost against this listing; null if they can't be reconciled. */
+  usedDkk: number | null;
+  /** True for the listing the automatic rule picks — the cheapest for this line. */
+  isDefault: boolean;
+  /** True for the listing currently in effect. */
+  isSelected: boolean;
+}
+
+/**
+ * A price decision the brewer has made for one ingredient, stored against the
+ * ingredient's name rather than a recipe: pricing "Voss Kveik" once should hold
+ * everywhere it's pitched. Either half may stand alone — pinning a product
+ * without touching its price, or typing a price for something the shop doesn't
+ * stock at all.
+ */
+export interface IngredientPriceOverride {
+  kind: IngredientKind;
+  /** The ingredient name as the brewer last saw it, for display. */
+  label: string;
+  /** Catalogue listing to use; null when the price is entirely manual. */
+  catalogueId: string | null;
+  /** The typed price; null when only the product was pinned. */
+  unitPriceDkk: number | null;
+  /** What `unitPriceDkk` is quoted per. Null when there's no manual price. */
+  priceUnit: PriceUnit | null;
+  /** The package that price refers to; null means one pack/pitch of no stated weight. */
+  packageSizeG: number | null;
+  updatedAt: string;
+}
+
+/**
+ * Everything the price picker needs for one ingredient line (GET
+ * /api/prices/options): the listings that match its name, and whatever decision
+ * is already saved for it.
+ */
+export interface IngredientPriceOptions {
+  kind: IngredientKind;
+  /** The name as asked for. */
+  name: string;
+  /** In-stock catalogue listings whose name matches this ingredient. */
+  matched: PriceOption[];
+  /** The saved decision for this ingredient, or null while it's automatic. */
+  override: IngredientPriceOverride | null;
+  /** What the line is priced at now, so the picker can show its provenance. */
+  price: IngredientPrice | null;
 }
 
 /** One product to buy, pooling every addition of it in the recipe. */
@@ -351,6 +445,13 @@ export interface RecipeYeast {
   starter: boolean;
   /** Weight in grams, normalized from `amount`/`amountUnit`; null if unreadable. */
   grams: number | null;
+  /**
+   * Packs/vials, for a pitch the recipe counts rather than weighs ("1 pkg" of
+   * liquid yeast). Null when it states a weight. One of this and `grams` is what
+   * the pricing costs against, so both travel to the client — the price picker
+   * has to ask about the same amount the recipe was costed at.
+   */
+  units: number | null;
   price: IngredientPrice | null;
 }
 
@@ -371,6 +472,8 @@ export interface RecipeOtherIngredient {
   type: string;
   /** Weight in grams, normalized from `amount`/`unit`; null if unreadable. */
   grams: number | null;
+  /** Packs, for a line the recipe counts rather than weighs ("1 each"). */
+  units: number | null;
   price: IngredientPrice | null;
 }
 
@@ -1643,6 +1746,73 @@ export const setActiveRecipeSchema = z.object({
 });
 export type SetActiveRecipeInput = z.infer<typeof setActiveRecipeSchema>;
 
+// --- Ingredient price overrides --------------------------------------------
+
+const ingredientKindSchema = z.enum(['fermentable', 'hop', 'yeast', 'other']);
+
+/**
+ * Query for `GET /api/prices/options` — which ingredient the picker is open on.
+ * The amount travels with it because "cheapest" is a per-line judgement: a 25 g
+ * pitch is cheaper as one 25 g sachet than as three 11.5 g ones, so the default
+ * can't be worked out from the listings alone.
+ */
+export const priceOptionsQuerySchema = z.object({
+  kind: ingredientKindSchema,
+  name: z.string().trim().min(1).max(300),
+  grams: z.coerce.number().positive().max(1_000_000).optional(),
+  units: z.coerce.number().positive().max(1000).optional(),
+  /**
+   * The line's own colour (malt only). Sent so the picker's "cheapest" marker
+   * agrees with what the recipe is actually costed at — colour is part of the
+   * automatic match, and without it a pale malt's default would look wrong.
+   */
+  ebc: z.coerce.number().positive().max(2000).optional(),
+});
+
+/** Query for `GET /api/prices/search` — free-text lookup across one catalogue. */
+export const priceSearchQuerySchema = z.object({
+  kind: ingredientKindSchema,
+  /** Absent or blank lists the catalogue from the top rather than matching nothing. */
+  q: z.string().trim().max(200).optional(),
+  grams: z.coerce.number().positive().max(1_000_000).optional(),
+  units: z.coerce.number().positive().max(1000).optional(),
+});
+
+/**
+ * Body for `PUT /api/prices/override`. Both halves are optional on their own but
+ * one must be present — a row that neither pins a product nor sets a price is
+ * just the automatic behaviour, which is what DELETE is for.
+ *
+ * A price is refused without a unit: 26 kr means nothing until it says whether
+ * that's per kilo or per pack, and guessing would silently misprice a batch.
+ *
+ * Every field is sent explicitly — nulls included, rather than omitted — because
+ * a save replaces the whole decision: leaving `unitPriceDkk` out would otherwise
+ * be indistinguishable from "clear the manual price and use the listing's own".
+ */
+export const priceOverrideSchema = z
+  .object({
+    kind: ingredientKindSchema,
+    name: z.string().trim().min(1).max(300),
+    catalogueId: z.string().trim().max(300).nullable(),
+    unitPriceDkk: z.number().nonnegative().max(1_000_000).nullable(),
+    priceUnit: z.enum(['kg', 'pack']).nullable(),
+    packageSizeG: z.number().positive().max(1_000_000).nullable(),
+  })
+  .refine((v) => v.catalogueId != null || v.unitPriceDkk != null, {
+    message: 'Pin a product, set a price, or both',
+  })
+  .refine((v) => v.unitPriceDkk == null || v.priceUnit != null, {
+    message: 'A manual price needs a unit (per kg or per pack)',
+  });
+export type PriceOverrideInput = z.infer<typeof priceOverrideSchema>;
+
+/** Query for `DELETE /api/prices/override` — the ingredient to return to automatic. */
+export const priceOverrideQuerySchema = z.object({
+  kind: ingredientKindSchema,
+  name: z.string().trim().min(1).max(300),
+});
+
 // --- Notification settings -------------------------------------------------
 
 /**
@@ -1943,3 +2113,125 @@ export type BruceSpeakInput = z.infer<typeof bruceSpeakSchema>;
 /** Body for POST /api/bruce/volume — 0–200 %, 100 = native. */
 export const bruceVolumeSchema = z.object({ percent: z.coerce.number().min(0).max(200) });
 export type BruceVolumeInput = z.infer<typeof bruceVolumeSchema>;
+
+// ---------------------------------------------------------------------------
+// Bruce chat (text). Unlike the voice assistant above, this runs *in the
+// server* — it needs no microphone, so it works whether or not bruce.service
+// is up. Answers are grounded in the brewing books under knowledge/ (see
+// apps/server/src/knowledge): the question is embedded, the closest passages
+// are retrieved, and the model answers from them and cites where it read it.
+
+/** Where one retrieved passage came from — rendered as a citation chip. */
+export interface BruceChatSource {
+  /** Document title, e.g. "Water: A Comprehensive Guide for Brewers". */
+  title: string;
+  /** Heading trail inside the document, e.g. "4. Residual Alkalinity › Water Alkalinity". */
+  section?: string;
+  /** Page or page range in the source book, e.g. "142" or "142–143". */
+  page?: string;
+}
+
+/** One stored turn of the text conversation. */
+export interface BruceChatMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  /** Passages the answer was grounded in. Assistant turns only, may be empty. */
+  sources?: BruceChatSource[];
+  /** ISO timestamp. */
+  createdAt: string;
+}
+
+/** State of the knowledge index the chat answers from. */
+export interface BruceKnowledgeStatus {
+  /** True when an index exists and matches the files currently in knowledge/. */
+  ready: boolean;
+  /** Why it isn't ready (missing, stale, unreadable) — shown as-is in the UI. */
+  problem?: string;
+  /** One entry per indexed document, in title order. */
+  documents: { title: string; passages: number }[];
+  /** Total indexed passages. */
+  passages: number;
+  /** ISO timestamp of the last index build. */
+  builtAt?: string;
+}
+
+/** One chat thread. Threads are shared across accounts, not per-user. */
+export interface BruceConversation {
+  id: number;
+  /** Seeded from the opening question; renameable. */
+  title: string;
+  /** How many turns it holds, for the thread list. */
+  messages: number;
+  createdAt: string;
+  /** Last activity — the thread list is ordered by this. */
+  updatedAt: string;
+}
+
+/** A model the picker offers, with plain-language guidance on when to use it. */
+export interface BruceChatModel {
+  /** OpenAI model id, e.g. `gpt-5-mini`. */
+  id: string;
+  /** Short role, e.g. "Fastest" or "Most capable". */
+  label: string;
+  /** One or two sentences on what it is better and worse at. */
+  blurb: string;
+}
+
+/** GET /api/bruce/chat — one thread plus everything the page needs to explain itself. */
+export interface BruceChatState {
+  /** The thread being shown. */
+  conversation: BruceConversation;
+  /** Every thread, most recently used first, for the switcher. */
+  conversations: BruceConversation[];
+  /** Messages of `conversation`, oldest first. */
+  messages: BruceChatMessage[];
+  knowledge: BruceKnowledgeStatus;
+  /** False when the server has no OPENAI_API_KEY — the composer is disabled. */
+  configured: boolean;
+  /** Chat model in use, e.g. `gpt-5-mini`. */
+  model: string;
+  /**
+   * Models offered by the picker: a shortlist chosen for this page, matched
+   * against what the API key can actually see. Empty when the lookup failed —
+   * the picker then shows only the current model.
+   */
+  models: BruceChatModel[];
+}
+
+/** POST /api/bruce/chat — answer to one question, plus the turn that asked it. */
+export interface BruceChatReply {
+  question: BruceChatMessage;
+  answer: BruceChatMessage;
+  /** The thread it landed in — its title may have just been set from the question. */
+  conversation: BruceConversation;
+}
+
+/** Body for POST /api/bruce/chat. Omit `conversationId` to use the newest thread. */
+export const bruceChatSchema = z.object({
+  message: z.string().trim().min(1).max(2000),
+  conversationId: z.coerce.number().int().positive().optional(),
+});
+export type BruceChatInput = z.infer<typeof bruceChatSchema>;
+
+/** Body for POST/PATCH of a chat thread. */
+export const bruceConversationSchema = z.object({
+  title: z.string().trim().min(1).max(80),
+});
+export type BruceConversationInput = z.infer<typeof bruceConversationSchema>;
+
+/**
+ * Body for POST /api/bruce/chat/model. Validated by shape, not against the
+ * live list: OpenAI ships models faster than the cached list refreshes, and
+ * refusing a valid new name would be worse than passing it through and letting
+ * the API report an unknown model.
+ */
+export const bruceChatModelSchema = z.object({
+  model: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[a-zA-Z0-9._-]+$/, 'Not a valid model id'),
+});
+export type BruceChatModelInput = z.infer<typeof bruceChatModelSchema>;

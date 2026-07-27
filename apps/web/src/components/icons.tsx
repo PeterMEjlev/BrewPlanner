@@ -40,6 +40,22 @@ export function HomeIcon(props: IconProps): JSX.Element {
   );
 }
 
+/**
+ * Speech bubble, for the Bruce nav item. Bruce is a chat you type in first and
+ * a voice you talk to second, so the rail shows a bubble rather than a mic —
+ * MicIcon is still used where the voice service itself is meant.
+ */
+export function ChatIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      {/* Body spans x 3–21, so the bubble sits centred in the 24-unit box. */}
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+      <path d="M7 8h10" />
+      <path d="M7 12h6" />
+    </Svg>
+  );
+}
+
 /** Microphone, for the Bruce voice-assistant nav item. */
 export function MicIcon(props: IconProps): JSX.Element {
   return (

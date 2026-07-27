@@ -325,6 +325,17 @@ export async function listRecipeStats(force = false): Promise<RecipeStats[]> {
   return statsInFlight;
 }
 
+/**
+ * Drop the cached per-recipe figures. Called when a price decision changes: the
+ * stats hold costs computed against the catalogue as it was, and half an hour of
+ * a grid showing the old figure after an edit reads as the edit not having worked.
+ * Only the derived numbers go — the upstream ingredient lists are re-fetched on
+ * the next ask, which is the price of keeping this honest.
+ */
+export function invalidateRecipeStats(): void {
+  statsCache = null;
+}
+
 async function fetchAllStats(apiKey: string): Promise<RecipeStats[]> {
   const raw = await fetchAllRaw(apiKey, { ingredients: 'true' });
   const stats = raw.map(recipeStats);
@@ -756,6 +767,7 @@ function yeasts(r: BrewersFriendRecipe): RecipeYeast[] {
     const units = toUnits(y.amount, y.unit);
     return {
       grams,
+      units,
       // Match on the strain name; the lab is only used for display. A pitch given
       // as "1 pkg" is costed per pack rather than being dropped as weightless.
       price: grams == null && units == null ? null : priceYeast(name, { grams, units }),
@@ -801,6 +813,7 @@ function otherIngredients(r: BrewersFriendRecipe): RecipeOtherIngredient[] {
         time: str(m.othertime) || str(m.misctime) || str(m.time),
         type: str(m.othertype) || str(m.type),
         grams,
+        units,
         price: grams == null && units == null ? null : priceOther(name, { grams, units }),
       };
     })

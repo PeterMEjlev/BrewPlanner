@@ -20,6 +20,7 @@
     "user": "npm run user --workspace @checklist/server --",
     "device": "npm run device --workspace @checklist/server --",
     "notify": "npm run notify --workspace @checklist/server --",
+    "knowledge": "npm run knowledge --workspace @checklist/server --",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

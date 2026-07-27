@@ -10,6 +10,10 @@ import {
   kegContentColorsSchema,
   kegNumberParamSchema,
   notificationSettingsSchema,
+  priceOptionsQuerySchema,
+  priceOverrideQuerySchema,
+  priceOverrideSchema,
+  priceSearchQuerySchema,
   reorderStepsSchema,
   reorderTodosSchema,
   setActiveRecipeSchema,
@@ -27,7 +31,9 @@ import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
 import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
+import * as prices from '../prices.js';
 import { pricingInfo } from '../prices.js';
+import { deleteOverride as deletePriceOverride, saveOverride as savePriceOverride } from '../priceOverrides.js';
 import * as telegram from '../notify/telegram.js';
 import * as repo from '../repo.js';
 import {
@@ -325,6 +331,69 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/recipe', adminOnly, async (_req, reply) => {
     repo.clearActiveRecipe();
+    return reply.status(204).send();
+  });
+
+  // --- Ingredient prices ------------------------------------------------
+  // The price picker behind each ingredient on a brew sheet. Reads are open to
+  // anyone who can see the recipe; changing a price is an admin action, and
+  // takes effect account-wide (a decision is stored per ingredient, not per
+  // recipe), so both mutations drop the cached per-recipe figures.
+
+  // What one ingredient could be priced against, and what it is priced at now.
+  app.get('/prices/options', async (req, reply) => {
+    const query = parse(priceOptionsQuerySchema, req.query, reply);
+    if (!query) return;
+    return prices.ingredientOptions(
+      query.kind,
+      query.name,
+      { grams: query.grams ?? null, units: query.units ?? null },
+      query.ebc ?? null,
+    );
+  });
+
+  // Free-text lookup across one catalogue, for when the name match was wrong.
+  app.get('/prices/search', async (req, reply) => {
+    const query = parse(priceSearchQuerySchema, req.query, reply);
+    if (!query) return;
+    return {
+      results: prices.searchCatalogue(query.kind, query.q ?? '', {
+        grams: query.grams ?? null,
+        units: query.units ?? null,
+      }),
+    };
+  });
+
+  // Pin a product for an ingredient, set its price by hand, or both.
+  app.put('/prices/override', adminOnly, async (req, reply) => {
+    const body = parse(priceOverrideSchema, req.body, reply);
+    if (!body) return;
+    // A pin is only meaningful against a listing that exists — a stale id would
+    // save cleanly and then silently fall back to automatic pricing.
+    if (body.catalogueId != null && !prices.catalogueHasItem(body.kind, body.catalogueId)) {
+      return reply.status(400).send({ error: 'No such product in the price catalogue' });
+    }
+    const saved = savePriceOverride({
+      kind: body.kind,
+      ingredient: prices.ingredientKey(body.name),
+      label: body.name,
+      catalogueId: body.catalogueId,
+      unitPriceDkk: body.unitPriceDkk,
+      priceUnit: body.priceUnit,
+      packageSizeG: body.packageSizeG,
+    });
+    prices.invalidatePriceOverrides();
+    bf.invalidateRecipeStats();
+    return saved;
+  });
+
+  // Return an ingredient to automatic pricing.
+  app.delete('/prices/override', adminOnly, async (req, reply) => {
+    const query = parse(priceOverrideQuerySchema, req.query, reply);
+    if (!query) return;
+    deletePriceOverride(query.kind, prices.ingredientKey(query.name));
+    prices.invalidatePriceOverrides();
+    bf.invalidateRecipeStats();
     return reply.status(204).send();
   });
 

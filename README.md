@@ -38,6 +38,7 @@ admin configures checklists from any PC on the same network.
 │                      its own service on the Pi — see deploy/README-bruce.md
 ├── packages/
 │   └── shared/        Types + Zod validation shared by server and web
+├── knowledge/         Brewing books Bruce's chat answers from (see its README)
 └── deploy/            systemd units + Raspberry Pi setup guide
 ```
 
@@ -64,6 +65,14 @@ and the Vite dev server (port 5173) together. Open:
 
 Vite proxies `/api` to the server, so both pages talk to the same backend. The
 SQLite file is created automatically at `apps/server/data/checklist.sqlite`.
+
+Features that call out to a paid API need a key. In development the server
+reads a gitignored `.env` at the repo root (production uses
+`/etc/brewplanner.env` instead, loaded by systemd):
+
+```
+OPENAI_API_KEY=sk-...      # Bruce's chat + `npm run knowledge`
+```
 
 ## Production build (what runs on the Pi)
 
@@ -148,6 +157,42 @@ history. The rig is normally powered off between brew days — the page shows an
 offline card and reconnects automatically. The rig's backend keeps running the
 regulation loop, power limit, and safety watchdog itself, so a dropped remote
 connection can never leave a heater unmanaged.
+
+### Bruce — chat
+
+The `/bruce` page is a written conversation with the brewery's assistant,
+answered by the **server** — not by the voice service — so it works with no
+microphone attached and `bruce.service` stopped.
+
+Answers are grounded in the brewing books in `knowledge/` (see
+`knowledge/README.md`). `npm run knowledge` splits each book into passages and
+embeds them into a local index; a question is embedded the same way, the
+closest passages are retrieved, and the model answers from those and cites the
+book and page it read. When the books don't cover something it says so instead
+of inventing a figure. Drop a `PROMPT.md` into `knowledge/` to replace Bruce's
+written persona (e.g. with the instructions from an existing custom GPT).
+
+Needs `OPENAI_API_KEY` on the server — the same key the voice assistant uses.
+Without it the page says so rather than failing when you type. Asking is
+admin-only (each question costs API credit); reading a thread needs a session.
+
+Conversations are separate threads (`bruce_conversations` + `bruce_messages`),
+switched from the menu in the chat header: start a new one per brew day or
+topic, rename it, delete it. A thread names itself after its opening question.
+Threads are shared, not per-account — a question asked on the phone is there on
+the kiosk — and survive restarts.
+
+The model is chosen from a picker on the page, which explains what each one is
+better and worse at rather than just listing ids. It offers a shortlist of five
+picked for this job (see `SHORTLIST` in `apps/server/src/bruce/chat.ts` — edit
+it to change the menu, blurbs included). Names are matched against the models
+the API key can actually see, so a retired model drops out instead of breaking
+the picker, and the list tops up from the account's newest models if the
+shortlist ages out. The choice is stored in settings; `BRUCE_CHAT_MODEL` only
+sets where a fresh install starts.
+
+Billing is the OpenAI **API**, per token — a ChatGPT Plus/Pro subscription is a
+separate product and does not cover it.
 
 ### Bruce — voice assistant
 

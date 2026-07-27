@@ -200,6 +200,27 @@ const RULES: Rule[] = [
   { method: 'PUT', re: /^\/api\/recipe$/, build: ({ body }) => ({ entity: 'Recipe', action: `Set the active recipe${str(body, 'name') ? ` to "${str(body, 'name')}"` : ''}` }) },
   { method: 'DELETE', re: /^\/api\/recipe$/, build: () => ({ entity: 'Recipe', action: 'Cleared the active recipe' }) },
 
+  // --- Ingredient prices ----------------------------------------------------
+  // Worth recording: a price decision is stored per ingredient, so it re-costs
+  // every recipe that uses it, not just the brew sheet it was made from.
+  {
+    method: 'PUT',
+    re: /^\/api\/prices\/override$/,
+    build: ({ body }) => {
+      const name = str(body, 'name') || 'an ingredient';
+      const price = body != null && typeof body === 'object' ? (body as Record<string, unknown>).unitPriceDkk : null;
+      const unit = str(body, 'priceUnit') === 'pack' ? 'pack' : 'kg';
+      return {
+        entity: 'Recipe',
+        action:
+          typeof price === 'number'
+            ? `Priced ${name} at ${price} kr per ${unit}`
+            : `Changed which product ${name} is priced against`,
+      };
+    },
+  },
+  { method: 'DELETE', re: /^\/api\/prices\/override$/, build: () => ({ entity: 'Recipe', action: 'Reset an ingredient to automatic pricing' }) },
+
   // --- Keg inventory (referred to by keg #, per the sheet) ------------------
   { method: 'PUT', re: /^\/api\/kegs\/([^/]+)$/, build: ({ m, body }) => ({ entity: 'Keg', action: `Updated keg #${decodeURIComponent(m[1] ?? '')}${str(body, 'contents') ? ` (${str(body, 'contents')})` : ''}` }) },
 

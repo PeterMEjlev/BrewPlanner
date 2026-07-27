@@ -1,3 +1,5 @@
+// Must stay first: later imports read process.env when they load. See env.ts.
+import './env.js';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

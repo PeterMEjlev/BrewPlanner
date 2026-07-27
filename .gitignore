@@ -14,6 +14,18 @@ dist/
 # Generated session-signing secret (per-device, never commit)
 session-secret
 
+# Local secrets for development (API keys). Production reads
+# /etc/brewplanner.env, which lives outside the repo. The *.env.example files
+# under deploy/ are templates with empty values and stay tracked.
+.env
+.env.*
+!*.env.example
+
+# Bruce's knowledge index — derived from knowledge/*.md by `npm run knowledge`.
+# Tens of MB of float vectors: rebuildable, and far too big to carry in git.
+knowledge-index.json
+knowledge-index.bin
+
 # Editor / OS
 .DS_Store
 .vscode/

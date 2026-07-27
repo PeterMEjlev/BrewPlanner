@@ -1,10 +1,11 @@
-- fermenter temp graph doesnt show target temp when opened.
+- Overview Page: fermenter temp graph doesnt show target temp when opened.
 
-- edit recipes and have them update in brewersfriend
+- Recipe Page: edit recipes and have them update in brewersfriend
 
-- review if water calc math is correct
 
-- write with bruce in the bruce tab (change icon away from a mic to reflect this). Give specific GPT with the J. Palmer books (as .md files)
+
+- Water Calculator page: review if water calc math is correct
+
 
 - ## Add support for
   - Electricity (Watt) usage
@@ -27,8 +28,9 @@
   3. Add `OPENAI_API_KEY` + `PICOVOICE_ACCESS_KEY` to `/etc/brewplanner.env`
   4. Reinstall the sudoers whitelist (it now covers bruce.service)
   5. `sudo systemctl enable --now bruce.service`, check `journalctl -u bruce.service -f`
-  Also still to do: build the Bruce page contents in the dashboard (the sidebar
-  tab exists but the page is a placeholder — status indicator + conversation log).
+  The Bruce page itself is built: it is a written chat (server-side, works today
+  without any of the above) with the voice service's live state, volume, speak
+  box and spoken transcript in the right-hand rail once the hardware is in.
 
 - ## Apparent attenuation & ABV live tracker — compute OG→current % attenuation and estimated ABV from Tilt readings; show projected final ABV.
 

@@ -9,6 +9,12 @@ Everything below is a **one-time** setup, done on the Pi over SSH
 before — `bruce.service` is opt-in and `deploy/update.sh` skips it while it
 is not enabled.
 
+> **This page is only about talking to Bruce out loud.** The written chat on
+> the `/bruce` page is answered by the BrewPlanner server itself and needs no
+> microphone, no speaker, and no `bruce.service` — only `OPENAI_API_KEY` in
+> `/etc/brewplanner.env` (step 3 below) and one `npm run knowledge` to index
+> the books. See `knowledge/README.md`.
+
 ## 0. Prerequisites
 
 - A USB microphone and a speaker plugged into the Pi (3.5 mm jack, USB, or the

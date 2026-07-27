@@ -14,6 +14,7 @@
     "user": "tsx src/auth/cli.ts",
     "device": "tsx src/devices/cli.ts",
     "notify": "tsx src/notify/cli.ts",
+    "knowledge": "tsx src/knowledge/cli.ts",
     "seed:demo": "tsx src/devices/seed-demo.ts"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/static": "^8.0.3",
     "better-sqlite3": "^11.7.0",
+    "dotenv": "^17.3.1",
     "drizzle-orm": "^0.38.3",
     "fastify": "^5.2.0",
     "sonos": "^1.14.3",

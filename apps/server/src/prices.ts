@@ -1,11 +1,23 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { IngredientPrice, PurchaseLine, RecipeCost, RecipePricing } from '@checklist/shared';
+import type {
+  IngredientKind,
+  IngredientPrice,
+  IngredientPriceOptions,
+  PriceOption,
+  PriceSource,
+  PurchaseLine,
+  RecipeCost,
+  RecipePricing,
+} from '@checklist/shared';
+import type { StoredOverride } from './priceOverrides.js';
+import { listOverrides } from './priceOverrides.js';
 
 /**
  * Ingredient costing from the local price catalogue (`prices/` at the repo root)
- * — Humlecentralen's malt, hop and yeast listings, scraped to JSON.
+ * — Humlecentralen's malt, hop and yeast listings, scraped to JSON — layered
+ * with the brewer's own decisions from the `ingredient_prices` table.
  *
  * Two figures come out of a recipe, because they answer different questions.
  * Per line, `usedDkk` is what the recipe consumes (grams × price per kg): the
@@ -24,6 +36,12 @@ import type { IngredientPrice, PurchaseLine, RecipeCost, RecipePricing } from '@
  * ingredients the shop simply doesn't stock. An unmatched or unpriced ingredient
  * returns null rather than a guess, and the counts travel with the totals so a
  * short total says so.
+ *
+ * What the automatic match decides, the brewer can overrule. Each price resolves
+ * in a fixed order — the brewer's own decision, then a built-in rule, then the
+ * cheapest catalogue match — and every price says which of those it came from
+ * (see {@link PriceSource}), so a figure the brewer chose is never confused with
+ * one this file guessed.
  */
 
 const PRICES_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../prices');
@@ -667,51 +685,255 @@ function packageFraction(item: PricedItem, qty: Quantity): number | null {
   return null;
 }
 
+/** The catalogue one kind of ingredient is priced against. */
+function catalogueFor(kind: IngredientKind): PricedItem[] {
+  const c = catalogue();
+  switch (kind) {
+    case 'fermentable':
+      return c.fermentables;
+    case 'hop':
+      return c.hops;
+    case 'yeast':
+      return c.yeasts;
+    case 'other':
+      return c.others;
+  }
+}
+
+/** A catalogue entry paired with how much of it one line consumes. */
+interface Match {
+  item: PricedItem;
+  /** Null when the line and the product can't be reconciled (see {@link packageFraction}). */
+  fraction: number | null;
+}
+
+/** What buying enough of a product for this line costs, for ranking. */
+function buyIn(m: Match): number {
+  return m.fraction == null ? Number.POSITIVE_INFINITY : Math.ceil(m.fraction) * m.item.packagePriceDkk;
+}
+
 /**
- * Cost one ingredient line against the cheapest catalogue entry that matches,
- * per the brewery's rule that two listings of the same malt are the same malt.
+ * Every catalogue entry that could be this ingredient, cheapest first.
  *
  * "Cheapest" is judged on what this line would actually cost to buy, not on the
  * headline rate — which matters for yeast, where a 25 g pitch is cheaper as one
- * 25 g sachet at 82 kr than as three 11.5 g sachets at 37 kr each.
+ * 25 g sachet at 82 kr than as three 11.5 g sachets at 37 kr each. A listing the
+ * line can't be reconciled with sorts last rather than being dropped, so the
+ * picker can still offer it.
+ */
+function rankedMatches(
+  kind: IngredientKind,
+  name: string,
+  qty: Quantity,
+  recipeEbc: number | null,
+): Match[] {
+  return candidates(catalogueFor(kind), name)
+    .filter((item) => colourPlausible(item, recipeEbc))
+    .map((item) => ({ item, fraction: packageFraction(item, qty) }))
+    .sort((a, b) => buyIn(a) - buyIn(b));
+}
+
+/**
+ * The listing automatic pricing would use: the cheapest match this line can
+ * actually be costed against.
+ *
+ * A cheaper price on something the shop has run out of is not a better price, so
+ * in-stock listings win outright and sold-out ones are only a last resort — the
+ * point being that an ingredient stays priced rather than going blank because the
+ * shop is temporarily empty. The picker doesn't offer sold-out listings at all;
+ * they aren't something the brewer can choose to buy.
+ */
+function cheapestMatch(matches: Match[]): Match | null {
+  const usable = matches.filter((m) => m.fraction != null && m.fraction > 0);
+  const inStock = usable.filter((m) => !m.item.soldout);
+  return (inStock[0] ?? usable[0]) ?? null;
+}
+
+/**
+ * Kveik is priced at a flat rate rather than from the catalogue. The shop stocks
+ * almost none of it — it comes from a fellow brewer or a previous batch's slurry
+ * — so a strain that happens to share a word with a listing would otherwise be
+ * costed against something unrelated, and one that doesn't would go unpriced.
+ */
+const KVEIK_PITCH_DKK = 99;
+
+/** A built-in pricing rule for this ingredient, if one applies. */
+function ruleMatch(kind: IngredientKind, name: string): { item: PricedItem; note: string } | null {
+  if (kind !== 'yeast' || !/kveik/i.test(name)) return null;
+  return {
+    item: {
+      // Per strain, not per rule: two different kveiks are two pitches to buy.
+      id: `rule:kveik:${ingredientKey(name)}`,
+      label: name.trim(),
+      tokens: [],
+      // A pitch, not a weight — however many grams the recipe writes down.
+      pricePerKgDkk: null,
+      packagePriceDkk: KVEIK_PITCH_DKK,
+      packageSizeG: null,
+      ebcMin: null,
+      ebcMax: null,
+      soldout: false,
+    },
+    note: `Kveik — priced at a flat ${KVEIK_PITCH_DKK} kr a pitch rather than from the catalogue`,
+  };
+}
+
+/**
+ * The brewer's decisions, indexed for lookup. Cached because costing the Recipes
+ * grid resolves thousands of lines against a table of a few dozen rows; every
+ * write clears it (see {@link invalidatePriceOverrides}).
+ */
+let overrideCache: Map<string, StoredOverride> | null = null;
+
+function overrideKey(kind: IngredientKind, ingredient: string): string {
+  return `${kind} ${ingredient}`;
+}
+
+function overrides(): Map<string, StoredOverride> {
+  if (!overrideCache) {
+    overrideCache = new Map(listOverrides().map((o) => [overrideKey(o.kind, o.ingredient), o]));
+  }
+  return overrideCache;
+}
+
+/** Forget the cached decisions, so the next price reads them fresh. */
+export function invalidatePriceOverrides(): void {
+  overrideCache = null;
+}
+
+/**
+ * The key a decision is filed under: the ingredient's name reduced to its
+ * significant words, so one price covers every spelling of it that the matcher
+ * already treats as the same thing. A name with nothing significant in it (all
+ * noise, or punctuation) falls back to itself, which still keys consistently.
+ */
+export function ingredientKey(name: string): string {
+  const tokens = tokenize(name);
+  return tokens.length > 0 ? tokens.join(' ') : name.trim().toLowerCase();
+}
+
+function overrideFor(kind: IngredientKind, name: string): StoredOverride | undefined {
+  return overrides().get(overrideKey(kind, ingredientKey(name)));
+}
+
+/**
+ * A priced product built from the brewer's own figure. When they also pinned a
+ * catalogue listing, the listing supplies the identity (name, pack size) and only
+ * the price is theirs — so repeats of it still pool into one purchase.
+ *
+ * A per-kg price needs a package to book the buying cost against: the pinned
+ * listing's, if there is one, else the kilo it was quoted in. A per-pack price
+ * carries whatever pack it was quoted for, and null means one pitch of no stated
+ * weight — the same thing a liquid yeast pack is.
+ */
+function manualItem(override: StoredOverride, pinned: PricedItem | null): PricedItem | null {
+  if (override.unitPriceDkk == null || override.priceUnit == null) return null;
+  const base = {
+    id: pinned?.id ?? `manual:${override.kind}:${override.ingredient}`,
+    label: pinned?.label ?? override.label,
+    tokens: [],
+    ebcMin: null,
+    ebcMax: null,
+    soldout: false,
+  };
+  if (override.priceUnit === 'kg') {
+    const packageSizeG = override.packageSizeG ?? pinned?.packageSizeG ?? 1000;
+    return {
+      ...base,
+      pricePerKgDkk: override.unitPriceDkk,
+      packagePriceDkk: (override.unitPriceDkk * packageSizeG) / 1000,
+      packageSizeG,
+    };
+  }
+  const packageSizeG = override.packageSizeG ?? pinned?.packageSizeG ?? null;
+  return {
+    ...base,
+    pricePerKgDkk: packageSizeG == null ? null : (override.unitPriceDkk / packageSizeG) * 1000,
+    packagePriceDkk: override.unitPriceDkk,
+    packageSizeG,
+  };
+}
+
+/**
+ * The product a saved decision resolves to. Null when it resolves to nothing
+ * usable — a pinned listing the shop has since dropped — in which case pricing
+ * falls through to the automatic match rather than leaving the line blank.
+ */
+function overrideMatch(
+  kind: IngredientKind,
+  override: StoredOverride,
+): { item: PricedItem; source: PriceSource } | null {
+  const pinned =
+    override.catalogueId == null
+      ? null
+      : (catalogueFor(kind).find((i) => i.id === override.catalogueId) ?? null);
+  const manual = manualItem(override, pinned);
+  if (manual) return { item: manual, source: 'manual' };
+  return pinned ? { item: pinned, source: 'chosen' } : null;
+}
+
+/** Turn a chosen product into the line's price, or null if it can't be costed. */
+function toPrice(
+  item: PricedItem,
+  qty: Quantity,
+  alternatives: number,
+  source: PriceSource,
+  note: string | null,
+): IngredientPrice | null {
+  const fraction = packageFraction(item, qty);
+  if (fraction == null || fraction <= 0) return null;
+  return {
+    // Pro-rata on the package, which is equivalent to grams × price-per-kg for
+    // anything sold by weight and still works for a unit-priced pack.
+    usedDkk: money(fraction * item.packagePriceDkk),
+    pricePerKgDkk: item.pricePerKgDkk == null ? null : money(item.pricePerKgDkk),
+    packageSizeG: item.packageSizeG,
+    packagePriceDkk: money(item.packagePriceDkk),
+    packageFraction: fraction,
+    matchedName: item.label,
+    catalogueId: item.id,
+    alternatives,
+    source,
+    note,
+  };
+}
+
+/**
+ * Cost one ingredient line, resolving in the order that puts the brewer's
+ * judgement above this file's: a saved decision, then a built-in rule, then the
+ * cheapest catalogue listing whose name matches.
+ *
+ * Each step falls through when it produces nothing usable, so a pinned product
+ * that has left the catalogue degrades to an automatic price rather than to no
+ * price at all.
  */
 function priceLine(
-  items: PricedItem[],
+  kind: IngredientKind,
   name: string,
   qty: Quantity,
   /** The recipe's own colour for this line, when it has one (malt only). */
   recipeEbc: number | null = null,
 ): IngredientPrice | null {
   if (qty.grams == null && qty.units == null) return null;
-  const matches = candidates(items, name)
-    .filter((item) => colourPlausible(item, recipeEbc))
-    .map((item) => ({ item, fraction: packageFraction(item, qty) }))
-    .filter((m): m is { item: PricedItem; fraction: number } => m.fraction != null && m.fraction > 0);
-  if (matches.length === 0) return null;
+  const matches = rankedMatches(kind, name, qty, recipeEbc);
+  // How many listings shared the name, whichever one ends up being used.
+  const alternatives = Math.max(matches.filter((m) => !m.item.soldout).length - 1, 0);
 
-  // A cheaper price on something the shop has run out of is not a better price,
-  // so in-stock listings win outright; sold-out ones are only a last resort.
-  const inStock = matches.filter((m) => !m.item.soldout);
-  const usable = inStock.length > 0 ? inStock : matches;
+  const override = overrideFor(kind, name);
+  if (override) {
+    const resolved = overrideMatch(kind, override);
+    const price = resolved && toPrice(resolved.item, qty, alternatives, resolved.source, null);
+    if (price) return price;
+  }
 
-  const buyIn = (m: { item: PricedItem; fraction: number }): number =>
-    Math.ceil(m.fraction) * m.item.packagePriceDkk;
+  const rule = ruleMatch(kind, name);
+  if (rule) {
+    const price = toPrice(rule.item, qty, alternatives, 'rule', rule.note);
+    if (price) return price;
+  }
 
-  const best = usable.reduce((cheapest, m) => (buyIn(m) < buyIn(cheapest) ? m : cheapest));
-
-  return {
-    // Pro-rata on the package, which is equivalent to grams × price-per-kg for
-    // anything sold by weight and still works for a unit-priced pack.
-    usedDkk: money(best.fraction * best.item.packagePriceDkk),
-    pricePerKgDkk: best.item.pricePerKgDkk == null ? null : money(best.item.pricePerKgDkk),
-    packageSizeG: best.item.packageSizeG,
-    packagePriceDkk: money(best.item.packagePriceDkk),
-    packageFraction: best.fraction,
-    matchedName: best.item.label,
-    catalogueId: best.item.id,
-    // How many listings shared the name; the cheapest was taken.
-    alternatives: usable.length - 1,
-  };
+  const best = cheapestMatch(matches);
+  return best ? toPrice(best.item, qty, alternatives, 'catalogue', null) : null;
 }
 
 /**
@@ -724,11 +946,11 @@ export function priceFermentable(
   grams: number,
   ebc: number | null = null,
 ): IngredientPrice | null {
-  return priceLine(catalogue().fermentables, name, { grams, units: null }, ebc);
+  return priceLine('fermentable', name, { grams, units: null }, ebc);
 }
 
 export function priceHop(name: string, grams: number): IngredientPrice | null {
-  return priceLine(catalogue().hops, name, { grams, units: null });
+  return priceLine('hop', name, { grams, units: null });
 }
 
 /**
@@ -741,7 +963,7 @@ export function priceHop(name: string, grams: number): IngredientPrice | null {
  * without a stated weight.
  */
 export function priceYeast(name: string, qty: Quantity): IngredientPrice | null {
-  return priceLine(catalogue().yeasts, name, qty);
+  return priceLine('yeast', name, qty);
 }
 
 /**
@@ -750,7 +972,90 @@ export function priceYeast(name: string, qty: Quantity): IngredientPrice | null 
  * pack count, since a recipe may say "3 kg" or "1 each".
  */
 export function priceOther(name: string, qty: Quantity): IngredientPrice | null {
-  return priceLine(catalogue().others, name, qty);
+  return priceLine('other', name, qty);
+}
+
+// ---------------------------------------------------------------------------
+// The price picker: what one ingredient could be priced against
+// ---------------------------------------------------------------------------
+
+/** How many search hits to hand back; more than fits a dropdown is noise. */
+const SEARCH_LIMIT = 40;
+
+/** Present one catalogue listing as something the brewer can pick. */
+function toOption(m: Match, defaultId: string | null, selectedId: string | null): PriceOption {
+  return {
+    catalogueId: m.item.id,
+    label: m.item.label,
+    pricePerKgDkk: m.item.pricePerKgDkk == null ? null : money(m.item.pricePerKgDkk),
+    packagePriceDkk: money(m.item.packagePriceDkk),
+    packageSizeG: m.item.packageSizeG,
+    usedDkk: m.fraction == null ? null : money(m.fraction * m.item.packagePriceDkk),
+    isDefault: m.item.id === defaultId,
+    isSelected: m.item.id === selectedId,
+  };
+}
+
+/**
+ * Everything the picker shows for one ingredient: the in-stock listings that
+ * match its name, which of them automatic pricing would take, which is in effect,
+ * and the decision already saved for it.
+ *
+ * Sold-out listings are filtered out here even though {@link cheapestMatch} will
+ * still fall back to one — offering the brewer something they can't buy is worse
+ * than the automatic pricing quietly using it as a last resort, and the price
+ * itself still names whatever it was costed against.
+ */
+export function ingredientOptions(
+  kind: IngredientKind,
+  name: string,
+  qty: Quantity,
+  ebc: number | null = null,
+): IngredientPriceOptions {
+  const price = priceLine(kind, name, qty, ebc);
+  const matches = rankedMatches(kind, name, qty, ebc);
+  const defaultId = cheapestMatch(matches)?.item.id ?? null;
+  return {
+    kind,
+    name,
+    matched: matches
+      .filter((m) => !m.item.soldout)
+      .map((m) => toOption(m, defaultId, price?.catalogueId ?? null)),
+    override: overrideFor(kind, name) ?? null,
+    price,
+  };
+}
+
+/**
+ * Free-text lookup across one catalogue, for when the name match landed on the
+ * wrong product entirely — the case the picker exists for. Matched on the words
+ * of the shop's own listing name (producer included), so "weyermann pils" finds
+ * what a token match on the recipe's wording never would.
+ */
+export function searchCatalogue(
+  kind: IngredientKind,
+  query: string,
+  qty: Quantity,
+  selectedId: string | null = null,
+): PriceOption[] {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const items = catalogueFor(kind).filter((item) => !item.soldout);
+  const hits = words.length === 0
+    ? items
+    : items.filter((item) => {
+        const haystack = item.label.toLowerCase();
+        return words.every((w) => haystack.includes(w));
+      });
+  return hits
+    .map((item) => ({ item, fraction: packageFraction(item, qty) }))
+    .sort((a, b) => buyIn(a) - buyIn(b))
+    .slice(0, SEARCH_LIMIT)
+    .map((m) => toOption(m, null, selectedId));
+}
+
+/** Whether a catalogue id exists in one kind's listings — validation on save. */
+export function catalogueHasItem(kind: IngredientKind, catalogueId: string): boolean {
+  return catalogueFor(kind).some((item) => item.id === catalogueId);
 }
 
 /** An ingredient line as the costing sees it. */

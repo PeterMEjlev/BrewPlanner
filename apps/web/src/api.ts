@@ -8,17 +8,25 @@ import type {
   BrewPump,
   BrewSystemConfig,
   BrewSystemStatus,
+  BruceChatReply,
+  BruceChatState,
+  BruceConversation,
   BruceServiceStatus,
   ChecklistSummary,
   ChecklistWithSteps,
   DeviceDataSources,
   DeviceStatus,
   GraphColors,
+  IngredientKind,
+  IngredientPriceOptions,
+  IngredientPriceOverride,
   Keg,
   KegContentColors,
   MetricTotal,
   NotificationSettings,
   NowPlaying,
+  PriceOption,
+  PriceOverrideInput,
   Reading,
   Recipe,
   RecipeDetail,
@@ -79,6 +87,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // 204 No Content
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/**
+ * Query string for the price endpoints. Null and undefined values are dropped
+ * rather than sent as "null" — the server treats an absent amount as "no amount
+ * to cost against", which is not the same as a zero.
+ */
+function priceQuery(params: Record<string, string | number | null | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value != null && value !== '') query.set(key, String(value));
+  }
+  return query.toString();
 }
 
 export const api = {
@@ -246,6 +267,39 @@ export const api = {
     }).then((r) => r.recipe),
   clearActiveRecipe: () => request<void>('/recipe', { method: 'DELETE' }),
 
+  // Ingredient prices. A decision is stored per ingredient name rather than per
+  // recipe — pricing "Voss Kveik" once holds wherever it's pitched — so saving
+  // one re-costs every recipe that uses it.
+  //
+  // The amount travels with a read because "cheapest" is a per-line judgement (a
+  // 25 g pitch is cheaper as one sachet than as three), and a fermentable's
+  // colour travels too, since the automatic match uses it to reject a
+  // same-grain-wrong-roast listing.
+  getPriceOptions: (line: {
+    kind: IngredientKind;
+    name: string;
+    grams?: number | null;
+    units?: number | null;
+    ebc?: number | null;
+  }) =>
+    request<IngredientPriceOptions>(`/prices/options?${priceQuery(line)}`),
+  searchPrices: (query: {
+    kind: IngredientKind;
+    q: string;
+    grams?: number | null;
+    units?: number | null;
+  }) =>
+    request<{ results: PriceOption[] }>(`/prices/search?${priceQuery(query)}`).then(
+      (r) => r.results,
+    ),
+  savePriceOverride: (override: PriceOverrideInput) =>
+    request<IngredientPriceOverride>('/prices/override', {
+      method: 'PUT',
+      body: JSON.stringify(override),
+    }),
+  clearPriceOverride: (kind: IngredientKind, name: string) =>
+    request<void>(`/prices/override?${priceQuery({ kind, name })}`, { method: 'DELETE' }),
+
   // Notification preferences (server-backed, shared across browsers) + a test
   // send so the user can confirm Telegram delivery from the Settings screen.
   getNotificationSettings: () =>
@@ -379,4 +433,36 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ percent }),
     }),
+
+  // Bruce's text chat. Answered by the server itself from the indexed brewing
+  // books (not by the voice service), so it works with Bruce's hardware
+  // offline. Asking is admin-only and can take a few seconds.
+  getBruceChat: (conversationId?: number) =>
+    request<BruceChatState>(
+      conversationId ? `/bruce/chat?conversation=${conversationId}` : '/bruce/chat',
+    ),
+  askBruce: (message: string, conversationId: number) =>
+    request<BruceChatReply>('/bruce/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, conversationId }),
+    }),
+  clearBruceChat: (conversationId: number) =>
+    request<void>(`/bruce/chat?conversation=${conversationId}`, { method: 'DELETE' }),
+  setBruceChatModel: (model: string) =>
+    request<{ model: string }>('/bruce/chat/model', {
+      method: 'POST',
+      body: JSON.stringify({ model }),
+    }),
+
+  // Chat threads: separate conversations so a brew day's water questions stay
+  // apart from last month's hop reading.
+  newBruceConversation: () =>
+    request<BruceConversation>('/bruce/chat/conversations', { method: 'POST' }),
+  renameBruceConversation: (id: number, title: string) =>
+    request<BruceConversation>(`/bruce/chat/conversations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    }),
+  deleteBruceConversation: (id: number) =>
+    request<void>(`/bruce/chat/conversations/${id}`, { method: 'DELETE' }),
 };

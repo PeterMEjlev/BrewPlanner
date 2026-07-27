@@ -1,21 +1,24 @@
 import type {
   CostTotal,
   HopStage,
-  IngredientPrice,
   Recipe,
   RecipeDetail,
+  RecipeFermentable,
   RecipeHop,
+  RecipeOtherIngredient,
   RecipePricing,
   RecipeWaterProfile,
   RecipeYeast,
 } from '@checklist/shared';
 import { HOP_STAGE_ORDER, ebcColor, predictBeerColor, sumCost } from '@checklist/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
-import { loadRecipeDetail } from '../recipeStore';
+import { IngredientName, PriceCell } from '../components/PricePicker';
+import type { PricedLine } from '../components/PricePicker';
+import { invalidateRecipes, loadRecipeDetail } from '../recipeStore';
 import { asCleanMessage } from '../util';
 
 /**
@@ -179,6 +182,19 @@ export function RecipeDetailPage(): JSX.Element {
   }, [id]);
 
   const isActive = recipe != null && active?.id === recipe.id;
+
+  /**
+   * Re-read the brew sheet after a price decision. A decision is stored against
+   * the ingredient rather than this recipe, so the whole account's costs move
+   * with it — hence dropping every cached recipe, not just this one, and letting
+   * the Recipes grid re-cost itself the next time it's opened.
+   */
+  const reprice = useCallback(() => {
+    invalidateRecipes();
+    void loadRecipeDetail(id, true)
+      .then(setRecipe)
+      .catch((e) => setError(asCleanMessage(e)));
+  }, [id]);
 
   /** Put this recipe in the fermenter (or take it out again). */
   async function setFermenter(next: boolean): Promise<void> {
@@ -397,16 +413,12 @@ export function RecipeDetailPage(): JSX.Element {
             >
               <ul className="divide-y divide-zinc-800">
                 {sorted.map((f, i) => (
-                  <li key={`${f.name}-${i}`} className="flex items-center gap-3 px-4 py-2.5">
-                    <Swatch color={ebcColor(f.ebc)} className="h-3 w-3" ebc={f.ebc} />
-                    <span className="min-w-0 flex-1 truncate text-sm text-zinc-100">{f.name}</span>
-                    <span className="shrink-0 text-sm text-zinc-400">
-                      {f.amount} {f.unit}
-                      {f.percent && <span className="text-zinc-500"> · {fmt(f.percent, 1)}%</span>}
-                      {f.ebc != null && <span className="text-zinc-500"> · {f.ebc} EBC</span>}
-                    </span>
-                    <Price price={f.price} />
-                  </li>
+                  <FermentableRow
+                    key={`${f.name}-${i}`}
+                    fermentable={f}
+                    editable={controllable}
+                    onChanged={reprice}
+                  />
                 ))}
               </ul>
             </Section>
@@ -427,7 +439,7 @@ export function RecipeDetailPage(): JSX.Element {
               open={!collapsed.hops}
               onToggle={() => toggle('hops')}
             >
-              <HopSchedule hops={recipe.hops} />
+              <HopSchedule hops={recipe.hops} editable={controllable} onChanged={reprice} />
             </Section>
           )}
 
@@ -445,20 +457,12 @@ export function RecipeDetailPage(): JSX.Element {
             >
               <ul className="divide-y divide-zinc-800">
                 {recipe.otherIngredients.map((m, i) => (
-                  <li key={`${m.name}-${i}`} className="flex items-center gap-3 px-4 py-2.5">
-                    <span className="min-w-0 flex-1 truncate text-sm text-zinc-100">{m.name}</span>
-                    <span className="shrink-0 text-sm text-zinc-400">
-                      {[
-                        `${m.amount}${m.unit ? ` ${m.unit}` : ''}`,
-                        m.type,
-                        m.use,
-                        m.time && `${m.time} min`,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                    <Price price={m.price} />
-                  </li>
+                  <OtherRow
+                    key={`${m.name}-${i}`}
+                    ingredient={m}
+                    editable={controllable}
+                    onChanged={reprice}
+                  />
                 ))}
               </ul>
             </Section>
@@ -474,7 +478,12 @@ export function RecipeDetailPage(): JSX.Element {
             >
               <ul className="divide-y divide-zinc-800">
                 {recipe.yeast.map((y, i) => (
-                  <YeastRow key={`${y.name}-${i}`} yeast={y} />
+                  <YeastRow
+                    key={`${y.name}-${i}`}
+                    yeast={y}
+                    editable={controllable}
+                    onChanged={reprice}
+                  />
                 ))}
               </ul>
             </Section>
@@ -620,13 +629,18 @@ function Section({
   onToggle: () => void;
   children: React.ReactNode;
 }): JSX.Element {
+  // Deliberately not `overflow-hidden`: an ingredient row's price picker is
+  // positioned against its own row and would be clipped at the section's edge.
+  // The header rounds its own corners instead, which is all the clipping did.
   return (
-    <section className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition hover:bg-zinc-800/50"
+        className={`flex w-full items-center gap-2.5 px-4 py-3 text-left transition hover:bg-zinc-800/50 ${
+          open ? 'rounded-t-xl' : 'rounded-xl'
+        }`}
       >
         <span aria-hidden>{icon}</span>
         <span className="text-sm font-semibold text-zinc-100">{title}</span>
@@ -648,39 +662,91 @@ function Section({
 }
 
 /**
- * One ingredient line's cost. Shows what the recipe consumes; the tooltip carries
- * the rest — which catalogue entry it matched (so a wrong match is visible), the
- * per-kg rate, and what the packages actually cost at the till.
- *
- * An em dash rather than a zero for an unpriced line: the catalogue prices every
- * malt but only some hops and almost no yeast, and a 0 would quietly understate
- * the batch.
+ * What every ingredient row shares: the price cell can be opened from the row's
+ * name as well as from the figure, so the open state lives one level up from
+ * both. The four sections lay their rows out differently enough that they each
+ * keep their own component rather than sharing one.
  */
-function Price({ price }: { price: IngredientPrice | null }): JSX.Element {
-  if (!price) {
-    return (
-      <span
-        className="w-20 shrink-0 text-right text-sm text-zinc-600"
-        title="Not in the price catalogue"
-      >
-        —
-      </span>
-    );
-  }
-  const alts = price.alternatives > 0 ? ` · cheapest of ${price.alternatives + 1} listings` : '';
-  const perKg = price.pricePerKgDkk != null ? ` · ${kr(price.pricePerKgDkk, 0)}/kg` : '';
-  // Liquid yeast is sold as a pitch, with no weight on the pack.
-  const pack =
-    price.packageSizeG != null
-      ? ` · sold in ${price.packageSizeG} g packs at ${kr(price.packagePriceDkk)}`
-      : ` · ${kr(price.packagePriceDkk)} per pack`;
+function usePricePicker(): { open: boolean; setOpen: (open: boolean) => void } {
+  const [open, setOpen] = useState(false);
+  return { open, setOpen };
+}
+
+/** Props every ingredient row takes for its price cell. */
+interface RowPricing {
+  /** False for a read-only guest: prices show, the picker doesn't open. */
+  editable: boolean;
+  /** Called after a price decision, so the page can re-read the recipe. */
+  onChanged: () => void;
+}
+
+function FermentableRow({
+  fermentable: f,
+  editable,
+  onChanged,
+}: { fermentable: RecipeFermentable } & RowPricing): JSX.Element {
+  const { open, setOpen } = usePricePicker();
+  const line: PricedLine = {
+    kind: 'fermentable',
+    name: f.name,
+    grams: f.grams,
+    // The colour is part of the automatic match, so the picker has to know it to
+    // mark the same listing as cheapest that the costing actually chose.
+    ebc: f.ebc,
+    price: f.price,
+  };
   return (
-    <span
-      className="w-20 shrink-0 text-right text-sm tabular-nums text-zinc-300"
-      title={`${price.matchedName}${perKg}${pack}${alts}`}
-    >
-      {kr(price.usedDkk)}
-    </span>
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <Swatch color={ebcColor(f.ebc)} className="h-3 w-3" ebc={f.ebc} />
+      <IngredientName
+        name={f.name}
+        editable={editable}
+        onClick={() => setOpen(!open)}
+        className="min-w-0 flex-1 text-sm text-zinc-100"
+      />
+      <span className="shrink-0 text-sm text-zinc-400">
+        {f.amount} {f.unit}
+        {f.percent && <span className="text-zinc-500"> · {fmt(f.percent, 1)}%</span>}
+        {f.ebc != null && <span className="text-zinc-500"> · {f.ebc} EBC</span>}
+      </span>
+      <PriceCell
+        line={line}
+        editable={editable}
+        open={open}
+        onOpenChange={setOpen}
+        onChanged={onChanged}
+      />
+    </li>
+  );
+}
+
+function OtherRow({
+  ingredient: m,
+  editable,
+  onChanged,
+}: { ingredient: RecipeOtherIngredient } & RowPricing): JSX.Element {
+  const { open, setOpen } = usePricePicker();
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <IngredientName
+        name={m.name}
+        editable={editable}
+        onClick={() => setOpen(!open)}
+        className="min-w-0 flex-1 text-sm text-zinc-100"
+      />
+      <span className="shrink-0 text-sm text-zinc-400">
+        {[`${m.amount}${m.unit ? ` ${m.unit}` : ''}`, m.type, m.use, m.time && `${m.time} min`]
+          .filter(Boolean)
+          .join(' · ')}
+      </span>
+      <PriceCell
+        line={{ kind: 'other', name: m.name, grams: m.grams, units: m.units, price: m.price }}
+        editable={editable}
+        open={open}
+        onOpenChange={setOpen}
+        onChanged={onChanged}
+      />
+    </li>
   );
 }
 
@@ -797,7 +863,11 @@ function CostSummary({
  * during active fermentation, so ascending puts those ahead of the longer
  * post-fermentation dry hop that follows.
  */
-function HopSchedule({ hops }: { hops: RecipeHop[] }): JSX.Element {
+function HopSchedule({
+  hops,
+  editable,
+  onChanged,
+}: { hops: RecipeHop[] } & RowPricing): JSX.Element {
   const stages = HOP_STAGE_ORDER.map((stage) => ({
     stage,
     additions: hops
@@ -832,34 +902,13 @@ function HopSchedule({ hops }: { hops: RecipeHop[] }): JSX.Element {
             </div>
             <ul className="divide-y divide-zinc-800/60">
               {additions.map((h, i) => (
-                <li key={`${h.name}-${i}`} className="flex items-center gap-3 px-4 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm text-zinc-100">{h.name}</span>
-                      {h.aa && (
-                        <span className="shrink-0 rounded border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-400">
-                          {h.aa}% AA
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 truncate text-xs text-zinc-500">
-                      {[
-                        `${h.amount}${h.unit ? ` ${h.unit}` : ''}`,
-                        hopTiming(h),
-                        h.temp && `@ ${h.temp}°C`,
-                        // The recipe's own wording, but only when it says more
-                        // than the stage heading already does.
-                        h.use !== stage ? h.use : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </div>
-                  </div>
-                  {h.ibu && Number.parseFloat(h.ibu) > 0 && (
-                    <span className="shrink-0 text-sm text-zinc-400">{fmt(h.ibu, 1)} IBU</span>
-                  )}
-                  <Price price={h.price} />
-                </li>
+                <HopRow
+                  key={`${h.name}-${i}`}
+                  hop={h}
+                  stage={stage}
+                  editable={editable}
+                  onChanged={onChanged}
+                />
               ))}
             </ul>
           </div>
@@ -870,11 +919,71 @@ function HopSchedule({ hops }: { hops: RecipeHop[] }): JSX.Element {
 }
 
 /**
+ * One hop addition. Priced per addition even though repeats of one hop pool into
+ * a single bag at the till — a decision made here therefore moves every other
+ * addition of the same hop, which is what the picker's footnote says.
+ */
+function HopRow({
+  hop: h,
+  stage,
+  editable,
+  onChanged,
+}: { hop: RecipeHop; stage: HopStage } & RowPricing): JSX.Element {
+  const { open, setOpen } = usePricePicker();
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <IngredientName
+            name={h.name}
+            editable={editable}
+            onClick={() => setOpen(!open)}
+            className="min-w-0 text-sm text-zinc-100"
+          />
+          {h.aa && (
+            <span className="shrink-0 rounded border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-400">
+              {h.aa}% AA
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 truncate text-xs text-zinc-500">
+          {[
+            `${h.amount}${h.unit ? ` ${h.unit}` : ''}`,
+            hopTiming(h),
+            h.temp && `@ ${h.temp}°C`,
+            // The recipe's own wording, but only when it says more than the
+            // stage heading already does.
+            h.use !== stage ? h.use : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </div>
+      </div>
+      {h.ibu && Number.parseFloat(h.ibu) > 0 && (
+        <span className="shrink-0 text-sm text-zinc-400">{fmt(h.ibu, 1)} IBU</span>
+      )}
+      <PriceCell
+        line={{ kind: 'hop', name: h.name, grams: h.grams, price: h.price }}
+        editable={editable}
+        open={open}
+        onOpenChange={setOpen}
+        onChanged={onChanged}
+      />
+    </li>
+  );
+}
+
+/**
  * One yeast pitch, with whatever the producer's data includes — the temperature
  * range matters most (it's the number you set the fermenter's Inkbird to), so it
  * gets its own line rather than being buried in the meta list.
  */
-function YeastRow({ yeast: y }: { yeast: RecipeYeast }): JSX.Element {
+function YeastRow({
+  yeast: y,
+  editable,
+  onChanged,
+}: { yeast: RecipeYeast } & RowPricing): JSX.Element {
+  const { open, setOpen } = usePricePicker();
   const range =
     y.minTempC != null && y.maxTempC != null
       ? `${y.minTempC}–${y.maxTempC}°C`
@@ -898,7 +1007,12 @@ function YeastRow({ yeast: y }: { yeast: RecipeYeast }): JSX.Element {
   return (
     <li className="px-4 py-2.5">
       <div className="flex items-center gap-3">
-        <span className="min-w-0 flex-1 truncate text-sm text-zinc-100">{y.name}</span>
+        <IngredientName
+          name={y.name}
+          editable={editable}
+          onClick={() => setOpen(!open)}
+          className="min-w-0 flex-1 text-sm text-zinc-100"
+        />
         {range && (
           <span
             className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs font-semibold text-zinc-200"
@@ -907,7 +1021,13 @@ function YeastRow({ yeast: y }: { yeast: RecipeYeast }): JSX.Element {
             {range}
           </span>
         )}
-        <Price price={y.price} />
+        <PriceCell
+          line={{ kind: 'yeast', name: y.name, grams: y.grams, units: y.units, price: y.price }}
+          editable={editable}
+          open={open}
+          onOpenChange={setOpen}
+          onChanged={onChanged}
+        />
       </div>
       {facts.length > 0 && (
         <div className="mt-0.5 text-xs text-zinc-500">{facts.join(' · ')}</div>
