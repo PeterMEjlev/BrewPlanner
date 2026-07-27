@@ -2,7 +2,7 @@
 
 - Recipe Page: edit recipes and have them update in brewersfriend
 
-- Bruce page: add a secondary side panel showing the latest chats (like in chatgpt's own interface)
+
 
 - Water Calculator page: review if water calc math is correct
 

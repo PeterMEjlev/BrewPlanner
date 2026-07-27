@@ -295,6 +295,124 @@ function ConversationMenu({
   );
 }
 
+/**
+ * The always-visible thread list, in the manner of a chat app's sidebar.
+ *
+ * Same actions as ConversationMenu, which stays for narrow screens: below `lg`
+ * this panel is hidden and the header popover takes over, so a phone or the
+ * kiosk in portrait doesn't spend a third of its width on a list. The two are
+ * never on screen at once.
+ */
+function ChatsPanel({
+  state,
+  onSwitch,
+  onNew,
+  onRename,
+  onDelete,
+}: {
+  state: BruceChatState | null;
+  onSwitch: (id: number) => void;
+  onNew: () => void;
+  onRename: (id: number, title: string) => void;
+  onDelete: (id: number) => void;
+}): JSX.Element {
+  const [renaming, setRenaming] = useState<number | null>(null);
+  const [draft, setDraft] = useState('');
+
+  const commitRename = (): void => {
+    if (renaming != null && draft.trim()) onRename(renaming, draft.trim());
+    setRenaming(null);
+  };
+
+  return (
+    <section className="hidden h-fit flex-col rounded-xl border border-zinc-800 bg-zinc-900 p-3 lg:sticky lg:top-5 lg:flex">
+      <div className="mb-2 flex items-center justify-between gap-2 px-1">
+        <h2 className="text-sm font-semibold text-zinc-400">Chats</h2>
+        <button
+          type="button"
+          onClick={onNew}
+          title="Start a new chat"
+          className="rounded-lg px-1.5 py-0.5 text-xs font-medium text-emerald-400 transition hover:bg-zinc-800/60"
+        >
+          + New
+        </button>
+      </div>
+
+      {state == null ? (
+        <p className="px-1 text-xs text-zinc-600">Loading…</p>
+      ) : (
+        <div className="max-h-[68vh] space-y-0.5 overflow-y-auto pr-0.5">
+          {state.conversations.map((conversation) => {
+            const active = conversation.id === state.conversation.id;
+            if (renaming === conversation.id) {
+              return (
+                <input
+                  key={conversation.id}
+                  autoFocus
+                  value={draft}
+                  maxLength={80}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') setRenaming(null);
+                  }}
+                  className="w-full rounded-lg border border-zinc-600 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100 focus:outline-none"
+                />
+              );
+            }
+            return (
+              <div
+                key={conversation.id}
+                className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 ${
+                  active ? 'bg-zinc-800' : 'hover:bg-zinc-800/60'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSwitch(conversation.id)}
+                  className="min-w-0 flex-1 text-left"
+                  title={conversation.title}
+                >
+                  <div className={`truncate text-xs ${active ? 'text-zinc-100' : 'text-zinc-300'}`}>
+                    {conversation.title}
+                  </div>
+                  <div className="text-[10px] text-zinc-600">
+                    {conversation.messages === 0
+                      ? 'empty'
+                      : `${conversation.messages} message${conversation.messages === 1 ? '' : 's'}`}
+                    {' · '}
+                    {relativeTime(conversation.updatedAt)}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  title="Rename"
+                  onClick={() => {
+                    setRenaming(conversation.id);
+                    setDraft(conversation.title);
+                  }}
+                  className="shrink-0 px-1 text-[11px] text-zinc-600 opacity-0 transition group-hover:opacity-100 hover:text-zinc-300"
+                >
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  title="Delete this chat"
+                  onClick={() => onDelete(conversation.id)}
+                  className="shrink-0 px-1 text-[11px] text-zinc-600 opacity-0 transition group-hover:opacity-100 hover:text-red-400"
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Chat(): JSX.Element {
   const [state, setState] = useState<BruceChatState | null>(null);
   const [draft, setDraft] = useState('');
@@ -415,18 +533,37 @@ function Chat(): JSX.Element {
   };
 
   return (
-    <section className="flex min-h-[70vh] flex-col rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+    <>
+      <ChatsPanel
+        state={state}
+        onSwitch={(id) => load(id)}
+        onNew={() => void newChat()}
+        onRename={(id, title) => void rename(id, title)}
+        onDelete={(id) => void remove(id)}
+      />
+
+      <section className="flex min-h-[70vh] flex-col rounded-xl border border-zinc-800 bg-zinc-900 p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        {/* Below lg the panel is hidden, so the popover is the only way to
+            switch threads; from lg it would be a second one, and the header
+            shows which thread is open instead. */}
         {state && (
-          <ConversationMenu
-            state={state}
-            onSwitch={(id) => load(id)}
-            onNew={() => void newChat()}
-            onRename={(id, title) => void rename(id, title)}
-            onDelete={(id) => void remove(id)}
-          />
+          <div className="lg:hidden">
+            <ConversationMenu
+              state={state}
+              onSwitch={(id) => load(id)}
+              onNew={() => void newChat()}
+              onRename={(id, title) => void rename(id, title)}
+              onDelete={(id) => void remove(id)}
+            />
+          </div>
         )}
-        <div className="flex shrink-0 items-center gap-2">
+        {state && (
+          <h2 className="hidden min-w-0 truncate text-sm font-medium text-zinc-300 lg:block">
+            {state.conversation.title}
+          </h2>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {state?.configured && (
             <ModelPicker
               state={state}
@@ -531,7 +668,8 @@ function Chat(): JSX.Element {
           </button>
         </div>
       </form>
-    </section>
+      </section>
+    </>
   );
 }
 
@@ -1084,8 +1222,12 @@ export function BrucePage(): JSX.Element {
 
   return (
     <DashboardShell active="bruce">
-      <main className="w-full max-w-[1200px] px-5 py-5">
-        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      {/* Wider than the other pages: three columns at 1200px would leave the
+          conversation itself about 640px, which reads badly for long answers. */}
+      <main className="w-full max-w-[1400px] px-5 py-5">
+        {/* Chat renders two grid children — the thread panel and the chat card
+            — so the columns line up without nesting them in a wrapper. */}
+        <div className="grid gap-4 lg:grid-cols-[210px_1fr_320px]">
           <Chat />
           <div className="space-y-4">
             <VoiceRail status={status} />
