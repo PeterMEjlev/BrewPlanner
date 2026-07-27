@@ -2,11 +2,7 @@
 
 - Recipe Page: edit recipes and have them update in brewersfriend
 
-- Recipe page: add filters
-
-- Recipe page: add white outline around the dot showing the predicted beer color (its difficult to see the dark beer (stout) color on the darkmode gui)
-
-- Colour in the recipe cards are sometimes wrong: berliner weisse (which is a sour) get white (which is for weissbeer). sometimes it gets the right pink colour. Peach fuzz = wrong (white), Raspberry Sour = right (pink). New england IPA doesnt always have the light green color. Check for other beers with the wrong colour assigned.
+- Bruce: Make web search on by default
 
 - Water Calculator page: review if water calc math is correct
 

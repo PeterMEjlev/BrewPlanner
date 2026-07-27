@@ -966,25 +966,47 @@ export const KEG_CONTENT_COLORS: KegContentColors = DEFAULT_KEG_CONTENT_COLORS;
 export const KEG_CONTENT_OPTIONS = Object.keys(DEFAULT_KEG_CONTENT_COLORS) as KegContent[];
 
 /**
+ * Terms that map a recipe onto one of the palette's beer types, in match order —
+ * the first hit wins, so the more specific rule has to come first.
+ *
+ * Sour leads, as it does in {@link STYLE_CATEGORY_RULES} and for the same
+ * reason: a Berliner Weisse is a wheat beer and a sour IPA is an IPA, but what
+ * either one pours as — and what the keg board is saying — is sour. NEIPA and
+ * SIPA are subsets of IPA, so both precede the bare IPA rule.
+ *
+ * Word boundaries matter: bare "ipa" would otherwise match "Ipanema", and "wit"
+ * would match "Wit(h) Honey". Styles the palette has no colour for
+ * (Saison, Helles Bock, Schwarzbier) are deliberately left unmatched rather than
+ * forced into the nearest slot — a missing colour is honest, a wrong one isn't.
+ */
+const CONTENT_MATCH_RULES: [KegContent, RegExp][] = [
+  ['Sour', /\b(sour|gose|berliner|lambic|gueuze|geuze|kriek|flanders|oud bruin|wild ale|brett\w*)\b/],
+  ['Stout', /\b(stout|porter)\b/],
+  ['NEIPA', /\b(neipa|ne ipa|new england|hazy)\b/],
+  ['SIPA', /\b(sipa|session ipa)\b/],
+  ['IPA', /\b(ipa|iipa|india pale ale)\b/],
+  // "wiess" as well as "weiss": that's the spelling the palette itself uses.
+  ['Wiessbeer', /\b(wheat|weizen|w(ei|ie)ss\w*|wit|witbier|hefe\w*)\b/],
+  ['Pilsner', /\b(pilsner|pils|lager|helles)\b/],
+  ['Brown Ale', /\b(brown ale|nut brown)\b/],
+];
+
+/**
  * Best-effort map of a recipe's name/style onto one of the known content
  * options, so linking a Brewer's Friend recipe can pre-fill the contents field
  * (e.g. "Galaxy NEIPA" → "NEIPA", "My Tropical Gose" → "Sour"). Returns null
  * when nothing matches, leaving the caller to fall back to the recipe name.
- * Order matters: more specific terms are checked before generic ones.
+ *
+ * Name and style are tested together, one rule at a time, so priority is decided
+ * by the rules rather than by which field happened to mention a beer first —
+ * "Peach Fuzz" / "Berliner Weisse" is a sour, whichever half says so. They're
+ * joined by a separator no pattern can span, so no rule matches a phrase that
+ * only exists across the seam.
  */
 export function matchContentOption(recipeName: string, recipeStyle = ''): KegContent | null {
-  for (const text of [recipeName, recipeStyle]) {
-    if (!text) continue;
-    const t = text.toLowerCase();
-    if (t.includes('neipa') || t.includes('hazy')) return 'NEIPA';
-    if (t.includes('sipa') || t.includes('session ipa')) return 'SIPA';
-    if (t.includes('brown ale')) return 'Brown Ale';
-    if (t.includes('ipa')) return 'IPA';
-    if (t.includes('wiessbeer') || t.includes('weiss') || t.includes('hefeweizen') || t.includes('wheat'))
-      return 'Wiessbeer';
-    if (t.includes('sour') || t.includes('gose') || t.includes('berliner')) return 'Sour';
-    if (t.includes('pilsner') || t.includes('pils') || t.includes('lager')) return 'Pilsner';
-    if (t.includes('stout') || t.includes('porter')) return 'Stout';
+  const text = `${recipeName} | ${recipeStyle}`.toLowerCase();
+  for (const [content, pattern] of CONTENT_MATCH_RULES) {
+    if (pattern.test(text)) return content;
   }
   return null;
 }
@@ -1020,8 +1042,8 @@ export type RecipeStyleCategory = (typeof RECIPE_STYLE_CATEGORIES)[number];
 const STYLE_CATEGORY_RULES: [RecipeStyleCategory, RegExp][] = [
   ['Sour', /\b(sour|gose|berliner|lambic|gueuze|geuze|kriek|flanders|oud bruin|wild ale|brett\w*|funk)\b/],
   ['Stout & Porter', /\b(stout|porter)\b/],
-  ['IPA', /\b(ipa|neipa|iipa|india pale ale|hazy)\b/],
-  ['Wheat', /\b(wheat|weizen|weiss\w*|weisse|wit|witbier|hefe\w*|dunkelweizen|weizenbock)\b/],
+  ['IPA', /\b(ipa|neipa|sipa|iipa|india pale ale|hazy)\b/],
+  ['Wheat', /\b(wheat|weizen|w(ei|ie)ss\w*|wit|witbier|hefe\w*|dunkelweizen|weizenbock)\b/],
   ['Pale Ale', /\b(pale ale|apa|xpa|blonde|golden ale|k(ö|o)lsch|cream ale|summer ale)\b/],
   // German compounds glue the style onto a modifier — \w*bock catches Doppel-,
   // Eis- and Maibock, while Weizenbock is already claimed by the wheat rule above.

@@ -4,6 +4,7 @@ import type {
   KegContentColors,
   Recipe,
   RecipeStats,
+  RecipeStyleCategory,
 } from '@checklist/shared';
 import {
   RECIPE_STYLE_CATEGORIES,
@@ -155,6 +156,155 @@ function toStatsMap(list: RecipeStats[]): Map<string, Stats> {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Filters
+// ---------------------------------------------------------------------------
+
+/**
+ * One numeric bound pair, held as the strings the inputs contain rather than as
+ * numbers: a half-typed "1." has to survive until the second character arrives,
+ * and an empty box has to stay empty rather than becoming a 0.
+ */
+interface Range {
+  min: string;
+  max: string;
+}
+
+/** Everything narrowing the grid, beyond the search box. */
+interface Filters {
+  /** Style families to include; empty means every family (no narrowing). */
+  families: RecipeStyleCategory[];
+  abv: Range;
+  ibu: Range;
+  ebc: Range;
+  price: Range;
+  hops: Range;
+}
+
+type RangeKey = 'abv' | 'ibu' | 'ebc' | 'price' | 'hops';
+
+/**
+ * The numeric filters, in the order the panel lays them out. `pick` returns null
+ * for a recipe that can't answer — no EBC set, nothing priceable — and such a
+ * recipe drops out once a bound is set, the same way it sinks under a sort.
+ */
+const RANGE_FIELDS: {
+  key: RangeKey;
+  label: string;
+  step: string;
+  pick: (recipe: Recipe, stats: Stats | null) => number | null;
+  /** Whether the answer comes from the heavier ingredient pass. */
+  needsStats?: boolean;
+}[] = [
+  { key: 'abv', label: 'ABV %', step: '0.1', pick: (r) => numeric(r.abv) },
+  { key: 'ibu', label: 'IBU', step: '1', pick: (r) => numeric(r.ibu) },
+  { key: 'ebc', label: 'Colour (EBC)', step: '1', pick: (r) => numeric(r.ebc) },
+  { key: 'price', label: 'Price (kr)', step: '10', pick: (_r, s) => s?.usedDkk ?? null, needsStats: true },
+  { key: 'hops', label: 'Hops (g/L)', step: '0.5', pick: (_r, s) => s?.hopsPerL ?? null, needsStats: true },
+];
+
+const EMPTY_RANGE: Range = { min: '', max: '' };
+
+const NO_FILTERS: Filters = {
+  families: [],
+  abv: EMPTY_RANGE,
+  ibu: EMPTY_RANGE,
+  ebc: EMPTY_RANGE,
+  price: EMPTY_RANGE,
+  hops: EMPTY_RANGE,
+};
+
+const FILTERS_KEY = 'brewplanner.recipeFilters';
+
+/**
+ * The filters the grid was last left in, persisted for the same reason the sort
+ * order is: opening a recipe unmounts this page, and coming back to an
+ * unfiltered grid loses the brewer's place. Anything malformed — a family that
+ * has since been renamed, a range that isn't a range — falls back to unfiltered
+ * rather than leaving the grid narrowed by something the panel can't show.
+ */
+function loadFilters(): Filters {
+  try {
+    const raw = localStorage.getItem(FILTERS_KEY);
+    if (!raw) return NO_FILTERS;
+    const saved = JSON.parse(raw) as Partial<Filters>;
+    const families = Array.isArray(saved.families)
+      ? saved.families.filter((f): f is RecipeStyleCategory =>
+          (RECIPE_STYLE_CATEGORIES as readonly string[]).includes(f),
+        )
+      : [];
+    const range = (r: unknown): Range =>
+      r && typeof r === 'object'
+        ? {
+            min: String((r as Range).min ?? ''),
+            max: String((r as Range).max ?? ''),
+          }
+        : EMPTY_RANGE;
+    return {
+      families,
+      abv: range(saved.abv),
+      ibu: range(saved.ibu),
+      ebc: range(saved.ebc),
+      price: range(saved.price),
+      hops: range(saved.hops),
+    };
+  } catch {
+    return NO_FILTERS;
+  }
+}
+
+function saveFilters(filters: Filters): Filters {
+  try {
+    localStorage.setItem(FILTERS_KEY, JSON.stringify(filters));
+  } catch {
+    // Per-browser convenience only.
+  }
+  return filters;
+}
+
+/** How many filters are actually narrowing the grid, for the toolbar badge. */
+function activeFilterCount(filters: Filters): number {
+  const ranges = RANGE_FIELDS.filter(
+    ({ key }) => filters[key].min.trim() !== '' || filters[key].max.trim() !== '',
+  ).length;
+  return (filters.families.length > 0 ? 1 : 0) + ranges;
+}
+
+/**
+ * Whether a value sits inside a bound pair. An unset bound doesn't constrain, so
+ * an empty pair passes everything — including a recipe with no value at all.
+ */
+function inRange(value: number | null, range: Range): boolean {
+  const min = numeric(range.min.trim() || null);
+  const max = numeric(range.max.trim() || null);
+  if (min == null && max == null) return true;
+  // A bound is set and this recipe can't answer it — it isn't a match.
+  if (value == null) return false;
+  return (min == null || value >= min) && (max == null || value <= max);
+}
+
+/**
+ * Whether a recipe survives the filter panel. The price and hop-rate bounds are
+ * skipped entirely until the ingredient pass has landed: applying them against
+ * figures that haven't arrived would empty the grid for a second and then
+ * refill it, which reads as a bug.
+ */
+function matchesFilters(
+  recipe: Recipe,
+  filters: Filters,
+  stats: Map<string, Stats> | null,
+): boolean {
+  if (filters.families.length > 0 && !filters.families.includes(styleCategory(recipe))) {
+    return false;
+  }
+  const recipeStats = stats?.get(recipe.id) ?? null;
+  for (const field of RANGE_FIELDS) {
+    if (field.needsStats && stats == null) continue;
+    if (!inRange(field.pick(recipe, recipeStats), filters[field.key])) return false;
+  }
+  return true;
+}
+
 /**
  * Creation date as a timestamp. Brewer's Friend writes "2026-03-14 09:12:00",
  * which Safari won't parse as-is, so the space becomes a T before it's read.
@@ -233,6 +383,9 @@ function sortRecipes(
  * shifted colour when there's fruit in it. Hollow when the recipe states no
  * colour at all. The style's palette colour rides on the card's left edge
  * instead, which is the pairing the keg board uses.
+ *
+ * The pale ring is what makes a stout legible: near-black on a near-black card
+ * is otherwise a hole rather than a swatch.
  */
 function BeerDot({
   color,
@@ -246,11 +399,109 @@ function BeerDot({
 }): JSX.Element {
   return (
     <span
-      className={`${className} shrink-0 rounded-full ${color ? '' : 'border border-zinc-600'}`}
+      className={`${className} shrink-0 rounded-full ${
+        color ? 'ring-1 ring-white/70' : 'border border-zinc-600'
+      }`}
       title={label ?? (color ? 'Predicted colour' : 'No colour set')}
       aria-hidden
       style={color ? { backgroundColor: color } : undefined}
     />
+  );
+}
+
+/**
+ * The filter panel — style families as toggle chips, then a min/max pair for
+ * every number the grid knows about a recipe. Open from the toolbar; it stays
+ * mounted while open so a half-typed bound isn't lost to a re-render.
+ *
+ * Every control is additive and independent: no chip selected means every
+ * family, an empty box means no bound, and "Clear" puts both back.
+ */
+function RecipeFilters({
+  filters,
+  onChange,
+  statsPending,
+}: {
+  filters: Filters;
+  onChange: (next: Filters) => void;
+  /** The ingredient pass hasn't landed, so the price/hops bounds don't bite yet. */
+  statsPending: boolean;
+}): JSX.Element {
+  const active = activeFilterCount(filters);
+
+  function toggleFamily(family: RecipeStyleCategory): void {
+    const families = filters.families.includes(family)
+      ? filters.families.filter((f) => f !== family)
+      : [...filters.families, family];
+    onChange({ ...filters, families });
+  }
+
+  return (
+    <section className="mb-5 rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Style</div>
+        <button
+          type="button"
+          onClick={() => onChange(NO_FILTERS)}
+          disabled={active === 0}
+          className="rounded-lg border border-zinc-700 px-3 py-1 text-xs font-medium text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          Clear filters
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {RECIPE_STYLE_CATEGORIES.map((family) => {
+          const on = filters.families.includes(family);
+          return (
+            <button
+              key={family}
+              type="button"
+              onClick={() => toggleFamily(family)}
+              aria-pressed={on}
+              className={`rounded-full border px-3 py-1 text-sm transition ${
+                on
+                  ? 'border-[#f87a68] bg-[#f87a68]/15 text-zinc-100'
+                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+              }`}
+            >
+              {family}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {RANGE_FIELDS.map(({ key, label, step, needsStats }) => (
+          <div key={key}>
+            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-500">
+              {label}
+              {needsStats && statsPending && (
+                <span className="ml-1.5 normal-case tracking-normal text-zinc-600">
+                  · reading ingredients…
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {(['min', 'max'] as const).map((bound) => (
+                <input
+                  key={bound}
+                  type="number"
+                  inputMode="decimal"
+                  step={step}
+                  value={filters[key][bound]}
+                  onChange={(e) =>
+                    onChange({ ...filters, [key]: { ...filters[key], [bound]: e.target.value } })
+                  }
+                  placeholder={bound === 'min' ? 'Min' : 'Max'}
+                  aria-label={`${label} ${bound}`}
+                  className="w-full min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#f87a68]"
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -359,9 +610,13 @@ export function RecipesDesktopPage(): JSX.Element {
   // has said — clearing a recipe deliberately doesn't answer it.
   const [fermenter, setFermenter] = useState<FermenterState | null>(null);
   const [markingFermenter, setMarkingFermenter] = useState(false);
-  // Restored from the last visit, so opening a recipe and coming back finds the
-  // grid in the order it was left in.
+  // Both restored from the last visit, so opening a recipe and coming back finds
+  // the grid in the order — and narrowed the way — it was left in.
   const [{ key: sort, dir }, setOrder] = useState<SortOrder>(loadOrder);
+  const [filters, setFilters] = useState<Filters>(loadFilters);
+  // The panel opens on its own the first time a stored filter is still in force,
+  // so a grid that comes back narrowed always says why.
+  const [showFilters, setShowFilters] = useState(() => activeFilterCount(filters) > 0);
   // Recipe id → cost and hop rate. Null until a sort that needs them asks:
   // working these out means pulling every recipe's ingredient list upstream.
   const [stats, setStats] = useState<Map<string, Stats> | null>(null);
@@ -483,14 +738,25 @@ export function RecipesDesktopPage(): JSX.Element {
   const activePour = active ? (stats?.get(active.id)?.fruitColor ?? ebcColor(active.ebc)) : null;
   const activeFruitNote = active ? (stats?.get(active.id)?.fruitNote ?? null) : null;
 
+  const activeFilters = activeFilterCount(filters);
+  // The ingredient figures back two sorts and two bounds; whichever is in use,
+  // the grid can be visibly incomplete until that pass lands.
+  const dependsOnStats =
+    STATS_SORTS.includes(sort) ||
+    RANGE_FIELDS.some(
+      (f) => f.needsStats && (filters[f.key].min.trim() !== '' || filters[f.key].max.trim() !== ''),
+    );
+
   const filtered = useMemo(() => {
     if (!recipes) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return recipes;
-    return recipes.filter(
-      (r) => r.name.toLowerCase().includes(q) || r.style.toLowerCase().includes(q),
-    );
-  }, [recipes, search]);
+    return recipes.filter((r) => {
+      if (q && !r.name.toLowerCase().includes(q) && !r.style.toLowerCase().includes(q)) {
+        return false;
+      }
+      return matchesFilters(r, filters, stats);
+    });
+  }, [recipes, search, filters, stats]);
 
   const sorted = useMemo(
     () => sortRecipes(filtered, sort, dir, stats),
@@ -549,8 +815,27 @@ export function RecipesDesktopPage(): JSX.Element {
                 >
                   {dir === 'asc' ? '↑' : '↓'}
                 </button>
+                {/* The panel is a lot of controls for a page whose usual answer
+                    is "all of them", so it's behind a toggle — with the count of
+                    what's in force on it, since a filtered grid that doesn't say
+                    so looks like a grid missing recipes. */}
+                <button
+                  type="button"
+                  onClick={() => setShowFilters((open) => !open)}
+                  aria-expanded={showFilters}
+                  className={`rounded-lg border px-3 py-2 text-sm transition ${
+                    activeFilters > 0
+                      ? 'border-[#f87a68] bg-[#f87a68]/15 text-zinc-100'
+                      : 'border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
+                  }`}
+                >
+                  Filters{activeFilters > 0 ? ` · ${activeFilters}` : ''}
+                </button>
                 <span className="hidden rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400 sm:inline">
-                  <span className="font-semibold text-zinc-100">{filtered.length}</span> recipe
+                  <span className="font-semibold text-zinc-100">{filtered.length}</span>
+                  {/* "of 34" only while something is actually narrowing the
+                      grid — otherwise the two numbers are the same. */}
+                  {filtered.length !== recipes.length && ` of ${recipes.length}`} recipe
                   {filtered.length === 1 ? '' : 's'}
                 </span>
               </>
@@ -646,6 +931,17 @@ export function RecipesDesktopPage(): JSX.Element {
           )}
         </section>
 
+        {/* Above the grid rather than up in the toolbar, so it sits with what it
+            narrows — and stays put when the grid empties, which is exactly when
+            the way out of it needs to be to hand. */}
+        {showFilters && recipes != null && recipes.length > 0 && (
+          <RecipeFilters
+            filters={filters}
+            onChange={(next) => setFilters(saveFilters(next))}
+            statsPending={stats == null}
+          />
+        )}
+
         {recipes === null ? (
           <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
             Loading recipes…
@@ -655,14 +951,32 @@ export function RecipesDesktopPage(): JSX.Element {
             No recipes found in your Brewer&rsquo;s Friend account.
           </div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
-            No recipes match “{search.trim()}”.
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
+            {/* Say which of the two emptied the grid — searching and filtering
+                fail identically, and the filters may well be collapsed out of
+                sight, so the way back also travels with the message. */}
+            <span>
+              {search.trim() && activeFilters > 0
+                ? `No recipes match “${search.trim()}” with these filters.`
+                : search.trim()
+                  ? `No recipes match “${search.trim()}”.`
+                  : 'No recipes match these filters.'}
+            </span>
+            {activeFilters > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilters(saveFilters(NO_FILTERS))}
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <>
-            {/* Only for the sorts that depend on the second fetch — the orders
-                that can be visibly incomplete. */}
-            {STATS_SORTS.includes(sort) && (statsLoading || statsError) && (
+            {/* Only when something on screen depends on the second fetch — the
+                orders and the bounds that can be visibly incomplete. */}
+            {dependsOnStats && (statsLoading || statsError) && (
               <div
                 className={`mb-3 rounded-lg border px-4 py-2 text-sm ${
                   statsError
