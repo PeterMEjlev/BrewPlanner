@@ -53,6 +53,26 @@ export function setChatModel(model: string): void {
 }
 
 /**
+ * Whether Bruce may search the web, stored alongside the model choice.
+ *
+ * Off unless switched on. The library is the whole point of this chat — a model
+ * that can reach the open web will happily answer a mash-pH question from the
+ * first forum post it finds instead of from Palmer, which is exactly the
+ * failure the retrieval was built to avoid. It is also billed per search on top
+ * of the tokens. So: opt-in, with the persona below telling him the books come
+ * first either way.
+ */
+const WEB_SEARCH_SETTING_KEY = 'bruce_web_search';
+
+export function webSearchEnabled(): boolean {
+  return getSetting(WEB_SEARCH_SETTING_KEY) === 'on';
+}
+
+export function setWebSearchEnabled(enabled: boolean): void {
+  setSetting(WEB_SEARCH_SETTING_KEY, enabled ? 'on' : 'off');
+}
+
+/**
  * Models this API key can actually use, as the page's dropdown.
  *
  * Asked live rather than hard-coded: OpenAI's line-up moves faster than this
@@ -279,11 +299,35 @@ export function setBruceInstructions(text: string): BruceInstructions {
  */
 const MAX_OUTLINE_CHAPTERS = 80;
 
+/**
+ * Appended to the instructions only while web search is on.
+ *
+ * It is kept out of DEFAULT_PROMPT (and so out of PROMPT.md) deliberately: it
+ * describes a capability that can be switched off under the persona's feet, and
+ * a persona claiming to browse when the tool isn't attached produces a model
+ * that apologises for failing to search. Written here, it appears exactly when
+ * the tool does, whichever persona is in use.
+ */
+const WEB_SEARCH_PROMPT = `--- Searching the web
+
+You can search the web, and should when it genuinely helps:
+
+- The books first. If the retrieved passages answer the question, answer from
+  them — don't search to double-check what Palmer already told you.
+- Search when the question is about something the books cannot know: a hop
+  variety released after they were written, current stock or prices, a piece of
+  equipment, a supplier, a recent study, anything dated.
+- Say which part came from the web, and cite the page you read it on with its
+  title and link.
+- The web is not the library. Where a brewing forum contradicts the books,
+  prefer the books and say the two disagree.`;
+
 /** Persona + what's actually on the shelf, sent as `instructions` each turn. */
 export function chatPrompt(): string {
+  const web = webSearchEnabled() ? `\n\n${WEB_SEARCH_PROMPT}` : '';
   const library = libraryOutline();
   if (library.length === 0) {
-    return `${personaPrompt()}\n\n--- The brewery library\n\nThe library is empty — no books have been indexed yet. Say so if asked, and answer from general brewing knowledge.`;
+    return `${personaPrompt()}${web}\n\n--- The brewery library\n\nThe library is empty — no books have been indexed yet. Say so if asked, and answer from general brewing knowledge.`;
   }
 
   const total = library.reduce((n, doc) => n + doc.chapters.length, 0);
@@ -296,7 +340,14 @@ export function chatPrompt(): string {
     )
     .join('\n');
 
-  return `${personaPrompt()}\n\n--- The brewery library\n\nThese are the only books you have. This is the complete list${detailed ? ', with each book\'s chapters' : ''}:\n\n${shelf}`;
+  return `${personaPrompt()}${web}\n\n--- The brewery library\n\nThese are the only books you have. This is the complete list${detailed ? ', with each book\'s chapters' : ''}:\n\n${shelf}`;
+}
+
+/** One web page the model read, as attached to the text it informed. */
+interface UrlCitation {
+  type: string;
+  url?: string;
+  title?: string;
 }
 
 /** Response shape of POST /v1/responses, narrowed to what's read here. */
@@ -306,7 +357,7 @@ interface ResponsesReply {
   output_text?: string;
   output?: {
     type: string;
-    content?: { type: string; text?: string }[];
+    content?: { type: string; text?: string; annotations?: UrlCitation[] }[];
   }[];
   /** Token counts for this call — priced by cost.ts. */
   usage?: TokenUsage;
@@ -331,6 +382,40 @@ function extractText(reply: ResponsesReply): string {
     }
   }
   return parts.join('\n').trim();
+}
+
+/**
+ * Web pages the model read, pulled out of the answer's `url_citation`
+ * annotations and returned as sources beside the book passages.
+ *
+ * The model is asked to link its web claims in the prose too, but these are
+ * what it actually opened — so the chips under an answer stay honest even when
+ * it forgets to. Deduplicated by URL: one page cited three times is one chip.
+ */
+function webSources(reply: ResponsesReply): BruceChatSource[] {
+  const sources: BruceChatSource[] = [];
+  const seen = new Set<string>();
+  for (const item of reply.output ?? []) {
+    if (item.type !== 'message') continue;
+    for (const piece of item.content ?? []) {
+      for (const note of piece.annotations ?? []) {
+        if (note.type !== 'url_citation' || !note.url || seen.has(note.url)) continue;
+        seen.add(note.url);
+        // Fall back to the hostname: a chip has to say *something*, and an
+        // untitled citation is otherwise a link with no label.
+        let title = note.title?.trim();
+        if (!title) {
+          try {
+            title = new URL(note.url).hostname.replace(/^www\./, '');
+          } catch {
+            title = note.url;
+          }
+        }
+        sources.push({ title, url: note.url });
+      }
+    }
+  }
+  return sources;
 }
 
 /** One passage as the model sees it, numbered so it can cite by source. */
@@ -410,15 +495,24 @@ export async function answerQuestion(
   const reasoningEffort = effort ?? (model.startsWith('gpt-5') || /^o[1-9]/.test(model) ? 'low' : undefined);
   if (reasoningEffort) body.reasoning = { effort: reasoningEffort };
 
+  // Let him off the shelf when the switch is on. `web_search` is run by OpenAI,
+  // not by us: the model decides whether a question needs it, searches, reads
+  // the results and cites them back as url_citation annotations — so there is
+  // no crawler, no scraping and no extra key here. It is billed per search on
+  // top of the tokens, which is why it is opt-in.
+  if (webSearchEnabled()) body.tools = [{ type: 'web_search' }];
+
   let reply: ResponsesReply;
   try {
     reply = await openaiPost<ResponsesReply>('/responses', body);
   } catch (err) {
     // A 400 usually means this model doesn't take one of the optional
-    // parameters. Retry bare before giving up, so swapping BRUCE_CHAT_MODEL to
-    // something older doesn't need a code change.
-    if (err instanceof OpenAIError && err.status === 400 && body.reasoning) {
+    // parameters — an older one that has no reasoning step, or one that can't
+    // search. Retry bare before giving up, so swapping the model on the Bruce
+    // page to something older doesn't need a code change.
+    if (err instanceof OpenAIError && err.status === 400 && (body.reasoning || body.tools)) {
       delete body.reasoning;
+      delete body.tools;
       reply = await openaiPost<ResponsesReply>('/responses', body);
     } else {
       throw err;
@@ -439,5 +533,11 @@ export async function answerQuestion(
 
   // Priced from the counts OpenAI just reported, not from the request — a
   // retry, a reasoning step or a truncated answer all move the real number.
-  return { text, sources, costUsd: estimateCostUsd(model, reply.usage) };
+  // Note the per-search tool fee is *not* in `usage`, so a searched answer costs
+  // a little more than this says; the page links the real bill for that reason.
+  return {
+    text,
+    sources: [...sources, ...webSources(reply)],
+    costUsd: estimateCostUsd(model, reply.usage),
+  };
 }

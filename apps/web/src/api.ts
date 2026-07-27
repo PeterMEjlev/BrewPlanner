@@ -466,6 +466,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ model }),
     }),
+  setBruceWebSearch: (enabled: boolean) =>
+    request<{ enabled: boolean }>('/bruce/chat/web-search', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }),
 
   // Chat threads: separate conversations so a brew day's water questions stay
   // apart from last month's hop reading.

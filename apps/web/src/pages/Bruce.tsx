@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   BruceChatMessage,
   BruceChatState,
@@ -15,7 +15,7 @@ import { api } from '../api';
 import { DashboardShell } from '../components/DashboardShell';
 import { Markdown } from '../components/Markdown';
 import { Popover } from '../components/Popover';
-import { MicIcon } from '../components/icons';
+import { GlobeIcon, MicIcon } from '../components/icons';
 import { usePoll } from '../usePoll';
 import { relativeTime } from '../util';
 
@@ -66,22 +66,133 @@ function formatCost(usd: number): string {
 
 // --- Chat -------------------------------------------------------------------
 
-/** Citation chips under an answer: which book, section and page it came from. */
+/**
+ * The composer's resting height, in pixels: three lines of `text-sm` plus the
+ * padding and border. Two lines was too mean — a question of any length spent
+ * most of itself scrolled out of sight.
+ */
+const COMPOSER_MIN_PX = 78;
+
+/**
+ * Where it stops growing and starts scrolling instead. The page has room to
+ * spare, but a composer that grew without limit would eventually push the
+ * conversation it belongs to off the bottom of the screen.
+ */
+const COMPOSER_MAX_PX = 320;
+
+/**
+ * Grow a textarea to fit what's in it, between the two bounds above.
+ *
+ * Measured after every change to `value`, so it also shrinks back when the box
+ * is emptied by sending. `useLayoutEffect` rather than `useEffect`: the height
+ * is set before the browser paints, so typing past the end of a line doesn't
+ * flash a scrollbar for a frame.
+ */
+function useAutoGrow(value: string): React.RefObject<HTMLTextAreaElement> {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Collapse first: `scrollHeight` can't report a *smaller* content height
+    // while the element is still being held open at the taller one.
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, COMPOSER_MIN_PX), COMPOSER_MAX_PX)}px`;
+  }, [value]);
+  return ref;
+}
+
+/**
+ * Citation chips under an answer: which book, section and page it came from,
+ * and — when web search is on — which pages Bruce read on the internet.
+ *
+ * A web source carries a `url` and nothing else does, so the two are told apart
+ * by that: books stay plain text, web pages become links that open in a new tab
+ * and are marked with a ↗ so it's obvious which claims left the library.
+ */
 function Sources({ message }: { message: BruceChatMessage }): JSX.Element | null {
   if (!message.sources || message.sources.length === 0) return null;
   return (
     <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-zinc-700/60 pt-2">
-      {message.sources.map((source, i) => (
-        <span
-          key={i}
-          className="rounded-md bg-zinc-950/50 px-1.5 py-0.5 text-[11px] text-zinc-500"
-          title={[source.title, source.section].filter(Boolean).join(' — ')}
-        >
-          {source.title}
-          {source.page && <span className="text-zinc-600"> p. {source.page}</span>}
-        </span>
-      ))}
+      {message.sources.map((source, i) =>
+        source.url ? (
+          <a
+            key={i}
+            href={source.url}
+            target="_blank"
+            rel="noreferrer"
+            title={source.url}
+            className="max-w-[16rem] truncate rounded-md bg-sky-950/50 px-1.5 py-0.5 text-[11px] text-sky-400/90 transition hover:text-sky-300"
+          >
+            {source.title} ↗
+          </a>
+        ) : (
+          <span
+            key={i}
+            className="rounded-md bg-zinc-950/50 px-1.5 py-0.5 text-[11px] text-zinc-500"
+            title={[source.title, source.section].filter(Boolean).join(' — ')}
+          >
+            {source.title}
+            {source.page && <span className="text-zinc-600"> p. {source.page}</span>}
+          </span>
+        ),
+      )}
     </div>
+  );
+}
+
+/**
+ * The web-search switch, in the chat header beside the model picker.
+ *
+ * Off by default and deliberately visible rather than buried in settings: it
+ * changes both where answers can come from and what each question costs, so it
+ * should be as easy to see as it is to flip.
+ */
+function WebSearchToggle({
+  enabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+}): JSX.Element {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = async (): Promise<void> => {
+    const next = !enabled;
+    setSaving(true);
+    setError(null);
+    try {
+      const { enabled: saved } = await api.setBruceWebSearch(next);
+      onChange(saved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^\d+:\s*/, '') : 'Could not change that');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      disabled={saving}
+      onClick={() => void toggle()}
+      aria-pressed={enabled}
+      title={
+        error ??
+        (enabled
+          ? 'Bruce may search the web when the books are silent. Billed per search.'
+          : 'Bruce answers from the library only. Click to let him search the web.')
+      }
+      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition disabled:opacity-50 ${
+        enabled
+          ? 'border-sky-800 bg-sky-950/50 text-sky-300 hover:border-sky-700'
+          : 'border-zinc-700 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
+      }`}
+    >
+      <GlobeIcon className="h-3.5 w-3.5" />
+      Web
+      {error && <span className="text-red-400">!</span>}
+    </button>
   );
 }
 
@@ -448,6 +559,7 @@ function Chat(): JSX.Element {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const composerRef = useAutoGrow(draft);
 
   const load = (conversationId?: number): void => {
     api
@@ -603,6 +715,12 @@ function Chat(): JSX.Element {
             OpenAI billing ↗
           </a>
           {state?.configured && (
+            <WebSearchToggle
+              enabled={state.webSearch}
+              onChange={(webSearch) => setState((prev) => (prev ? { ...prev, webSearch } : prev))}
+            />
+          )}
+          {state?.configured && (
             <ModelPicker
               state={state}
               onChange={(model) => setState((prev) => (prev ? { ...prev, model } : prev))}
@@ -641,7 +759,11 @@ function Chat(): JSX.Element {
             </div>
             <div className="flex justify-start">
               <div className="rounded-xl bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-500">
-                <span className="animate-pulse">Reading the books…</span>
+                {/* Searching takes noticeably longer than retrieval alone, so
+                    say when it's a possibility rather than looking stuck. */}
+                <span className="animate-pulse">
+                  {state?.webSearch ? 'Reading the books, and the web…' : 'Reading the books…'}
+                </span>
               </div>
             </div>
           </>
@@ -658,7 +780,10 @@ function Chat(): JSX.Element {
         }}
       >
         <div className="flex gap-2">
+          {/* No `rows` and `resize-none`: useAutoGrow owns the height, so the
+              box is always as tall as what has been typed into it. */}
           <textarea
+            ref={composerRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -668,13 +793,12 @@ function Chat(): JSX.Element {
                 void send(draft);
               }
             }}
-            rows={2}
             maxLength={2000}
             disabled={state != null && !state.configured}
             placeholder={
               state != null && !state.configured ? 'Chat is not configured' : 'Ask Bruce something…'
             }
-            className="min-w-0 flex-1 resize-none rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none disabled:opacity-50"
+            className="min-w-0 flex-1 resize-none overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none disabled:opacity-50"
           />
           <button
             type="submit"

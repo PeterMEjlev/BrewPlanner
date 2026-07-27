@@ -182,6 +182,17 @@ topic, rename it, delete it. A thread names itself after its opening question.
 Threads are shared, not per-account — a question asked on the phone is there on
 the kiosk — and survive restarts.
 
+**Web** in the chat header lets Bruce search the internet when the books are
+silent — a hop released after they were written, a current price, a supplier.
+Off by default, because the library is the point: left to the open web a model
+will answer a mash-pH question from the first forum post it finds rather than
+from Palmer. With it on he is still told to answer from the passages wherever
+they cover the question, to say which part came from the web, and to prefer the
+books where the two disagree. Web results are cited as links beside the book
+chips. OpenAI runs the search (the `web_search` tool on `/responses`), so there
+is no crawler here and no extra key — but each search is billed on top of the
+tokens, and that fee is not in the per-thread estimates the page shows.
+
 The model is chosen from a picker on the page, which explains what each one is
 better and worse at rather than just listing ids. It offers a shortlist of five
 picked for this job (see `SHORTLIST` in `apps/server/src/bruce/chat.ts` — edit

@@ -152,3 +152,22 @@ html.kiosk *::after {
     transform: none;
   }
 }
+
+/* Active nav icon, painted in the app's accent gradient instead of flat white.
+   SVG can't take a gradient through `currentColor`, so the icons reference a
+   paint server by id — <IconAccentGradient> in components/icons.tsx puts one
+   in the document, and these rules point the icons' stroke and fill at it.
+
+   Only what was drawn in `currentColor` is repainted: the root <svg> (outline
+   icons, whose paths inherit its stroke) and the solid shapes that override
+   with fill="currentColor". `none` is deliberately left alone — repainting it
+   would flood every outline icon into a solid blob. */
+.icon-accent {
+  stroke: url(#icon-accent);
+}
+.icon-accent [fill='currentColor'] {
+  fill: url(#icon-accent);
+}
+.icon-accent [stroke='currentColor'] {
+  stroke: url(#icon-accent);
+}

@@ -78,6 +78,29 @@ Front matter, image links (`![…](…)`), "no extractable text" placeholders, a
 the book's own table of contents and index are skipped — they retrieve badly
 and crowd out real content.
 
+## Units
+
+Both books on the shelf were written in US units and have been converted to
+metric in place — °C, litres, kilograms, hectares, hectolitres, g/L for hop
+rates. Where a book already gave both ("140° F (60° C)") only its own metric
+figure was kept, rather than a recomputed one. This brewery brews in metric, and
+a converted book means Bruce quotes a number instead of doing arithmetic on one.
+
+Four kinds of passage were deliberately left in US units, because there the unit
+is the subject rather than a measurement and converting would break the text:
+
+- the worked salt-addition examples in the water book (chains of arithmetic in
+  grams per gallon — Tables 14 and 17 above them are metric-only, which is where
+  a dose should be read from anyway)
+- the appendix that derives those figures, which teaches the gallon↔litre step
+  itself ("1 gallon of water = 3.785 liters")
+- discussions of hardness scales — grains per gallon, degrees Clark, French and
+  German degrees — and the historical table comparing them
+- direct quotations from 19th-century sources measured in grains per gallon
+
+If you add a book, convert it before indexing; nothing in the pipeline converts
+units for you.
+
 ## What Bruce knows about his own shelf
 
 Every request also carries a list of the indexed books and their chapters, so

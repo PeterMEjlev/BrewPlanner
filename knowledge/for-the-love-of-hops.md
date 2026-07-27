@@ -118,7 +118,7 @@ Size Matters, But So Does Family
 
 ### 5. Harvesting Hops
 
-Turning Acres of Hops Into Bales
+Turning Hectares of Hops Into Bales
 Rubbing and Sniffing
 A Brewer’s Guide to Evaluating and Selecting Hops
 
@@ -313,13 +313,13 @@ common storage, meaning unrefrigerated, but they may have been any variety that 
 rejected by brewers or were in surplus at the time. The limited availability of quality hops was
 not necessarily related to a conspiracy against homebrewers. Because it was still illegal to
 brew beer at home, the homebrewing movement was still in its infancy, and few had realized
-the market potential of supplying hops to hobbyist brewers. Interestingly enough, these pink, 4-
+the market potential of supplying hops to hobbyist brewers. Interestingly enough, these pink, 113-
 
 ---
 
 <!-- source_pdf_page: 12 -->
 
-ounce bricks of hops were originally destined for Africa and South America to be used in
+gram bricks of hops were originally destined for Africa and South America to be used in
 bread baking and had found their way into the homebrew trade in the United States as a
 sideline. The origin of the use of hops in bread is a bit of a mystery; I have found references to
 it in old recipes as an ingredient in the yeast starter. Although hops may have been used for
@@ -336,8 +336,8 @@ area for my increasingly serious hobby, I made the decision to open up my own st
 Brew Shop, in Chico, California, in 1976. That year my fascination with the role that hops
 played in beer took me on a road trip to Yakima, Washington. I connected with growers at the
 farmer-owned hop co-op, as well as an energetic young Ralph Olson, just new to the hop trade.
-Although the Home Brew Shop was too small to buy a typical 200-pound bale of any one
-variety, I talked them into selling me more than 100 individually wrapped, one-pound
+Although the Home Brew Shop was too small to buy a typical 91-kg bale of any one
+variety, I talked them into selling me more than 100 individually wrapped, 450-g
 “brewers’ cuts” of every variety they grew. These are the samples that are removed from every
 25 or 50 bales in a lot, and they are normally provided to breweries for quality evaluation. The
 U.S. hop industry at the time was still primarily focused on just a few varieties, primarily the
@@ -413,9 +413,9 @@ training hops, guiding them clockwise around a string, when she was six years ol
 you had to do when you were young. You don’t understand why,” she said. “When I was young,
 I hated this work so much.”
 
-Veronika Springer, the winner in 2011, helps her family tend to about 40 acres of hops on a
+Veronika Springer, the winner in 2011, helps her family tend to about 16 hectares of hops on a
 farm 15 minutes south of Wolnzach and also works in town at NATECO2, a plant that extracts
-about 10,000 tons of hops per year, turning pellets into a thick paste packed in tins or drums. It
+about 9,100 tonnes of hops per year, turning pellets into a thick paste packed in tins or drums. It
 looks not at all like the green bouquet of cones Springer carried with her after she was
 crowned.
 
@@ -428,14 +428,14 @@ eight months to process about one-third of the hops grown in the Hallertau.
 
 My day had begun in Žatec in the Czech Republic. Fog covered fields of Saaz hops, and the
 sun didn’t burn through the haze until I was beyond the hop yards and halfway to Pilsen. I took
-a hop-scenic route, soon driving through hundreds of acres of Hallertau hops and millions of
+a hop-scenic route, soon driving through hundreds of hectares of Hallertau hops and millions of
 bright green cones on the way to Mainburg, passing more processing plants before turning onto
 the Deutsche Hopfenstrasse leading to Wolnzach.
 
-In a few weeks each acre would yield, on average, eight bales of hops, occupying a space
-less than 4 by 4 by 8 feet high when stacked side by side. The cones in those bales would later
+In a few weeks each hectare would yield, on average, 20 bales of hops, occupying a space
+less than 1.2 by 1.2 by 2.4 m high when stacked side by side. The cones in those bales would later
 be processed into pellets, then the pellets into extract. The pellets would take up half as much
-room as the bales, and after extraction an acre of hops might fit in a 45-gallon drum.1
+room as the bales, and after extraction 0.4 hectares of hops might fit in a 170-litre drum.1
 
 These two different forms of hops—one celebrated as a traditional agricultural product that
 adds to beer a taste unique to the place where it was grown, the other sold as a commodity
@@ -452,7 +452,7 @@ In 2011, little more than 20 years after farmers planted them for the first time
 hops accounted for about half the production in the Hallertau. Florian Bogensberger
 remembers the outcomes his father, Michael, and other Hallertau growers considered before
 they began planting hops such as Nugget and Target, developed in the United States and
-England, respectively. The Bogensbergers farm about 350 acres, 160 of them devoted to hops,
+England, respectively. The Bogensbergers farm about 140 hectares, 160 of them devoted to hops,
 on property they bought from the Barth family in 1977. “People here were not so sure it was a
 good idea to have high alpha,” Bogensberger said. “If too many … started producing, it would
 eliminate others. On the other side, we would not stay relevant in the market.” The Hop
@@ -476,7 +476,7 @@ he’d need to return. “I saw these huge farms. You have to know how your bigg
 thinks about hops,” he said.
 
 Perrault Farms, west of Toppenish in the Yakima region, is not huge by local standards but
-with 750 acres is about six times the size of the Feiners’ farm. Jason Perrault, a fourth-
+with 300 hectares is about six times the size of the Feiners’ farm. Jason Perrault, a fourth-
 generation farmer born in 1971, began winding twine to string hops when he was five years
 old. He is vice president of sales for the farm and also breeds hops. That gives him a different
 perspective on the future, one that includes environmentally friendly low-trellis hops, organic
@@ -556,24 +556,24 @@ England’s best known hop farmer, still refers to Northdown as a “dual purpos
 aroma hop grower,” he said in August 2011, as he was preparing for his sixty-fourth hop
 harvest.
 
-In 1878 English farmers planted 71,000 acres of hops, mostly in the southeast. Today about
+In 1878 English farmers planted 29,000 hectares of hops, mostly in the southeast. Today about
 3,500 oast houses—distinctive, often round buildings with a white cone and cowl on top,
 scattered across the country but most prominent in Kent—recall that time. However, the
 buildings, once used to dry hops, have been turned into expensive, fashionable homes. Only
-about 2,500 acres of hops remain, half in the Kent region, where Redsell farms 3,000 acres,
+about 1,000 hectares of hops remain, half in the Kent region, where Redsell farms 1,200 hectares,
 200 of them devoted to hops. “It’s hard work, but so what?” he said. “When you’ve got it in the
 blood. … There may be only 50-odd of us left (in England), but we’re a hardy bunch.”
 
 English hop growers found a different equilibrium than in Germany or the United States.
 “The alpha market is not one to get into,” Redsell said, talking about massive oversupply left
-from the previous three years. Farmers in England still had 17,000 acres under wire in 1970,
+from the previous three years. Farmers in England still had 6,900 hectares under wire in 1970,
 when Target was the world’s premier high alpha hop. Now hops favored for their aroma
 quality and used mostly by English brewers account for three-quarters of British production.
 
 “There is demand for beer made from locally grown ingredients,” said Chris Daws, who
 grows hops himself, represents 37 growers in a cooperative, and is sales director for Botanix.
 “Brewers in Sussex want Sussex hops.” Daws sees hops from all sides. He farms a modest
-eight acres, which would be small even in the Spalt region and unheard of in the Hallertau or
+3.2 hectares, which would be small even in the Spalt region and unheard of in the Hallertau or
 
 ---
 
@@ -611,7 +611,7 @@ to the group as one.
 they will use something cheaper,” he said.
 
 His five children take holiday to help during harvest, and he hopes one day one will want to
-take over the farm. His great-great-grandfather managed 200 acres of hops and was the first in
+take over the farm. His great-great-grandfather managed 81 hectares of hops and was the first in
 the region to put his hops under wire. In 2009 his Pilgrim hops won overall champion in the
 English Hop Competition, and in 2010 his Admiral captured first for the best sample of hops
 bought primarily for their high alpha acid content.
@@ -707,7 +707,7 @@ people are excited about hops, about dry hopping. They want to understand Americ
 she said.
 
 This book addresses that interest, but it would be short-sighted to stop there. It is intended
-first for brewers who buy their hops by the pound, brewers who account for a rather small
+first for brewers who buy their hops by the kilogram, brewers who account for a rather small
 percentage of the world’s beer production and an outsized portion of hop consumption. Those
 in the hop industry appreciate the attention that new, bold varieties cast on hops, but there is
 more to aroma than what is suddenly special today.
@@ -764,7 +764,7 @@ market than creating “the flavor of the month.”
 
 Chapters 4 and 5 focus on the farm, growing hops, then harvesting and drying them. Brewers
 call cones, or even pellets, hops, but the plant itself mesmerized Charles Darwin, following the
-sun as it climbs, growing up to a foot in one day. Because vegetative growth and flowering
+sun as it climbs, growing up to 30 cm in one day. Because vegetative growth and flowering
 depend on day length, the plant flourishes only at certain latitudes, and more recently scientists
 have been able to explain why precisely where a variety is grown changes the character of
 cones themselves. The farmers’ work is not done until a crop is harvested and dried, and
@@ -816,8 +816,8 @@ final chapter, but there are some thoughts from participants who will have a dir
 
 often, high alpha varieties, which tend to be better yielding, are extracted. So a field of
 Herkules, or Columbus in the United States, would produce more than one drum of extract.
-The point remains the same. An acre of hops strung seven meters (almost 23 feet) high
-occupies more than a million cubic feet. The majority of the brewers in the world are
+The point remains the same. 0.4 hectares of hops strung seven meters high
+occupies more than 28,000 cubic metres. The majority of the brewers in the world are
 interested in only the tiniest portion of that.
 2. D.R.J. Laws, “A View on Aroma Hops,” 1976 Annual Report of the Department of Hop
 
@@ -838,7 +838,7 @@ Advance Hopped Pilsner Beers,” Institute of Brewing & Distilling 116, no. 4 (2
 
 *fruits*
 
-In the spring of 1917 Ernest S. Salmon, a professor at Wye College, 60 miles east of London,
+In the spring of 1917 Ernest S. Salmon, a professor at Wye College, 97 km east of London,
 placed a female hop in hill 1 of row BB of the Wye nursery. Salmon designated all his
 breeding material based on its position in the hop garden. He labeled the rows A, B, C, and so
 on; then AA, BB, CC. When he planted a wild Manitoban hop in hill 1 of row BB its name
@@ -853,8 +853,8 @@ powdery mildew but did not focus solely on breeding varieties resistant to that 
 objective was to combine the high resin content of American hops, including some found
 growing wild, with the aroma of European hops. This plan would take hops in a new direction.
 
-Although by early in the twentieth century American hop growers exported more than 10
-million pounds annually, with 80 percent of those going to England, most brewers used them
+Although by early in the twentieth century American hop growers exported more than 4,500
+tonnes annually, with 80 percent of those going to England, most brewers used them
 with reservations. American hops contained a higher percentage of alpha acids and thus had
 greater “keeping power” than English varieties. However, the opinion on those hops had not
 really changed since a harsh critique in The Edinburgh Review in 1862: “American hops may
@@ -982,8 +982,8 @@ When brewers talk about hops, they focus not on the plant but on the cone. The s
 develops from a female inflorescence (cluster of flowers). A zigzagging strig extends though
 the center of the strobile, and the strig bears a pair of bracts (outer leaves) and four bracteoles
 (inner petals) at each node. Lupulin glands develop at the base of the bracteoles. Lupulin itself
-is yellow, sticky, and aromatic. Cones range in size from less than an inch long to more than
-two inches and otherwise vary widely in appearance.
+is yellow, sticky, and aromatic. Cones range in size from less than 2.5 cm long to more than
+5.1 cm and otherwise vary widely in appearance.
 
 The lupulin glands contain hard and soft resins, hop oils, and polyphenols. The soft resins
 include alpha acids and beta acids, both of which contribute to bitterness. Until recently,
@@ -1021,7 +1021,7 @@ Kerr patented a device that used a pipe to collect vapor leaving the kettle, the
 vapor before brewers separated the hop oil and water. They returned the oil to the boiling
 wort. Many similar inventions followed. One brewer specified: “One day before use the hops
 are soaked in a vessel of water until covered by the latter. There they remain at least 14 hours
-over a low fire, well covered, the heat in the tenth hour not to exceed 175° F. Then the mass is
+over a low fire, well covered, the heat in the tenth hour not to exceed 79 °C. Then the mass is
 slowly boiled for 10 minutes, after which the liquid is emptied into the kettle with the first
 wort. The same process is repeated with a third wort.”7
 
@@ -1262,10 +1262,10 @@ batch and first wort and zero in another. Then Rice considered a suggestion to r
 quantity of hops in the recipe. While previously he had added more hops with the intention of
 increasing particular hop aromas and flavors, reversing that turned out to be the solution.
 
-In February 2011 the recipe for Marble IPA included 1.65 pounds per barrel of hops added
-within the final 10 minutes (including knockout) and 1.8 pounds per barrel in dry hopping. In
-January 2012 the IPA included 0.8 pounds per barrel within the final 10 minutes and 1.2
-pounds in dry hopping. Rice had the IPA he wanted. “I knew more was less, or less was more,
+In February 2011 the recipe for Marble IPA included 6.4 g/L of hops added
+within the final 10 minutes (including knockout) and 7 g/L in dry hopping. In
+January 2012 the IPA included 3.1 g/L within the final 10 minutes and 540
+g in dry hopping. Rice had the IPA he wanted. “I knew more was less, or less was more,
 but I wasn’t really applying it,” he said.
 
 Aroma scientists established relatively recently why less may be more in the nose. A series
@@ -1467,7 +1467,7 @@ sulfate.
 He determined 3MH and 3MHA were different from 4MMP in several ways. Adding
 copper granules lowered the 4MMP content by 50 percent, but the 3MH and 3MHA contents
 remained unchanged, so, not surprisingly, 3MH appeared in both U.S. and European cultivars.
-The 4MMP content decreased 91 percent after boiling at 212° F (100° C) for 60 minutes. In
+The 4MMP content decreased 91 percent after boiling at 100 °C for 60 minutes. In
 contrast, 3MH content increased as the compound was heated to warmer temperatures. The
 results indicate 3MH is thermally formed during boiling from precursors that exist in hops.
 Levels of 3MH and 4MMP both increased during fermentation, peaking in the early stages.20
@@ -1776,7 +1776,7 @@ American Society of Brewing Chemists, 2009), 80.
 
 Workers widening a drainage ditch in the Graveney Marshes near Whitsable in Kent, England,
 in 1970 came across the remains of an Anglo-Saxon boat. Archeologists used radiocarbon
-dating to determine sailors unknown abandoned the 40-foot-long and 10-foot-wide vessel
+dating to determine sailors unknown abandoned the 12-m-long and 3-m-wide vessel
 about 949 A.D. They found various plant samples, including considerable quantities of hops,
 that apparently had been part of the cargo. D. Gay Wilson of the University of Cambridge
 concluded that since cones made up most of the hop mass, the cargo was likely destined for
@@ -2075,7 +2075,7 @@ Kronen-Brauerei in the center of Tettnang with the museum. Every two years about
 Company and Anheuser-Busch, set up along the trail for a hop hiking day, a festival that attracts about 12,000 people.
 
 Bernhard Locher, former chairman of the Tettnang Hop Growers’ Association, founded the museum, and today his family
-cultivates about 35 acres of Tettnanger hops on the surrounding farm. A walkway extends off of one building into a field (color
+cultivates about 14 hectares of Tettnanger hops on the surrounding farm. A walkway extends off of one building into a field (color
 plate 6), allowing visitors to stroll out, eye level with the full-grown plants. They can experience modern-day harvesting almost
 as closely as those doing the work, contrasting that to a very different history on display in the museum.
 
@@ -2136,8 +2136,8 @@ skill but a different process that required hopped beer be boiled separately.
 
 Because hopped beers did not use as much malt, brewers could make beer less expensively.
 In A Perfite Platform of a Hoppe Garden, author and hop farmer Reginald Scot claimed,
-“Whereas you cannot make above 8 or 9 gallons of indifferent ale out of one bushel of malt,
-you can draw 18 or 20 gallons of very good beer.”16 Simply put, beer brewers needed about
+“Whereas you cannot make above 30 or 34 litres of indifferent ale out of 35 litres of malt,
+you can draw 68 or 76 litres of very good beer.”16 Simply put, beer brewers needed about
 half the malt as brewers of ale because with the addition of hops higher levels of alcohol were
 not necessary to improve a beer’s longevity. That easily offset the cost of hops, additional
 equipment, and extra fuel needed to boil them and extract their preservative power. Consider
@@ -2154,8 +2154,8 @@ fuel. William Harrison’s wife, Marion, spent 10s. on malt, 2d. on spices, 4s. 
 required in both brewing ale and beer) and half to seething the wort in hops (a process
 required only in beer brewing), brewing beer rather than ale cost her an additional 2s. for
 wood and 20d. for hops. For that additional 3s.8d. (about 25 percent of her total costs for
-materials), she more than doubled her brewing output, producing about 20 gallons for every
-bushel of malt. This was a nice saving for a domestic brewer such as Marion Harrison, but for
+materials), she more than doubled her brewing output, producing about 76 litres for every
+35 litres of malt. This was a nice saving for a domestic brewer such as Marion Harrison, but for
 a commercial brewery, these higher yields from beer brewing were even better news; they
 translated into higher profits.”17
 
@@ -2613,7 +2613,7 @@ Years 5-8: Selections grown on multi-hill plots. Plots harvested for accurate yi
 
 collected. Samples sent to breweries for pilot brews. Breweries select favorites.
 
-Years 9-???: Selections grown in commercial farm plot (15-30 hills, or one-acre plots). Tested at multiple breweries. Brewers
+Years 9-???: Selections grown in commercial farm plot (15-30 hills, or 0.4-hectare plots). Tested at multiple breweries. Brewers
 accept or reject the hop.
 
 Lutz first made crosses for floral, fruity, and otherwise exotic aromas in 2006, and in 2012
@@ -2684,7 +2684,7 @@ years of experience,” said hop farmer Tony Redsell, who spearheaded the establ
 Wye Hops Limited, headed by Darby. “He’d have been put on raspberries (at nearby East
 Malling Research).”
 
-Wye Hops occupies about eight acres in the midst of Redsell’s China Farm, one of his
+Wye Hops occupies about 3.2 hectares in the midst of Redsell’s China Farm, one of his
 properties near Canterbury, and Redsell’s employees do much of the field work, which the
 National Hop Association then pays for. Standing alongside Wye experimental hops, Darby
 pointed to some of Redsell’s across a path. “On this side consistency,” he said. Then he
@@ -2790,8 +2790,8 @@ no longer depends on support from a few large companies.
 “This whole hop world has gotten turned upside down. The holy grail in hop varietal
 development used to be to try and get a very large brewery to pick up and use your variety,”
 said Eric Desmarais, a Yakima Valley farmer who has started his own small breeding program.
-He planted high alpha hops on two-thirds of 600 acres in 2009. Three years later he devoted
-550 acres to specialty hops, most notably the proprietary variety El Dorado, to which he owns
+He planted high alpha hops on two-thirds of 240 hectares in 2009. Three years later he devoted
+220 hectares to specialty hops, most notably the proprietary variety El Dorado, to which he owns
 the rights.
 
 “There are twenty new hop varieties growing in one of my hop lanes,” Desmarais said,
@@ -2988,7 +2988,7 @@ forgot about that flavor.”
 Sometime after 2000 he was traveling with Pat Ting, then a hop chemist at Miller Brewing.
 “I need a citrus variety,” Ting said.
 “I have one,” Probasco replied.
-The next year he shipped a two-pound sample to Miller, which since has merged operations
+The next year he shipped a 910-g sample to Miller, which since has merged operations
 in the United States to become MillerCoors. Miller provided the financial support for the first
 commercial production of Citra. “They tested it for quite a few years,” Probasco said. Miller
 basically owned the hop for two years. Troy Rysewyk brewed a batch called Wild Ting IPA,
@@ -3036,7 +3036,7 @@ was not at all like the Liberty, noteworthy for its mild, traditional character 
 aromas that are more intense than Cascade or Centennial. Its lineage remains unknown. Gamache, who was in high school at
 the time, picked it by hand. “My father smelled it and said that’s what a beer should taste like,” Gamache said.
 
-“We gave it away for years,” he said. However, demand eventually outstripped the number of acres the family could harvest in
+“We gave it away for years,” he said. However, demand eventually outstripped the number of hectares the family could harvest in
 a timely manner.
 
 Gamache is a fourth-generation farmer on his father’s side, fifth-generation on his mother’s. He remembers planting Tettnanger
@@ -3073,7 +3073,7 @@ pedigree,” Perrault said.6 Zimmerman, who previously ran the USDA research fac
 Prosser Station, kept a nursery at his house. “Warrior and Simcoe came out of those crosses.
 Simcoe was in row 2, hill 56. I still remember that. It had a nice-looking growth in the field.”
 
-Simcoe is susceptible to powdery mildew and yields fewer pounds per acre than many
+Simcoe is susceptible to powdery mildew and yields fewer kilograms per hectare than many
 
 ---
 
@@ -3148,8 +3148,7 @@ would. “To have balance in the beer does not mean simply to go to the middle, 
 Keeling said.
 
 In the past Hüll released varieties intended for a broader farming and brewing audience,
-only choosing those with the potential to be planted on 1,000 or more hectares (about 2,500
-acres). “For these (new ones) we must expect they might grow only 20, 50, 80 hectares,” Lutz
+only choosing those with the potential to be planted on 1,000 or more hectares. “For these (new ones) we must expect they might grow only 20, 50, 80 hectares,” Lutz
 said. “And maybe a new variety is good for only five to eight years.”
 
 Per usual, he was thinking ahead. “More varieties,” he continued. “More change. More
@@ -3197,7 +3196,7 @@ They are the children and the grandchildren and the great-grandchildren of hop f
 farmers themselves. Not everybody who grows hops these days was born into the business, but
 sometimes it seems like it. “The intensity of harvest brings out this spirit,” said Gayle Goschie,
 whose grandfather began growing hops in 1905. She is president of Goschie Farms, which
-occupies about 1,000 acres in Oregon’s Willamette Valley, 350 of them devoted to hops.
+occupies about 400 hectares in Oregon’s Willamette Valley, 350 of them devoted to hops.
 “Night and day. It can be frantic. It’s my favorite time of year.” She remembers playing hide-
 and-seek in piles of hops and around bales, and that she didn’t like every single thing. “The
 machine part was noisy, and the hops scratched,” she said. “But there were always jobs to be
@@ -3215,7 +3214,7 @@ helped John Henning of the U.S. Department of Agriculture cross-pollinate hop pl
 diploma work he examined 14 varieties of poplar trees suitable for turning into wood chips.
 
 Like Goschie and Desmarais, he is a farmer first. His younger brother, George, became a
-brewer. Florian Seitz manages about 170 acres and grows about 50 acres of hops. His great-
+brewer. Florian Seitz manages about 69 hectares and grows about 20 hectares of hops. His great-
 grandfather first planted hops on the land he now works in 1869. His father still takes charge of
 drying hops right after they are picked, a skill most prized by growers and brewers and
 constantly in short supply no matter the country. “He has a great feel,” Seitz said—illustrating,
@@ -3252,16 +3251,16 @@ developed at Hüll.
 ### Growing Hops at Home in 10 Easy Steps
 
 1. Check the map. Hops grow best between latitudes 30° and 52°. They must have 15 hours of daylight, 120 days without
-frost during the growing season, and six to eight weeks of dormant time with the temperature below 40° F (4.4° C). They can
+frost during the growing season, and six to eight weeks of dormant time with the temperature below 4.4 °C. They can
 be grown outside this zone, particularly on a small scale, but yields generally will be lower.
 
 2. Buy rhizomes. Both homebrew stores and nurseries stock hop rhizomes. Many vendors sell them through the mail and will
 be able to offer advice about what grows best, and most easily, in various climates.
 
 3. Site the hop yard. A south-facing wall on a two-story building that gets six to eight hours of sunshine a day is perfect.
-Ideally, string a top wire about 18 feet high, then attach strings the hops will climb. As an alternative, erect a single pole, which
+Ideally, string a top wire about 5.5 m high, then attach strings the hops will climb. As an alternative, erect a single pole, which
 is what most commercial yards did until well into the nineteenth century, and run strings to the top. (Of course, another choice is
-to install a complete trellis system.) The string needs to support plants that will weigh 20 pounds when mature.
+to install a complete trellis system.) The string needs to support plants that will weigh 9.1 kg when mature.
 
 4. Prepare the soil. Hops will grow in a variety of soils but prefer mildly acidic, with a pH between 6 and 7.5. It should be
 loose, so the roots may burrow deeply, and drain well.
@@ -3270,14 +3269,14 @@ loose, so the roots may burrow deeply, and drain well.
 cones, and preparation for dormancy. In future years, when the first shoots come out of the ground, you will want to trim them,
 then follow the same regimen as a commercial grower.
 
-6. Plant the rhizomes. The sprouts should be facing up and the roots down. Build a mound about a foot high, which will aid
-drainage. They should be spaced three feet apart. The cones will grow on sidearms as the plant grows.
+6. Plant the rhizomes. The sprouts should be facing up and the roots down. Build a mound about 30 cm high, which will aid
+drainage. They should be spaced 91 cm apart. The cones will grow on sidearms as the plant grows.
 
 7. Train the bines. As they begin to grow, train two to three around the string. They will wrap clockwise and follow the sun.
 This is the time to add nutrients such as nitrogen and calcium.
 
 8. Water, monitor, repeat. The plant roots want to be wet but not waterlogged. Goschie Farms monitors moisture at one, two,
-and three feet deep, because the plant takes water from the first two feet. Moisture three feet deep is lost. Trim the bottom of
+and 91 cm deep, because the plant takes water from the first 61 cm. Moisture 91 cm deep is lost. Trim the bottom of
 the plant and pull any weeds. This will make it easier to inspect. As the plants grow it is important to monitor for diseases
 (below) and for insects.
 
@@ -3288,7 +3287,7 @@ the roots nutrients it can use the next year, so leaving the bines hanging will 
 cones that are not quite ready to ripen. Otherwise, when cutting the bine leave some green matter standing. The hops should be
 dried quickly or they will rot. A food dehydrator or window screens, allowing for good air flow, should work well.
 
-10. Prepare for next year. Don’t cut down the last green matter until the first frost, then prune bines to a few inches and
+10. Prepare for next year. Don’t cut down the last green matter until the first frost, then prune bines to a few centimetres and
 cover with mulch. In the spring, remove the mulch and open up the mounds and remove the first gamey growth.
 
 ### Hop Diseases & Pests
@@ -3310,7 +3309,7 @@ Powdery mildew
 Descriptions of mold from as early as the seventeenth century likely refer to powdery mildew. It is caused by the fungus
 Podosphaera macularis and remains a serious problem in the Pacific Northwest. It appears first as powdery white colonies on
 leaves, buds, stems, and cones. Affected cones become reddish-brown as tissues die or may turn medium brown after kiln
-drying. Under cloudy, humid conditions at 65° F (18° C) the fungus can complete its life cycle in as little as five days.
+drying. Under cloudy, humid conditions at 18 °C the fungus can complete its life cycle in as little as five days.
 
 Verticillium wilt
 It is caused by two related fungi, and the nonlethal strain is more common in the Pacific Northwest. Wilt caused severe
@@ -3320,7 +3319,7 @@ nonlethal variety include yellow veining of the leaves and wilting of leaves and
 
 Hop stunt viroid
 The subviral pathogen does just what its name implies: It stunts the growth of plants and can reduce alpha acid yield by as much
-at 60 to 80 percent per acre. It spread throughout Japan in the 1950s, and the extension center at Washington State University
+at 60 to 80 percent per hectare. It spread throughout Japan in the 1950s, and the extension center at Washington State University
 confirmed its presence in North American-grown hops in 2004. Symptoms of infection may not appear for three to five growing
 seasons, which increases the danger of the propagation and distribution of infected plants. It is viewed as an increasing threat.
 
@@ -3330,17 +3329,17 @@ sensitive varieties, mottling may occur on the leaves, and severely affected pla
 to the string. Golding hops or those with Golding heritage are most susceptible. The virus reduces growth and therefore yield.
 
 Hop aphid, Phorodon humuli
-The hop aphid is small, 1/20 to 1/10 inch long, and may be winged or wingless. It causes the most damage by feeding on
+The hop aphid is small, 1.3 to 2.5 mm long, and may be winged or wingless. It causes the most damage by feeding on
 developing cones, which turn brown. It secretes large amounts of sugary honeydew that causes a sooty mold fungi on leaves
 and cones, reducing productivity. It may also transmit plant viruses.
 
 Spider mites, Tetranychus urticae
-Smaller than aphids, just 1/50 inch long, spider mites also suck plant juices from cells. A minor infestation causes bronze leaves,
+Smaller than aphids, just 0.51 mm long, spider mites also suck plant juices from cells. A minor infestation causes bronze leaves,
 while a severe one results in defoliation and white webs. Spider mites are most dangerous during warm, dry weather and not
 usually a problem for well watered plants.
 
 California Prionus beetle, Prionus californicus
-The large brown beetles are 1 to 2 inches long, but the cream-colored larvae, 1/8 to 3 inches long, cause the damage. They feed
+The large brown beetles are 2.5 to 5.1 cm long, but the cream-colored larvae, 0.32 to 7.6 cm long, cause the damage. They feed
 on plant roots, and a severe infestation can completely destroy a crown and kill the plant.
 
 Kuplent grew up not far from Munich and began his brewing education in Bavaria. He
@@ -3396,7 +3395,7 @@ processing pellets.
 
 The plants are annual above ground and perennial below, wintering through an important
 period of dormancy before emerging with particular vigor in the spring. They may grow as
-much as a foot in a day. They are photoperiodic, and day length is a critical factor for both
+much as 30 cm in a day. They are photoperiodic, and day length is a critical factor for both
 vegetative growth and flowering. While they grow between latitudes 30° and 52°, they thrive
 between 45° and 50°. For instance, Goschie Farms is located at 45°, the Desmarais farm at
 46.6°, and the Seitz farm at 47.7°.2 Days last about half an hour longer in the Hallertau than in
@@ -3409,8 +3408,8 @@ Yakima Valley, and an hour longer than in the Willamette Valley.
 Hops grow best between the 35th and 50th parallels.
 
 Not surprisingly, growing practices vary between regions and also within regions. Farmers
-in the the United States grow hops on 18-foot-high trellises. In Europe most trellises are seven
-meters (about 23 feet), but in Tettnang farmers hang Tettanger hops on eight-meter trellises and
+in the the United States grow hops on 5.5-m-high trellises. In Europe most trellises are seven
+meters, but in Tettnang farmers hang Tettanger hops on eight-meter trellises and
 plant them closer together (although newer varieties grow on seven-meter trellises). Franz
 Wöllhaf, who works for the hop research station in Tettnang, said there are two theories as to
 why the narrower system evolved. “Some say they grow better if the wire is more straight,” he
@@ -3419,12 +3418,12 @@ He shrugged and explained that Tettnanger hops grow better on eight-meter trelli
 the space between laterals, the sidearms that extend from the main vine and produce cones, is
 larger.
 
-Farmers plant 3,600 to 4,000 plants on one hectare (about 2.5 acres), training a single
+Farmers plant 3,600 to 4,000 plants on one hectare, training a single
 Tettnanger bine per wire, compared to two bines of other varieties. In Spalt Hans Zeiner trains
 two or three bines of Spalt Spalter to each of 4,000 wires in a hectare. At the Karel Dittrich
 farm in the Czech Republic workers train 3,300 Saaz plants in a hectare, putting two or three
-bines on a wire. In Yakima plants are usually spaced at 3½ feet by 14 feet or 7 feet by 7 feet,
-resulting in 889 plants per acre (the equivalent of about 2,200 plants per hectare).
+bines on a wire. In Yakima plants are usually spaced at 1.1 m by 4.3 m or 2.1 m by 2.1 m,
+resulting in about 2,200 plants per hectare.
 
 Hop plants thrive in a wide range of soils, although there are varietal differences. The key
 requirements are sufficient depth of soil for the deep-rooted plant, adequate moisture, and good
@@ -3434,10 +3433,10 @@ farmers worry that when a spring is particularly wet, plants may develop “wet 
 which inhibits development of root structure.
 
 A new growing season in Spalt begins in March. Zeiner, who is manager of the Spalt hop
-growers association and also farms about 10 acres of hops himself, will open his hills and cut
+growers association and also farms about 4 hectares of hops himself, will open his hills and cut
 the first gamey shoots. He and his family train the second round of shoots to wire in May.
-Because Spalt farms are small, on average less than 10 acres, a family can rip out the other
-shoots by hand. Farmers tending to more acres use chemicals or dehydrate unwanted growth.
+Because Spalt farms are small, on average less than 4 hectares, a family can rip out the other
+shoots by hand. Farmers tending to more hectares use chemicals or dehydrate unwanted growth.
 
 ---
 
@@ -3445,7 +3444,7 @@ shoots by hand. Farmers tending to more acres use chemicals or dehydrate unwante
 
 Hanging the twine or wire the plants will grow on, then training the plants to them, requires
 extra hands in the field. The Dittrich farm hires about 25 outside workers, many from Slovakia,
-in the spring, compared to 50 to harvest 104 acres. Seitz needs only three extra workers for
+in the spring, compared to 50 to harvest 42.1 hectares. Seitz needs only three extra workers for
 harvest, but six during training, members of two migrant families. “One Polish family has been
 coming since the 1980s, and now their daughter works with them,” Seitz said. Nearby, the
 Feiner family grows hops on about twice the acreage, around 107, and employs 20 migrant
@@ -3492,7 +3491,7 @@ facilitate organic growing. Basically, low-trellis is the growing system (which 
 dwarfs), dwarf is the plant type (includes semi-dwarfs) and describes plants with a shorter internode distance than normal,
 hedgerow describes the dwarf type growing on the low-trellis system.
 
-Obviously, plants only eight to 10 feet high (see color plate 1) are easier to monitor than those 18 feet and taller. Peter Darby at
+Obviously, plants only 2.4 to 3 m high (see color plate 1) are easier to monitor than those 5.5 m and taller. Peter Darby at
 Wye Hops pointed out that because there is more plant material near the soil, and because hedges are in constant contact,
 dwarf hops attract more beneficial predatory insects, and it is easier for the insects to patrol the plants. Additionally, because
 
@@ -3598,8 +3597,8 @@ consumers showed a distinct preference for hops picked later.7
 In 2008 Hop Products Australia began an ongoing study that included harvest dates and
 drying conditions. HPA determined that adding visual assessment of lupulin gland filling in
 preharvest analysis enhanced the chemical maturity of hops, and that aroma varieties benefited
-more. The study also concluded that lowering kilning temperatures from 140° F (60° C) to
-122° F (50° C) increased the quantities of essential oils for certain varieties.8
+more. The study also concluded that lowering kilning temperatures from 60 °C to
+50 °C increased the quantities of essential oils for certain varieties.8
 
 ## Location, Location, Location
 
@@ -3609,7 +3608,7 @@ The OSU study also revealed something the researchers were not looking for, diff
 
 <!-- source_pdf_page: 81 -->
 
-didn’t expect between hops grown miles rather than continents apart. They collected data for
+didn’t expect between hops grown kilometres rather than continents apart. They collected data for
 Willamette and Cascade hops harvested on three dates at three locations in the Willamette
 Valley. When farmers picked either variety early at any of the farms, the concentration of
 essential oils varied little. Differences began to arise as hops spent more time on the bine.
@@ -3618,7 +3617,7 @@ different farms proved “better” for different varieties. For instance, the a
 Cascade hops picked at Farm 1 was lower than the other two, but the level of oils in
 Willamette grown on Farm 1 was highest.9 The opposite was true on Farm 3. The German
 study focused on harvest dates also found location significantly changed hop aroma and flavor
-in the beers, even when the hops were grown only miles apart.10
+in the beers, even when the hops were grown only kilometres apart.10
 
 Farmers learned long ago that most varieties grow better in a particular region and
 sometimes not at all in others. The OSU and German research provides confirmation that the
@@ -3644,7 +3643,7 @@ with vineyards, orchards, and fields of hops, the Alps looming in the distance. 
 genetic link to Spalt Spalter and Saaz, Tettnanger hops are different, both because of farming
 practices and where they are grown. When brewers such as Fritz Tauscher (p. 176) make beers
 that feature the hop, it seems a perfect fit for the terrain. However, Tettnanger hops also remain
-distinctive in a beer brewed thousands of miles away.
+distinctive in a beer brewed thousands of kilometres away.
 
 Henning explained the science behind why environment and epigenetics combine to make
 hops from a particular area unique. All plant species have methylated DNA, which causes
@@ -3662,7 +3661,7 @@ grouped together as “Saazer hops.”13 The Tettnang region (47.7° latitude) r
 <!-- source_pdf_page: 82 -->
 
 rain and more sunshine than areas around Spalt (49.2° latitude) or Žatec (50.3°). Žatec is about
-700 feet above sea level, Spalt 1,200 feet, and Tettnang itself is 1,500 feet (although fields
+210 m above sea level, Spalt 370 m, and Tettnang itself is 460 m (although fields
 range from 1,300 to 2,300). Not only are many of the trellises in Tettnang taller, but many
 plants are 80 to 100 years old, compared to 25-year-old plants in other regions.
 
@@ -3710,15 +3709,15 @@ Hop farms in the American Northwest, particularly the Yakima Valley, and in Germ
 resemble each other in size, but in neither area will a visitor meet many first-generation hop
 growers. They are family run operations. The average farm in the Northwest (Washington,
 Oregon, and Idaho) harvests about the same quantity of hops as all of Belgium and is 12 times
-larger the average German farm. Seventy-five farmers managed a little more than 920 acres of
+larger the average German farm. Seventy-five farmers managed a little more than 370 hectares of
 
 ---
 
 <!-- source_pdf_page: 83 -->
 
 hops in the Spalt region of Germany in 2010. That’s two more farms than in all of the
-Northwest, where farmers planted 32,000 acres. The small-scale model works elsewhere. In
-Spain 240 farmers grow almost exclusively Nugget, tending to an average of six acres.
+Northwest, where farmers planted 13,000 hectares. The small-scale model works elsewhere. In
+Spain 240 farmers grow almost exclusively Nugget, tending to an average of 2.4 hectares.
 
 Source: International Hop Growers Convention
 
@@ -3734,11 +3733,11 @@ Poland, where farmers don’t have high alpha or unique aroma hops and brewers c
 <!-- source_pdf_page: 84 -->
 
 find a wider variety nearby, are obvious. Nearly one-third of Polish hop farmers quit growing
-hops in 2010 and 2011, although almost 700 remain. They manage an average of less than six
-acres each.
+hops in 2010 and 2011, although almost 700 remain. They manage an average of less than 2.4
+hectares each.
 
 The largest grower in Washington, Roy Farms, produces more hops annually than all but six
-countries. Roy cultivates more than 30 varieties on more than 3,000 acres, on high trellises and
+countries. Roy cultivates more than 30 varieties on more than 1,200 hectares, on high trellises and
 low trellises, organic and mostly otherwise. The company has four processing facilities in
 Moxee and Toppenish, using four Dauenhauer picking machines, two of them double-size, plus
 a field picking unit for its low-trellis hops. It has two pellet mills that turn dried cones directly
@@ -3822,8 +3821,8 @@ the parent eventually was called Late Cluster. Late Cluster is much like (althou
 similar Cluster variations grown in New York after Prohibition.
 
 Decades later Ezra Meeker, a well known Washington farmer, proposed that a model
-Pacific yard would include one acre of Humphrey’s Seedling, two acres of Cluster, and one
-acre of Canada Red. Humphrey’s Seedling originated by chance in Wisconsin, and Canada
+Pacific yard would include 0.4 hectares of Humphrey’s Seedling, 0.81 hectares of Cluster, and 0.4
+hectares of Canada Red. Humphrey’s Seedling originated by chance in Wisconsin, and Canada
 Red, which had red bines, in Canada. Cluster likely was the variation that eventually became
 known as Late Cluster. Oregon’s farmers didn’t follow his suggestion, instead planting Fuggle
 as well as Cluster. Fuggle exports, which remained strong during Prohibition, helped Oregon
@@ -3831,8 +3830,8 @@ become the nation’s leading hop growing state. Washington sales did not surpas
 1942.
 
 Washington hops first flourished in the Puyallup Valley near Tacoma after J.V. Meeker
-planted them in 1866, curing them in a loft over his living room. His son, Ezra, planted four
-acres the next year and by 1891 grew 500 acres himself and had an interest in almost every
+planted them in 1866, curing them in a loft over his living room. His son, Ezra, planted 1.6
+hectares the next year and by 1891 grew 200 hectares himself and had an interest in almost every
 other commercial hop operation in the Northwest. Years after he died, a tribute in the local
 newspaper described him as “hop king of the world.” In 1892 hop lice devastated crops along
 the Pacific Coast. Meeker wrote:
@@ -3843,17 +3842,17 @@ the Pacific Coast. Meeker wrote:
 
 “One evening in 1892, as I stepped out of my office and cast my eyes toward one group of
 hop houses, it struck me that the hop foliage of a field nearby was off color—did not look
-natural. … (I) walked down to the yards, a quarter of a mile away, and there saw the first hop
+natural. … (I) walked down to the yards, 400 metres away, and there saw the first hop
 louse. The yard was literally alive with lice, and (they) were destroying—at least the quality.
 … At that time I had advanced to my neighbors and others upon their hop crops more than a
 hundred thousand dollars, which was lost. These people simply could not pay, and I forgave
 the debt, taking no judgments against them, and I have never regretted the action. All my
 accumulations were swept away, and I quit the business—or rather, the business quit me.”20
 
-The next year, the Yakima Herald reported acreage in the Valley grew from 400 acres to a
-state-leading 2,500 acres between 1891 and 1893. Much was planted by French Canadians,
+The next year, the Yakima Herald reported acreage in the Valley grew from 160 hectares to a
+state-leading 1,000 hectares between 1891 and 1893. Much was planted by French Canadians,
 who bought land from the Moxee Company, an experimental farm started by Alexander Bell
-and others. In anticipation of future settlement, the company irrigated 7,000 acres of land.
+and others. In anticipation of future settlement, the company irrigated 2,800 hectares of land.
 Irrigation, of course, has been vital to the success of hop growing in the Yakima Valley, much
 of it on farms run by the offspring of those French Canadian settlers. In 2011 Washington
 farmers harvested 79.3 percent (by weight) of the hops grown in the United States, Oregon
@@ -3874,14 +3873,14 @@ grew widely. In other states they are new. Colorado State University planted its
 experimental organic hops in 2004, and farmers across the state have since harvested both
 organic hops and non-organic hops. Additionally, AC Golden Brewing, a subsidiary of
 MillerCoors, gave away Chinook rhizomes for volunteers to grow at home. About 500
-volunteers took rhizomes in 2011, and 125 harvested them. The rather modest 60 pounds went
+volunteers took rhizomes in 2011, and 125 harvested them. The rather modest 27 kg went
 into a batch of Colorado Native Lager.
 
 Until relatively recently several large British breweries kept their own hop farms. In 1997
-Whitbread Brewing’s farm became the Hop Farm Family Park, a multipurpose, 400-acre
+Whitbread Brewing’s farm became the Hop Farm Family Park, a multipurpose, 160-hectare
 facility with rides, games, picnic areas, and many other attractions, including a hop museum
 and a large collection of oast houses. The Rogue Ales Micro Hopyard in Oregon’s Willamette
-Valley, about 75 miles east of the Newport brewery, does not have miniature golf, but Rogue
+Valley, about 120 km east of the Newport brewery, does not have miniature golf, but Rogue
 has used it to teach consumers that beer is an agricultural product.
 
 “This whole thing is an accident,” Brett Joyce, Rogue Ales president, said late one
@@ -3894,11 +3893,11 @@ yards in the background. After the hop shortage of 2007 Rogue first considered g
 <!-- source_pdf_page: 87 -->
 
 knows how to use hops. He established a reputation long ago for lavish additions of hops in his
-beers. “And we knew they’d been readily available at four or five dollars a pound,” Joyce
+beers. “And we knew they’d been readily available at nine or eleven dollars a kilogram,” Joyce
 said.
 
 Rogue didn’t start from scratch. “We opened up the Yellow Pages and found the Coleman
-family,” he said. Now Rogue leases 42 acres from the Colemans. Wigan Richardson and
+family,” he said. Now Rogue leases 17 hectares from the Colemans. Wigan Richardson and
 Company first established the farm early in the twentieth century. The Colemans, who continue
 to farm other land, already had a trellis system in place, a picking machine, and kilning
 facilities.
@@ -3924,7 +3923,7 @@ fall of 2011 was packed with visitors most weekends. The tasting room keeps regu
 and during the summer and harvest there are tours every day. Special events include fish bakes
 and musical concerts as well as educational presentations, such as one on beekeeping. The
 facility is available for weddings, and there’s overnight accommodations at the Hop ’N Bed, a
-farmhouse that overlooks acres of hops as well as the processing facilities. Rogue invites local
+farmhouse that overlooks hectares of hops as well as the processing facilities. Rogue invites local
 homebrewers to make batches of beer in its nanobrewery, located in a simple shed. The beers
 are served at Chatoe Rogue.
 
@@ -3949,7 +3948,7 @@ with planning a yard and continues through building their own version of an oast
 <!-- source_pdf_page: 88 -->
 
 2012 harvest Gorst Valley began selling small-scale harvesters designed to mechanically pick
-hops grown on less than 10 acres. It takes a crew of six an hour to pick two bines by hand,
+hops grown on less than 4 hectares. It takes a crew of six an hour to pick two bines by hand,
 while the new Bine 3060, operated by three people, processes 30 to 60 bines an hour. The
 Bine 3060 costs $12,900, while a large-scale picker would run around $180,000 new and
 $30,000 used.
@@ -3962,17 +3961,17 @@ option to compete on price,” Altweis said.
 
 Wisconsin growers need look only to history to see the results when hops are traded as a
 commodity. When hop louse wiped out much of the New York crop in 1867, hop mania swept
-across Wisconsin, after hops that sold for 15 to 25 cents per pound in 1861 brought up to 70
-cents a pound. Newspapers carried stories about the profits farmers made on every acre they
+across Wisconsin, after hops that sold for 33 to 55 cents per kilogram in 1861 brought up to
+$1.54 a kilogram. Newspapers carried stories about the profits farmers made on every hectare they
 planted. The accounts described the mansions the growers lived in, the carriages they rode in,
 and the vacations they took. Little surprise that production in Sauk County, where most of the
-state’s hops grew, jumped from a half million pounds in 1865 to four million pounds in 1869.
-Hop prices crashed from 70 cents a pound in 1867 to four or five cents the next year. Both
+state’s hops grew, jumped from 230 tonnes in 1865 to 1,800 tonnes in 1869.
+Hop prices crashed from $1.54 a kilogram in 1867 to nine or eleven cents the next year. Both
 growers and hop dealers went bankrupt.22 Wisconsin farmers were pretty much out of the hop
 business within the next 10 years, and the “Hop Crash of 1867” was their legacy.
 
 Wisconsin craft brewers buy most of the hops Gorst Valley growers plant—the company
-processed about 100 pounds of hops in 2009 and expected 10,000 in 2012, still less than 20
+processed about 45 kg of hops in 2009 and expected 10,000 in 2012, still less than 20
 percent of the production of an average farm in the Hallertau—and the rest go to craft brewers
 in other states or to homebrewers. About 70 percent of those are aroma hops. “That’s what the
 brewers want,” Altweis said. “We have to look for what we can do on process (drying and
@@ -3992,7 +3991,7 @@ United States the limit is 3 percent (although that would be 4.2 percent using t
 measurement method). Oregon is the only large hop region outside of England growing a
 substantial amount of seeded hop. About 36 percent of the 2011 crop contained 4 percent
 or more seeds (as compared to 9 percent of the Washington crop).
-2. Farmers in New Zealand and Australia together do not plant two-thirds as many acres of
+2. Farmers in New Zealand and Australia together do not plant two-thirds as many hectares of
 
 hops as those in Oregon, but their hop aromas currently are very fashionable. New
 Zealand’s Nelson hop growing region is at -41°, while two-thirds of Australia’s hops are
@@ -4052,7 +4051,7 @@ U.S. Department of Agriculture, 1900), 9.
 1916), 228-229.
 21. Sierra Nevada grows both the hops and barley for its Estate Homegrown Ale. The brewery
 
-first planted three acres of hops in an adjacent field in 2002 and now manages eight acres,
+first planted 1.2 hectares of hops in an adjacent field in 2002 and now manages 3.2 hectares,
 all grown organically. In full bloom the minifarm beside the brewery is quite striking, and
 
 ---
@@ -4078,8 +4077,8 @@ silly season,” he explained after he hung up. “Every editor thinks, let’s 
 ‘Hopping down in Kent.’”
 
 Redsell is the most famous of the 50 or so hop growers who are left in all of England, with
-his 200 acres of hops in Kent representing about 10 percent of the national total. Hop
-production in Kent reached its peak in 1878, when farmers grew hops on 77,000 acres. Special
+his 81 hectares of hops in Kent representing about 10 percent of the national total. Hop
+production in Kent reached its peak in 1878, when farmers grew hops on 31,000 hectares. Special
 trains that ran between London and Kent carried 23,000 seasonal pickers to spend a
 moneymaking vacation picking hops, an annual pilgrimage that inspired the song, “Hopping
 Down in Kent.”
@@ -4165,7 +4164,7 @@ scent—an unutterably refreshing scent, like a wind blowing from oceans of cool
 be almost ideal if one could only earn a living at it.” Although government officials inspected
 workers’ accommodations, Orwell was not impressed. “But what it can have been like in the
 old days is hard to imagine, for even now the ordinary hop-picker’s hut is worse than a
-stable,” he wrote in 1931. “My friend and I, with two others, slept in a tin hut ten feet across,
+stable,” he wrote in 1931. “My friend and I, with two others, slept in a tin hut 3 m across,
 with two unglazed windows and half a dozen other apertures to let in the wind and rain, and no
 furniture save a heap of straw; the latrine was two hundred yards away, and the water tap the
 same distance. Some of these huts had to be shared by eight men—but that, at any rate,
@@ -4243,20 +4242,20 @@ instead of hunting for firewood, and Woolworth’s is round the corner—but sti
 in the category of things that are great fun when they are over. It figures in the pickers’ mind as
 a holiday, though they are working hard all the time and out of pocket at the end.”11
 
-## Turning Acres of Hops Into Bales
+## Turning Hectares of Hops Into Bales
 
 When Jason Perrault’s great-grandfather began farming hops in the 1920s, it took 100 people
-30 days to harvest 13 acres. When his grandfather ran the farm, it took 80 people 30 days to
-harvest 150 acres. Today 40 people harvest 750 acres in 30 days.12
+30 days to harvest 5.3 hectares. When his grandfather ran the farm, it took 80 people 30 days to
+harvest 61 hectares. Today 40 people harvest 300 hectares in 30 days.12
 
 ---
 
 <!-- source_pdf_page: 95 -->
 
 Everything at Otto Scheuerlein’s farm in Spalt happens on a smaller scale, but with their
-two sons—who take holiday to help—the Scheuerleins harvest about 10 acres of hops in nine
+two sons—who take holiday to help—the Scheuerleins harvest about 4 hectares of hops in nine
 days. Farms in Yakima, or even other parts of Germany, have machines dedicated to quickly
-cutting acres of bines from their trellises, large stationary picking machines, and giant kilns.
+cutting hectares of bines from their trellises, large stationary picking machines, and giant kilns.
 The Scheuerleins have an attachment on their tractor, a small picker, a three-drawer kiln, and a
 conditioning floor on the second story of the barn, with a picker and baler on the first floor.
 
@@ -4282,14 +4281,14 @@ those buildings with high, steep roofs still loom over parts of town.
 
 Modern-day American and European growers dry hops much differently. Kilns in the U.S.
 Northwest consist of multiple sections within what are basically giant sheds. Conveyor belts
-carry the cones to the kilns after they are separated from the bines, and they are spread 24
-inches to 36 inches deep. Heated air, forced through the bed from the bottom, dries the hops
+carry the cones to the kilns after they are separated from the bines, and they are spread 61
+cm to 91 cm deep. Heated air, forced through the bed from the bottom, dries the hops
 within six to eight hours.
 
 Farmers choose to spread different varieties to different heights and dry them at different
-temperatures. Double R Ranch dries aroma hops between 130° F (54° C) and 140° F (60° C),
+temperatures. Double R Ranch dries aroma hops between 54 °C and 60 °C,
 with Cascade at the higher end of the range because its cone is durable. The ranch dries high
-alpha hops at 145° F (63° C). John Segal said the Segal Ranch dries its Cascades at lower
+alpha hops at 63 °C. John Segal said the Segal Ranch dries its Cascades at lower
 temperatures (which he chooses to keep proprietary) than at any other farm, resulting in a
 process that takes two hours longer. “We’re drying for aroma,” he said. In 2010 Segal’s
 Cascades contained 3.1 percent essential oils, almost double typical Cascades. “We let them
@@ -4307,9 +4306,8 @@ At Perrault Farms, workers limit the depth of Simcoe and Citra, two hops high in
 
 <!-- source_pdf_page: 96 -->
 
-mostly valued for their aroma, to between 24 and 28 inches and dry them at about 130° F (54°
-C). Jim Boyd, hop processing and logistics manager at Roy Farms, said the company estimates
-that drying all its aroma hops at 125° F (52° C) takes 20 percent longer and uses 18 percent
+mostly valued for their aroma, to between 61 and 71 cm and dry them at about 54 °C. Jim Boyd, hop processing and logistics manager at Roy Farms, said the company estimates
+that drying all its aroma hops at 52 °C takes 20 percent longer and uses 18 percent
 more diesel fuel.
 
 Farmers have many tools to monitor the moisture within the kiln, realizing it will never be
@@ -4383,7 +4381,7 @@ hops. “You have to remember you are buying farm products.”
 That’s true on the largest scale. “We’ve always selected hops on a sensory basis,” said
 Steve Dresler, brewmaster at Sierra Nevada Brewing. “I don’t look at alpha. I don’t look at
 oil. We open up the brewers’ cuts and get dirty,” he said. Founder Ken Grossman, Dresler, and
-those on the brewery’s selection team will choose hundreds of thousands of pounds of hops in
+those on the brewery’s selection team will choose hundreds of tonnes of hops in
 36 hours. “We’re aroma buyers. I’ll do the same for alpha through the mail.”
 
 Dresler appreciates the annual trip for more than the hops he buys. “You always get to see
@@ -4440,7 +4438,7 @@ to the brewer. You probably will never see any hop samples that have been severe
 see the diseases in your samples.
 
 Windburn and spray burn. Evidence of windburn and spray burn shows on the cones as brown discoloration. When the spray
-is applied, the grower uses a large fan that blows the spray over the field at about 130 miles per hour. This can cause stress to
+is applied, the grower uses a large fan that blows the spray over the field at about 210 km per hour. This can cause stress to
 the hop cones and burn them, either by the chemical or wind force. High wind conditions may cause the cones to bump into
 each other, causing bruising to the cones. This is more of a cosmetic flaw and should not hurt brewing performance. Evaluate
 the hops to determine if they meet your needs.
@@ -4530,7 +4528,7 @@ pressing on a board. If the sample is too dry, it will shatter when pressed, and
 indication of too-late harvesting. Lower alpha/aroma hops tend to break apart more easily than high alpha hops due to less
 lupulin and essential oils.
 
-3. Inspect whole cones. Take the cardboard divider and cut off a 2-inch sample. Break the cones apart and inspect for flaws.
+3. Inspect whole cones. Take the cardboard divider and cut off a 5.1-cm sample. Break the cones apart and inspect for flaws.
 Look for wind or spray burn, aphid or spider damage, mold, leaf, and stem. Check the cones’ sizing—are they the right size for
 the variety? Also check the strig in the cone. Are the hop petals attached well? This is a sign of proper drying. The whole cones
 should outnumber the broken by a great majority. The more broken cones you have, the greater chance of oxidized hops. Break
@@ -4659,10 +4657,10 @@ Knowledge, 1883), 54.
 
 and Development (1970), 8.
 11. Orwell.
-12. Here’s the math in more detail. 1920s: 13 acres, 100 people, 30 days = 2.3 acres per day,
+12. Here’s the math in more detail. 1920s: 5.3 hectares, 100 people, 30 days = 0.93 hectares per day,
 
-7.7 people per acre; 1960s: 150 acres, 80 people, 30 days = 5 acres per day, 0.5 people
-per acre; Today: 750 acres, 40 people, 30 days = 25 acres per day, 0.05 people per acre.
+19 people per hectare; 1960s: 61 hectares, 80 people, 30 days = 2 hectares per day,
+1.2 people per hectare; Today: 300 hectares, 40 people, 30 days = 10 hectares per day, 0.12 people per hectare.
 13. Herbert Myrick, The Hop: Its Culture and Cure, Marketing and Manufacture
 
 (Springfield, Mass: Orange Judd Co., 1899), 177.
@@ -4811,7 +4809,7 @@ In 1963 the Hops Extract Corporation of America built a large plant in Yakima. B
 
 <!-- source_pdf_page: 113 -->
 
-equivalent of 23 million pounds out of the U.S. crop of 49.6 million pounds were converted
+equivalent of 10,400 tonnes out of the U.S. crop of 22,500 tonnes were converted
 into extract.
 
 ## Pelletizing and Pellet Products
@@ -4839,7 +4837,7 @@ is actually higher. They are the most common sold. The composition of oils and a
 the pellets is similar to cones but not necessarily identical.
 
 Type 45 pellets. T45, or lupulin-enriched, pellets, are manufactured from enriched hop
-powder. Processors mill the hops at about -20° F (-30° C), which reduces the stickiness of the
+powder. Processors mill the hops at about -30 °C, which reduces the stickiness of the
 resin, and separate the lupulin from unwanted fibrous vegetative matter. Although the name
 implies the hops are enriched to twice the level of T90s, the level may be restricted by the
 amount of lupulin in the original hop. Normally, processors customize the level, producing, for
@@ -5360,7 +5358,7 @@ Lubliner or Lubelski. Storage: Very poor.
 ### Magnum | BO
 
 Soon to be replaced as Germany’s primary high alpha hop (Herkules already yields more
-pounds, although Magnum is planted on more acres). Not surprisingly, German-grown version
+by weight, although Magnum is planted on more hectares). Not surprisingly, German-grown version
 smells more “noble” than American. Storage: Very good.
 
 ### Mandarina Bavaria | NST
@@ -5662,7 +5660,7 @@ purpose hop, but can drift toward onion and garlic. Storage: Excellent.
 ### Super Galena | BP
 
 A granddaughter of Galena. Noteworthy for both high alpha and yield. Can produce more alpha
-per acre than even Herkules.
+per hectare than even Herkules.
 
 ### Super Pride | BP
 
@@ -5737,7 +5735,7 @@ Floral and spicy. Storage: Good.
 
 Bred in Oregon from Hallertau Mittelfrüh and a Saazer-type male. Another choice for those
 looking for the mild, pleasant character of European landrace hops. Loved by some brewers
-but never grown on many acres. Storage: Good to very good.
+but never grown on many hectares. Storage: Good to very good.
 
 ---
 
@@ -5803,7 +5801,7 @@ other hand, has been around since before the last Montfort, Count Anton IV, live
 eighteenth century. The Tauscher family bought the brewery, which sits directly behind the
 hotel, in 1847, and Fritz Tauscher is a seventh-generation brewer. The Kronen-Brauerei is the
 last of 26 breweries that once operated in Tettnang. It produces about 6,000 hectoliters
-(something more than 5,000 barrels) a year, about 60 percent of that sold in bottles labeled
+(something more than 5,900 hectolitres) a year, about 60 percent of that sold in bottles labeled
 “Tettnanger.”
 
 Tauscher is one of nine brewers in a group its members call Brauer mit Leib und Seele
@@ -5910,7 +5908,7 @@ importance to flavor stability.
 The ratio between the two in a traditionally hopped beer will be 68 percent cis and 32
 percent trans. The cis forms may be perceived as more bitter. More importantly, trans-isomers
 deteriorate much faster. Researchers in Germany determined that approximately 75 percent of
-the trans-iso-alpha acids degraded within the first 12 months in beer stored at 82° F (28° C),
+the trans-iso-alpha acids degraded within the first 12 months in beer stored at 28 °C,
 but only 15 percent of the cis-iso-alpha acids. The results remind brewers who use only
 conventional hops of the importance of cold storage and selling beer when it is fresh. Those
 who brew with preisomerized extracts, primarily because they result in 55 percent utilization
@@ -5974,7 +5972,7 @@ years had declined about 20 percent. He estimated the bitterness of Budweiser at
 1946 and 17 by the 1970s. Hop usage and bitterness levels likely moved in tandem until the
 mid-twentieth century, when efficiencies allowed brewers to use fewer hops and maintain the
 same level of bitterness. Greater efficiency does not, however, totally account for changes in
-U.S. hop consumption, from 0.65 pounds per barrel to 0.43 in 1950, 0.33 in 1960, 0.23 in
+U.S. hop consumption, from 2.5 g/L to 0.43 in 1950, 0.33 in 1960, 0.23 in
 1970, and in 2011 about half of that (when craft breweries are not included).
 
 In order to better track bitterness levels, in 2006 the Barth-Haas Group began to conduct
@@ -6119,13 +6117,13 @@ but approximately 50 milligrams per liter iso-alpha acids.
 Mikkel Borg Bjergsø, a “gypsy brewer” based in Denmark who makes beer in facilities
 around the world and sells them under the Mikkeller label, produces one he calls 1000 IBU.
 He does not claim a lab would measure 1,000 IBUs in the beer, but simply states that those are
-the calculated bitterness units. To brew a 10-hectoliter (8.5-barrel) batch he adds 18 cans
+the calculated bitterness units. To brew a 10-hectoliter batch he adds 18 cans
 
 ---
 
 <!-- source_pdf_page: 159 -->
 
-containing 400 grams (about 14 ounces) of hop extract with 53 percent alpha acids. He also
+containing 400 grams of hop extract with 53 percent alpha acids. He also
 adds “normal” doses of hops for aroma, then 10 kilograms (one per hectoliter) as a dry hop.
 
 White Labs in San Diego, which offers a full spectrum of lab services for small brewers,
@@ -6256,17 +6254,17 @@ efficient than cones.
 <!-- source_pdf_page: 162 -->
 
 90 minutes, iso-alpha acids break down to unidentified components that are not desirable.
-- Kettle geometry. Larger kettles are more efficient, and the difference between a five-
+- Kettle geometry. Larger kettles are more efficient, and the difference between a 19-
 
-gallon homebrew system and even a 10-barrel (310-gallon) commercial brewery is
+litre homebrew system and even a 12-hectolitre commercial brewery is
 startling.
 - Wort gravity. Utilization decreases as wort gravity increases. However, as alcohol and
 
 unfermented carbohydrates increase, a beer may support more IBUs.
 - Boiling temperature. In an experiment at Oregon State University, less than 10 percent of
 
-alpha acids were converted to iso-alpha acids during a 90-minute boil at 158° F (70° C),
-while it took only 30 minutes at 248° F (120° C) to achieve 90 percent conversion,
+alpha acids were converted to iso-alpha acids during a 90-minute boil at 70 °C,
+while it took only 30 minutes at 120 °C to achieve 90 percent conversion,
 possible in a pH 5.2 buffered aqueous solution but not in beer. Water boils at a lower
 temperature at higher altitudes, lowering utilization.
 - The pH and mineral content of the water. Efficiency increases with pH. Of course, higher
@@ -6336,7 +6334,7 @@ second international ring study in the summer and fall of 2012.
 Deschutes Brewery in Oregon describes Hop Henge Experimental IPA as its “annual exercise
 in IBU escalation.” In 2008 Deschutes brewers made a batch with 243 calculated IBUs, which
 the lab measured at 117 in the fermenter. The bottled beer contained only 87 IBUs measured.
-The next year the brewers included one pound of Amarillo and Cascade hops per barrel as
+The next year the brewers included 3.9 g/L of Amarillo and Cascade hops as
 they milled malted barley for the mash.10 Brewmaster Larry Sidor never considered trying to
 measure how many IBUs the mash addition might have added. He understood it would be
 meaningless.
@@ -6435,7 +6433,7 @@ the mash tun, referred to as mash hopping, are not. Little or no isomerization o
 and hop material will be left with the spent grain. Some hop material passes into the kettle and
 will be converted into iso-alpha acids at the same rate as first wort additions. MillerCoors
 Brewing has run tests in its pilot brewery using pellets, and an addition of 50 parts per million
-of alpha acids to the mash resulted in beers with between 10 and 15 IBUs for a 10-barrel
+of alpha acids to the mash resulted in beers with between 10 and 15 IBUs for a 12-hectolitre
 batch.
 
 Russian River Brewing brewmaster Vinnie Cilurzo mash hops his Belgian-inspired beers
@@ -6540,11 +6538,11 @@ hop flavors might be, but 60 Minute IPA is Dogfish’s best selling beer, and de
 Minute IPA and 120 Minute IPA exceeds supply.
 
 Calagione rigged up a plastic bucket and vibrating electronic football game he bought at the
-Salvation Army to add hops in regular intervals for the first five-barrel batch of 60 Minute IPA
+Salvation Army to add hops in regular intervals for the first 5.9-hectolitre batch of 60 Minute IPA
 brewed at Dogfish’s Rehoboth Beach brewpub. When the brewery began making 90 Minute
 IPA at its production facility, a brewer would stand over the kettle, continuously tossing in
 pellets for 90 minutes. A mechanical hopper, dubbed Sir Hops Alot, automated the process,
-and when Dogfish replaced its 50-barrel brewhouse with a 100-barrel system it added Sofa
+and when Dogfish replaced its 59-hectolitre brewhouse with a 120-hectolitre system it added Sofa
 King Hoppy, a pneumatic cannon connected to the brew kettle with hard piping.
 
 Dogfish also continuously hops My Antonia, a beer first made in collaboration with Italian
@@ -6690,12 +6688,12 @@ brewers with a better understanding of the impact of different hopping schemes. 
 regional brewer for the group at the time, organized and reported on the project.
 
 Each beer received the same significant hop dose for 90 minutes and for 30 minutes.
-Breweries then followed one of four procedures: 1) added one pound of Amarillo (8.4%
-alpha) per barrel at the end of the boil, with 50 minutes of post-boil residence; 2) added one
-pound of Amarillo per barrel at end of boil, 80 minutes post-boil residence; 3) added one-half
-pound of Amarillo per barrel at the end of boil, with 80 minutes post-boil residence, and one-
-half pound of Amarillo per barrel as dry hops; 4) dry hopped with one pound of Amarillo per
-barrel, with no additional kettle addition.
+Breweries then followed one of four procedures: 1) added 3.9 g/L of Amarillo (8.4%
+alpha) at the end of the boil, with 50 minutes of post-boil residence; 2) added
+3.9 g/L of Amarillo at end of boil, 80 minutes post-boil residence; 3) added
+1.9 g/L of Amarillo at the end of boil, with 80 minutes post-boil residence, and
+1.9 g/L of Amarillo as dry hops; 4) dry hopped with 3.9 g/L of
+Amarillo, with no additional kettle addition.
 
 A sensory panel that included 34 experienced tasters later evaluated the beers based on
 seven characteristics: perceived bitterness, intensity of hop aroma, intensity of hop flavor, malt
@@ -6765,10 +6763,10 @@ Compounds of Hops (Humulus lupulus L.) and Beer,” Chemical Perception 2 (2009)
 7. Shellhammer, ed., 164-165.
 8. The recipe provided to brewers who wanted to replicate the 13th Anniversary Ale called
 
-for a total of 5 pounds of hops per barrel, including 1.5 pounds per barrel of Chinook (13%
-alpha acids) boiled for 90 minutes and one pound per barrel of Chinook at knockout. The
-beer was dry hopped with 1.5 pounds per barrel for 7 days. Those hops were discarded,
-and it was dry hopped with 0.5 pounds per barrel for another 7 days.
+for a total of 19 g/L, including 5.8 g/L of Chinook (13%
+alpha acids) boiled for 90 minutes and 3.9 g/L of Chinook at knockout. The
+beer was dry hopped with 5.8 g/L for 7 days. Those hops were discarded,
+and it was dry hopped with 1.9 g/L for another 7 days.
 9. Thomas Shellhammer, “Techniques for Measuring Bitterness in Beer,” presentation at the
 
 Craft Brewers Conference, San Diego, 2012.
@@ -6802,7 +6800,7 @@ doi:10.1094/TQ-47-2-0623-01, 4-6.
 
 Paul Farnsworth was 16 years old in 1961, when he began working as an apprentice at
 Truman, Hanbury & Buxton’s Burton brewery. The brewery dry hopped its premium cask ales,
-always with two ounces of Goldings in a firkin. “It was a three-man job,” Farnsworth said.
+always with 57 g of Goldings in a firkin. “It was a three-man job,” Farnsworth said.
 “One held the copper funnel, one the bag of hops, and one used a stick to jam them in the firkin.
 If one of them was out, then beer didn’t get dry hopped that day. Union rules. The invention of
 (hop) plugs eliminated a job.”
@@ -6838,7 +6836,7 @@ The Hop Aroma Compendium illustrate how a simple infusion in cold water changes
 perception—but it certainly provides hop presence. As demand for dry-hopped beers
 increases, brewers need to be concerned about more than finding new ways to pack aroma into
 their beers. Dry hopping on a large scale is considerably different than adding a few hop cones
-to a firkin (less than 11 U.S. gallons).
+to a firkin (less than 42 litres).
 
 “From a process efficiency standpoint, dry hopping is relatively foolish, but fools who want
 hops in their beer will do anything to get it,” said Saint Louis Brewery director of brewing
@@ -6877,7 +6875,7 @@ that might arise,” he wrote.2
 Several American breweries boasted about the quality of their “dry hopped” beers in the
 years after Prohibition, some listing imported hops, occasionally a variety such as Saaz, and
 others letting “dry hopped” speak for itself. Ballantine IPA stood out among those for several
-reasons. P. Ballantine and Sons brewed more than 5 million barrels a year in the 1950s,
+reasons. P. Ballantine and Sons brewed more than 5.9 million hectolitres a year in the 1950s,
 although only a portion of that was IPA. The beer was said to be 7.5% ABV and contain 60
 IBUs or sometimes more. Brewers distilled the oils from Bullion hops at the brewery and
 added them to storage tanks.
@@ -6935,7 +6933,7 @@ didn’t end up in the glass.
 Schlafly still serves dry-hopped cask beers at the Tap Room and at Bottleworks, the
 restaurant attached to its production brewery. To dry hop draft beers at the Tap Room, brewers
 add pellets through the pressure relief valve at the top of a maturation tank. “It’s one thing to
-climb eight feet (on a ladder), and another to put on a harness and go 25 feet in the air,”
+climb 2.4 m (on a ladder), and another to put on a harness and go 7.6 m in the air,”
 Ottolini said, explaining safety issues make the same process unsuitable at the larger brewery
 with taller tanks.
 
@@ -6954,10 +6952,10 @@ when hops floated to the top those in the upper layer remained dry and presumabl
 their essential oils. Later the brewers tried something they called a “reverse French press,”
 using stainless steel screen plates to hold hops down. However, the buoyancy of the hops lifted
 the screens in places, and dry layers resulted. “Everybody hated it,” Ottolini said. “Sanitizing a
-screen that is six feet in diameter; tedious does not describe it.”
+screen that is 1.8 m in diameter; tedious does not describe it.”
 
 The “hop coffin,” a hose trough fitted with a lid, was the first attempt to include an exterior
-vessel in the process. Brewers laid hops on 16 2-foot-by-1-foot screens, each set at an angle in
+vessel in the process. Brewers laid hops on 16 61-cm-by-30-cm screens, each set at an angle in
 
 ---
 
@@ -6965,18 +6963,18 @@ vessel in the process. Brewers laid hops on 16 2-foot-by-1-foot screens, each se
 
 the trough, then pumped beer from the maturation tank through the hops and back into the
 maturation tank. However, they discovered rectangles make poor pressure vessels, and the
-coffin couldn’t hold more than five pounds per square inch. Although it didn’t work, it was
+coffin couldn’t hold more than 2.3 kg per square inch. Although it didn’t work, it was
 another step toward the method Schlafly uses today, developed about the same time as Sierra
 Nevada Brewing’s “torpedo,” although neither brewery knew about the other’s experiments.
 
 After the “hop coffin” at the Saint Louis Brewery proved unsatisfactory it was set to the
 side and ended up being stolen.
 
-Schlafly later converted two seven-barrel fermentation vessels into the “hop rockets” used
+Schlafly later converted two 8.2-hectolitre fermentation vessels into the “hop rockets” used
 to make its Dry Hopped American Pale Ale, fitting the cones with small lauter tun plates and
 replacing the CIP (clean in place) ball, a part used to clean the tanks, with a slotted tube that
-extends into the hop bed. Brewers put four mini-bales, totaling 52 pounds of whole hops, in
-one vessel and circulate beer from a 200-barrel tank through the hop rocket for one week.
+extends into the hop bed. Brewers put four mini-bales, totaling 24 kg of whole hops, in
+one vessel and circulate beer from a 230-hectolitre tank through the hop rocket for one week.
 
 The brewery also tested dry hopping the popular beer with pellets, but in-house objections
 quickly blunted that. “We got an outcry from the people making the beer, ‘It’s different.’ We did
@@ -7026,7 +7024,7 @@ The method is much simpler when Schlafly makes a batch on a smaller scale. Early
 Jared Williamson, a shift brewer, dry hopped a batch of pale ale to be served only at
 Bottleworks. “After 36 hours of primary fermentation the beer was within 1° Plato of its limit,
 at which point I dumped yeast off of the cone, dropped (Amarillo) hop pellets through the PRV
-port on top of the tank, and bunged the tank,” he explained. After pressure built to 14 pounds
+port on top of the tank, and bunged the tank,” he explained. After pressure built to 6.4 kg
 per square inch and the beer was diacetyl negative, he crashed the temperature. “I periodically
 dumped hops off the cone as they settled out.”
 
@@ -7084,7 +7082,7 @@ carboy at a home brewery, works well. There are plenty of other factors that can
 ### Form
 
 In the first part of the study at Oregon State, Wolfe dry hopped beers with both pellets and
-whole hops under cold conditions, 32° F (0° C), then had a sensory panel evaluate them for
+whole hops under cold conditions, 0 °C, then had a sensory panel evaluate them for
 overall hop impression after one day of dry hopping and after seven. He also analyzed the
 beers using gas chromatography. Pellet aroma was consistently rated as more intense than
 whole cone aroma by the panelists. The sum of the aroma peaks recorded on the GC confirmed
@@ -7131,16 +7129,16 @@ control over just what gets extracted.
 Brewers produce excellent beers dry hopped at a wide range of temperatures. The brewers
 on the panel at CBC in Chicago all dry hop “warm” but nonetheless differently.
 
-- Stone Brewing dry hops at 62° F (17° C). “It’s yeast based,” Steele said. Stone circulates
+- Stone Brewing dry hops at 17 °C. “It’s yeast based,” Steele said. Stone circulates
 
 its beer three times during the process, allowing the beer to finish fermentation and create
 some carbon dioxide before the tank is crash cooled.
-- Lagunitas Brewing conducts a diacetyl rest at 70° F (21° C) for its highly flocculent
+- Lagunitas Brewing conducts a diacetyl rest at 21 °C for its highly flocculent
 
 English ale yeast and dry hops at the same temperature. Marshall said most of the yeast
 drops during that diacetyl rest and is removed before hops are added.
-- New Belgium dry hops at 12° C (about 54° F) so that yeast is still active.
-- Sierra Nevada begins dry hopping with whole hops in bags at 68° F (20° C), starting the
+- New Belgium dry hops at 12 °C so that yeast is still active.
+- Sierra Nevada begins dry hopping with whole hops in bags at 20 °C, starting the
 
 process when nearly fermented beer is 1-1.5 °P above terminal gravity. “It’s critical to
 have that extract left (and yeast) because even when you purge the tank with CO2 there
@@ -7150,8 +7148,7 @@ In contrast, Boston Beer dry hops Samuel Adams Boston Lager inline as it is tran
 from a fermentation tank to a lagering tank after mixing hops in with cold, de-aerated water to
 create the slurry (page 226).
 
-As a data point, one dry hop experiment at OSU included very warm extraction, 77° F (25°
-C), over a short period of time. Wolfe used both cones and pellets agitated during extraction.
+As a data point, one dry hop experiment at OSU included very warm extraction, 25 °C, over a short period of time. Wolfe used both cones and pellets agitated during extraction.
 
 ---
 
@@ -7168,20 +7165,19 @@ way in the spring of 2012.
 
 Again, from Chicago:
 
-- Stone uses between one-third and 1¼ pounds per barrel for dry hopping, based in part on
+- Stone uses between one-third and 4.8 g/L for dry hopping, based in part on
 
-the starting gravity of a batch. Most beers include one-half to one pound.
-- Lagunitas additions average between one-half pound and 1½ pounds per barrel,
+the starting gravity of a batch. Most beers include 230 to 450 g.
+- Lagunitas additions average between 1.9 and 5.8 g/L,
 
-depending on the brand. “There’s a saturation constant,” Marshall said. “If you do half a
-pound per barrel you get more bang for your buck than if you do one or two. More doesn’t
+depending on the brand. “There’s a saturation constant,” Marshall said. “If you do 1.9 g/L
+you get more bang for your buck than if you do 3.9 or 7.7. More doesn’t
 give you more.” Steele agreed the result is not linear. The experiment by Rock Bottom
 Breweries (pp. 201-202) also indicated diminishing returns when comparing additions of
-one-half pound and one pound per barrel.
+1.9 and 3.9 g/L.
 - “There’s a ceiling for your method and variety (of hops),” Bouckaert said. New Belgium
 
-found that ceiling at 35 kilograms in 100 hectoliters (comparable to about nine-tenths of a
-pound per barrel).
+found that ceiling at 35 kilograms in 100 hectolitres.
 
 Chapter 10 includes more examples.
 
@@ -7282,50 +7278,50 @@ a ladder. Safety was an issue. Bouckaert said bees could be as unpleasant in sum
 was in winter. The brewery experimented with a variety of other processes before settling on a
 slurry method similar to one used by breweries both large and small.
 
-New Belgium had a 30-hectoliter (approximately 25-barrel) mixing tank specially built. It
-has a stirring arm and a blending pump. Brewers cool beer to 12° C (about 54° F) after
+New Belgium had a 30-hectoliter mixing tank specially built. It
+has a stirring arm and a blending pump. Brewers cool beer to 12 °C after
 fermentation and a diacetyl rest, centrifuge it, and hook up the mixing tank. They blend hops
-with 20° C (68° F) de-aerated water. The slurry is ready after one hour and is transferred into
+with 20 °C de-aerated water. The slurry is ready after one hour and is transferred into
 the beer.
 
 They drain off spent hops every 12 hours, transfer beer after 48 hours, centrifuge again for
-hop removal, and chill it to -1° C (30° F).
+hop removal, and chill it to -1 °C.
 
-Stone Brewing added a similar 30-barrel mixing tank in 2011, also fabricated at Paul
+Stone Brewing added a similar 35-hectolitre mixing tank in 2011, also fabricated at Paul
 Mueller Company in Missouri. It became the primary slurry tank, although Stone still uses the
-old 3.4-barrel grundy in one fermentation cellar.
+old 4-hectolitre grundy in one fermentation cellar.
 
 “I had no idea these guys were doing this much dry hopping,” said Steele, who went to
-work at Stone in 2006. Stone brewed 69,000 barrels in 2007 and almost 150,000 in 2011,
+work at Stone in 2006. Stone brewed 81,000 hectolitres in 2007 and almost 150,000 in 2011,
 about 60 percent of that dry hopped.
 
 “It was a very sound method. We liked the results,” Steele said. “We realized as we
 continued to grow this wasn’t the best way to do this. It is a very labor-intensive method. When
 you are doing a dry hop every day that’s not reasonable.”
 
-Brewers set up a circulation loop that starts from the racking port of a 400-barrel tank
-(effectively holding 360 barrels), runs into the grundy, then out of the bottom of the grundy and
+Brewers set up a circulation loop that starts from the racking port of a 470-hectolitre tank
+(effectively holding 420 hectolitres), runs into the grundy, then out of the bottom of the grundy and
 back into the bottom of the fermentation vessel. Previously, a brewer would put a funnel into
-the top of the grundy and begin adding hops, between 100 and 400 pounds. It took half a day to
+the top of the grundy and begin adding hops, between 45 and 180 kg. It took half a day to
 dry hop Ruination, a double IPA.
 
 The new system operates much as at New Belgium, although the other variables (hopping
-rates, temperature, and residence time) are all different. Hops are added all at once to the 30-
-barrel tank, agitated to create a slurry, and then transferred into the fermentation vessel. It is
+rates, temperature, and residence time) are all different. Hops are added all at once to the 35-
+hectolitre tank, agitated to create a slurry, and then transferred into the fermentation vessel. It is
 simpler, less labor intensive, takes less time, and had the advantage of being a closed system,
 reducing microbial and oxidation risks.7
 
 O’Fallon Brewing in Missouri uses a simpler slurry method on a much smaller scale. Head
-brewer Brian Owens adds pellets and warm water to a one-half-barrel yeast brink, blending in
+brewer Brian Owens adds pellets and warm water to a 59-litre yeast brink, blending in
 
 ---
 
 <!-- source_pdf_page: 184 -->
 
-one pound of hops for each gallon of water. He blows the mixture in through a standpipe,
-dispersing it into the fermentation vessel. He adds 11 pounds of hops to a 15-barrel vessel
-(effective size, 14 barrels), and doses 30-barrel tanks twice. O’Fallon’s 5 Day IPA spends five
-days on dry hops at 68° F (20° C).
+120 g of hops for each litre of water. He blows the mixture in through a standpipe,
+dispersing it into the fermentation vessel. He adds 5 kg of hops to a 18-hectolitre vessel
+(effective size, 16 hectolitres), and doses 35-hectolitre tanks twice. O’Fallon’s 5 Day IPA spends five
+days on dry hops at 20 °C.
 
 ## Hop Cannon
 
@@ -7338,7 +7334,7 @@ in Chicago.
 ### Hop Cannon Primer
 
 Tank considerations
-- The receiving tank must have at least a 2-inch vent or blowoff port to blow the hops into.
+- The receiving tank must have at least a 5.1-cm vent or blowoff port to blow the hops into.
 - Long-radius 90° elbows are preferred to standard short-radius 90° elbows.
 - There is a benefit to have an oversized vent pipe that reduces down at the valve.
 - Venting off of the delivery gas can be achieved through the sprayball piping.
@@ -7357,11 +7353,11 @@ receiving hops must be vented off continuously.
 - Slowly open the bottom outlet to introduce the hop pellets.
 - As the hopper becomes less full, the bottom outlet can be opened more.
 - It is better to use a higher number of smaller shots at first, and as experience is gained, increase the size gradually.
-- Lagunitas can deliver 88 pounds in seven to eight shots (at 80 psi).
-- 10- to 12.5-pound shots occur in 3 seconds.
+- Lagunitas can deliver 40 kg in seven to eight shots (at 5.5 bar).
+- 10- to 5.7-kg shots occur in 3 seconds.
 - A pleasant, characteristic “rattling” sound occurs with each shot.
 - Most of the time is spent waiting on repressurizing of the vessel.
-- An experienced operator can deliver 88 pounds in 30 minutes.
+- An experienced operator can deliver 40 kg in 30 minutes.
 
 Storage of vessel
 - Best to store the dry-hop vessel under CO2 pressure, which will prevent oils from oxidizing and ingress of microbes.
@@ -7371,20 +7367,20 @@ Storage of vessel
 Courtesy of Jeremy Marshall, Lagunitas Brewing Company
 
 Lagunitas decided to try the method after watching a grain delivery, which uses a pneumatic
-device to propel grain into a tall silo. The cannon is not large. It holds about two 44-pound
+device to propel grain into a tall silo. The cannon is not large. It holds about two 20-kg
 boxes of pellets so must be reloaded and repurged multiple times to dry hop larger tanks. It
 
 ---
 
 <!-- source_pdf_page: 185 -->
 
-proved scalable as Lagunitas added 500-barrel fermentation tanks and its production grew
-from 72,000 barrels in 2009 to 106,000 in 2010 and 165,000 in 2011. Lagunitas dry hops 90
+proved scalable as Lagunitas added 590-hectolitre fermentation tanks and its production grew
+from 84,000 hectolitres in 2009 to 106,000 in 2010 and 165,000 in 2011. Lagunitas dry hops 90
 percent of its beers.
 
 “It’s worked with taller and taller tanks,” Marshall said. “It’s essentially a sparging
-process, the hops spreading out and hitting the head space. Three hundred to five hundred
-barrels, we will get the same character. If anything, more aroma, more extraction. The only
+process, the hops spreading out and hitting the head space. Three hundred and fifty to six hundred
+hectolitres, we will get the same character. If anything, more aroma, more extraction. The only
 thing different is the height. The hop particles rain down.”
 
 Marshall listed several advantages to the system: safety, relative ease of execution,
@@ -7409,7 +7405,7 @@ Hop cannon at Russian River Brewing. Courtesy of Russian River Brewing.
 ## Torpedo
 
 Sierra Nevada Brewing uses two different methods to dry hop with cones. One is to attach
-eight-pound bags of hops, which will be more than four times heavier after absorbing beer, to
+3.6-kg bags of hops, which will be more than four times heavier after absorbing beer, to
 rings that have been welded to the sides of tanks. Celebration, BigFoot, and other small-run
 beers will soak for up to two weeks. They are then transferred into another tank. “That was
 really starting to tie up my infrastructure, particularly when we were going to start doing a new
@@ -7419,9 +7415,9 @@ Sierra Nevada founder Ken Grossman said he had started thinking about a system t
 forced beer through a bed of hops back in the mid-1990s. That turned out 10 years later to be
 what Sierra Nevada calls a torpedo. It looks like a torpedo turned on its side. The brewery
 soon needed more than a dozen to keep up with demand for Torpedo Extra IPA and retrofitted
-even its 800-barrel tanks to work with a series of torpedoes linked together (color plate 8).
+even its 940-hectolitre tanks to work with a series of torpedoes linked together (color plate 8).
 
-A torpedo can hold up to 80 pounds of hops, although Dresler said he prefers the results
+A torpedo can hold up to 36 kg of hops, although Dresler said he prefers the results
 when it isn’t packed tight. It is purged with CO2, then beer is circulated from the bottom of the
 cone to the bottom of the torpedo, up through the torpedo and back into the tank. The beer,
 freshly dosed with hop oils, passes through a tube within a tube (called a periscope) so that it
@@ -7430,7 +7426,7 @@ won’t retain any more hop oil.
 
 The concept is brilliantly simple, although the execution is a bit more complicated. Dresler
 said results vary dramatically based upon temperature and flow rates. Torpedo Extra IPA
-circulates for five days, beginning at 68° F (20° C) and finishing cold, extracting all the oils
+circulates for five days, beginning at 20 °C and finishing cold, extracting all the oils
 Sierra Nevada wants out of the hops much more quickly than with the passive bag system.
 
 Speaking at the 2008 Craft Brewers Conference, Nielsen emphasized the effects of
@@ -7500,7 +7496,7 @@ Projects,” presentation at Craft Brewers Conference, San Diego, 2012.
 7. The ROLEC DryHOPNIK is basically a slurry system, using a shear pump to wet mill
 
 hops, which are added to a dosing tank that feeds the milling chamber. It is a closed system
-and portable, designed to pump more than 500 pounds of hops in an hour.
+and portable, designed to pump more than 230 kg of hops in an hour.
 
 ---
 
@@ -7511,7 +7507,7 @@ and portable, designed to pump more than 500 pounds of hops in an hour.
 *Taking responsibility for hop quality*
 
 The Boston Beer Company dry hops Samuel Adams Boston Lager with Hallertau Mittelfrüh
-added as a slurry, completing a cold chain that begins more than 4,000 miles away on a farm in
+added as a slurry, completing a cold chain that begins more than 6,400 km away on a farm in
 Bavaria. “Those hops are treated reverently,” said David Grinnell, vice president of brewing.
 
 Getting the most out of hops requires a certain investment, although few breweries have the
@@ -7546,7 +7542,7 @@ sometimes until springtime,” Grinnell said.
 custom process, creating Type 90 pellets on a Type 45 line. When they otherwise produce
 Type 45 pellets, those are concentrated, including only enriched hop powder and not much
 of the vegetative matter that is part of a Type 90 pellet. They mill the Samuel Adams
-pellets at the same super-cold temperature as Type 45s, at about -31° F (-35° C), but
+pellets at the same super-cold temperature as Type 45s, at about -35 °C, but
 retain almost all the hop material. The process leaves more lupulin glands intact, removes
 some coarse matter, and results in a finer particle size, which disperses better in the dry
 hop slurry and separates more easily in centrifuging.
@@ -7715,14 +7711,14 @@ and/or CO2.
 Peacock provided brewers concise guidelines during a 2010 presentation at the Craft
 Brewers Conference:
 
-- Unopened pellets retain most of the alpha for five years when frozen (26° F or -3° C), two
+- Unopened pellets retain most of the alpha for five years when frozen (-3 °C or -3° C), two
 
-to three years when refrigerated (40° F or 4.4° C). Aroma changes will occur more
-quickly, but at 26° F aroma remains relatively stable.
+to three years when refrigerated (4 °C or 4.4° C). Aroma changes will occur more
+quickly, but at -3 °C aroma remains relatively stable.
 - Because unprotected pellets store more poorly than cones, opened foils must be used
 
-quickly. Cascade pellets should be good for two weeks at 50° F (10° C), and five weeks
-at 26° F (-3° C), longer if colder. Resealing the bag does not provide the same protection
+quickly. Cascade pellets should be good for two weeks at 10 °C, and five weeks
+at -3 °C, longer if colder. Resealing the bag does not provide the same protection
 as the original package but will help retain aroma.
 Peacock also warned brewers about deterioration that may occur during transit, citing a
 2002 article in Brauwelt International by Adrian Forster. Some key points:
@@ -7732,14 +7728,13 @@ Peacock also warned brewers about deterioration that may occur during transit, c
 smell, particularly at higher temperatures. The formation of gas may cause the package to
 balloon, enough that it will burst. Even when packages don’t rupture, the contents may be
 damaged.
-- Warm conditions over 77° to 86° F (25° to 30° C) should be avoided.
+- Warm conditions over 77° to 30 °C (25° to 30° C) should be avoided.
 - The German study, of course, included concerns about overseas transportation, but the
 
 temperature within a truck standing in the sun (or sitting over a weekend) may also easily
-increase above 95° to 122° F (35° to 50° C). The research determined that temperatures
-77° to 86° F (25° to 30° C) were acceptable if they lasted less than five days; 86° to 95°
-F (30° to 35° C) for less than two days; that 95° to 104° F (35° to 40° C) was dangerous;
-and above 104° F (40° C) unacceptable.1
+increase above 95° to 50 °C (35° to 50° C). The research determined that temperatures
+77° to 30 °C (25° to 30° C) were acceptable if they lasted less than five days; 86° to 35 °C (30° to 35° C) for less than two days; that 95° to 40 °C (35° to 40° C) was dangerous;
+and above 40 °C unacceptable.1
 
 Brewers may easily spot the problem if foils arrive ruptured or swollen. However, they
 usually deflate as they cool, so the damage may not be obvious. Examining the contents of each
@@ -7799,7 +7794,7 @@ it the name “light struck flavor” in 1875, and in the 1960s Yoshiro Kuroiwa 
 Japan determined 3-methyl-2-butene-1-thiol was the main source. MBT, in fact, closely
 resembles the odor that skunks spray and is derived from photodecomposition of isohumulones
 in the presence of a photosensitizer, riboflavin. It has a very low threshold of detection and
-occurs quickly in direct sunlight so may be perceived by the end of a pint consumed outdoors
+occurs quickly in direct sunlight so may be perceived by the end of 0.47 litres consumed outdoors
 on a sunny afternoon.
 
 Kuroiwa’s work showed the blue part of the visible spectrum is most efficient in generating
@@ -7839,8 +7834,7 @@ the results in his doctoral thesis, Toru Kishimoto suggested that esters are syn
 the fermentation process from the substrate short-chain acids, which were generated by the
 oxidative degradations of humulone or lupulone.
 
-The Japanese researchers brewed four beers, two with hops aged for 30 days at 104° F
-(40° C) and two with hops stored at 39° F (4° C). Two were dosed at the beginning of the boil,
+The Japanese researchers brewed four beers, two with hops aged for 30 days at 40 °C and two with hops stored at 4 °C. Two were dosed at the beginning of the boil,
 one with a fresh hop and one with an aged one. Two were hopped for aroma after the wort
 cooled, again with a fresh hop and an aged one.
 
@@ -8060,21 +8054,21 @@ next and one region to the next. “I grow Centennial in my yard. In the back of
 the front of the house it is entirely different,” he said. “So how do I make Racer taste the same
 when hops change? That’s what makes it craft.”
 
-He hauled out a recipe for a 17-barrel batch from 2005 to illustrate, the hop addition made
+He hauled out a recipe for a 20-hectolitre batch from 2005 to illustrate, the hop addition made
 during and after a 90-minute boil:
 
-90 minutes: 2.5 pounds each of Chinook and Cascade
-60 minutes: 2.5 pounds each of Cascade and Centennial
-Whirlpool: 5 pounds of Cascade and one pound of Amarillo
-Dry hop in primary: 4 pounds of Cascade and 4 pounds of CTZ
-Hop baby (later added to finished tank): 1 pound each of Cascade, Centennial, Amarillo,
-and CTZ. The “hop babies” are basically hop tea vessels, and Bear Republic uses eight 30-
+90 minutes: 1.1 kg each of Chinook and Cascade
+60 minutes: 1.1 kg each of Cascade and Centennial
+Whirlpool: 2.3 kg of Cascade and 450 g of Amarillo
+Dry hop in primary: 1.8 kg of Cascade and 1.8 kg of CTZ
+Hop baby (later added to finished tank): 450 g each of Cascade, Centennial, Amarillo,
+and CTZ. The “hop babies” are basically hop tea vessels, and Bear Republic uses eight 35-
 
 ---
 
 <!-- source_pdf_page: 199 -->
 
-barrel babies for dry hopping in its production brewery, each serving a 300-barrel tank.
+hectolitre babies for dry hopping in its production brewery, each serving a 350-hectolitre tank.
 
 “There are multiple ways to change the perception in your mouth,” Norgrove said. “My goal
 is to capture it for the whole beer, from start to finish. How do I make this excite me from
@@ -8139,17 +8133,17 @@ Grain bill:
 3% acidulated malt (German)
 
 Mashing:
-Single-infusion mash at 154° F (68° C)
+Single-infusion mash at 68 °C
 
 Hops:
 90 minutes (5 to 10 IBU)
 30 minutes (20 IBU)
 0 minutes (10 IBU)
-Dry hop, 1 week at 68° F (20° C), variable
+Dry hop, 1 week at 20 °C, variable
 
 Boiling: 90 minutes
 Yeast: California Ale
-Fermentation: 68° F (20° C)
+Fermentation: 20 °C
 Packaging: Target 2.5 volumes CO2 (5 g/L)
 
 Instructions: Use the same malt bill each time. Keep the dry hop, final hop addition, and
@@ -8169,7 +8163,7 @@ always exact.
 
 Fact is, although the first hop addition in the recipe from Meantime will add about 12 IBUs
 the recipe calls for five kilograms because hops come in that size package. The quantity
-converts conveniently to 1.5 ounces per barrel purely by chance, and works best for a brewery
+converts conveniently to 0.36 g/L purely by chance, and works best for a brewery
 that, like Meantime, expects 35 percent utilization on a 75-minute addition.
 
 ---
@@ -8183,9 +8177,8 @@ yields different results, dependent on water chemistry, wort pH, boiling methods
 analytics.”
 
 As those who use the metric system will point out, conversions are more straightforward
-when they don’t include mixing barrels, gallons and ounces. Key ones to remember are that
-100 grams per hectoliter (1 g/L) equals about 85 grams per barrel, which is comparable to
-three ounces. One pound per barrel is equivalent to 3.85 grams per liter.
+when they don’t include mixing barrels, gallons and ounces. The one to remember is that
+100 grams per hectolitre is the same as 1 gram per litre.
 
 Recipes change all the time at commercial breweries. John Keeling said that Fuller’s in
 London will make adjustments during the course of a brewing year based on input from its
@@ -8243,10 +8236,10 @@ Grain bill:
 6% crystal malt (120 EBC)
 
 Mashing:
-50° C (122° F), 15 minutes
-63° C (145° F), 45 minutes
-72° C (162° F), 20 minutes
-78° C (172° F), 5 minutes
+50 °C, 15 minutes
+63 °C, 45 minutes
+72 °C, 20 minutes
+78 °C, 5 minutes
 
 Hops:
 Challenger, beginning of boil, 300 g/hL
@@ -8257,8 +8250,7 @@ each
 Water: Hard
 Boiling: 75 minutes, hard boil
 Yeast: Neutral. Highly attenuative. Flocculent
-Fermentation: Main: Maximum temperature 26° C (79° F). Lagering: 4 weeks at 10° C (50°
-F)
+Fermentation: Main: Maximum temperature 26 °C. Lagering: 4 weeks at 10 °C
 Packaging: Refermentation in the bottle. 2.5 volumes CO2 (5g/L)
 
 ## Dogfish Head Craft Brewery
@@ -8306,17 +8298,16 @@ Simcoe, heat off or whirlpool (17 IBU)
 
 Mashing:
 Treat your water as you would for a Burton-style IPA. Adjust your water temperature to hit
-156° F (69° C). Add the 2-row first to build a base, then the remainder of the grains. With the
-use of maize, a 113° F (45° C) protein rest may be desired if you have the capability to raise to
-conversion temperature. Hold for 30 minutes. Sparge at 169° F (76° C) with a slow runoff rate
+69 °C. Add the 2-row first to build a base, then the remainder of the grains. With the
+use of maize, a 45 °C protein rest may be desired if you have the capability to raise to
+conversion temperature. Hold for 30 minutes. Sparge at 76 °C with a slow runoff rate
 due to the maize and specialty malts.
 
 Boiling: 60 minutes
 Yeast: California Ale or another low-ester-producing yeast
-Fermentation: Cool to 60° F (15.5° C) and hold cooler if possible during ferment at 66° F
-(19° C). Rack to secondary and dry hop when fermentation is complete, and hold for 21 days.
+Fermentation: Cool to 15.5 °C and hold cooler if possible during ferment at 19 °C. Rack to secondary and dry hop when fermentation is complete, and hold for 21 days.
 
-Dry hops: 0.5 pound/barrel of Vanguard for 21 days
+Dry hops: 1.9 g/L of Vanguard for 21 days
 Packaging: 2.6-2.7 volumes CO2 (5.2-5.4 g/L).
 
 ---
@@ -8350,7 +8341,7 @@ that makes you close your eyes and think of our forests and fields.”
 
 New Zealand is not among the largest dozen hop growing regions, but mostly because of
 demand for hops with special aromas, New Zealand Hops established a five-year program in
-2012 that would boost production by almost 30 percent. In addition to adding acres, farmers
+2012 that would boost production by almost 30 percent. In addition to adding hectares, farmers
 have begun to replace higher alpha hops with special varieties such as Nelson Sauvin,
 Motueka, and Wakatu.
 
@@ -8383,7 +8374,7 @@ In percentages
 5% Torrified wheat
 
 Mashing:
-153-154° F (67-68° C) single infusion
+67–68 °C single infusion
 
 Hops:
 Pacific Jade, 60 minutes (7-8 IBU)
@@ -8397,8 +8388,8 @@ low alpha/high oil variety in short supply.)
 
 Boiling: 60 minutes
 Yeast: Wyeast 1272
-Fermentation: Pitch at 17° C (63° F), ferment at 19° C (66° F), making sure it does not rise
-above 21° C (70° F). Fermentation should take 4-7 days. Reduce to 4° C (39° F) during days
+Fermentation: Pitch at 17 °C, ferment at 19 °C, making sure it does not rise
+above 21 °C. Fermentation should take 4-7 days. Reduce to 4 °C during days
 5-6. Hold, make second dryhop addition, do not dry hop for more than 7 days.
 Dry hops: Blend Wait-ti, Motueka, and Pacific Jade in equal parts, 5 g/L. Add half when beer
 is near target gravity. Add half after racking beer off yeast into secondary.
@@ -8461,7 +8452,7 @@ to increase finish Ca). I’m not big on overly Burtonized water. We start with 
 Acidify mash to 5.4 with phosphoric or lactic.
 
 Mashing:
-Mash at low temp 145° F (63° C) for 45 to 60 minutes and step up to 155° F (68° C) to finish
+Mash at low temp 63 °C for 45 to 60 minutes and step up to 68 °C to finish
 conversion. You might add dextrose (up to 5%) to get to gravity and/or to aid in attenuation if
 needed. The idea is to have a lean body, not to hide hop character, and to help accentuate the
 hop profile.
@@ -8488,12 +8479,11 @@ We hit it in the whirlpool with another charge of Cascade and Centennial (equal 
 On paper this looks like a 40 IBU charge but, again, the utilization of alpha on a brew like this
 is low overall.
 
-We ferment UJ with our house ale yeast cooling in at 63° F (17° C) and setting the
-fermentation at 66° F (19° C). Our house ale strain is closest to London ale or other English-
-style (fruity/soft) yeast. When the brew reaches 6 °P (1.024) we turn the fermenter up to 70° F
-(21° C) for VDK (diacetyl) reduction and for the dry hop additions.
+We ferment UJ with our house ale yeast cooling in at 17 °C and setting the
+fermentation at 19 °C. Our house ale strain is closest to London ale or other English-
+style (fruity/soft) yeast. When the brew reaches 6 °P (1.024) we turn the fermenter up to 21 °C for VDK (diacetyl) reduction and for the dry hop additions.
 
-We dry hop the beer two times at about one pound per barrel. Once at 0.5-1 °P (0.002 to
+We dry hop the beer two times at about 3.9 g/L. Once at 0.5-1 °P (0.002 to
 0.004) before the end of fermentation (about day 5) and again three days later while the beer is
 still warm (prior to crash cooling the beer). We use a blend of Centennial and Cascade, with
 lesser amounts of Simcoe and Amarillo for each dry hop. I’m a firm believer in short contact
@@ -8554,13 +8544,13 @@ Mash and sparge liquors at rates to produce wort capable of producing beer at sa
 This brew is not parti-gyled.
 
 Hops:
-Golding, start of boil. Approximately one pound per barrel to achieve final beer IBU.
-Golding, late copper with short boil to mix, one-quarter pound per barrel
+Golding, start of boil. Approximately 3.9 g/L to achieve final beer IBU.
+Golding, late copper with short boil to mix, 0.97 g/L
 
 Boiling: 60 minutes, vigorous, with evaporation rate a minimum of 7 percent
 Yeast: Fuller’s own ale strain
-Pitching rate: Approximately 4 pounds per barrel, to achieve more than 15 million cells/mL
-Fermentation: Pitch at 62° F (17° C), allow to rise to 68° F (20° C).
+Pitching rate: Approximately 15 g/L, to achieve more than 15 million cells/mL
+Fermentation: Pitch at 17 °C, allow to rise to 20 °C.
 Packaging: Bottle conditioned. 2.3 volumes CO2 at start, 2.6 after conditioning (4.6 g/L and
 5.2 g/L)
 
@@ -8620,17 +8610,17 @@ Grain bill:
 
 <!-- source_pdf_page: 210 -->
 
-Mash-in 50° C (122° F), 20 minutes, pH of mash: 5.3 to 5.5, adjust with acid if necessary
-Heat to 64° C (147° F) in 15 minutes, 1° C per minute
-Saccharification 64° C (147° F), 45 minutes
-Heat to 70° C (158° F) in 15 minutes, 1° C per minute
-Saccharification 70° C (158° F), 15 minutes, hold at 70° C (158° F) until iodine test is
+Mash-in 50 °C, 20 minutes, pH of mash: 5.3 to 5.5, adjust with acid if necessary
+Heat to 64 °C in 15 minutes, 1° C per minute
+Saccharification 64 °C, 45 minutes
+Heat to 70 °C in 15 minutes, 1° C per minute
+Saccharification 70 °C, 15 minutes, hold at 70 °C until iodine test is
 negative
-Heat to 78° C (172° F) in 10 minutes, 1° C per minute
-Mash-off 78° C (172° F), 15 minutes
+Heat to 78 °C in 10 minutes, 1° C per minute
+Mash-off 78 °C, 15 minutes
 b) Straight infusion
-Mash-in 68° C (154° F), pH of mash: 5.2 to 5.4
-Saccharification 65° C (149° F), 60 minutes
+Mash-in 68 °C, pH of mash: 5.2 to 5.4
+Saccharification 65 °C, 60 minutes
 
 Hops:
 Columbus, mash (10 IBU)
@@ -8650,10 +8640,10 @@ Nelson Sauvin, whirlpool
 
 Boil: 60 minutes
 Yeast: American Ale, 15 million cells/mL
-Fermentation: 72° F (22° C)
+Fermentation: 22 °C
 
 Dry hops:
-Begin as soon after cropping yeast as possible, 14-16° C (57-61° F).
+Begin as soon after cropping yeast as possible, 14–16 °C.
 Length based on preference
 Add 50 grams per hectoliter:
 Simcoe
@@ -8667,8 +8657,8 @@ Pacific Gem
 Vanguard
 
 Secondary:
-After dry hopping, beer is cooled to 8° C (46° F) for 5-7 days. The temperature is reduced to
-0° C (preferably as low as -1.5° C; 29-32° F). The cooling rate is not critical, but the beer
+After dry hopping, beer is cooled to 8 °C for 5-7 days. The temperature is reduced to
+0° C (preferably as low as -1.5° C; -2 to -36 °C). The cooling rate is not critical, but the beer
 must be lagered at the low temperature until clarity and flavor is satisfactory.
 Packaging: Do not filter. Target 2.5 volumes (5 g/L).
 
@@ -8677,7 +8667,7 @@ Packaging: Do not filter. Target 2.5 volumes (5 g/L).
 ### Albuquerque, New Mexico
 
 The good news for Marble Brewery when it opened in 2008 was Marble India Pale Ale
-became an instant hit, and the Albuquerque brewery sold nearly 5,000 barrels of beer in its
+became an instant hit, and the Albuquerque brewery sold nearly 5,900 hectolitres of beer in its
 first full calendar year of operation. The bad news was that hops became much more expensive
 in 2008 than they were in 2007, and contracts for future deliveries became more important.
 
@@ -8720,28 +8710,28 @@ Grain bill:
 5% 120° L English crystal malt
 
 Mashing:
-Add 3.0 oz./bbl CaSO4 and 2.0 oz./bbl CaCl to mash liquor
+Add 0.72 g/L CaSO4 and 0.48 g/L CaCl to mash liquor
 
-Infusion mash at 150° F (65.5° C)
-Sparge at 164° F (73° C)
+Infusion mash at 65.5 °C
+Sparge at 73 °C
 
 Hops:
 CTZ, 75 minutes (40 IBU)
-Citra, 10 minutes, 0.13 lb./bbl
-Simcoe, 10 minutes, 0.13 lb./bbl
-Cascade, 10 minutes, 0.25 lb./bbl
-Cascade, 0 minutes, 0.5 lb./bbl
+Citra, 10 minutes, 0.5 g/L
+Simcoe, 10 minutes, 0.5 g/L
+Cascade, 10 minutes, 0.97 g/L
+Cascade, 0 minutes, 1.9 g/L
 
 Boiling: 90 minutes
 Yeast: American Ale, 0.75 million cells per milliliter per Plato
-Fermentation: Ferment at 68° F (20° C) and let ride to 74° F (23° C) when two-thirds of
+Fermentation: Ferment at 20 °C and let ride to 23 °C when two-thirds of
 fermentation is complete.
 
 Dry hops:
-Cascade 1 lb./bbl
-Simcoe 0.15 lb./bbl
-Citra 0.15 lb./bbl
-Dry hop at 65° F (18° C), crash cool on third day for two days, then transfer.
+Cascade 3.9 g/L
+Simcoe 0.58 g/L
+Citra 0.58 g/L
+Dry hop at 18 °C, crash cool on third day for two days, then transfer.
 Packaging: 2.5 volumes CO2 (5 g/L)
 
 ## Meantime Brewing
@@ -8754,7 +8744,7 @@ Hook said. “If you grow up a fan of the Charlton Football Club, your ultimate 
 back and play for that club.”
 
 Appropriately, 90 percent of the sales of its London Lager are in the East End, and all the
-ingredients, other than yeast, come from within 100 miles of the brewery. The hops are
+ingredients, other than yeast, come from within 160 km of the brewery. The hops are
 Golding and Fuggle, varieties more often associated with fruitier ales. Before providing this
 
 ---
@@ -8790,7 +8780,7 @@ Grain bill:
 31% Muntons Flagon pale ale malt
 
 Mashing:
-66° C (151° F)
+66 °C
 
 Hops:
 (All hops whole leaf)
@@ -8800,9 +8790,9 @@ Fuggle, 6.1 AA, 5 kg, whirlpool (5 IBU)
 Golding, 6.6 AA, 5 kg, cooling [hop back addition] (4 IBU)
 Fuggle, 6.1 AA, 5 kg, cooling [hop back addition] (4 IBU)
 
-Yeast and fermentation: Yeast 34/70, 12° C (54° F) for 10-14 days, and allow yeast to free
-rise to 15° C (59° F) about 1.5 °P before terminal gravity. Take a sample and force it warm to
-make certain diaceytl reduced. 5 days at 5° C. Chill to -1° C (34° F). Lager for 2 weeks.
+Yeast and fermentation: Yeast 34/70, 12 °C for 10-14 days, and allow yeast to free
+rise to 15 °C about 1.5 °P before terminal gravity. Take a sample and force it warm to
+make certain diaceytl reduced. 5 days at 5° C. Chill to -1 °C. Lager for 2 weeks.
 Packaging: 2.3-2.5 volumes CO2 (4.6-5 g/L)
 
 ---
@@ -8901,10 +8891,10 @@ is 30 minutes before the end of the boil,” said Hlavsa. After boil, Kout uses 
 minutes before chilling to fermentation temperatures.
 
 Yeast and fermentation: Kout uses the H yeast strain, purchased from Budweiser Budvar.
-“We pitch the yeast at 8° Celsius (46° F), but fermentation raises the temperature to 10.5 or
-even 11° Celsius (51-52° F),” said Hlavsa. “When fermentation is 60 percent complete, we
+“We pitch the yeast at 8° Celsius (8 °C), but fermentation raises the temperature to 10.5 or
+even 11° Celsius (11 to -47 °C),” said Hlavsa. “When fermentation is 60 percent complete, we
 transfer it to the lagering tanks, where it ripens for 60 to 90 days, sometimes up to 4 months.”
-Lagering is at 2° C (36° F).
+Lagering is at 2 °C.
 
 Tip: “It’s best to brew dark beer at night,” said Hlavsa, “because that way the darkness gets
 into the beer.”
@@ -8974,8 +8964,8 @@ Spalter Select, 5% AA, 15 minutes (2 IBU)
 
 Boiling: 90 minutes
 Yeast: Weihenstephan 34/70
-Fermentation: 9-10° C (48-50° F) until target reached, usually 7 to 8 days. Lager 2 to 3
-weeks at 3-4° C (37-39° F), then gradually drop temperature to -1° C (30° F) over 5 days and
+Fermentation: 9–10 °C until target reached, usually 7 to 8 days. Lager 2 to 3
+weeks at 3–4 °C, then gradually drop temperature to -1 °C over 5 days and
 hold. Total lagering time 5 to 6 weeks.
 Packaging: 2.5 volumes CO2 (5 g/L)
 
@@ -9057,8 +9047,8 @@ Nelson Sauvin, 0 minutes (6 IBU)
 
 Boiling: 60 minutes
 Yeast: 3 L/hL Schneider yeast from propagation tank. 0.5 L/hL Belgian yeast
-Fermentation: 7 days, beginning at 16° C (61° F), allow to rise to 22° C (72° F), reduce to
-12° C (54° F)
+Fermentation: 7 days, beginning at 16 °C, allow to rise to 22 °C, reduce to
+12 °C
 Bottling: Refermentation in the bottle, using speise (unfermented wort). 3.3 volumes CO2 (6.5
 g/L)
 
@@ -9110,7 +9100,7 @@ Grain bill:
 
 Mashing:
 Calcium 150 ppm, sulfate 300 ppm, chloride 30 ppm
-155° F (68° C)
+68 °C
 
 ---
 
@@ -9118,20 +9108,20 @@ Calcium 150 ppm, sulfate 300 ppm, chloride 30 ppm
 
 Hops:
 (Weights are wet, 8 times dry weight)
-Fresh picked wet Cascade, 100 minutes, 2 lbs./bbl
-Fresh picked wet Centennial, 100 minutes, 3 lbs./bbl
-Fresh picked wet Cascade, 20 minutes, 10 oz./bbl
-Fresh picked wet Centennial, 20 minutes, 10 oz./bbl
-Fresh picked wet Cascade, 0 minutes, 1 lb./bbl
-Fresh picked wet Centennial, 0 minutes, 1 lb./bbl
+Fresh picked wet Cascade, 100 minutes, 7.7 g/L
+Fresh picked wet Centennial, 100 minutes, 12 g/L
+Fresh picked wet Cascade, 20 minutes, 2.4 g/L
+Fresh picked wet Centennial, 20 minutes, 2.4 g/L
+Fresh picked wet Cascade, 0 minutes, 3.9 g/L
+Fresh picked wet Centennial, 0 minutes, 3.9 g/L
 
 Boiling: 100 minutes
 Yeast: California Ale
-Fermentation: Pitch at 62° F (17° C). Allow to rise to 68° F (20° C) and hold 7 days. Rack to
-secondary, hold at 68° F (20° C) for additional 5 days. Slowly crash chill to 38° F (3° C) on
+Fermentation: Pitch at 17 °C. Allow to rise to 20 °C and hold 7 days. Rack to
+secondary, hold at 20 °C for additional 5 days. Slowly crash chill to 3 °C on
 day 14 of fermentation (7 in primary, 7 in secondary).
 Packaging: Prime with fresh yeast (California Ale) at bottling, 2.5 volumes CO2 (5 g/L).
-Store at 65-68° F (18-20° C) for 10 days for bottle conditioning.
+Store at 18–20 °C for 10 days for bottle conditioning.
 
 ## Urban Chestnut Brewing
 
@@ -9184,12 +9174,12 @@ Grain bill:
 15% imported Munich malt
 
 Mashing:
-Mash-in at 131° F (55° C).
-Heat to 144° F (62° C).
+Mash-in at 55 °C.
+Heat to 62 °C.
 Rest for 45 minutes.
-Heat to 162° F (72° C).
+Heat to 72 °C.
 Rest for 45 minutes.
-Heat to 172° F (78° C).
+Heat to 78 °C.
 Transfer mash.
 Sparge three times, total sparge water volume to be evenly divided between the sparges.
 
@@ -9200,12 +9190,11 @@ Hallertau Mittelfrüh, 15 minutes (15 IBU)
 
 Boiling: 90 minutes
 Yeast: Weihenstephan 34/70 lager. Pitch 15 million cells/mL.
-Fermentation: Ferment at 59° F (15° C) until complete, usually 5-6 days. Cool to 30° F (-1°
-C), and mature for 3 weeks.
+Fermentation: Ferment at 15 °C until complete, usually 5-6 days. Cool to -1 °C, and mature for 3 weeks.
 
 Dry hops:
-Hallertau Mittelfrüh: 1 lb./bbl
-Hallertau Tradition: 1 lb./bbl
+Hallertau Mittelfrüh: 3.9 g/L
+Hallertau Tradition: 3.9 g/L
 
 ---
 
@@ -9253,8 +9242,8 @@ Grain bill:
 
 Mashing:
 Single decoction:
-Mash-in entire grist at 122° F (50° C), using a thin mash.
-Immediately raise to 144° F (62° C).
+Mash-in entire grist at 50 °C, using a thin mash.
+Immediately raise to 62 °C.
 If you have a separate mash kettle:
 
 ---
@@ -9264,16 +9253,16 @@ If you have a separate mash kettle:
 Move 25% of the mash to the mash kettle.
 Hold for 10 minutes, then raise 2° C per minute to boil.
 Boil 1-3 minutes, then move back into the mash tun.
-This should bring the main entire mash up to 70-72° C (158-162° F).
-Hold at 70-72° C (158-162° F) for 15 minutes, then raise to 77° C (171° F).
+This should bring the main entire mash up to 70–72 °C.
+Hold at 70–72 °C for 15 minutes, then raise to 77 °C.
 If you do not have a separate mash kettle, but can move mash to and from lauter tun:
 Move 75% of the mash to the lauter tun, which should be preheated by foundation water.
 In the mash tun, hold the remaining 25% for 10 minutes; then raise 2° C per minute to boil.
 Boil 1-3 minutes, then pump the 75% remaining in lauter tun back into the mash tun.
-This should bring the main entire mash up to 70-72° C (158-162° F).
-Hold at 70-72° C (158-162° F) until iodine starch check passes, but for a minimum of 15
+This should bring the main entire mash up to 70–72 °C.
+Hold at 70–72 °C until iodine starch check passes, but for a minimum of 15
 minutes.
-Raise to 77° C (171° F) for mash-off, and send entire mash to lauter tun for lautering.
+Raise to 77 °C for mash-off, and send entire mash to lauter tun for lautering.
 
 Hops:
 Saaz, 60 minutes (5 IBU)
@@ -9289,12 +9278,11 @@ Boiling: Boil as long as necessary to achieve proper reduction in DMS precursors
 longer. Depending on the veracity of the boil and its capability to reduce DMS precursor, the
 length of boil usually is 65-90 minutes. Boiling longer than necessary will increase color and
 decrease flavor stability.
-Yeast: Weihenstephan 34/70, pitched at 15 million cells per milliliter at 10° C (50° F); aerate
+Yeast: Weihenstephan 34/70, pitched at 15 million cells per milliliter at 10 °C; aerate
 to 8 ppm O2.
 
-Fermentation: Ferment at 10° C (50° F) until 5 °P (1.020), then cool slowly (1° C/day) to 4°
-C (39° F). Hold at 4° C (39° F) until fermented and when diacetyl is no longer noticeable.
-Cool to 0° C (32° F) and hold for 2-3 weeks. Racking the beer into a lager tank after
+Fermentation: Ferment at 10 °C until 5 °P (1.020), then cool slowly (1° C/day) to 4 °C. Hold at 4 °C until fermented and when diacetyl is no longer noticeable.
+Cool to 0 °C and hold for 2-3 weeks. Racking the beer into a lager tank after
 fermentation is complete improves final beer taste and clarity.
 Packaging: 2-2.4 volumes CO2 (4-4.8 g/L). The wide range covers the variant of a Kellerpils
 called ungespundet, which means “not bunged” in German. The resulting low dissolved CO2
@@ -9357,17 +9345,16 @@ Grain bill:
 <!-- source_pdf_page: 225 -->
 
 Mashing:
-149° F (65° C) 60 minutes
+65 °C 60 minutes
 
 Hops:
 Centennial, 60 minutes, (45 IBU)
-Cascade pellets, 0 min (added before whirlpool), 0.5 lb./bbl
-Cascade whole hops, 0 min (added to hop back), 0.5 lb./bbl
+Cascade pellets, 0 min (added before whirlpool), 1.9 g/L
+Cascade whole hops, 0 min (added to hop back), 1.9 g/L
 
 Boiling: 60 minutes
 Yeast: Wyeast 1214
-Fermentation: Six days at 72° F (22° C). Let stand for 48 hours. Lower temperature to 58° F
-(14.5° C) to 48° F (9° C) to 32° F (0° C) next 48 hours. Hold for 6 days.
+Fermentation: Six days at 22 °C. Let stand for 48 hours. Lower temperature to 14.5 °C to 9 °C to 0 °C next 48 hours. Hold for 6 days.
 Packaging: Bottle condition with primary yeast. 2.9 volumes CO2 (5.8 g/L)
 
 ---
@@ -9409,12 +9396,12 @@ interested in it.’ Another dealer asked, ‘Are they paying for the program?�
 The growers voted to discontinue trials for W415-90. “I went to the farmer who had it and
 told him we’d change the name and keep growing them,” Olson said. He gave the variety a new
 name, CFJ-90, and kept selling it. “I started to get nervous; it was getting more popular. We got
-to about 10 acres, and I had to go to Prosser (the USDA hops research station in Washington)
+to about 4 hectares, and I had to go to Prosser (the USDA hops research station in Washington)
 and confess. I told them (specifically, Steve Kenny) I didn’t know what to do. He laughed and
 said, ‘Let’s give the bastard a name.’”
 
 Because the state of Washington celebrated 100 years of statehood in 1989 they chose the
-name Centennial. As recently as 2005, growers still planted little more than 100 acres of
+name Centennial. As recently as 2005, growers still planted little more than 40 hectares of
 Centennial. The demand since reflects the growth in blossoming sales of IPA (most drinkers
 simply use the initials rather than asking for “India pale ale”). Its aroma is unique but not
 universally appealing. “The flavor of flavor hops, these up to now were regarded in our
@@ -9428,7 +9415,7 @@ Czech Republic, said, candidly. “These are off-flavors for us.”
 Today Centennial is a key component in such fast growing brands as Lagunitas IPA, Bell’s
 Two-Hearted Ale, and Bear Republic’s Racer 5. Between 2010 and 2011 farmers in
 Washington, where most of it is grown, boosted Centennial acreage from 357 to 641 and
-production from 639,400 pounds in 2010 to 899,400, an increase of 40 percent that almost
+production from 290,000 kg in 2010 to 899,400, an increase of 40 percent that almost
 perfectly mirrors 41 percent more IPA sales in 2011 than in 2010.
 
 Nobody forecast such growth, and nobody was talking with confidence about how long it
@@ -9449,13 +9436,13 @@ eventualities.”1
 
 These new fangled hops remain fashionable within what is in fact a niche but perhaps a
 large enough one to have changed the conversation. Consider this bit of math. In 2011
-American beer production shrank by about 4.6 million barrels overall, although craft beer
-production grew by 1.3 million barrels. A survey of Brewers Association members indicates
-they use about one pound of hops per barrel, so they would have needed at least an additional
-1.3 million pounds of hops in 2011, probably more taking dry-hopped IPAs into account.
-Production of all beers not classified as craft actually fell 5.9 million barrels. If brewers used
-two ounces of hops in each of those barrels—an educated guess—that would not have
-amounted to 750,000 pounds of hops. Despite the hefty drop in beer production overall,
+American beer production shrank by about 5.4 million hectolitres overall, although craft beer
+production grew by 1.5 million hectolitres. A survey of Brewers Association members indicates
+they use about 3.9 g/L, so they would have needed at least an additional
+590 tonnes of hops in 2011, probably more taking dry-hopped IPAs into account.
+Production of all beers not classified as craft actually fell 6.9 million hectolitres. If brewers used
+48 g of hops in each of those hectolitres—an educated guess—that would not have
+amounted to 340,000 kg of hops. Despite the hefty drop in beer production overall,
 American hop usage increased.
 
 Just five years ago the hop supply chain looked much different. In 2007 a worldwide
@@ -9496,7 +9483,7 @@ types, plants with Russian and South African pedigrees, and hops derived from Fu
 “We went cold turkey,” said John Segal at the Segal Ranch on the eastern edge of Yakima
 County. His late father, also named John, had begun growing hops for A-B 30 years before and
 also kept an experimental plot for them. Segal chose to take a buyout and let his Willamette
-acres lay dormant. When he attended the 2009 Craft Brewers Conference he didn’t know
+hectares lay dormant. When he attended the 2009 Craft Brewers Conference he didn’t know
 anybody at a craft brewery other than Anchor Brewing—his father first sold Cascade to
 Anchor in 1974—but committed himself to finding craft clients.
 
@@ -9504,13 +9491,13 @@ He talks about pretty much the same things as craft brewers do. The back of Sega
 hats read “All hops are good. Some are better.” Signs that say, “Remember this is a food
 product” hung around the property long before the Hop Quality Group began giving similar
 ones to other farmers. He emphasizes the care with which his staff dries hops and the amount
-of oil in them. “It all comes down to the rub,” he said. Segal planted 83 acres of hops in 2009,
+of oil in them. “It all comes down to the rub,” he said. Segal planted 34 hectares of hops in 2009,
 190 in 2010, 290 in 2011, and 390 in 2012, putting his property at capacity.
 
 The shift from alpha-rich hops to aroma-focused hops continued at a faster pace in 2012
 than even Alex Barth predicted at the beginning of the year. Acreage dedicated to hops that
 American brewers use later in the boil or post-fermentation (those such as Simcoe and
-Chinook) grew from 32 percent of acres strung in 2011 to 40 percent in 2012. This did not only
+Chinook) grew from 32 percent of hectares strung in 2011 to 40 percent in 2012. This did not only
 include high demand, proprietary hops with aromas du jour: Centennial acreage was up 93
 percent and Chinook 73 percent, for instance.
 
@@ -9520,7 +9507,7 @@ and in part, because of improved communications (p. 228). Hop shortages in 2007 
 resulted from a combination of circumstances, including natural disasters and poor worldwide
 inventory control caused by rapid industry consolidation. They also arose because many
 breweries did not contract for the hops they knew they would need, choosing to buy them on
-the “spot” market. Farmers planted fewer acres because prices were lower. Surpluses shrank.
+the “spot” market. Farmers planted fewer hectares because prices were lower. Surpluses shrank.
 It didn’t take much to trigger a shortage. Prices skyrocketed for those without contracts. Not
 surprisingly, breweries reacted by contracting for future deliveries. Those new to the process
 learned that contracting is not all that simple, but there are some key elements: a) it is easier to
@@ -9532,7 +9519,7 @@ c) they do ensure delivery, with rare exceptions.
 <!-- source_pdf_page: 229 -->
 
 New Zealand Hops representative Doug Donelan pointed to the variety Nelson Sauvin as an
-example. “We grew 90 metric tons (less than 200,000 pounds and not half of Citra production
+example. “We grew 90 metric tons (less than 91,000 kg and not half of Citra production
 in 2011), all of which was forward sold,” he wrote in an email. “Brewers attempting to buy
 high demand hops on spot markets need to rethink their purchasing strategy. Nelson Sauvin has
 been in volume growth for the past few years and will continue for the foreseeable future.
@@ -9547,7 +9534,7 @@ almost immediately. The brewery used American Liberty, Willamette, Cascade, and 
 the more widely distributed and dry-hopped Wild River pale ale in 2012.
 
 “The hops fit the market, for different beers for different occasions,” Keeling said. “Beer
-has become for more than going down to the pub and having three pints. You can’t make this
+has become for more than going down to the pub and having 1.4 litres. You can’t make this
 variety of beers simply with Golding.”
 
 The choices don’t necessarily need to be the “flavor of the month.” Fuller’s Discovery,
@@ -9579,7 +9566,7 @@ scientists everywhere they are also focused on discovering nonbrewing uses for h
 Twenty years ago 70 percent of Czech hops were sold whole, and now only 4 percent are.
 Half the pellets are Type 90 and half Type 45, with a very small amount of Agnus sent to
 Germany for extraction. About 135 farmers remain, 101 of them members of the growers union,
-half of them small, and half with farms ranging from 150 acres to 750 acres.
+half of them small, and half with farms ranging from 61 hectares to 300 hectares.
 
 ---
 
@@ -9628,7 +9615,7 @@ work and needed a lot of energy. The faster we worked, the sooner we got done.
 
 “We had what was then a state-of-the-art baling machine. Two monks would work upstairs,
 pushing hops into the baler with a large piece of plywood. Every day we would have to
-estimate again how many hops would be needed to make a 200-pound bale. The difference
+estimate again how many hops would be needed to make a 91-kg bale. The difference
 each day was because of the different degrees of humidity in the hops.
 
 “I was in charge of the hop baling crews until 1973. I loved that kind of work, because it
@@ -9665,10 +9652,10 @@ Patrick Smith said. “Is it a risky strategy? We’re already tied to this indu
 Hop Quality Group made plans to study the effects of reducing kilning temperatures, Smith
 conducted his own experiments and invited brewers to assess the results.
 
-- On the Bentele farm outside of Tettnang, Georg Bentele and his family grow about 55
+- On the Bentele farm outside of Tettnang, Georg Bentele and his family grow about 22
 
-acres of hops, 70 percent of them Tettnanger. Bentele’s son brews the beer in the 12-
-hectoliter (about 10-U.S.-barrel) brewhouse on the grounds. Bentele’s daughter, who was
+hectares of hops, 70 percent of them Tettnanger. Bentele’s son brews the beer in the 12-
+hectolitre brewhouse on the grounds. Bentele’s daughter, who was
 once a Tettnang hop queen, was the first brewer.
 The beef and pork the Benteles serve in their restaurant and beer garden, Brauereigasthof
 Schöre, comes from animals they raise. They distill eight flavors of schnapps, some with
@@ -9677,7 +9664,7 @@ minimum of two months, most for three, and pour sparkling bright. The hops, of c
 from the surrounding fields.
 
 Bentele, whose grandfather first planted a single hectare of hops in 1906, sells his hops
-directly to brewers, most of them to Victory Brewing in Pennsylvania. He planted three acres
+directly to brewers, most of them to Victory Brewing in Pennsylvania. He planted 1.2 hectares
 of Perle in 2008 and said that was a mistake. He explained he thought farmers in Tettnang
 should grow only hops with the finest aroma—at the Bentele farm this also includes a little
 Mittelfrüh—because that is what makes the region special.

@@ -13,6 +13,7 @@ import {
   FlaskIcon,
   HistoryIcon,
   HomeIcon,
+  IconAccentGradient,
   KegIcon,
   MonitorIcon,
   SettingsIcon,
@@ -380,6 +381,10 @@ export function DashboardShell({
         fit ? 'xl:h-screen xl:overflow-hidden' : ''
       }`}
     >
+      {/* The accent paint the active nav icon is drawn with. Once per document,
+          above both navs — an SVG gradient is referenced by id, not scoped to
+          the <svg> that defines it. */}
+      <IconAccentGradient />
       <Sidebar
         active={active}
         alertCount={alertCount}
@@ -603,7 +608,9 @@ function BottomTab({
       }`}
     >
       <span className="relative">
-        <Icon className="h-6 w-6" />
+        {/* Same treatment as the sidebar's active row — this is the same nav,
+            just the phone's shape of it. */}
+        <Icon className={`h-6 w-6 ${active ? 'icon-accent' : ''}`} />
         {badge != null && (
           <span className="absolute -right-2 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-zinc-950">
             {badge}
@@ -643,7 +650,10 @@ function NavRow({
           : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white'
       }`}
     >
-      <Icon className="h-5 w-5 shrink-0" />
+      {/* The active item's icon is the accent gradient rather than white — the
+          label stays white, so the rail reads as one lit row with a coloured
+          mark rather than two competing highlights. */}
+      <Icon className={`h-5 w-5 shrink-0 ${active ? 'icon-accent' : ''}`} />
       <span className="flex-1 text-left">{label}</span>
       {accessory ??
         (badge != null && (

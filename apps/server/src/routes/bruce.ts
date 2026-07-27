@@ -16,6 +16,7 @@ import {
   bruceReindexSchema,
   bruceSpeakSchema,
   bruceVolumeSchema,
+  bruceWebSearchSchema,
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -28,6 +29,8 @@ import {
   listChatModels,
   setBruceInstructions,
   setChatModel,
+  setWebSearchEnabled,
+  webSearchEnabled,
 } from '../bruce/chat.js';
 import {
   addMessage,
@@ -183,6 +186,7 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
       configured: isOpenAIConfigured(),
       model: chatModel(),
       models,
+      webSearch: webSearchEnabled(),
     };
   });
 
@@ -220,6 +224,16 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
     if (!body) return;
     setChatModel(body.model);
     return { model: chatModel() };
+  });
+
+  // POST /api/bruce/chat/web-search — let Bruce off the shelf, or put him back.
+  // Admin-only like the model choice: it changes what every later question
+  // costs, and where its answers can come from.
+  app.post('/chat/web-search', { preHandler: requireAdmin }, async (req, reply) => {
+    const body = parse(bruceWebSearchSchema, req.body, reply);
+    if (!body) return;
+    setWebSearchEnabled(body.enabled);
+    return { enabled: webSearchEnabled() };
   });
 
   // POST /api/bruce/chat — ask Bruce a question. Admin-only: every call costs

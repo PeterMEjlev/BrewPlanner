@@ -2146,7 +2146,13 @@ export type BruceVolumeInput = z.infer<typeof bruceVolumeSchema>;
 // apps/server/src/knowledge): the question is embedded, the closest passages
 // are retrieved, and the model answers from them and cites where it read it.
 
-/** Where one retrieved passage came from — rendered as a citation chip. */
+/**
+ * Where one piece of an answer came from — rendered as a citation chip.
+ *
+ * Two kinds, told apart by `url`: a passage retrieved from a book on the shelf
+ * (title + section + page, no url), or a web page Bruce searched up when web
+ * search is on (title + url, no page).
+ */
 export interface BruceChatSource {
   /** Document title, e.g. "Water: A Comprehensive Guide for Brewers". */
   title: string;
@@ -2154,6 +2160,8 @@ export interface BruceChatSource {
   section?: string;
   /** Page or page range in the source book, e.g. "142" or "142–143". */
   page?: string;
+  /** Set only on a web result: the page Bruce read. Its presence marks it as one. */
+  url?: string;
 }
 
 /** One stored turn of the text conversation. */
@@ -2230,6 +2238,12 @@ export interface BruceChatState {
    * the picker then shows only the current model.
    */
   models: BruceChatModel[];
+  /**
+   * Whether Bruce may search the web when the books don't cover a question.
+   * Off by default: the library is the point, and each search is billed on top
+   * of the tokens. Toggled on the Bruce page, stored server-side.
+   */
+  webSearch: boolean;
 }
 
 /** POST /api/bruce/chat — answer to one question, plus the turn that asked it. */
@@ -2268,6 +2282,10 @@ export const bruceChatModelSchema = z.object({
     .regex(/^[a-zA-Z0-9._-]+$/, 'Not a valid model id'),
 });
 export type BruceChatModelInput = z.infer<typeof bruceChatModelSchema>;
+
+/** Body for POST /api/bruce/chat/web-search — let Bruce search the web, or not. */
+export const bruceWebSearchSchema = z.object({ enabled: z.boolean() });
+export type BruceWebSearchInput = z.infer<typeof bruceWebSearchSchema>;
 
 // ---------------------------------------------------------------------------
 // Tending the library from the dashboard: adding a book, rebuilding the index,

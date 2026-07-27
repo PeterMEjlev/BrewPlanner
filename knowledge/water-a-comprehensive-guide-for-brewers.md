@@ -968,7 +968,7 @@ water acidity and its resulting pH. The dissolution of carbon dioxide into rainw
 dioxide and carbonic acid that lowers pH from 7 (distilled water) to somewhere in the range of 5 to 6,
 with a typical mean value of 5.0 to 5.5. The pH of pure water in contact with carbon dioxide can be
 directly calculated. For example, at 0.03% carbon dioxide in the atmosphere, the resulting pH of pure
-water would be 5.65 (at 68°F/ 20°C).
+water would be 5.65 (at 20 °C).
       To summarize, water from precipitation will typically have very low ionic content and very low
 alkalinity. However, the very low ionic content may be elevated in industrialized areas, and winds can
 easily cause contamination far from the contaminant source.
@@ -1002,7 +1002,7 @@ The organic acids and low alkalinity of the Amazon’s water prevents its pH fro
 6.
       Surface water sourced from lakes in colder temperate regions can change seasonally due to thermal
 stratification. The densest water is at the bottom of the lake in both winter and summer at a temperature of
-39°F (4°C). The surface water is less dense, either being warmed by the sun or frozen. When the
+4 °C. The surface water is less dense, either being warmed by the sun or frozen. When the
 temperatures become more uniform in spring and fall, the stratification disappears and mixing can occur
 by wind action, bringing nutrients up from the bottom of the lake and taking oxygen-rich surface water into
 the lake depths. Lakes in warm regions may also suffer from algal blooms and organic matter. Seasonal
@@ -2316,7 +2316,7 @@ you have measured the others. See Appendix A for more information.
 
 
     The dissolution of chalk in water with aqueous CO2 is described by the following equations. These
-chemical equations at 20°C (68°F) are each governed by equilibrium or dissociation constants:
+chemical equations at 20 °C are each governed by equilibrium or dissociation constants:
 
     [CO2] + H2O ↔ H2CO3* pKH = 1.41
 
@@ -2538,7 +2538,7 @@ was obtained by using pulverized grist. He repeated the experiment using three w
 with various mill gaps corresponding to normal commercial settings for multi-roller mills: (pulverized),
 0.5, 0.8, and 1.2 mm. The 0.8 mm setting on a two roller mill is probably most similar to the American
 Society of Brewing Chemists (ASBC) coarse grind condition, which is not determined by roller spacing
-but by 75% of a malt sample remaining on a No. 30 sieve (sieve opening of 0.0232 inch). The data
+but by 75% of a malt sample remaining on a No. 30 sieve (sieve opening of 0.59 mm). The data
 showed that the buffering capacity of the mashes decreased with increasing gap size, in much the same
 magnitude as for grist ratio. However, it is speculated that this effect should diminish with longer mashing
 time, as the grist becomes fully hydrated and more phosphates are available for reaction. See Table 6.
@@ -2645,24 +2645,23 @@ kilned malts, caramel malts, and roasted. Base malts have a distilled water or c
 bacteria in the husk. The amount and viability of the bacteria is quite variable, depending on the local
 environment and the particular kilning regimen. Therefore, each lot of malt can have a slightly different
 base malt mash pH, even within a particular brand from the same maltster.
-     Base malts such as Pilsner, lager malt, and pale ale malt are produced by germination at 15-17°C
-(59-63°F) and dried in a cool airflow to about 8% moisture. These malts are kilned at low temperatures
-of 50-70°C (122-158°F) before curing at a final temperature of 70-85°C (158-185°F). Pale ale malts are
-typically given kilning temperatures of 60-90°C (140-194°F) and are cured at up to 105°C (221°F) to
+     Base malts such as Pilsner, lager malt, and pale ale malt are produced by germination at 15–17 °C and dried in a cool airflow to about 8% moisture. These malts are kilned at low temperatures
+of 50–70 °C before curing at a final temperature of 70–85 °C. Pale ale malts are
+typically given kilning temperatures of 60–90 °C and are cured at up to 105 °C to
 develop higher color (3-5 SRM) and more flavor. The flavors expressed are lightly grainy with hints of
 toast and warmth. Note that these temperatures are ranges of typical conditions that maltsters might choose
 at their discretion—there are no standardized recipes for specific types of malt.
       Highly-kilned malts are base malts (or base malts that have not been fully cured) that have been
 kilned to a higher color, such as pale ale, Vienna, Munich, and aromatic malts. The highly kilned malts are
-heated dry (3-10% moisture) at low temperatures (120-160°F/50-70°C) to retain their diastatic enzymes.
-Aromatic and Munich malt are kilned at higher temperatures than base malts (195-220°F/90-105°C) to
+heated dry (3-10% moisture) at low temperatures (50–70 °C) to retain their diastatic enzymes.
+Aromatic and Munich malt are kilned at higher temperatures than base malts (90–105 °C) to
 produce richly malty and bready flavors. Only Maillard reactions are involved; caramelization reactions
 occur at higher temperatures. The congress mash pH of these malts drops by a couple tenths from that of
 the base malt.1 The higher curing temperature reduces or eliminates acid-producing microflora.
       Caramel malts are produced by roasting green malt, i.e., malt that was not dried by kilning after
-germination. These malts are put into a roaster and stewed at the saccharification range of 150-158°F (65-
+germination. These malts are put into a roaster and stewed at the saccharification range of 66 to -106 °C (65-
 70°C) until starch conversion takes place inside the husk. Afterwards, these malts are roasted at higher
-temperatures of 220-320°F (105-160°C), depending on the degree of color wanted. Heating at these
+temperatures of 105–160 °C, depending on the degree of color wanted. Heating at these
 temperatures causes both caramelization and Maillard reactions. The maximum color achievable is about
 150 SRM or 300 EBC.
 
@@ -2701,15 +2700,15 @@ rating beer color is EBC=1.97 x °SRM, or about twice the °SRM rating.
 
      Roasted malts include amber, brown, chocolate, and black malt. These malts start out green like the
 caramel malts above, but are kilned to a lower percentage of moisture (5-15%) before roasting. Amber
-malts are produced by roasting fully kilned pale ale malt at temperatures up to 335°F (170°C). These
+malts are produced by roasting fully kilned pale ale malt at temperatures up to 170 °C. These
 temperatures give the malt its characteristic toasty, biscuity (cookie), and nutty flavors. Brown malts are
 roasted longer than amber malts, but at lower temperatures, and achieve a very dry, dark toast flavor, with
 color equal to that of the caramel malts.
      Chocolate malt starts out with more moisture before roasting than brown malt, but less than caramel.
-The roasting process begins at about 165°F (75°C) and is steadily increased to over 420°F (215°C),
+The roasting process begins at about 75 °C and is steadily increased to over 215 °C,
 where the malt develops chocolaty flavors. Some degree of caramelization occurs, but the majority of the
 flavors are from Maillard reactions and some degree of pyrolysis (controlled charring). Black (Patent)
-malts are roasted to slightly higher temperatures of 428-437°F (220-225°C) producing coffee-like
+malts are roasted to slightly higher temperatures of 220–225 °C producing coffee-like
 flavors. Roast barley is produced in a similar manner but the difference is that it is never malted to begin
 with. Again, the majority of flavors come from Maillard reactions and pyrolysis.
 
@@ -2725,7 +2724,7 @@ and not-roasted). The difference occurs during roasting, when the color of the M
 
 <!-- source_pdf_page: 79 -->
 
-from red to brown. The transition appears to be in the range of 325-355°F (~165-180°C), corresponding
+from red to brown. The transition appears to be in the range of 163 to -215 °C (~165-180°C), corresponding
 to the highest processing temperatures for highly kilned and caramel malts, and the lowest temperatures
 for roasted malts. This shift is visually apparent when worts are made from different specialty malts to the
 same SRM or EBC color value. See Figure 15 for a picture of worts prepared by Briess Malting and
@@ -2906,7 +2905,7 @@ Bies study used the ASBC Congress Mash procedure, and this may account for some 
 results.
        The experimental procedure in the Bies study consisted of mashing 75 grams of each malt, and
 titrating it using 10 milliliters at a time of a 0.1N sodium hydroxide solution to a pH 7 endpoint. The pH
-was measured at temperature, generally between 150° and 130°F as the sample cooled during titration.
+was measured at temperature, generally between 150° and 54 °C as the sample cooled during titration.
 The acidity of the malts in the Bies study were recalculated afterwards using an endpoint of 5.7 pH
 instead of 7 to better compare with the Troester data. A couple of assumptions were made in the setup and
 analysis of these experiments. They assumed that:
@@ -2971,7 +2970,7 @@ Temperature affects a pH measurement in two ways: 1) the electrochemical respons
 electrode changes with temperature, and 2) the chemical activity of a solution (e.g., the wort)
 changes with temperature. The electrode probe of the pH meter needs to be calibrated with
 buffered calibration solutions, typically at values of 4 and 7 pH. Those solutions are buffered to
-be most accurate to their declared pH at room temperature 20-25°C (60-77°F). However, the
+be most accurate to their declared pH at room temperature 20–25 °C. However, the
 companies also publish charts specifying the precise change in the pH of the buffer solution with
 temperature.
 
@@ -2981,8 +2980,8 @@ In other words, it maintains calibration of the probe away from the calibration 
 However, it does nothing to account for any actual change in pH of the solution due to
 temperature.
 
-The pH of the wort at mash temperature (~65°C, 150°F) is known to be about 0.3 lower than
-the same wort when it is cooled to room temperature (~20°C, 68°F). That is why brewers
+The pH of the wort at mash temperature (~65°C, 66 °C) is known to be about 0.3 lower than
+the same wort when it is cooled to room temperature (~20°C, 20 °C). That is why brewers
 always refer to pH measurements at room temperature. It is the standard because when the
 pH scale was first invented and used for beer analysis, before the age of electronics, there was
 no other option than to measure it at room temperature and that is the basis of comparison.
@@ -3472,7 +3471,7 @@ imbalance in the equilibrium, in accordance with LeChatelier’s Principle, and 
 bicarbonate to carbonate. Thus bicarbonate concentration decreases in favor of carbonic and carbonate
 until the ion product of calcium and carbonate drops below pKs (which is a little bigger, i.e., actually a
 lower concentration, 10-pKs, than it would be at room temperature—pKs changes from 8.44 at 20°C or
-68°F to 8.67 at 50°C or 122°F).
+20 °C to 8.67 at 50°C or 50 °C).
       The carbon dioxide is driven from the water in two ways: first, a reduction in effective partial
 pressure over the water causes it to coalesce into micro-bubbles; and second, it is scrubbed out by the
 evolution of steam as the water boils. This evolution and resultant precipitation continues until about 1
@@ -3677,7 +3676,7 @@ forms a thick gel in the tank. Both of these minerals are somewhat difficult to 
 
 A. J. deLange’s Method for Using Slaked Lime Decarbonation at Home
 
- 1. Add 1 tsp. of chalk for each 5 gallons of water to be treated to the water.
+ 1. Add 5 ml. of chalk for each 19 litres of water to be treated to the water.
 
  2. Multiply the temporary hardness of the water by 0.74 to get a rough idea of the amount of
     lime required (in mg) to treat 1 L. Then multiply by the number of liters to be treated and
@@ -4040,7 +4039,7 @@ South & Southeast Technical meeting in 2010. In the presentation, “Water Quali
 Perspective,” he showed results from experiments they had conducted to compare their standard operating
 procedure of phosphoric acid acidification of all brewing water, with doubling the amount of calcium
 salts normally added to the mash and boil, as appropriate to the beer recipe. Pale ale beers were brewed
-on a 10 barrel pilot system, each condition brewed twice to fill 20 barrel fermentors. To summarize the
+on a 12-hectolitre pilot system, each condition brewed twice to fill 23-hectolitre fermentors. To summarize the
 findings, the mash pH of all three conditions was within acceptable parameters, as was the extract yield
 and general parameters of the beers. The most significant difference between the trials was the last-
 runnings lauter pH, which rose to 5.91 for the standard salts without acidification, and 5.83 for the
@@ -4089,7 +4088,7 @@ alkalinity and a new search for the right water composition began.
 
       After a discussion of the effect of very low sulfate levels on light beers with A. J. deLange, it was
 decided to cut the sulfate entirely to make this ale more lager-like. The first attempt used 100 grams of
-calcium chloride and 10 mL of 85% phosphoric acid to acidify the 300 gallons of hot liquor. This water
+calcium chloride and 10 mL of 85% phosphoric acid to acidify the 1,100 litres of hot liquor. This water
 calculates to 24 ppm Ca and 42 ppm Cl-. The pH of the final runnings rose as can be seen in Figure 24.
 The sparge was stopped at that point. The boil pH for this batch was 5.47. The finished beer seemed to
 have the normal fermentation characteristics and typical FG, but had a distinct dry, harsh and almost ashy
@@ -4146,7 +4145,7 @@ to water.
 
 Adding Sodium Bicarbonate
 Sodium bicarbonate (a.k.a., baking soda) is very soluble in water, and reaches its saturation limit at about
-9% by weight at 25°C (77°F), or about 1 pound per gallon. Therefore it can easily be added to the
+9% by weight at 25 °C, or about 120 g per litre. Therefore it can easily be added to the
 brewing water or the mash in order to raise the alkalinity. However, the carbonate system is a weak base,
 and therefore its charge (mEq/mmol) changes depending on the pH range it is moved through. This was
 explained in Chapter 5.
@@ -4217,7 +4216,7 @@ the most amount of the total mash time in the optimum mash pH range. Balancing a
 specific recipe at a specific brewery will take experimentation, but at least the calculations discussed
 here help clarify what is actually occurring.
      The only other issue with using sodium bicarbonate is the accompanying rise in sodium level—about
-72 ppm at 1 gram per gallon. As will be noted in Chapter 7, sodium levels in excess of 100 ppm are
+273 ppm at 1 gram per litre. As will be noted in Chapter 7, sodium levels in excess of 100 ppm are
 generally not recommended, especially if sulfate levels are 300 ppm or greater, as it tends to give a
 metallic taste to the bitterness.
 
@@ -4243,7 +4242,7 @@ solutions are not as stable as the natural water; the carbonate seems to have a 
 
 precipitate out. As mentioned earlier in Chapter 4, the normal saturation level of calcium carbonate in
 water is very low, being only about 1 mEq/L or 0.05 grams per liter at typical atmospheric partial
-pressure of carbon dioxide. This equates to about 2 grams in 10 gallons of water! More calcium
+pressure of carbon dioxide. This equates to about 2 grams in 38 litres of water! More calcium
 carbonate can be dissolved if carbon dioxide is bubbled into the water with constant stirring or supplied
 to a closed container under pressure, but the process is not very convenient or quick.
       Conventional wisdom has been to add the chalk to the mash because the lower pH there would
@@ -4449,11 +4448,9 @@ Table 14—Summary of Methods for Increasing Alkalinity
 Method                           Comments
 
 Sodium Bicarbonate               For total alkalinity adjustment of water:
-Can be added to water or mash.   1 gram per gallon = 72.3 ppm Na+1, 188 ppm HCO3-, 3.04 mEq/gallon alkalinity.
-                                 1 gram per liter = 273.7 ppm Na+1, 710.5 ppm HCO3-, 11.8 mEq/liter alkalinity.
+Can be added to water or mash.   1 gram per liter = 273.7 ppm Na+1, 710.5 ppm HCO3-, 11.8 mEq/liter alkalinity.
 Efficacy: Good                   For mash adjustment to Z pH:
-Safety: Low Hazard               1 gram per gallon = 72.3 ppm Na+1, 3.04 mEq/gallon alkalinity.
-                                 1 gram per liter = 273.7 ppm Na+1, 11.9 mEq/gallon alkalinity.
+Safety: Low Hazard               1 gram per liter = 273.7 ppm Na+1, 11.9 mEq/liter alkalinity.
                                  See text for additions to mash and Z alkalinity.
 Chalk                            Powdered chalk additions are not recommended. Results are unpredictable, but
 Can be dissolved in water with   generally ineffective for increasing alkalinity and the mash pH.
@@ -4462,20 +4459,19 @@ CO2 overpressure or acid.        If dissolved in water prior to addition, it wil
 Efficacy: Poor
 Safety: Low Hazard
 
-Slaked Lime                      1 gram per gallon = 142.9 ppm Ca+2, 121.2 ppm OH-, 7.1 mEq/gallon alkalinity
-Can be added to water or mash.   1 gram per liter = 540.9 ppm Ca+2, 458.8 ppm OH-, 27 mEq/gallon alkalinity
-                                 DRA = 5.1 mEq/gal
+Slaked Lime                      1 gram per liter = 540.9 ppm Ca+2, 458.8 ppm OH-, 27 mEq/liter alkalinity
+Can be added to water or mash.
 Efficacy: Good                   DRA = 19.3 mEq/L
 Safety: Moderate Hazard          Can be added to water or to mash.
                                  Reaction rate is acceptable: 4.9 to 5.4 pH in 15-20 minutes.
 
-Sodium Hydroxide                 1 gram per gallon = 152 ppm Na+1, 112.3 ppm OH-, 6.6 mEq/gallon alkalinity
-Can be added to water or mash.   1 gram per liter = 575 ppm Na+1, 425 ppm OH-, 25 mEq/ liter alkalinity
+Sodium Hydroxide                 1 gram per liter = 575 ppm Na+1, 425 ppm OH-, 25 mEq/liter alkalinity
+Can be added to water or mash.
                                  Dissolve 40 grams in sufficient water to make a 1 liter, 1N solution.
 Efficacy: Good
 Safety: Hazardous
-Potassium Hydroxide              1 gram per gallon = 184.1 ppm K+1, 80.0 ppm OH-, 4.7 mEq/gallon alkalinity
-Can be added to water or mash.   1 gram per liter = 697 ppm K+1, 303 ppm OH-, 17.8 mEq/liter alkalinity
+Potassium Hydroxide              1 gram per liter = 697 ppm K+1, 303 ppm OH-, 17.8 mEq/liter alkalinity
+Can be added to water or mash.
                                  Dissolve 56 grams in sufficient water to make a 1 liter, 1N
 Efficacy: Good                   solution.
 Safety: Hazardous
@@ -4521,7 +4517,7 @@ Adjusting the water for a specific beer is one of the more challenging parts of 
 a lot of decisions, a lot of choices and a lot of leeway. There is no single perfect water for a specific
 style, but brewing water and style choice can evolve hand in hand to reach a perfect recipe.
       The primary requirements for brewing water are that it mashes in at the target pH range (typically
-5.2-5.6 pH at 68°F) and that the water’s flavor character should enhance the beer character and not
+5.2-5.6 pH at 20 °C) and that the water’s flavor character should enhance the beer character and not
 detract from it. Many great beer recipes have been discredited because of a lack of understanding about
 the relationship between the style and the water choices used to create the recipe. Fortunately, it is now
 becoming more common for recipes to include water information.
@@ -4684,7 +4680,7 @@ Burton water is the ideal pale ale water, and probably think that you want to re
 to best brew the style. However, digging deeper into the history of the region shows that the water was not
 always this hard or sulfuric. In the book, IPA: Brewing Techniques, Recipes and the Evolution of India
 Pale Ale, by M. Steele2, the author states that the earliest breweries drilled shallow wells close to the
-river Trent, to a depth of about 30 feet (9m). However, as the population and brewing industry grew, the
+river Trent, to a depth of about 9.1 m (9m). However, as the population and brewing industry grew, the
 river and local wells became polluted with human waste. As a result, new wells were dug further away
 from the river and deeper (100-200ft/30-60m) to find clean water. Data from Worthington for shallow and
 deep wells shows a difference of nearly 3 times more “Sulfate of Lime” (gypsum) and half the “Carbonate
@@ -4752,7 +4748,7 @@ light malts even more difficult. Only the use of water, malt, hops, and yeast we
 beer. The addition of brewing salts was not allowed. The addition of mineral acids was not allowed.
 Instead, acidification of the mash was accomplished by the use of Sauermalz (sour malt, i.e., malt that is
 sprayed with lactobacillus-soured wort and dried) and the decoction mashing process (melanoidin
-development). A long acid rest at 86-126°F/30-53°C was also used by many breweries. The acid rest
+development). A long acid rest at 30–53 °C was also used by many breweries. The acid rest
 temperature promotes phytase enzyme activity and favors lactobacillus growth.
      The Reinheitsgebot and Biergesetz of 1993 forbid additions to water, but they do not bar removing
 elements from the water, and decarbonation by heating and slaked lime treatment are both common in
@@ -4879,7 +4875,7 @@ following guidelines:
 
       The nice thing about experimenting with the sulfate-to-chloride ratio in a beer is that it can be done
 in the glass. An easy experiment is to take several glasses of beer and dose them with different amounts of
-CaCl2 and CaSO4. To do this, dissolve a teaspoon (a few grams) of CaCl2 and CaSO4 into separate
+CaCl2 and CaSO4. To do this, dissolve 5 ml (a few grams) of CaCl2 and CaSO4 into separate
 glasses of warm water. CaSO4 is hard to dissolve so stir thoroughly; most of it will eventually dissolve.
 Use a straw or eyedropper to add a few milliliters of one or the other solution and taste the beer. You will
 learn the difference the ratio can make firsthand.
@@ -4895,7 +4891,7 @@ gradually drop towards 5, just as it does with rainwater.
       The addition of calcium and magnesium sulfate salts to brewing water is very straightforward—the
 ion contributions are listed in Table 17, and both act to lower mash pH. Calcium sulfate can be difficult to
 dissolve in water however, having a saturation level of about 1.9-2.1 grams per liter across the brewing
-temperatures. The maximum solubility occurs at 40oC/104°F.
+temperatures. The maximum solubility occurs at 40oC/40 °C.
       Calcium chloride is another popular option for affecting mash pH and flavor, but there are two
 problems when calculating additions: 1) calcium chloride tends to absorb water and the powder must be
 kept tightly sealed to prevent it from forming into a solid crystal, and 2) commercial sources vary in
@@ -4930,74 +4926,74 @@ additions depends on the water pH, target pH and other carbonates already in sol
 Table 17—Ion Contributions by Salt Additions
 The contributions are listed equivalently as mg/L (ppm), mEq/L, or ppm as CaCO3, as applicable. mw = mole weight, eqw
 = equivalent weight, Ceqw = Cation equivalent weight, Aeqw = Anion equivalent weight.
-Brewing Salt Concentration at 1 Concentration at 1             Comments
-(formula)    gram of salt per   gram of salt per
-             liter              gallon
-Calcium       400 ppm Ca+2,          106 ppm Ca+2,             Don’t Use. See Ch. 6 for explanation.
-Carbonate     600 ppm CO3-2          158 ppm CO3-2
-CaCO3         20 mEq/liter alkalinity 5.3 mEq/gal alkalinity
+Brewing Salt Concentration at 1                                Comments
+(formula)    gram of salt per
+             liter
+Calcium       400 ppm Ca+2,                                    Don’t Use. See Ch. 6 for explanation.
+Carbonate     600 ppm CO3-2
+CaCO3         20 mEq/liter alkalinity
 mw = 100
 (eqw = 50)
 
-Sodium        273.7 ppm Na+1         72.3 ppm Na+1             Dissolves readily and effective at raising alkalinity.
-Bicarbonate   710.5 ppm              188 ppm                   Z alkalinity depends on pH. See Ch. 6 for explanation.
-NaHCO3        HCO3-@99%              HCO3-@99%
-mw = 84       11.8 mEq/liter         3.04 mEq/gal alkalinity
-Ceqw = 23     alkalinity @99%        @99%
+Sodium        273.7 ppm Na+1                                   Dissolves readily and effective at raising alkalinity.
+Bicarbonate   710.5 ppm                                        Z alkalinity depends on pH. See Ch. 6 for explanation.
+NaHCO3        HCO3-@99%
+mw = 84       11.8 mEq/liter
+Ceqw = 23     alkalinity @99%
 Aeqw = 61
 
-Calcium       541 ppm Ca+2,           143 ppm Ca+2,            Dissolves readily in water. Raises alkalinity, but see Ch. 6
-Hydroxide     459 ppm OH   -          121 ppm OH   -           for explanation. Pickling Lime seems to be acceptable purity.
-Ca(OH)2       27 mEq/liter alkalinity 7.1 mEq/liter alkalinity
-mw = 74.1     ΔRA = 19.3 mEq/         ΔRA = 5.1 mEq/ liter
+Calcium       541 ppm Ca+2,                                    Dissolves readily in water. Raises alkalinity, but see Ch. 6
+Hydroxide     459 ppm OH   -                                   for explanation. Pickling Lime seems to be acceptable purity.
+Ca(OH)2       27 mEq/liter alkalinity
+mw = 74.1     ΔRA = 19.3 mEq/
 Ceqw = 20     liter
 Aeqw = 17
-Sodium        575 ppm Na+1           152 ppm Na+1              Dissolves readily. Raises alkalinity. Caution! Hazardous
-Hydroxide     425 ppm OH-            112.3 ppm OH-             material! Consult MSDS before use.
-NaOH          25 mEq/L alkalinity    6.6 mEq/L alkalinity
+Sodium        575 ppm Na+1                                     Dissolves readily. Raises alkalinity. Caution! Hazardous
+Hydroxide     425 ppm OH-                                      material! Consult MSDS before use.
+NaOH          25 mEq/L alkalinity
 mw = 40
 Ceqw = 23
 Aeqw = 17
 
-Potassium     697 ppm K+1            184 ppm K+1               Dissolves readily. Raises alkalinity. Caution! Hazardous
+Potassium     697 ppm K+1                                      Dissolves readily. Raises alkalinity. Caution! Hazardous
 
 ---
 
 <!-- source_pdf_page: 137 -->
 
-Hydroxide   303 ppm OH-           80 ppm OH-             material! Consult MSDS before use.
-KOH         17.8 mEq/L alkalinity 4.7 mEq/L alkalinity
+Hydroxide   303 ppm OH-                                  material! Consult MSDS before use.
+KOH         17.8 mEq/L alkalinity
 mw = 56.1
 Ceqw = 39.1
 Aeqw = 17
 
-Calcium    232.8 ppm Ca+2          61.5 ppm Ca+2         Saturation at room temperature is about 2 grams per liter.
-Sulfate    557.7 ppm SO4-          147.4 ppm SO4-        Stir vigorously. Lowers mash pH.
+Calcium    232.8 ppm Ca+2                                Saturation at room temperature is about 2 grams per liter.
+Sulfate    557.7 ppm SO4-                                Stir vigorously. Lowers mash pH.
 CaSO4•2H2O
 mw = 172.2
 Ceqw = 20
 Aeqw = 48
-Magnesium  98.6 ppm Mg+2           26.0 ppm Mg+2         Saturation at room temperature is about 255 grams per liter.
-Sulfate    389.6 ppm SO4-          102.9 ppm SO4-        Lowers mash pH.
+Magnesium  98.6 ppm Mg+2                                 Saturation at room temperature is about 255 grams per liter.
+Sulfate    389.6 ppm SO4-                                Lowers mash pH.
 MgSO4•7H2O
 mw = 246.5
 Ceqw = 12.1
 Aeqw = 48
 
-Calcium       272.6 ppm Ca+2       72.0 ppm Ca+2         Dissolves readily. Lowers mash pH. Food-grade salt may
-Chloride      482.3 ppm Cl-        127.4 ppm Cl-         not be high purity.
+Calcium       272.6 ppm Ca+2                             Dissolves readily. Lowers mash pH. Food-grade salt may
+Chloride      482.3 ppm Cl-                              not be high purity.
 CaCl2•2H2O
 mw = 147.0
 Ceqw = 20
 Aeqw = 35.4
-Magnesium     119.5 ppm Mg+2       31.6 ppm Mg+2         Dissolves readily. Lowers mash pH. Food-grade salt may
-Chloride      348.7 ppm Cl-        92.1 ppm Cl-          not be high purity.
+Magnesium     119.5 ppm Mg+2                             Dissolves readily. Lowers mash pH. Food-grade salt may
+Chloride      348.7 ppm Cl-                              not be high purity.
 MgCl2•6H2O
 mw = 203.3
 Ceqw = 12.1
 Aeqw = 35.4
-Sodium        393.4 ppm Na+1       103.9 ppm Na+1        Dissolves readily. Avoid iodized salt and anti-caking agents.
-Chloride      606.6 ppm Cl-        160.3 ppm Cl-
+Sodium        393.4 ppm Na+1                             Dissolves readily. Avoid iodized salt and anti-caking agents.
+Chloride      606.6 ppm Cl-
 NaCl
 mw = 58.4
 Ceqw = 23
@@ -5492,8 +5488,8 @@ Only Option—Build the Water
      0 ppm Total Alkalinity
      0 ppm Sulfate
 
-     Assume for this example that we want to treat 10 gallons of water. To calculate the weight of
-calcium chloride to get 30 ppm of Ca in 10 gallons:
+     Assume for this example that we want to treat 38 litres of water. To calculate the weight of
+calcium chloride to get 30 ppm of Ca in 38 litres:
 
      30 ppm / 72.0 ppm per 1g/gallon x 10 gallons = 4.17 grams or about 4.2 grams of calcium chloride.
 
@@ -6089,8 +6085,8 @@ water. The disadvantage of a mixed-bed system is that once the resins are spent 
 washing with both strong caustic and strong acid. This cycle can be expensive and not very
 environmentally sound. Mixed-bed units are most commonly used for small amounts of pure water. Some
 home brewers use this type of unit, obtained from reef aquarium hobby suppliers, to prepare brewing
-liquor. Small breweries (20 bbl and less) can purchase mixed-bed filters on an exchange basis. A typical
-leased mixed-bed filter will last for 800 to 2,000 gallons of water depending on the TDS of the source
+liquor. Small breweries (23 hectolitres and less) can purchase mixed-bed filters on an exchange basis. A typical
+leased mixed-bed filter will last for 3,000 to 7,600 litres of water depending on the TDS of the source
 water. Companies will charge a lease and a replacement fee. The source water conductivity can be
 measured and compared to the output water conductivity to set a standard for a specific brewery or brand.
 The output water conductivity can be monitored to check when a deionizer needs to be recharged.
@@ -6163,7 +6159,7 @@ membrane as the tank fills. Water can be obtained more quickly by disconnecting 
 leaving the faucet open and collecting the water in another open container.
      Criticisms levied at RO systems usually involve the high ratio of concentrate to permeate production.
 Typically, less than 20% of the feed water is captured as permeate in the typical home systems. This
-means that for every gallon that goes into the HLT, 4 gallons go down the drain. This can be an important
+means that for every gallon that goes into the HLT, 15 litres go down the drain. This can be an important
 factor depending on the water source, whether it is a fresh water well, or the ocean. In more elaborate
 systems the recovery (the fraction of feed water recovered as permeate) may be appreciably higher—as
 high as 80% or even a bit more—but such high recovery rates come at the expense of higher permeate ion
@@ -6210,8 +6206,8 @@ exchange and lime softening. In many cases, nanofiltration can provide acceptabl
 with better overall economy. The economic difference will depend on the specific circumstances: TDS
 concentration, composition of the TDS, and acceptance limits on the permeate. Many large breweries now
 utilize nanofiltration instead of RO for their water needs.
-      Nanofiltration membranes are available for typical commercial equipment in the same 2.5, 4, or 8
-inch diameter cartridges as are available for RO membranes. At this time, nanofiltration membranes are
+      Nanofiltration membranes are available for typical commercial equipment in the same 2.5, 10 or 20
+cm diameter cartridges as are available for RO membranes. At this time, nanofiltration membranes are
 not available to fit the typical home RO systems. The relatively recent availability of affordable RO
 presents a tremendous opportunity to home and commercial brewers alike. Whereas in the past the
 emphasis has been on fixing water in the mash or at the kettle to make a suitable beer (and indeed much of
@@ -6428,12 +6424,12 @@ as a percentage compared to a GAC standard. The tannin test measures the ability
 tannins and is reported as ppm concentration. The hardness number is a measure of the media’s resistance
 to attrition, or movement, such as bed expansion during backwashing. The hardness number depends on
 the carbon source used to make the media, and should be at least 70.
-      GAC systems can be sized for most any need, and home units are common. The 10-inch GAC
+      GAC systems can be sized for most any need, and home units are common. The 25-cm GAC
 cartridges for under-sink filters typically contain about 30-32 cubic inches of AC media. Using the EBCT
-guidance above, the flow rate through this AC filter should be limited to about 0.065 gallon/minute for
-chlorine removal and about 0.016 gallon/minute for removal of chloramines. However, much shorter
-EBCTs for chlorine removal have been proven suitable in practice. A one gallon/minute flow rate through
-a 10-inch AC filter can provide adequate removal performance and filter life.
+guidance above, the flow rate through this AC filter should be limited to about 250 ml/minute for
+chlorine removal and about 61 ml/minute for removal of chloramines. However, much shorter
+EBCTs for chlorine removal have been proven suitable in practice. A 3.8 litres/minute flow rate through
+a 25-cm AC filter can provide adequate removal performance and filter life.
       Common problems with GAC filters are microbial contamination and contaminant breakthrough due
 to lack of maintenance. Carbon filters are a perfect home for bacteria and other microorganisms after the
 chlorine/ chloramine has been removed. Other organic contaminants that are trapped by the filters can
@@ -6500,8 +6496,8 @@ scrubbed oxygen) is vented. Cold-column systems in which the water is not heated
 less than 0.03 ppm residual oxygen. By then heating the water to below boiling point using heat
 exchangers, this level can be further reduced. These hot-column systems can achieve residual oxygen
 below 0.01 ppm (less than 10 parts per billion). Other advantages of column systems are low energy use,
-high flow rates, and low maintenance. Units can be sized to deliver 5,000-80,000 liters per hour (40-680
-barrels per hour).
+high flow rates, and low maintenance. Units can be sized to deliver 5,000-80,000 liters per hour (47-800
+hectolitres per hour).
 
 Summary
 In this chapter we have looked at most of the currently practical technologies for removing solids, liquids
@@ -6559,15 +6555,15 @@ stream ahead of actual need, because these dead legs can provide a haven for bac
 
 
 ## Cleaning and Rinsing Water
-Most brewery water is used for cleaning. An ultra-modern brewery may use only 1 barrel of cleaning
-water to make 1 barrel of beer, but older, less-efficient breweries may use 3-8 barrels for cleaning per
-barrel of beer produced. Currently, a good total water use per barrel of beer production is about 4.5-5
-barrels on average. This usage would typically break down to about 2-3 barrels of wastewater, 1 barrel
-lost to spent grain, yeast, evaporation, etc., and 1 barrel to the product. Higher brewery production
+Most brewery water is used for cleaning. An ultra-modern brewery may use only 1 hectolitre of cleaning
+water to make 1 hectolitre of beer, but older, less-efficient breweries may use 3-8 hectolitres for cleaning per
+hectolitre of beer produced. Currently, a good total water use per hectolitre of beer production is about
+4.5-5 hectolitres on average. This usage would typically break down to about 2-3 hectolitres of wastewater,
+1 hectolitre lost to spent grain, yeast, evaporation, etc., and 1 hectolitre to the product. Higher brewery production
 actually helps improve water usage due to economies of scale. The largest breweries in the United States
-have set a total usage goal of about 3.5 barrels per barrel of beer production. However, it can be difficult
-to reduce usage to less than 4.5 barrels per barrel of beer production if the brewery is producing less than
-10,000 barrels annually.
+have set a total usage goal of about 3.5 hectolitres per hectolitre of beer production. However, it can be
+difficult to reduce usage to less than 4.5 hectolitres per hectolitre of beer production if the brewery is producing less than
+12,000 hectolitres annually.
       Cleaning water should have low calcium and magnesium hardness (<50 ppm total hardness
 recommended) to make the most efficient use of detergents and caustics. In hard water conditions, a
 portion of the cleaning chemicals will be bound up (essentially neutralized) by the calcium and
@@ -6653,7 +6649,7 @@ freezing points than water and therefore are less likely to freeze in the lines 
 system. Glycol manufacturers recommend that distilled water be used to create the solution, but it is not
 common practice among brewers to do so. Most breweries just use city water for dilution, although water
 sources with high hardness are not recommended. Glycol cooling system manufacturers recommend that
-the propylene glycol content be at least 30% (by volume) so that the freezing point is 20-25°F (11-13°C)
+the propylene glycol content be at least 30% (by volume) so that the freezing point is 11–13 °C
 below the lowest thermostat setting in use at the brewery—this is the typical margin to prevent freezing of
 the coolant in the system. See the propylene glycol sidebar for more information.
       Residual disinfectants and biocides are needed in open-air cooling systems, such as cooling towers,
@@ -6690,19 +6686,19 @@ expensive, so every effort must be made to avoid leaks in the system.
 
 Propylene Glycol Solution Properties
 
-Volume Freezing Point °F        Refractometer Reading (Brix)          Specific Gravity*    Specific Heat BTU/(lb-°F)
-   %         (°C)                       @68°F (20°C)                      @70°F                     @70°F
-  10          26 (-3.3)                        8.5                          1.006                     0.986
-  20          18 (-7.8)                        16                           1.015                     0.968
+Volume Freezing Point °C        Refractometer Reading (Brix)          Specific Gravity*    Specific Heat kJ/(kg·K)  
+   %                                    @20 °C                      @21 °C                     @21 °C
+  10             -3.3                          8.5                          1.006                     4.128
+  20             -7.8                          16                           1.015                     4.053
 
-  30          8 (-13.3)                       22.5                          1.024                     0.939
-  32         6.6 (-14.1)                       24                           1.025                     0.932
-  34         3.9 (-15.6)                      25.5                          1.026                     0.924
+  30            -13.3                         22.5                          1.024                     3.931
+  32            -14.1                          24                           1.025                     3.902
+  34            -15.6                         25.5                          1.026                     3.869
 
-  36         0.8 (-17.3)                      26.5                          1.028                     0.917
-  38         -2.4 (-19.1)                      28                           1.030                     0.908
+  36            -17.3                         26.5                          1.028                     3.839
+  38             -19.1                         28                           1.030                     3.802
 
-  40          -6 (-21.1)                       29                           1.031                     0.900
+  40             -21.1                         29                           1.031                     3.768
 
 * Specific gravity is generally not recommended because density increases, then decreases with increasing percentage
 of glycol in solution (>60%). Glycol solutions do not follow the same relationship for refraction vs. gravity as sugar
@@ -6916,7 +6912,7 @@ the drain. The job is done. Or is it? Wastewater just goes down the drain, right
 grains? Down the drain. Wastewater from CIP operations? Down the drain. The city will take care of it,
 right?
       For many small brewers, this is indeed the case. The city sewer/ water treatment system can handle
-100-500 gallons of water or wort at a time without much trouble. But as a brewery gets larger (the issue
+380-1,900 litres of water or wort at a time without much trouble. But as a brewery gets larger (the issue
 of size depends on the city or treatment plant), the brewery may be responsible for higher fees to have its
 wastewater treated, or may have to treat the wastewater itself before discharging it.
       This chapter is intended to be an introduction to brewery wastewater treatment. It is not intended to
@@ -6930,8 +6926,8 @@ you on what wastewater is, why it needs to be treated, and how it can be treated
 Any water that is adversely affected in quality by human use or utilization is called wastewater. Quality in
 this definition refers to drinking water quality. Wastewater can contain suspended solids, dissolved
 solids, and/or dissolved liquids and gases. Brewing can be a very wasteful activity: typical water usage
-is 5-8 volumes of water per volume of beer produced and about 3 pounds of saturated spent grain per
-gallon of beer. Additional waste, mostly proteins and spent hops, are produced as trub in the whirlpool
+is 5-8 volumes of water per volume of beer produced and about 0.36 kg of saturated spent grain per
+litre of beer. Additional waste, mostly proteins and spent hops, are produced as trub in the whirlpool
 and fermentors. Some of this waste can be collected and disposed of as solid waste, but a lot of it makes
 its way to the drains. Most brewery wastewater comes from cleaning operations, and will contain caustic
 cleaners, sanitizers, acids, and brewing residue. The strength of these effluents can be measured in
@@ -6962,7 +6958,7 @@ oxygen from an ecosystem, effectively killing it.
 ## Why Do We Treat Wastewater?
 Brewery waste is a particular problem for a city waste treatment plant because of its strength. Typical
 brewery wastewater can contain suspended solids in the range of 400-800 ppm, and BOD of 2,000-3,500
-ppm. The temperature of the wastewater can exceed 140°F. The pH of the discharge can easily exceed the
+ppm. The temperature of the wastewater can exceed 60 °C. The pH of the discharge can easily exceed the
 5-11 pH limits due to the cleaning caustics and acid rinsing. The yeast load can potentially out-compete
 the treatment facility’s digestion bacteria. Residual sanitizers can also damage or kill the digestion
 bacteria and shut down the treatment operation.
@@ -6981,7 +6977,7 @@ Waste Parameter                                            Limit
 
 pH                                                         6-9 pH
 
-Temperature                                                100°F (38°C)
+Temperature                                                38 °C
 
 BOD                                                        30 ppm
 
@@ -7005,9 +7001,9 @@ for discharge to sewers in the US are shown in Table 24.
 
 Table 24—Typical US Sewer Discharge Limits
 Waste Parameters                                       Limit
-Flow                                                   <25,000 gallons per day*
+Flow                                                   <95,000 litres per day*
 
-Temperature                                            140°F (60°C)
+Temperature                                            60 °C
 pH                                                     5-11
 
 BOD                                                    250 mg/L
@@ -7015,7 +7011,7 @@ BOD                                                    250 mg/L
 TSS                                                    250 mg/L
 Fats, Oils, Grease                                     100 mg/L
 
-*Flow rates greater than 25,000 gallons per day are considered to be Significant Industrial Users, subject to higher fees
+*Flow rates greater than 95,000 litres per day are considered to be Significant Industrial Users, subject to higher fees
 and requirements.
 
 
@@ -7024,10 +7020,10 @@ wastewater and its strength. A large volume of low strength waste can be handled
 in fact this condition could be considered typical for daily processing. A small volume of high strength
 waste can be diluted by other waste streams before or immediately after entering the plant and can be
 accommodated without too much trouble. However, a large volume of high strength waste (ex. high BOD)
-can be a real problem. In addition, any facility that discharges more than 25,000 gallons per day is
+can be a real problem. In addition, any facility that discharges more than 95,000 litres per day is
 considered to be a Significant Industrial User by the US EPA, and is subject to higher rates and more
 restrictive requirements. Assuming a fairly typical wastewater to beer ratio of 4:1 for mid-size
-breweries, this would equate to an annual production of about 75,000 barrels a year.
+breweries, this would equate to an annual production of about 88,000 hectolitres a year.
 
 ## How is Wastewater Treated?
 
@@ -7066,8 +7062,8 @@ major process steps will be reviewed in more detail below.
 Brewery wastewater usually contains a high volume of suspended solids that should not be in the
 wastewater stream. These solids can include spent grains, spent hops, spent yeast, proteins, tannins,
 broken glass and bottle caps. The openings in the filtration screens at municipal water treatment plants
-tend to be approximately 6mm spacing or diameter (0.25 inch). However, brewery screens need to be
-finer, and are typically less than 2mm spacing or diameter (0.08 inch). The waste stream is screened and
+tend to be approximately 6 mm spacing or diameter. However, brewery screens need to be
+finer, and are typically less than 2 mm spacing or diameter. The waste stream is screened and
 continues on to the next step, typically a holding or equalization tank where the pH is adjusted and the
 flow rate is regulated to the next process(es).
       The screens for removal of suspended solids can be either static or rotary, but both need a method of
@@ -7106,8 +7102,8 @@ better. If the waste is going to be digested, as discussed below, then even tigh
      A steady flow of consistent-strength waste is easiest to manage for everyone.
 
 ## Filtration of Fines
-Many of the suspended solids in brewery wastewater streams are very fine, often less than 1mm in
-diameter (.04 inch). These fines can be carbohydrates, proteins, silica from beer filtration, or yeast.
+Many of the suspended solids in brewery wastewater streams are very fine, often less than 1 mm in
+diameter. These fines can be carbohydrates, proteins, silica from beer filtration, or yeast.
 While the organic compounds can be digested by other processing downstream, it is useful to extract
 purified water from the stream and reduce the volume of wastewater that needs to be treated.
      Sedimentation is usually the preferred method for separation of suspended solids in most other
@@ -7124,7 +7120,7 @@ filter purified water from the wastewater. Microfiltration is often used in memb
 in aerobic digestion systems, and this will be discussed further in the next section.
       Microfiltration is generally capable of filtering out yeast and bacteria, and this type of filter is
 commonly used for bottled water processing to eliminate microorganisms. Yeast cells are typically 0.005-
-0.010 mm (0.0002-0.0004 inch), and bacteria may be 10 times smaller. The range of pore size available
+0.010 mm, and bacteria may be 10 times smaller. The range of pore size available
 for microfiltration membranes is 0.1-10 micrometers (i.e., the same range as typical bacteria and yeast).
 The membranes can be hollow fibers, flat sheets, tubes, or spiral-wound cartridges. In continuous
 processing, it is useful to have the membranes arranged in racks or similar geometry for easier
@@ -7132,7 +7128,7 @@ maintenance.
       During filtration, a pressure difference is often applied across the membrane, typically suction, to
 pull filtrate water away from the effluent. The difference between the pressure on the feed side of the
 membrane and the filtrate side of the membrane is called the trans-membrane pressure, or TMP. Typical
-operating pressure is 2-4 psi (14-28 kPa). The TMP will rise as the feed side of the membrane becomes
+operating pressure is 0.14-0.28 bar (14-28 kPa). The TMP will rise as the feed side of the membrane becomes
 fouled with solids. Agitation of the feed side is provided by air or liquid washing to maintain low TMP
 and prevent solids accumulation on the feed side of the membrane fibers. For example, coarse bubbles,
 generated by a diffuser below the membranes, create a scouring effect that reduces the accumulation of
@@ -7157,7 +7153,7 @@ The fines and dissolved solids can be broken down by aerobic or anaerobic digest
 microorganisms (‘bugs’). These microorganisms can be any variety of bacteria, protozoa, fungi, algae,
 rotifers, and even worms, depending on the type of waste that needs to be reduced. For brewery waste,
 they primarily consist of bacteria.
-      The microbes are sensitive to temperature and pH, thriving best at 85-95°F (30-35°C), and 6.5-7.5
+      The microbes are sensitive to temperature and pH, thriving best at 30–35 °C, and 6.5-7.5
 pH. The pH range can be broader, 5-9, but 6.5-7.5 is optimum. The pH can drop quickly in digestion
 systems due to generation of CO2 and nitrates, though this depends on the bacteria in the system. If the pH
 drops, it should be adjusted quickly to prevent biological die-off and a halt to treatment. The low
@@ -7173,11 +7169,11 @@ Generally a COD of >5,000 mg/L is considered high-strength waste.
 Table 25—Typical Brewery Waste Strength
 Parameter                                  Concentration (mg/L)              Typical Production
 
-Total COD                                       3,000-5,500                     2.5-7.5 lbs./bbl
+Total COD                                       3,000-5,500                     2.5-29 g/L
 
 Total BOD                                       2,000-3,500                            --
 
-Total Suspended Solids                           400-800                        0.3-1.1 lbs./bbl
+Total Suspended Solids                           400-800                        0.3-4.3 g/L
 
 
     There are two options for digestion: aerobic and anaerobic. Aerobic microbes use gases (mainly
@@ -7240,7 +7236,7 @@ are several sludge disposal options available, including land application, compo
 expanded. When operated correctly, the odor from the aerated tank or pond is minimal with most of the
 gases consisting of CO2 and water. If operated incorrectly, the bacteria can die, the tank may go
 anaerobic, and foul odors will blanket the area. The current economics of treatment suggest that aerobic
-systems are best suited for loadings of up to 5,000 pounds of COD per day. Beyond that load, anaerobic
+systems are best suited for loadings of up to 2,300 kg of COD per day. Beyond that load, anaerobic
 systems may be more economical.
      Some of the disadvantages of an aerobic treatment system are the high energy requirements for the
 
@@ -7296,7 +7292,7 @@ contents mixed. Each of these digester systems performs the same task: convertin
 strong BOD waste into methane gas, while producing less sludge volume than an aerobic process.
      All anaerobic digesters use methane-producing bacteria to reduce the waste. Acetogens (acetate-
 forming) can be present as well, but are usually not needed to break down brewery waste. Acetogens like
-warmer temperatures than methanogens (methane-forming). Methanogens like 85-95°F (30-35°C). The
+warmer temperatures than methanogens (methane-forming). Methanogens like 30–35 °C. The
 anaerobic bacteria are very sensitive to the environment, and they can be overwhelmed by yeast. The
 process can be finicky and requires constant attention.
      The benefit of anaerobic digestion is the methane gas that it produces. Nominally you have three
@@ -7305,7 +7301,7 @@ or you can clean it and sell it. The biogas contains other gases besides methane
 70% of the total. Most of the rest of the gas is carbon dioxide and water vapor, but there are traces of
 hydrogen sulfide, and other hydrocarbons. Cleaning consists of removing these contaminants. Once
 cleaned, the methane gas can be used in boilers or engines. The heating value of the biogas after drying is
-typically 500-700 BTU/ft3, compared to about 1,020 BTU/ft3 for natural gas, and about 2,500 BTU/ft3 for
+typically 530-740 kJ/ft3, compared to about 1,080 kJ/ft3 for natural gas, and about 2,600 kJ/ft3 for
 propane gas. Drying is accomplishing by pressurizing and condensation.
 
 ---
@@ -8148,7 +8144,7 @@ weight of the salt, and multiply each of those fractions by the mole fraction of
 would be easier to show you with an example.
 
 Problem
-If 1 gram of Calcium Chloride (CaCl2) is added to 1 gallon of water, how much will that addition
+If 1 gram of Calcium Chloride (CaCl2) is added to 3.8 litres of water, how much will that addition
 increase the concentration of Ca+2 and the Cl-1 ions?
 
 Solution
@@ -8189,7 +8185,7 @@ atomic weights of the elements from the Periodic Table of Elements:
 
      The rest of the molecular weight is water.
      Once we know the mole fractions, we can determine the weight of each ion contribution. So, if 1
-gram of calcium chloride is dissolved into 1 gallon of water, we can say that the weight fraction of
+gram of calcium chloride is dissolved into 3.8 litres of water, we can say that the weight fraction of
 calcium is 1 gram x 0.272 = 0.272 grams or 272 milligrams (mg) Ca+2.
      Likewise, for chloride, 1 gram x 0.483 = 483 milligrams Cl-1.
      But how do we get from milligrams to concentration?
@@ -8206,7 +8202,7 @@ of calcium, which if dissolved in one liter of water, would equal 272 mg/L or 27
 
      272 ppm of Ca+2 and 483 ppm of Cl-1
 
-    Going back to the original problem (1 gram of calcium chloride dissolved in 1 gallon of water), this
+    Going back to the original problem (1 gram of calcium chloride dissolved in 3.8 litres of water), this
 becomes a matter of simply dividing that concentration by the extra volume.
 
      1 gallon of water = 3.785 liters, so instead of being 272 mg/1 liter, the concentration becomes 272
@@ -8226,7 +8222,7 @@ Swapping Calcium Chloride for Gypsum
 Problem
 Suppose you have built up a water recipe using distilled water and want to change the sulfate-to-chloride
 ratio without changing the total calcium concentration in the water. The current water recipe is 200 grams
-of gypsum and 100 grams of calcium chloride in 300 gallons of water. This gives ion concentrations of:
+of gypsum and 100 grams of calcium chloride in 1,100 litres of water. This gives ion concentrations of:
 
      65 ppm Ca
      98 ppm SO4
@@ -8276,7 +8272,7 @@ contribution of calcium chloride is 72 ppm, therefore:
 
      Y = 0.520 grams per gallon of calcium chloride
 
-     Multiplying these weights by the 300 gallons of water to be treated gives the composition:
+     Multiplying these weights by the 1,100 litres of water to be treated gives the composition:
 
      65 ppm Ca
      66 ppm SO4
@@ -8294,7 +8290,7 @@ concentration solution that is easier to measure and safer to handle?
       The partial answer to the first question is to create a 1 Normal (N) solution of the acid. The
 definition of a 1 N solution is that 1 liter contains 1 equivalent of the solute (the acid), and thus 1
 milliliter contains 1 milliequivalent. So if you needed, for example, 1.8 mEq per liter to acidify 1,135.5
-liters (300 gal) of hot liquor, 1.8 x 1135.5 = 2,044 milliliters of this 1 N acid solution.
+liters of hot liquor, 1.8 x 1135.5 = 2,044 milliliters of this 1 N acid solution.
       The next problem is, how do you create a 1 N solution from a higher concentration of commercial
 acid?
 

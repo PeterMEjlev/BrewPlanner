@@ -29,6 +29,37 @@ function Svg({ className, style, children }: IconProps & { children: React.React
   );
 }
 
+/**
+ * The app's accent gradient as an SVG paint server, defined once per document.
+ *
+ * `currentColor` can only ever be a flat colour, so an icon drawn in the accent
+ * has to reference a gradient by id instead. SVG resolves `url(#…)` against the
+ * whole document rather than the `<svg>` it appears in, so this one hidden
+ * definition serves every icon on the page — render it once, near the root.
+ *
+ * Point an icon at it with the `icon-accent` class (see index.css). The stops
+ * are the accent the primary buttons use, `from-[#f87a68] to-[#e0463f]`, run
+ * corner to corner to match `bg-gradient-to-br`.
+ *
+ * `userSpaceOnUse` over the 24×24 viewBox every icon here shares, rather than
+ * the default objectBoundingBox: a gradient in bounding-box units is not
+ * painted at all when the box has no width or height, and these icons are full
+ * of dead-straight strokes — the speech bubble's lines, the flask's neck — that
+ * have exactly that. In bounding-box units those strokes silently disappear.
+ */
+export function IconAccentGradient(): JSX.Element {
+  return (
+    <svg width="0" height="0" aria-hidden className="absolute" focusable="false">
+      <defs>
+        <linearGradient id="icon-accent" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="24" y2="24">
+          <stop offset="0%" stopColor="#f87a68" />
+          <stop offset="100%" stopColor="#e0463f" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
 // --- Sidebar nav ------------------------------------------------------------
 
 export function HomeIcon(props: IconProps): JSX.Element {
@@ -187,6 +218,18 @@ export function BookIcon(props: IconProps): JSX.Element {
       <path d="M12 6.5 4 4v14l8 2.5" />
       <path d="M12 6.5 20 4v14l-8 2.5" />
       <path d="M12 6.5v14" />
+    </Svg>
+  );
+}
+
+/** Globe, for the Bruce chat's web-search switch. */
+export function GlobeIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      {/* The two meridians that read as a globe rather than a target. */}
+      <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
     </Svg>
   );
 }
