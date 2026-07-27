@@ -438,17 +438,17 @@ export function VolumeIcon(props: IconProps): JSX.Element {
  * it: the chat's progress bubble, and the sidebar's Bruce tab while an answer
  * is still coming (see bruceActivity.ts). Inherits its colour, so the caller
  * decides whether it reads as ordinary work or as "he's out on the web".
+ *
+ * The motion is all in `.thinking-dot` (index.css), stagger included — these
+ * are three plain spans in order, and the stylesheet does the rest. `h-1` dots
+ * were too small to read as moving in a nav row, hence 1.5.
  */
 export function ThinkingDots({ className = '' }: { className?: string }): JSX.Element {
   return (
-    <span className={`inline-flex items-end gap-0.5 ${className}`} aria-hidden>
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="thinking-dot h-1 w-1 rounded-full bg-current"
-          style={{ animationDelay: `${i * 0.16}s` }}
-        />
-      ))}
+    <span className={`inline-flex items-end gap-1 ${className}`} aria-hidden>
+      <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-current" />
+      <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-current" />
+      <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-current" />
     </span>
   );
 }

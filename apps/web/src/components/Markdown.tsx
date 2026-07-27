@@ -120,11 +120,18 @@ const HEADING_LOOK: Record<number, string> = {
   6: 'mt-2 font-medium text-zinc-400',
 };
 
-export function Markdown({ text }: { text: string }): JSX.Element {
+/**
+ * @param anchors When set, every heading gets `id="{anchors}{n}"`, numbered in
+ *   document order from 0. The library reader uses it to jump to a section:
+ *   the server counts headings the same way, so the two agree without either
+ *   side slugifying a title (see sectionsOf in the server's knowledge/store).
+ */
+export function Markdown({ text, anchors }: { text: string; anchors?: string }): JSX.Element {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
   let key = 0;
+  let headingIndex = 0;
 
   while (i < lines.length) {
     const line = lines[i] ?? '';
@@ -201,10 +208,17 @@ export function Markdown({ text }: { text: string }): JSX.Element {
     if (heading) {
       const level = (heading[1] ?? '#').length;
       blocks.push(
-        <p key={key++} className={`${HEADING_LOOK[level] ?? HEADING_LOOK[3]} first:mt-0`}>
+        <p
+          key={key++}
+          {...(anchors ? { id: `${anchors}${headingIndex}` } : {})}
+          // `scroll-mt`: the reader scrolls a heading to the top of its own
+          // pane, and without it the heading lands flush against the edge.
+          className={`${HEADING_LOOK[level] ?? HEADING_LOOK[3]} scroll-mt-4 first:mt-0`}
+        >
           {renderInline(heading[2] ?? '', `h-${key}`)}
         </p>,
       );
+      headingIndex++;
       i++;
       continue;
     }

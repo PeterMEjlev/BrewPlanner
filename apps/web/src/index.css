@@ -172,27 +172,56 @@ html.kiosk *::after {
   stroke: url(#icon-accent);
 }
 
-/* Bruce's "working on it" dots: three that rise and fall in turn, staggered by
-   an inline animation-delay. Used in the chat's progress bubble and on the
-   sidebar's Bruce tab while an answer is still coming. */
+/* Bruce's "working on it" dots: three that rise and fall in turn. Used in the
+   chat's progress bubble and on the sidebar's Bruce tab while an answer is
+   still coming.
+
+   Longhand properties and a `:nth-child` stagger, matching the marquee above,
+   rather than the `animation` shorthand with the delay set inline per dot. The
+   whole animation then lives in one place, and nothing about it depends on the
+   component passing a style through. */
 @keyframes thinking-dot {
   0%,
-  70%,
+  60%,
   100% {
     transform: translateY(0);
-    opacity: 0.45;
+    opacity: 0.4;
   }
-  35% {
-    transform: translateY(-3px);
+  30% {
+    transform: translateY(-4px);
     opacity: 1;
   }
 }
 .thinking-dot {
-  animation: thinking-dot 1.1s ease-in-out infinite;
+  animation-name: thinking-dot;
+  animation-duration: 0.9s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+.thinking-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.thinking-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* Reduced motion: brighten and dim in place instead of stopping. Freezing them
+   would leave an indicator that says "thinking" while looking like nothing is
+   happening at all — the one thing this must never do. The travel goes, which
+   is what the preference is actually asking for. */
+@keyframes thinking-dot-fade {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+  }
+  30% {
+    opacity: 1;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .thinking-dot {
-    animation: none;
-    opacity: 0.7;
+    animation-name: thinking-dot-fade;
   }
 }

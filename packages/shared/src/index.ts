@@ -2184,6 +2184,24 @@ export interface BruceChatSource {
   page?: string;
   /** Set only on a web result: the page Bruce read. Its presence marks it as one. */
   url?: string;
+  /**
+   * Book passages only: whether the answer actually cited this one.
+   *
+   * Every passage retrieved for a question is attached to the answer, because
+   * that is what Bruce was handed to read. But retrieval always returns its
+   * best few matches, so a question the library doesn't cover still comes back
+   * with passages — and an answer written entirely from the web would list six
+   * book citations underneath it, which is a claim about where the answer came
+   * from that simply isn't true.
+   *
+   * So the answer's own inline citations decide this (see markCited in the
+   * server's bruce/chat.ts), and the page shows the uncited ones as what they
+   * are: passages read, not sources used.
+   *
+   * Absent on turns stored before this existed, and on web results — treat a
+   * missing value as cited, which is how those older answers already read.
+   */
+  cited?: boolean;
 }
 
 /** One stored turn of the text conversation. */
@@ -2415,6 +2433,20 @@ export interface BruceBookChapter {
   title: string;
   /** Characters of markdown in it, so the reader can say how long it is. */
   chars: number;
+  /** The headings inside it, in order — the reader's second level of contents. */
+  sections: BruceBookSection[];
+}
+
+/** One heading below chapter level, and where to jump to it. */
+export interface BruceBookSection {
+  title: string;
+  /**
+   * This heading's position among *all* headings in the chapter, counting the
+   * chapter's own as 0. The reader renders the chapter with matching ids, so
+   * the two agree without either side having to slugify a title — which would
+   * have to be done identically in two languages to stay in step.
+   */
+  anchor: number;
 }
 
 /**

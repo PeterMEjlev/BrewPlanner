@@ -107,16 +107,25 @@ export function defaultConversation(): BruceConversation {
   return newest ?? createConversation('New chat');
 }
 
-/**
- * Name a thread after its opening question — "What mash pH for a pale ale?"
- * beats five rows of "New chat". Only applied while the title is still the
- * placeholder, so a rename is never overwritten.
- */
-export function titleFromFirstMessage(id: number, question: string): void {
+/** True while a thread still carries the placeholder name. */
+export function isUntitled(id: number): boolean {
   const row = db.select().from(bruceConversations).where(eq(bruceConversations.id, id)).get();
-  if (!row || row.title !== 'New chat') return;
+  return row?.title === 'New chat';
+}
 
-  const clean = question.replace(/\s+/g, ' ').trim();
+/**
+ * Name a thread after what it is about — "Mash pH for a pale ale" beats five
+ * rows of "New chat". Only applied while the title is still the placeholder,
+ * so a rename is never overwritten.
+ *
+ * `summary` is the short label the model wrote for the question (see
+ * summariseTitle in chat.ts); the question itself is the fallback for when
+ * that couldn't be had, trimmed to fit the thread list.
+ */
+export function titleFromFirstMessage(id: number, question: string, summary?: string | null): void {
+  if (!isUntitled(id)) return;
+
+  const clean = (summary?.trim() || question).replace(/\s+/g, ' ').trim();
   let title = clean;
   if (clean.length > TITLE_MAX) {
     const cut = clean.slice(0, TITLE_MAX);

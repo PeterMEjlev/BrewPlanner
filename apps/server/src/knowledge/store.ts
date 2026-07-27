@@ -20,7 +20,12 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { BruceBook, BruceBookChapter, BruceKnowledgeStatus } from '@checklist/shared';
+import type {
+  BruceBook,
+  BruceBookChapter,
+  BruceBookSection,
+  BruceKnowledgeStatus,
+} from '@checklist/shared';
 import { databasePath } from '../db/index.js';
 import type { KnowledgeChunk } from './chunk.js';
 import { readableMarkdown } from './chunk.js';
@@ -173,6 +178,7 @@ export function readKnowledgeBook(file: string, wanted?: number): BruceBook | nu
     id,
     title: chapter.title,
     chars: chapter.lines.join('\n').trim().length,
+    sections: sectionsOf(chapter.lines),
   }));
 
   const id = wanted != null && wanted >= 0 && wanted < chapters.length ? wanted : 0;
@@ -187,6 +193,47 @@ export function readKnowledgeBook(file: string, wanted?: number): BruceBook | nu
 function countHeadings(lines: string[], level: number): number {
   const heading = new RegExp(`^#{${level}}\\s+\\S`);
   return lines.filter((line) => heading.test(line)).length;
+}
+
+/**
+ * The headings inside one chapter, for the reader's second level of contents.
+ *
+ * `anchor` counts every heading in the chapter, the chapter's own title
+ * included, because that is exactly what the Markdown component numbers its
+ * rendered headings by — so a section here and its heading on screen carry the
+ * same number without either side inventing a slug. Fenced code is skipped for
+ * the same reason: the renderer doesn't treat a `#` inside a fence as a
+ * heading, so neither can this.
+ *
+ * Only the first two levels below the chapter are listed. Transcribed books
+ * nest four deep in places, and a contents rail that deep is a wall of text.
+ */
+function sectionsOf(lines: string[]): BruceBookSection[] {
+  const sections: BruceBookSection[] = [];
+  let index = -1;
+  let top: number | null = null;
+  let fenced = false;
+
+  for (const line of lines) {
+    if (line.trim().startsWith('```')) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+
+    const match = line.match(/^(#{1,6})\s+(.*\S)\s*$/);
+    if (!match) continue;
+    index++;
+    const level = (match[1] ?? '#').length;
+    // The chapter's own heading is the first one and anchors the levels below.
+    if (top == null) {
+      top = level;
+      continue;
+    }
+    if (level > top + 2) continue;
+    sections.push({ title: (match[2] ?? '').trim(), anchor: index });
+  }
+  return sections;
 }
 
 /**

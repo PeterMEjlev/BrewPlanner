@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   BruceBook,
   BruceChatMessage,
+  BruceChatSource,
   BruceChatState,
   BruceConversation,
   BruceIndexJob,
@@ -134,33 +135,76 @@ function useAutoGrow(value: string): React.RefObject<HTMLTextAreaElement> {
  * A web source carries a `url` and nothing else does, so the two are told apart
  * by that: books stay plain text, web pages become links that open in a new tab
  * and are marked with a ↗ so it's obvious which claims left the library.
+ *
+ * The third case is the quiet one. Retrieval hands Bruce its best few passages
+ * for every question, whether or not they turn out to be relevant, so an answer
+ * written entirely from the web used to appear over six book citations it never
+ * opened. Those are folded away here and labelled as read rather than cited —
+ * present, because he really was given them, but not passing as sources.
  */
 function Sources({ message }: { message: BruceChatMessage }): JSX.Element | null {
+  const [showRead, setShowRead] = useState(false);
   if (!message.sources || message.sources.length === 0) return null;
+
+  // Passages retrieved for the question but never cited in the answer are not
+  // sources for it — an answer written from the web listing six book pages
+  // underneath claims a grounding it hasn't got. They still happened, so they
+  // are kept, one fold away, described as what they are. `cited` is absent on
+  // turns stored before this distinction existed, which read as cited.
+  const used = message.sources.filter((source) => source.cited !== false);
+  const read = message.sources.filter((source) => source.cited === false);
+
+  const bookChip = (source: BruceChatSource, key: number, muted: boolean): JSX.Element => (
+    <span
+      key={key}
+      className={`rounded-md px-1.5 py-0.5 text-[11px] ${
+        muted ? 'bg-zinc-950/30 text-zinc-600' : 'bg-zinc-950/50 text-zinc-500'
+      }`}
+      title={[source.title, source.section].filter(Boolean).join(' — ')}
+    >
+      {source.title}
+      {source.page && <span className={muted ? 'text-zinc-700' : 'text-zinc-600'}> p. {source.page}</span>}
+    </span>
+  );
+
   return (
-    <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-zinc-700/60 pt-2">
-      {message.sources.map((source, i) =>
-        source.url ? (
-          <a
-            key={i}
-            href={source.url}
-            target="_blank"
-            rel="noreferrer"
-            title={source.url}
-            className="max-w-[16rem] truncate rounded-md bg-sky-950/50 px-1.5 py-0.5 text-[11px] text-sky-400/90 transition hover:text-sky-300"
+    <div className="mt-2.5 border-t border-zinc-700/60 pt-2">
+      <div className="flex flex-wrap gap-1.5">
+        {used.map((source, i) =>
+          source.url ? (
+            <a
+              key={i}
+              href={source.url}
+              target="_blank"
+              rel="noreferrer"
+              title={source.url}
+              className="max-w-[16rem] truncate rounded-md bg-sky-950/50 px-1.5 py-0.5 text-[11px] text-sky-400/90 transition hover:text-sky-300"
+            >
+              {source.title} ↗
+            </a>
+          ) : (
+            bookChip(source, i, false)
+          ),
+        )}
+      </div>
+
+      {read.length > 0 && (
+        <div className={used.length > 0 ? 'mt-1.5' : ''}>
+          <button
+            type="button"
+            onClick={() => setShowRead((open) => !open)}
+            title="Passages the library returned for this question that the answer doesn't cite"
+            className="text-[11px] text-zinc-600 transition hover:text-zinc-400"
           >
-            {source.title} ↗
-          </a>
-        ) : (
-          <span
-            key={i}
-            className="rounded-md bg-zinc-950/50 px-1.5 py-0.5 text-[11px] text-zinc-500"
-            title={[source.title, source.section].filter(Boolean).join(' — ')}
-          >
-            {source.title}
-            {source.page && <span className="text-zinc-600"> p. {source.page}</span>}
-          </span>
-        ),
+            {showRead ? '▾' : '▸'} {read.length} more passage{read.length === 1 ? '' : 's'} read, not
+            cited
+          </button>
+          {showRead && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {read.map((source, i) => bookChip(source, i, true))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -1258,6 +1302,9 @@ function InstructionsModal({ onClose }: { onClose: () => void }): JSX.Element {
  * a slow request over the tunnel and slower still to render on the kiosk — with
  * the table of contents down the side.
  */
+/** Id prefix for the reader's heading anchors — see Markdown's `anchors` prop. */
+const ANCHOR_PREFIX = 'book-heading-';
+
 function BookModal({ file, onClose }: { file: string; onClose: () => void }): JSX.Element {
   const [book, setBook] = useState<BruceBook | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1282,6 +1329,15 @@ function BookModal({ file, onClose }: { file: string; onClose: () => void }): JS
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- opening is keyed on the file alone
   useEffect(() => open(), [file]);
+
+  /**
+   * Scroll a section's heading into view. The ids are handed to Markdown as
+   * `anchors` below and numbered the same way the server numbered the sections,
+   * so this is a lookup rather than a search through the rendered text.
+   */
+  const jumpTo = (anchor: number): void => {
+    document.getElementById(`${ANCHOR_PREFIX}${anchor}`)?.scrollIntoView({ block: 'start' });
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -1333,21 +1389,37 @@ function BookModal({ file, onClose }: { file: string; onClose: () => void }): JS
           {/* The contents list. Hidden on a phone, where it would take the whole
               screen; the chapter itself is what you came for. */}
           {book && book.chapters.length > 1 && (
-            <nav className="hidden w-56 shrink-0 overflow-y-auto border-r border-zinc-800 p-2 sm:block">
+            <nav className="hidden w-60 shrink-0 overflow-y-auto border-r border-zinc-800 p-2 sm:block">
               {book.chapters.map((chapter) => (
-                <button
-                  key={chapter.id}
-                  type="button"
-                  onClick={() => open(chapter.id)}
-                  title={chapter.title}
-                  className={`mb-0.5 block w-full rounded-lg px-2 py-1.5 text-left text-xs leading-snug transition ${
-                    chapter.id === current
-                      ? 'bg-zinc-800 text-zinc-100'
-                      : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200'
-                  }`}
-                >
-                  {chapter.title}
-                </button>
+                <div key={chapter.id}>
+                  <button
+                    type="button"
+                    onClick={() => open(chapter.id)}
+                    title={chapter.title}
+                    className={`mb-0.5 block w-full rounded-lg px-2 py-1.5 text-left text-xs leading-snug transition ${
+                      chapter.id === current
+                        ? 'bg-zinc-800 text-zinc-100'
+                        : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200'
+                    }`}
+                  >
+                    {chapter.title}
+                  </button>
+                  {/* Sections only under the chapter you have open. Listing
+                      every chapter's would be four hundred lines of contents
+                      for a book with nineteen chapters in it. */}
+                  {chapter.id === current &&
+                    chapter.sections.map((section) => (
+                      <button
+                        key={section.anchor}
+                        type="button"
+                        onClick={() => jumpTo(section.anchor)}
+                        title={section.title}
+                        className="mb-0.5 block w-full truncate rounded-lg py-1 pl-4 pr-2 text-left text-[11px] leading-snug text-zinc-500 transition hover:bg-zinc-800/60 hover:text-zinc-300"
+                      >
+                        {section.title}
+                      </button>
+                    ))}
+                </div>
               ))}
             </nav>
           )}
@@ -1359,7 +1431,7 @@ function BookModal({ file, onClose }: { file: string; onClose: () => void }): JS
               // `max-w-prose`: a 900px-wide line of book text is unreadable, and
               // this is the one place in the app with real prose in it.
               <article className="max-w-prose text-sm text-zinc-300">
-                <Markdown text={book.chapter.content} />
+                <Markdown text={book.chapter.content} anchors={ANCHOR_PREFIX} />
               </article>
             )}
           </div>

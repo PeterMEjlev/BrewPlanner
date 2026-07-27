@@ -29,7 +29,7 @@ import { pageLabel } from '../knowledge/chunk.js';
 import { embedQuery } from '../knowledge/embed.js';
 import { knowledgeDir, libraryOutline, search } from '../knowledge/store.js';
 import type { StreamEvent } from '../openai.js';
-import { openaiKey, OpenAIError, openaiGet, openaiStream } from '../openai.js';
+import { openaiKey, OpenAIError, openaiGet, openaiPost, openaiStream } from '../openai.js';
 import { getSetting, setSetting } from '../repo.js';
 import type { TokenUsage } from './cost.js';
 import { estimateCostUsd } from './cost.js';
@@ -245,7 +245,9 @@ You have been given passages from the brewing books in this brewery's library.
 Answer from those passages.
 
 - Base your answer on the passages whenever they cover the question, and cite
-  where it came from inline, like (Water, p. 142).
+  where it came from inline, like (Water, p. 142). Always give the page. That
+  citation is what attaches a passage to your answer on screen, so cite every
+  passage you actually used — and none that you didn't.
 - If the passages only partly cover it, answer what they support and say
   plainly which part is your own general brewing knowledge.
 - If they don't cover it at all, say so rather than inventing a figure. General
@@ -549,6 +551,128 @@ function phaseForEvent(event: StreamEvent, report: PhaseReporter): void {
 }
 
 /**
+ * Name a thread from its opening question — "Chocolate malt and mash pH"
+ * rather than the whole sentence the brewer typed.
+ *
+ * Its own small call, made *alongside* the answer rather than after it (see the
+ * route), so naming the thread costs no extra waiting. It is one call per
+ * conversation, not per question, and a handful of tokens: a rounding error
+ * against the answer it runs next to.
+ *
+ * Returns null on any failure, which is not an error — the caller falls back to
+ * the trimmed question, which is what every thread was named before this.
+ */
+export async function summariseTitle(question: string): Promise<string | null> {
+  if (!openaiKey()) return null;
+  const model = chatModel();
+  try {
+    const reply = await openaiPost<ResponsesReply>('/responses', {
+      model,
+      instructions: `Write a title for a brewing chat that opens with this question. Three to six words, no quotes, no full stop, capitalised like a headline. Name the subject, not the asking: "Mash pH for a pale ale", not "Question about mash pH". Reply with the title and nothing else.`,
+      input: [{ role: 'user', content: question.slice(0, 500) }],
+      max_output_tokens: TITLE_TOKEN_BUDGET,
+      // As little thinking as the model allows: naming a thread needs none, and
+      // spent on reasoning the budget above comes back empty. The o-series has
+      // no "minimal", so it gets the lowest it does take.
+      ...(model.startsWith('gpt-5')
+        ? { reasoning: { effort: 'minimal' } }
+        : /^o[1-9]/.test(model)
+          ? { reasoning: { effort: 'low' } }
+          : {}),
+    });
+    // Models like to wrap a title in quotes however firmly they are asked not
+    // to, and a trailing full stop is just as common — often both at once, so
+    // the quotes come off before the stop underneath them.
+    const title = (extractText(reply).split('\n')[0] ?? '')
+      .trim()
+      .replace(/^["'“”]+|["'“”]+$/g, '')
+      .replace(/\s*\.+$/, '')
+      .trim();
+    return title.length >= 3 ? title : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Room for a title and, on a reasoning model, the minimum it insists on
+ * spending before writing one. Six words is nothing; the floor is the model's.
+ */
+const TITLE_TOKEN_BUDGET = 200;
+
+/**
+ * A parenthesised aside — `(Water, p. 78–79)`. Citations are asked for in this
+ * form, and looking only inside brackets keeps a page number mentioned in the
+ * prose ("mash in with 30 p. of…") from reading as one.
+ */
+const PARENTHETICAL = /\(([^)]{1,200})\)/g;
+
+/** `p. 78`, `pp. 78–79`, `page 78` — the page (and range end) being cited. */
+const CITED_PAGE = /\bpp?\.\s*(\d+)(?:\s*[–—-]\s*(\d+))?|\bpages?\s+(\d+)(?:\s*[–—-]\s*(\d+))?/gi;
+
+/** Every number a passage covers: `"78–79"` → `[78, 79]`. */
+function pageNumbers(page: string | undefined): number[] {
+  if (!page) return [];
+  return [...page.matchAll(/\d+/g)].map((m) => Number(m[0]));
+}
+
+/**
+ * Work out which retrieved passages the answer actually leaned on.
+ *
+ * The evidence is the answer's own inline citations: the persona asks for
+ * `(Water, p. 142)`, so a passage whose pages appear in a bracket is one the
+ * model used, and an answer with no book citation at all used no book.
+ *
+ * Deliberately biased towards over-showing. If the answer cites the books in
+ * some way this can't attribute to a particular passage — an unusual format, a
+ * citation by chapter, a passage that carries no page numbers — everything is
+ * marked cited, exactly as it behaved before. The failure this fixes is a claim
+ * of provenance that isn't there; quietly hiding a real one would be the same
+ * mistake pointed the other way.
+ */
+function markCited(sources: BruceChatSource[], answer: string): BruceChatSource[] {
+  const books = sources.filter((source) => !source.url);
+  if (books.length === 0) return sources;
+
+  const brackets = [...answer.matchAll(PARENTHETICAL)].map((m) => m[1] ?? '');
+  const citedPages = new Set<number>();
+  for (const bracket of brackets) {
+    for (const match of bracket.matchAll(CITED_PAGE)) {
+      for (const number of match.slice(1)) {
+        if (number) citedPages.add(Number(number));
+      }
+    }
+  }
+
+  // A book named in a bracket, for the citations that carry no page: match on
+  // the title's longer words, which inside a bracket are a deliberate reference
+  // rather than ordinary prose.
+  const titleWords = new Set(
+    books.flatMap((source) =>
+      source.title
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length >= 5),
+    ),
+  );
+  const namesABook = brackets.some((bracket) =>
+    bracket
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .some((word) => titleWords.has(word)),
+  );
+
+  const matched = books.filter((source) => pageNumbers(source.page).some((n) => citedPages.has(n)));
+  // Cited the books but not in a way that lands on a passage: show them all
+  // rather than guess wrong about which one.
+  const allCited = matched.length === 0 && (citedPages.size > 0 || namesABook);
+
+  return sources.map((source) =>
+    source.url ? source : { ...source, cited: allCited || matched.includes(source) },
+  );
+}
+
+/**
  * Answer one question, grounded in the knowledge index.
  *
  * @param question What the brewer typed
@@ -697,7 +821,9 @@ export async function answerQuestion(
   // a little more than this says; the page links the real bill for that reason.
   return {
     text,
-    sources: [...sources, ...uniqueWeb],
+    // The passages travel with the answer either way; `cited` is what separates
+    // the ones it was written from and the ones it merely had to hand.
+    sources: markCited([...sources, ...uniqueWeb], text),
     costUsd: estimateCostUsd(model, usage),
   };
 }

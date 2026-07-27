@@ -31,6 +31,7 @@ import {
   setBruceInstructions,
   setChatModel,
   setWebSearchEnabled,
+  summariseTitle,
   webSearchEnabled,
 } from '../bruce/chat.js';
 import {
@@ -41,6 +42,7 @@ import {
   defaultConversation,
   deleteConversation,
   deleteMessage,
+  isUntitled,
   listConversations,
   listMessages,
   renameConversation,
@@ -292,6 +294,13 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
     // question would poison every following turn's context.
     const history = listMessages(conversationId);
     const question = addMessage(conversationId, 'user', body.message);
+
+    // Naming a still-unnamed thread runs *beside* the answer, not after it: it
+    // is a second (small) round trip, and sequenced it would add its latency to
+    // every first question. Started before the await below, collected after,
+    // by which time the much longer answer call has covered it.
+    const title = isUntitled(conversationId) ? summariseTitle(body.message) : null;
+
     try {
       const answer = await answerQuestion(body.message, history, (phase) =>
         send({ type: 'phase', ...phase }),
@@ -305,7 +314,7 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
       );
       // Name the thread after what it turned out to be about. Only takes
       // effect on an untitled thread, so a rename is never clobbered.
-      titleFromFirstMessage(conversationId, body.message);
+      titleFromFirstMessage(conversationId, body.message, await title);
       trimHistory(conversationId);
       const conversation = listConversations().find((c) => c.id === conversationId);
       if (!conversation) throw new Error('Conversation vanished mid-answer.');
