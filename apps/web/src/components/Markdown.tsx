@@ -33,6 +33,16 @@ const INLINE =
 const LINK = /^\[([^\]]+)\]\(([^)\s]+)\)$/;
 
 /**
+ * How emphasised text is set: a full weight step *and* a brightness step.
+ *
+ * `font-semibold` alone did not read as bold — 600 against 400 is a small
+ * difference in the UI font, and it was paired with a colour one shade off the
+ * body text, so the two were genuinely hard to tell apart. Both callers set
+ * their body copy at zinc-300 to leave this room to land.
+ */
+const BOLD = 'font-bold text-white';
+
+/**
  * Only http(s) links become anchors. The text being rendered is model output,
  * so a `javascript:` or `data:` target is not a link this app should offer to
  * follow — those fall through and are shown as the plain text they are.
@@ -50,13 +60,13 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     const link = part.match(LINK);
     if (part.startsWith('***') && part.endsWith('***') && part.length > 6) {
       nodes.push(
-        <strong key={key} className="font-semibold italic text-zinc-50">
+        <strong key={key} className={`${BOLD} italic`}>
           {part.slice(3, -3)}
         </strong>,
       );
     } else if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
       nodes.push(
-        <strong key={key} className="font-semibold text-zinc-50">
+        <strong key={key} className={BOLD}>
           {part.slice(2, -2)}
         </strong>,
       );
@@ -116,8 +126,10 @@ const HEADING_LOOK: Record<number, string> = {
   2: 'mt-3 text-[0.95rem] font-semibold text-zinc-100',
   3: 'mt-2 font-semibold text-zinc-100',
   4: 'mt-2 font-semibold text-zinc-200',
-  5: 'mt-2 font-medium text-zinc-300',
-  6: 'mt-2 font-medium text-zinc-400',
+  // Never dimmer than the zinc-300 body copy either caller sets — a heading
+  // that reads as de-emphasised is worse than no heading style at all.
+  5: 'mt-2 font-semibold text-zinc-200',
+  6: 'mt-2 font-semibold text-zinc-300',
 };
 
 /**

@@ -295,7 +295,12 @@ function ChatBubble({ message }: { message: BruceChatMessage }): JSX.Element {
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[92%] rounded-xl px-3.5 py-2.5 text-sm ${
-          isUser ? 'bg-emerald-950/60 text-emerald-100' : 'bg-zinc-800 text-zinc-100'
+          // Answers sit a shade below full brightness so that **bold** has
+          // somewhere to go. At zinc-100 the emphasised words were already the
+          // same white as everything around them, and only the weight said
+          // otherwise — which is exactly the complaint. zinc-300 on zinc-800 is
+          // still ~9:1, comfortably readable.
+          isUser ? 'bg-emerald-950/60 text-emerald-100' : 'bg-zinc-800 text-zinc-300'
         }`}
       >
         {isUser ? <p className="whitespace-pre-wrap">{message.content}</p> : <Markdown text={message.content} />}
@@ -1305,10 +1310,21 @@ function InstructionsModal({ onClose }: { onClose: () => void }): JSX.Element {
 /** Id prefix for the reader's heading anchors — see Markdown's `anchors` prop. */
 const ANCHOR_PREFIX = 'book-heading-';
 
+/**
+ * How far down the reading pane the "you are here" line sits, in pixels.
+ *
+ * A heading counts as the section you are in once it has scrolled to within
+ * this much of the top. On the line itself, a heading would only light up its
+ * section after it had left the screen entirely.
+ */
+const READING_LINE_PX = 96;
+
 function BookModal({ file, onClose }: { file: string; onClose: () => void }): JSX.Element {
   const [book, setBook] = useState<BruceBook | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Anchor of the section currently under the reading line; null above the first. */
+  const [readingAnchor, setReadingAnchor] = useState<number | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
 
   const open = (chapter?: number): void => {
@@ -1339,6 +1355,49 @@ function BookModal({ file, onClose }: { file: string; onClose: () => void }): JS
     document.getElementById(`${ANCHOR_PREFIX}${anchor}`)?.scrollIntoView({ block: 'start' });
   };
 
+  /**
+   * Follow the reading position: the contents rail lights up whichever section
+   * the text on screen belongs to, so a long chapter says where you are in it
+   * rather than only where you jumped from.
+   *
+   * Measured on scroll rather than with an IntersectionObserver — "the last
+   * heading above the line" is one pass over a handful of elements and says
+   * exactly what it means, where an observer would have to infer the same
+   * answer from which headings happen to be visible. Coalesced onto animation
+   * frames so a fast scroll measures once per paint.
+   */
+  useEffect(() => {
+    const pane = pageRef.current;
+    const sections = book?.chapter.sections;
+    if (!pane || !sections || sections.length === 0) return;
+
+    let frame = 0;
+    const measure = (): void => {
+      frame = 0;
+      const line = pane.getBoundingClientRect().top + READING_LINE_PX;
+      let current: number | null = null;
+      // Sections come in document order, so the last one to start above the
+      // line is the one being read.
+      for (const section of sections) {
+        const heading = document.getElementById(`${ANCHOR_PREFIX}${section.anchor}`);
+        if (heading && heading.getBoundingClientRect().top <= line) current = section.anchor;
+      }
+      setReadingAnchor(current);
+    };
+    const onScroll = (): void => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+
+    pane.addEventListener('scroll', onScroll, { passive: true });
+    measure(); // the chapter may open already scrolled past its first heading
+    return () => {
+      pane.removeEventListener('scroll', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+    // `loading` as well as `book`: the two land in separate renders, and the
+    // headings only exist in the DOM once the second one has drawn the chapter.
+  }, [book, loading]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose();
@@ -1368,7 +1427,10 @@ function BookModal({ file, onClose }: { file: string; onClose: () => void }): JS
         className="absolute inset-0 cursor-default bg-black/70 backdrop-blur-sm"
       />
 
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-5xl flex-col rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50">
+      {/* 90rem rather than the old 5xl (64rem): wide enough to hold a couple of
+          screens' worth of a chapter, still bounded so it doesn't sprawl on a
+          large monitor. Smaller displays are capped by the viewport anyway. */}
+      <div className="relative z-10 flex max-h-[92vh] w-full max-w-[90rem] flex-col rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50">
         <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-5 py-3.5">
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold tracking-tight text-zinc-50">
@@ -1408,29 +1470,41 @@ function BookModal({ file, onClose }: { file: string; onClose: () => void }): JS
                       every chapter's would be four hundred lines of contents
                       for a book with nineteen chapters in it. */}
                   {chapter.id === current &&
-                    chapter.sections.map((section) => (
-                      <button
-                        key={section.anchor}
-                        type="button"
-                        onClick={() => jumpTo(section.anchor)}
-                        title={section.title}
-                        className="mb-0.5 block w-full truncate rounded-lg py-1 pl-4 pr-2 text-left text-[11px] leading-snug text-zinc-500 transition hover:bg-zinc-800/60 hover:text-zinc-300"
-                      >
-                        {section.title}
-                      </button>
-                    ))}
+                    chapter.sections.map((section) => {
+                      // Lit while the text on screen belongs to this section —
+                      // the rail doubles as a position marker in a long chapter.
+                      const here = section.anchor === readingAnchor;
+                      return (
+                        <button
+                          key={section.anchor}
+                          type="button"
+                          onClick={() => jumpTo(section.anchor)}
+                          title={section.title}
+                          aria-current={here ? 'location' : undefined}
+                          className={`mb-0.5 block w-full truncate border-l-2 py-1 pl-3 pr-2 text-left text-[11px] leading-snug transition ${
+                            here
+                              ? 'border-[#f87a68] font-medium text-zinc-200'
+                              : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
+                          }`}
+                        >
+                          {section.title}
+                        </button>
+                      );
+                    })}
                 </div>
               ))}
             </nav>
           )}
 
-          <div ref={pageRef} className="min-w-0 flex-1 overflow-y-auto px-5 py-4 sm:px-8 sm:py-6">
+          <div ref={pageRef} className="min-w-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6 sm:py-5">
             {loading && <p className="text-sm text-zinc-500">Opening…</p>}
             {error && <p className="text-sm text-red-400">{error}</p>}
             {!loading && book && (
-              // `max-w-prose`: a 900px-wide line of book text is unreadable, and
-              // this is the one place in the app with real prose in it.
-              <article className="max-w-prose text-sm text-zinc-300">
+              // Fills the pane rather than sitting inside a `max-w-prose`
+              // column: this is a reference book being consulted, not an essay
+              // being read end to end, and the empty right-hand half was just
+              // fewer paragraphs per screen.
+              <article className="text-sm text-zinc-300">
                 <Markdown text={book.chapter.content} anchors={ANCHOR_PREFIX} />
               </article>
             )}
