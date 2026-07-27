@@ -11,6 +11,8 @@ import type {
   BruceChatReply,
   BruceChatState,
   BruceConversation,
+  BruceInstructions,
+  BruceKnowledgeState,
   BruceServiceStatus,
   ChecklistSummary,
   ChecklistWithSteps,
@@ -465,4 +467,28 @@ export const api = {
     }),
   deleteBruceConversation: (id: number) =>
     request<void>(`/bruce/chat/conversations/${id}`, { method: 'DELETE' }),
+
+  // Bruce's library. Uploading a book indexes it, which takes a minute or two,
+  // so these return the job rather than waiting for it — poll getBruceKnowledge
+  // while `job.state === 'running'`.
+  getBruceKnowledge: () => request<BruceKnowledgeState>('/bruce/knowledge'),
+  addBruceBook: (file: string, content: string) =>
+    request<BruceKnowledgeState>('/bruce/knowledge/files', {
+      method: 'POST',
+      body: JSON.stringify({ file, content }),
+    }),
+  reindexBruceKnowledge: (force = false) =>
+    request<BruceKnowledgeState>('/bruce/knowledge/reindex', {
+      method: 'POST',
+      body: JSON.stringify({ force }),
+    }),
+
+  // Bruce's persona (knowledge/PROMPT.md). Saving empty text reverts to the
+  // built-in instructions.
+  getBruceInstructions: () => request<BruceInstructions>('/bruce/instructions'),
+  saveBruceInstructions: (text: string) =>
+    request<BruceInstructions>('/bruce/instructions', {
+      method: 'PUT',
+      body: JSON.stringify({ text }),
+    }),
 };

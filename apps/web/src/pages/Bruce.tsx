@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   BruceChatMessage,
   BruceChatState,
-  BruceKnowledgeStatus,
+  BruceIndexJob,
+  BruceInstructions,
+  BruceKnowledgeState,
   BruceServiceStatus,
   BruceState,
   BruceTranscriptEntry,
 } from '@checklist/shared';
+import { MAX_KNOWLEDGE_FILE_CHARS } from '@checklist/shared';
 import { api } from '../api';
 import { DashboardShell } from '../components/DashboardShell';
 import { Markdown } from '../components/Markdown';
@@ -85,80 +88,15 @@ function ChatBubble({ message }: { message: BruceChatMessage }): JSX.Element {
   );
 }
 
-/** One line explaining what Bruce can currently answer from — or why he can't. */
-function KnowledgeNote({ state }: { state: BruceChatState }): JSX.Element {
-  if (!state.configured) {
-    return (
-      <p className="text-xs text-amber-500/90">
-        No <code className="text-amber-400">OPENAI_API_KEY</code> on the server — add it to{' '}
-        <code className="text-amber-400">/etc/brewplanner.env</code> on the Pi, or a{' '}
-        <code className="text-amber-400">.env</code> at the repo root in development, then
-        restart the server.
-      </p>
-    );
-  }
-  if (!state.knowledge.ready) {
-    return <p className="text-xs text-amber-500/90">{state.knowledge.problem}</p>;
-  }
-  if (state.knowledge.documents.length === 0) {
-    return <p className="text-xs text-zinc-600">Nothing indexed from the brewery library yet.</p>;
-  }
+/** Shown in the composer's place when the server has no key to answer with. */
+function MissingKeyNote(): JSX.Element {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-600">
-      <KnowledgeLibrary knowledge={state.knowledge} />
-      {state.knowledge.problem && <span className="text-amber-500/90">{state.knowledge.problem}</span>}
-    </div>
-  );
-}
-
-/**
- * The shelf itself: which books Bruce answers from, and how much of each was
- * indexed. Behind a popover because the titles are long and the answer to
- * "what has he read?" is wanted occasionally, not on every glance — but the
- * trigger still carries the summary so a glance is usually enough.
- */
-function KnowledgeLibrary({ knowledge }: { knowledge: BruceKnowledgeStatus }): JSX.Element {
-  const books = knowledge.documents.length;
-  return (
-    <Popover
-      title="Which books Bruce answers from"
-      width="w-80"
-      label={
-        <span className="truncate">
-          {books} {books === 1 ? 'book' : 'books'} · {knowledge.passages.toLocaleString()} passages
-        </span>
-      }
-    >
-      {() => (
-        <>
-          <p className="px-2 pb-1 pt-1.5 text-[11px] text-zinc-500">
-            Answers are retrieved from these files in <code className="text-zinc-400">knowledge/</code>.
-          </p>
-          {knowledge.documents.map((doc) => (
-            <div key={doc.file} className="rounded-lg px-2 py-1.5">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-xs font-medium text-zinc-100">{doc.title}</span>
-                <span className="ml-auto shrink-0 text-[10px] text-zinc-500">
-                  {doc.passages.toLocaleString()} passages
-                </span>
-              </div>
-              <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-500" title={doc.file}>
-                {doc.file}
-              </p>
-            </div>
-          ))}
-          {knowledge.builtAt && (
-            <p
-              className="border-t border-zinc-800 px-2 pb-1 pt-1.5 text-[11px] text-zinc-500"
-              title={new Date(knowledge.builtAt).toLocaleString()}
-            >
-              Indexed {relativeTime(knowledge.builtAt)}. Adding or editing a book means rebuilding —
-              see <code className="text-zinc-400">npm run knowledge</code>.
-            </p>
-          )}
-        </>
-      )}
-    </Popover>
+    <p className="text-xs leading-relaxed text-amber-500/90">
+      No <code className="text-amber-400">OPENAI_API_KEY</code> on the server — add it to{' '}
+      <code className="text-amber-400">/etc/brewplanner.env</code> on the Pi, or a{' '}
+      <code className="text-amber-400">.env</code> at the repo root in development, then restart
+      the server.
+    </p>
   );
 }
 
@@ -508,9 +446,9 @@ function Chat(): JSX.Element {
         </div>
       </div>
 
-      {state && (
+      {state && !state.configured && (
         <div className="mb-3 border-b border-zinc-800 pb-2.5">
-          <KnowledgeNote state={state} />
+          <MissingKeyNote />
         </div>
       )}
 
@@ -794,6 +732,344 @@ function VoiceRail({ status }: { status: BruceServiceStatus | null }): JSX.Eleme
   );
 }
 
+// --- The library ------------------------------------------------------------
+
+/** How often the library refreshes while a rebuild is running. */
+const JOB_POLL_MS = 1500;
+
+/** Progress of a rebuild, or why it stopped. Silent once a build has landed. */
+function IndexJobLine({ job }: { job: BruceIndexJob }): JSX.Element | null {
+  if (job.state === 'running') {
+    const percent = job.total > 0 ? Math.round((job.embedded / job.total) * 100) : 0;
+    return (
+      <div>
+        <div className="mb-1 flex items-baseline justify-between gap-2 text-[11px]">
+          <span className="truncate text-zinc-400">
+            Indexing{job.note ? ` ${job.note}` : ''}…
+          </span>
+          <span className="shrink-0 tabular-nums text-zinc-500">
+            {job.embedded}/{job.total}
+          </span>
+        </div>
+        <div className="h-1 overflow-hidden rounded-full bg-zinc-800">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-all"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      </div>
+    );
+  }
+  if (job.state === 'failed') {
+    return <p className="text-[11px] leading-relaxed text-red-400">Indexing failed: {job.error}</p>;
+  }
+  // A finished build speaks for itself — the book appears in the list above and
+  // "Indexed just now" updates. Only the no-op case needs saying out loud.
+  if (job.total === 0) {
+    return <p className="text-[11px] text-zinc-500">Everything was already indexed.</p>;
+  }
+  return null;
+}
+
+/**
+ * Bruce's instructions, editable. This is knowledge/PROMPT.md — the persona
+ * sent with every question — which until now meant an SSH session and a text
+ * editor on the Pi. Full-screen rather than in the card because a persona is
+ * paragraphs, not a field.
+ */
+function InstructionsModal({ onClose }: { onClose: () => void }): JSX.Element {
+  const [loaded, setLoaded] = useState<BruceInstructions | null>(null);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let stale = false;
+    api
+      .getBruceInstructions()
+      .then((next) => {
+        if (stale) return;
+        setLoaded(next);
+        setText(next.text);
+      })
+      .catch((err: unknown) => {
+        if (!stale) setError(err instanceof Error ? err.message : 'Could not load the instructions.');
+      });
+    return () => {
+      stale = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
+
+  /** Empty text deletes PROMPT.md server-side, which is the revert. */
+  const save = async (next: string, close: boolean): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await api.saveBruceInstructions(next);
+      setLoaded(saved);
+      setText(saved.text);
+      if (close) onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^\d+:\s*/, '') : 'Could not save.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Bruce's instructions"
+    >
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 cursor-default bg-black/70 backdrop-blur-sm"
+      />
+
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50">
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-5 py-3.5">
+          <h2 className="text-base font-semibold tracking-tight text-zinc-50">
+            Bruce&rsquo;s instructions
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-200"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          <p className="mb-3 text-xs leading-relaxed text-zinc-500">
+            How Bruce answers in writing: sent with every question, on top of the passages
+            retrieved from the books. Saved as{' '}
+            <code className="text-zinc-400">knowledge/PROMPT.md</code> and used from the next
+            question — nothing needs restarting. The voice assistant keeps its own, shorter
+            instructions.
+          </p>
+
+          {loaded == null && !error && <p className="text-sm text-zinc-500">Loading…</p>}
+          {loaded != null && (
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={18}
+              maxLength={20000}
+              spellCheck={false}
+              className="w-full resize-y rounded-lg border border-zinc-800 bg-zinc-900 p-3 font-mono text-xs leading-relaxed text-zinc-200 focus:border-zinc-600 focus:outline-none"
+            />
+          )}
+          {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 px-5 py-3">
+          <span className="text-[11px] text-zinc-600">
+            {loaded?.custom ? 'Using knowledge/PROMPT.md' : 'Using the built-in instructions'}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={busy || !loaded?.custom}
+              onClick={() => void save('', false)}
+              title="Delete knowledge/PROMPT.md and go back to the built-in persona"
+              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition enabled:hover:border-zinc-600 enabled:hover:text-zinc-200 disabled:opacity-40"
+            >
+              Revert to built-in
+            </button>
+            <button
+              type="button"
+              disabled={busy || loaded == null || text.trim() === loaded.text.trim()}
+              onClick={() => void save(text, true)}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition enabled:hover:bg-emerald-500 disabled:opacity-40"
+            >
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What Bruce has read, and the controls for changing it: add a book, rebuild
+ * the index, rewrite his instructions.
+ *
+ * It owns its own data rather than reading the chat's copy, because a rebuild
+ * has to be followed live — the card polls while a job runs and stops as soon
+ * as it lands.
+ */
+function LibraryCard(): JSX.Element {
+  const [state, setState] = useState<BruceKnowledgeState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const running = state?.job?.state === 'running';
+  usePoll(
+    async (isStale) => {
+      try {
+        const next = await api.getBruceKnowledge();
+        if (!isStale()) setState(next);
+      } catch {
+        // Keep the last known shelf through a transient failure.
+      }
+    },
+    running ? JOB_POLL_MS : null,
+    [running],
+  );
+
+  const upload = async (file: File): Promise<void> => {
+    setError(null);
+    if (!file.name.toLowerCase().endsWith('.md')) {
+      setError('Bruce reads markdown — convert the book to .md first (see knowledge/README.md).');
+      return;
+    }
+    setBusy(true);
+    try {
+      const content = await file.text();
+      if (content.length > MAX_KNOWLEDGE_FILE_CHARS) {
+        setError('That file is too large to index in one go.');
+        return;
+      }
+      setState(await api.addBruceBook(file.name, content));
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^\d+:\s*/, '') : 'Could not add that book.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rebuild = async (): Promise<void> => {
+    setError(null);
+    setBusy(true);
+    try {
+      setState(await api.reindexBruceKnowledge());
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^\d+:\s*/, '') : 'Could not rebuild.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const knowledge = state?.knowledge;
+  const buttonClass =
+    'rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition enabled:hover:border-zinc-600 enabled:hover:text-zinc-200 disabled:opacity-40';
+
+  return (
+    <section className="h-fit space-y-3 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-zinc-400">Library</h2>
+        {knowledge && knowledge.documents.length > 0 && (
+          <span className="text-[11px] text-zinc-600">
+            {knowledge.passages.toLocaleString()} passages
+          </span>
+        )}
+      </div>
+
+      {state == null && <p className="text-xs text-zinc-600">Loading…</p>}
+      {state != null && !state.configured && <MissingKeyNote />}
+
+      {knowledge != null &&
+        (knowledge.documents.length > 0 ? (
+          <ul className="space-y-2">
+            {knowledge.documents.map((doc) => (
+              <li key={doc.file}>
+                <div className="text-xs font-medium leading-snug text-zinc-200">{doc.title}</div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="truncate font-mono text-[10px] text-zinc-600" title={doc.file}>
+                    {doc.file}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-zinc-600">
+                    {doc.passages.toLocaleString()} passages
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs leading-relaxed text-zinc-600">
+            No books yet. Add a markdown book and Bruce answers from it, citing the page.
+          </p>
+        ))}
+
+      {knowledge?.builtAt && !running && (
+        <p
+          className="text-[11px] text-zinc-600"
+          title={new Date(knowledge.builtAt).toLocaleString()}
+        >
+          Indexed {relativeTime(knowledge.builtAt)}
+        </p>
+      )}
+
+      {knowledge?.problem && (
+        <p className="text-[11px] leading-relaxed text-amber-500/90">{knowledge.problem}</p>
+      )}
+
+      {state?.job && <IndexJobLine job={state.job} />}
+
+      <div className="flex flex-wrap gap-2">
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".md,text/markdown"
+          className="hidden"
+          onChange={(e) => {
+            const picked = e.target.files?.[0];
+            // Cleared so picking the same file twice fires onChange again.
+            e.target.value = '';
+            if (picked) void upload(picked);
+          }}
+        />
+        <button
+          type="button"
+          disabled={busy || running}
+          onClick={() => fileRef.current?.click()}
+          title="Upload a .md book into knowledge/ and index it"
+          className={buttonClass}
+        >
+          {busy ? 'Working…' : 'Add a book'}
+        </button>
+        <button
+          type="button"
+          disabled={busy || running}
+          onClick={() => void rebuild()}
+          title="Re-index after editing the files on disk"
+          className={buttonClass}
+        >
+          Rebuild
+        </button>
+        <button type="button" onClick={() => setEditing(true)} className={buttonClass}>
+          Instructions
+        </button>
+      </div>
+
+      {error && <p className="text-xs leading-relaxed text-red-400">{error}</p>}
+
+      {editing && <InstructionsModal onClose={() => setEditing(false)} />}
+    </section>
+  );
+}
+
 export function BrucePage(): JSX.Element {
   const [status, setStatus] = useState<BruceServiceStatus | null>(null);
 
@@ -811,7 +1087,10 @@ export function BrucePage(): JSX.Element {
       <main className="w-full max-w-[1200px] px-5 py-5">
         <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
           <Chat />
-          <VoiceRail status={status} />
+          <div className="space-y-4">
+            <VoiceRail status={status} />
+            <LibraryCard />
+          </div>
         </div>
       </main>
     </DashboardShell>

@@ -2,6 +2,8 @@ import type {
   BruceChatModel,
   BruceChatReply,
   BruceChatState,
+  BruceInstructions,
+  BruceKnowledgeState,
   BruceServiceStatus,
   BruceStatus,
 } from '@checklist/shared';
@@ -9,6 +11,9 @@ import {
   bruceChatModelSchema,
   bruceChatSchema,
   bruceConversationSchema,
+  bruceInstructionsSchema,
+  bruceKnowledgeFileSchema,
+  bruceReindexSchema,
   bruceSpeakSchema,
   bruceVolumeSchema,
 } from '@checklist/shared';
@@ -16,7 +21,14 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
-import { answerQuestion, chatModel, listChatModels, setChatModel } from '../bruce/chat.js';
+import {
+  answerQuestion,
+  bruceInstructions,
+  chatModel,
+  listChatModels,
+  setBruceInstructions,
+  setChatModel,
+} from '../bruce/chat.js';
 import {
   addMessage,
   clearMessages,
@@ -31,7 +43,10 @@ import {
   titleFromFirstMessage,
   trimHistory,
 } from '../bruce/repo.js';
-import { knowledgeStatus } from '../knowledge/store.js';
+import { BuildError } from '../knowledge/build.js';
+import { chunkMarkdown } from '../knowledge/chunk.js';
+import { indexJob, startIndexJob } from '../knowledge/job.js';
+import { isReservedKnowledgeName, knowledgeStatus, writeKnowledgeFile } from '../knowledge/store.js';
 import { isOpenAIConfigured } from '../openai.js';
 
 /**
@@ -58,6 +73,14 @@ function bruceBase(): string {
 
 /** Loopback answers in microseconds; anything slower means the service is down. */
 const BRUCE_TIMEOUT_MS = 2000;
+
+/**
+ * Body limit for a book upload. Fastify defaults to 1 MB for every route,
+ * which is under the cap the schema allows (MAX_KNOWLEDGE_FILE_CHARS), so a
+ * large book would be refused by the framework before the schema ever saw it.
+ * Raised here only — the rest of the API has no reason to accept megabytes.
+ */
+const UPLOAD_BODY_LIMIT = 12 * 1024 * 1024;
 
 /** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
 function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T | null {
@@ -249,5 +272,90 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
     }
     clearMessages(conversationId);
     return reply.status(204).send();
+  });
+
+  // --- The library ---------------------------------------------------------
+  // Putting a book on Bruce's shelf used to mean an SSH session on the Pi: scp
+  // the markdown into knowledge/, then `npm run knowledge` with the API key
+  // loaded by hand. Same for his instructions, which are a file in that folder
+  // too. These four endpoints are that work, from the dashboard.
+
+  /** Kick off a rebuild, turning a BuildError into a 400 the page can show. */
+  const startRebuild = async (
+    options: { force?: boolean; note?: string },
+    reply: FastifyReply,
+  ): Promise<BruceKnowledgeState | void> => {
+    try {
+      const job = startIndexJob(options);
+      return { knowledge: knowledgeStatus(), job, configured: isOpenAIConfigured() };
+    } catch (err) {
+      if (err instanceof BuildError) return reply.status(400).send({ error: err.message });
+      throw err;
+    }
+  };
+
+  // GET /api/bruce/knowledge — what's on the shelf, plus any rebuild in flight.
+  // Polled by the page's library card while a job runs.
+  app.get('/knowledge', { preHandler: requireAuth }, async (): Promise<BruceKnowledgeState> => {
+    return { knowledge: knowledgeStatus(), job: indexJob(), configured: isOpenAIConfigured() };
+  });
+
+  // POST /api/bruce/knowledge/files — upload a book and index it. Admin-only:
+  // it writes to disk and then spends OpenAI credit embedding what it wrote.
+  app.post(
+    '/knowledge/files',
+    { preHandler: requireAdmin, bodyLimit: UPLOAD_BODY_LIMIT },
+    async (req, reply) => {
+      const body = parse(bruceKnowledgeFileSchema, req.body, reply);
+      if (!body) return;
+      if (isReservedKnowledgeName(body.file)) {
+        return reply.status(400).send({
+          error: `${body.file} is a reserved name — PROMPT.md holds Bruce's instructions and README.md documents the folder.`,
+        });
+      }
+      // Chunk it before it touches the disk. A file that produces no passages
+      // (too short, or a table of contents rather than prose) would otherwise
+      // sit in knowledge/ nagging "1 new file not indexed" after every build.
+      if (chunkMarkdown(body.file, body.content).length === 0) {
+        return reply.status(400).send({
+          error: `There is nothing to index in ${body.file} — Bruce needs markdown prose, and very short files are skipped.`,
+        });
+      }
+      try {
+        writeKnowledgeFile(body.file, body.content);
+      } catch (err) {
+        req.log.error({ err }, 'Could not save an uploaded book');
+        return reply.status(500).send({ error: 'Could not save the file into knowledge/.' });
+      }
+      // Index it straight away: a book on disk that nothing embedded answers
+      // no questions, and needing a second button for that is a trap.
+      return startRebuild({ note: body.file }, reply);
+    },
+  );
+
+  // POST /api/bruce/knowledge/reindex — rebuild after editing files by hand, or
+  // when the page reports the index is stale. `force` re-embeds everything.
+  app.post('/knowledge/reindex', { preHandler: requireAdmin }, async (req, reply) => {
+    const body = parse(bruceReindexSchema, req.body ?? {}, reply);
+    if (!body) return;
+    return startRebuild({ ...(body.force ? { force: true } : {}) }, reply);
+  });
+
+  // GET /api/bruce/instructions — the persona in use, and the built-in one.
+  app.get('/instructions', { preHandler: requireAuth }, async (): Promise<BruceInstructions> => {
+    return bruceInstructions();
+  });
+
+  // PUT /api/bruce/instructions — rewrite knowledge/PROMPT.md. Empty text
+  // deletes it, which is how you go back to the built-in persona.
+  app.put('/instructions', { preHandler: requireAdmin }, async (req, reply) => {
+    const body = parse(bruceInstructionsSchema, req.body, reply);
+    if (!body) return;
+    try {
+      return setBruceInstructions(body.text);
+    } catch (err) {
+      req.log.error({ err }, 'Could not save Bruce instructions');
+      return reply.status(500).send({ error: 'Could not write knowledge/PROMPT.md.' });
+    }
   });
 }

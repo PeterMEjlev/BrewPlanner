@@ -2235,3 +2235,85 @@ export const bruceChatModelSchema = z.object({
     .regex(/^[a-zA-Z0-9._-]+$/, 'Not a valid model id'),
 });
 export type BruceChatModelInput = z.infer<typeof bruceChatModelSchema>;
+
+// ---------------------------------------------------------------------------
+// Tending the library from the dashboard: adding a book, rebuilding the index,
+// and rewriting Bruce's instructions. All of it used to need an SSH session and
+// `npm run knowledge` on the Pi.
+// ---------------------------------------------------------------------------
+
+/**
+ * A rebuild of the knowledge index, as the Bruce page follows it.
+ *
+ * Embedding a book takes a minute or two, which is far too long to hold a
+ * request open, so the server runs it in the background and the page polls
+ * this. `embedded`/`total` count passages in *this* run, not the whole shelf —
+ * unchanged books keep their vectors and are never re-embedded.
+ */
+export interface BruceIndexJob {
+  state: 'running' | 'ok' | 'failed';
+  startedAt: string;
+  /** Absent while running. */
+  finishedAt?: string;
+  embedded: number;
+  total: number;
+  /** What kicked it off, e.g. `water.md` — shown next to the progress bar. */
+  note?: string;
+  /** Set when `state` is `failed`; safe to show as-is. */
+  error?: string;
+}
+
+/** GET /api/bruce/knowledge — what's on the shelf, plus any rebuild in flight. */
+export interface BruceKnowledgeState {
+  knowledge: BruceKnowledgeStatus;
+  /** The most recent rebuild, running or finished; null if none since boot. */
+  job: BruceIndexJob | null;
+  /** False when the server has no OPENAI_API_KEY — nothing can be embedded. */
+  configured: boolean;
+}
+
+/**
+ * Upload cap for one book. The two books this was built against are ~600 KB of
+ * markdown each; 8 MB is roughly a shelf of them and still small enough that
+ * holding one in memory on a Pi is nothing to worry about.
+ */
+export const MAX_KNOWLEDGE_FILE_CHARS = 8_000_000;
+
+/**
+ * Body for POST /api/bruce/knowledge/files — a markdown book, uploaded whole.
+ *
+ * The name is checked hard: it lands on disk in knowledge/, so anything with a
+ * folder in it, or not ending in `.md`, is refused here rather than sanitised
+ * into something the uploader didn't ask for.
+ */
+export const bruceKnowledgeFileSchema = z.object({
+  file: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9 ._-]*\.md$/i, 'Needs to be a .md file name, with no folders'),
+  content: z.string().min(1).max(MAX_KNOWLEDGE_FILE_CHARS),
+});
+export type BruceKnowledgeFileInput = z.infer<typeof bruceKnowledgeFileSchema>;
+
+/** Body for POST /api/bruce/knowledge/reindex — `force` re-embeds everything. */
+export const bruceReindexSchema = z.object({ force: z.boolean().optional() });
+export type BruceReindexInput = z.infer<typeof bruceReindexSchema>;
+
+/** GET /api/bruce/instructions — the persona the chat runs with. */
+export interface BruceInstructions {
+  /** What is actually sent to the model: the custom text, or the built-in one. */
+  text: string;
+  /** True when knowledge/PROMPT.md exists and is being used. */
+  custom: boolean;
+  /** The built-in persona, so the page can show it and offer to revert. */
+  builtIn: string;
+}
+
+/**
+ * Body for PUT /api/bruce/instructions. Empty text deletes knowledge/PROMPT.md
+ * and goes back to the built-in persona — that is the "revert" button.
+ */
+export const bruceInstructionsSchema = z.object({ text: z.string().max(20000) });
+export type BruceInstructionsInput = z.infer<typeof bruceInstructionsSchema>;

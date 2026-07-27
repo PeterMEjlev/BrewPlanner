@@ -16,9 +16,14 @@
  * which page it read it on, and says it doesn't know when the books are silent.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { BruceChatMessage, BruceChatModel, BruceChatSource } from '@checklist/shared';
+import type {
+  BruceChatMessage,
+  BruceChatModel,
+  BruceChatSource,
+  BruceInstructions,
+} from '@checklist/shared';
 import { pageLabel } from '../knowledge/chunk.js';
 import { embedQuery } from '../knowledge/embed.js';
 import { knowledgeDir, libraryOutline, search } from '../knowledge/store.js';
@@ -216,18 +221,53 @@ numbers, and give the reasoning behind a recommendation, not just the number.
 Use metric units (°C, litres, grams), since that is what this brewery brews in,
 converting from the books where they use US units.`;
 
-/** Persona text: knowledge/PROMPT.md when present, else the built-in default. */
-function personaPrompt(): string {
-  const custom = join(knowledgeDir(), 'PROMPT.md');
+/** Where a custom persona lives. Instructions, not source material: never indexed. */
+function promptPath(): string {
+  return join(knowledgeDir(), 'PROMPT.md');
+}
+
+/** Persona in use: knowledge/PROMPT.md when it has content, else the built-in. */
+function persona(): { text: string; custom: boolean } {
   try {
-    if (existsSync(custom)) {
-      const text = readFileSync(custom, 'utf-8').trim();
-      if (text.length > 0) return text;
+    if (existsSync(promptPath())) {
+      const text = readFileSync(promptPath(), 'utf-8').trim();
+      if (text.length > 0) return { text, custom: true };
     }
   } catch {
     // Unreadable persona file: fall back rather than take the chat down.
   }
-  return DEFAULT_PROMPT;
+  return { text: DEFAULT_PROMPT, custom: false };
+}
+
+function personaPrompt(): string {
+  return persona().text;
+}
+
+/**
+ * The persona as the Bruce page shows it: what is in use, whether it came from
+ * PROMPT.md, and the built-in text so the page can show what reverting gives.
+ */
+export function bruceInstructions(): BruceInstructions {
+  return { ...persona(), builtIn: DEFAULT_PROMPT };
+}
+
+/**
+ * Rewrite knowledge/PROMPT.md from the dashboard. Empty text deletes the file,
+ * which puts the built-in persona back — that is the revert, so there is no
+ * separate endpoint for it.
+ *
+ * Takes effect on the next question: the file is read per turn, so nothing
+ * needs restarting and a bad edit is one save away from being undone.
+ */
+export function setBruceInstructions(text: string): BruceInstructions {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    rmSync(promptPath(), { force: true });
+  } else {
+    mkdirSync(knowledgeDir(), { recursive: true });
+    writeFileSync(promptPath(), `${trimmed}\n`, 'utf-8');
+  }
+  return bruceInstructions();
 }
 
 /**

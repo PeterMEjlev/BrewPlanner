@@ -11,6 +11,15 @@ request, and an answer can point at where it came from.
 
 ## Adding a book
 
+From the **Bruce page**, the Library card (under the voice card) has an **Add a
+book** button: pick a `.md` file and the server saves it here and indexes it,
+showing progress while it embeds. Nothing else to do — no SSH, no rebuild.
+
+The card also has **Rebuild**, for when the files here were changed by hand and
+the index has gone stale.
+
+By hand instead:
+
 1. Drop the `.md` file in this folder.
 2. Rebuild the index:
 
@@ -20,6 +29,10 @@ request, and an answer can point at where it came from.
 
 3. That's it — a running server notices the rebuilt index and starts using it
    without a restart.
+
+A file that produces no passages is refused on upload rather than saved: very
+short files, and pages that are all headings or tables of contents, chunk to
+nothing (see `MIN_CHARS` in `apps/server/src/knowledge/chunk.ts`).
 
 Indexing needs `OPENAI_API_KEY`. **In development** put it in a `.env` at the
 repo root (gitignored, and the server reads the same file):
@@ -81,6 +94,10 @@ request small.
 Add a `PROMPT.md` to this folder and its contents replace Bruce's built-in
 persona for the chat. This is where the instructions from an existing custom
 GPT go — paste them in as-is.
+
+The Bruce page's Library card edits this file directly: **Instructions** opens
+the persona in an editor, **Save** writes it here, and **Revert to built-in**
+deletes it again. Changes apply from the next question — nothing restarts.
 
 `PROMPT.md` is treated as instructions, not source material: it is never
 indexed and never retrieved.

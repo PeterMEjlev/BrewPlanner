@@ -17,7 +17,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BruceKnowledgeStatus } from '@checklist/shared';
@@ -96,6 +96,28 @@ export function knowledgeFiles(): string[] {
     .filter((f) => f.toLowerCase().endsWith('.md'))
     .filter((f) => !NOT_SOURCE_MATERIAL.has(f.toLowerCase()))
     .sort();
+}
+
+/** True for the names knowledge/ keeps for itself — see NOT_SOURCE_MATERIAL. */
+export function isReservedKnowledgeName(file: string): boolean {
+  return NOT_SOURCE_MATERIAL.has(file.toLowerCase());
+}
+
+/**
+ * Save a book into knowledge/, for the Bruce page's upload button.
+ *
+ * The name has already been validated by the route's schema; this re-checks
+ * where it actually lands, because the cost of being wrong is a write outside
+ * knowledge/ and the check is one comparison.
+ */
+export function writeKnowledgeFile(file: string, content: string): void {
+  const dir = resolve(knowledgeDir());
+  const path = resolve(dir, file);
+  if (dirname(path) !== dir) {
+    throw new Error(`Refusing to write ${file}: it would land outside knowledge/.`);
+  }
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path, content, 'utf-8');
 }
 
 export function hashContent(content: string): string {
