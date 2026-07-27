@@ -457,7 +457,7 @@ interface KegForm {
   abv: string;
 }
 
-// Brewer's Friend recipes, fetched once per page session and reused across every
+// BrewPlanner recipes, fetched once per page session and reused across every
 // modal open. Caching here (rather than per-modal) means reopening a keg shows
 // its linked-recipe chip instantly — no "Loading recipes…" flash — and avoids a
 // fresh request on each edit. `recipesPromise` dedupes concurrent loads and is
@@ -516,9 +516,9 @@ function KegEditModal({
   const [error, setError] = useState('');
   const [progress, setProgress] = useState('');
 
-  // Recipe linking (Brewer's Friend). The list is cached across opens (see
-  // loadRecipes); failures (no key configured, upstream down) just leave the
-  // picker empty/disabled. When the cache is already warm we seed straight from
+  // Recipe linking. The BrewPlanner list is cached across opens (see
+  // loadRecipes); failures leave the picker empty/disabled. When the cache is
+  // already warm we seed straight from
   // it so a linked keg's chip shows with no loading flash.
   const [recipes, setRecipes] = useState<Recipe[]>(recipesCache ?? []);
   const [recipesLoading, setRecipesLoading] = useState(recipesCache === null);
@@ -567,7 +567,7 @@ function KegEditModal({
         }
       })
       .catch(() => {
-        // No Brewer's Friend key / upstream error — recipe linking stays off.
+        // Recipe library unavailable — recipe linking stays off.
       })
       .finally(() => {
         if (!cancelled) setRecipesLoading(false);

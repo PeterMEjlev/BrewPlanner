@@ -128,6 +128,12 @@ device just works. Data persists in the file at `DATABASE_PATH`
 | PATCH  | `/api/todos/:id`                           | Edit text / toggle done              |
 | DELETE | `/api/todos/:id`                           | Delete a to-do item                  |
 | POST   | `/api/todos/clear-completed`               | Remove all completed to-do items     |
+| GET    | `/api/recipes`                             | List app-owned recipes               |
+| POST   | `/api/recipes`                             | Create a recipe (admin)              |
+| GET    | `/api/recipes/:id`                         | Read a full brew sheet               |
+| PUT    | `/api/recipes/:id`                         | Save a recipe (admin)                |
+| DELETE | `/api/recipes/:id`                         | Delete a recipe (admin)              |
+| POST   | `/api/recipes/import/brewersfriend`        | Import new legacy recipes (admin)    |
 
 ### Run model
 
@@ -143,6 +149,36 @@ A separate, standalone list of ad-hoc brewery tasks — intentionally **not** a
 checklist (no steps, runs or progress reset). On the `/display` page it lives
 behind its own **To-Do** button in the top bar so it never gets mixed up with
 procedure checklists; the button shows a badge with the open-item count.
+
+### Recipes
+
+Recipes are first-class BrewPlanner data stored in SQLite. Admins can create a
+blank recipe, edit every field on its brew sheet (including ordered ingredient
+lists, mash steps, and water targets), or delete it. Recipe ids created here are
+UUIDs; imported Brewer's Friend recipes retain their old numeric ids so existing
+keg links and bookmarks keep working. Ingredient weights, local catalogue costs,
+shopping totals, fruit colour, and hop-rate stats are rebuilt from the stored
+sheet whenever it is read.
+
+The recipe builder follows the Brewer's Friend form structure: recipe setup,
+style category and subcategory, fermentables, hops, other
+ingredients, mash schedule, water chemistry, yeast/pitching, and calculation
+outputs. Calculations always use Standard ABV, Tinseth IBU, Morey EBC, and
+Lintner diastatic power. Style and ingredient fields are searchable comboboxes. Ingredient
+results merge the local shop catalogues with names already used in saved
+recipes, while still accepting a custom value. Gravity, FG, ABV, IBU, EBC, and
+mash pH are recalculated from the recipe inputs on every save; ABV, IBU, and EBC
+also show whether the batch is inside the selected 2021 BJCP style range.
+New recipes start with one fermentable, hop, and yeast row and a 3 L/kg mash
+thickness. Malt choices carry their catalogue EBC and hop choices their AA%;
+fermentable quantities are entered in kilograms.
+
+The first Recipes-page read after upgrading performs a one-way import when
+`BREWERS_FRIEND_API_KEY` is configured. A manual import button can retry later;
+existing ids are always skipped, so it never overwrites an app edit. Imported
+recipes retain their original Brewer's Friend URL for reference, but all normal
+reads and writes are local after import. The old API key is optional once the
+legacy library has been brought across.
 
 ### Brew System page
 

@@ -605,6 +605,8 @@ export function RecipesDesktopPage(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
   // Whether the tank has been washed, for while it's empty. Null until someone
   // has said — clearing a recipe deliberately doesn't answer it.
@@ -617,8 +619,7 @@ export function RecipesDesktopPage(): JSX.Element {
   // The panel opens on its own the first time a stored filter is still in force,
   // so a grid that comes back narrowed always says why.
   const [showFilters, setShowFilters] = useState(() => activeFilterCount(filters) > 0);
-  // Recipe id → cost and hop rate. Null until a sort that needs them asks:
-  // working these out means pulling every recipe's ingredient list upstream.
+  // Recipe id → cost and hop rate, derived from the stored ingredient lists.
   const [stats, setStats] = useState<Map<string, Stats> | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
@@ -644,8 +645,8 @@ export function RecipesDesktopPage(): JSX.Element {
       setFermenter(state);
       setError(null);
     } catch (e) {
-      // The list is the page — a failure here (no API key, upstream down)
-      // leaves the empty state with the reason on it.
+      // The list is the page, so a server failure leaves the empty state with
+      // the reason on it.
       setRecipes((prev) => prev ?? []);
       setError(asCleanMessage(e));
     } finally {
@@ -676,11 +677,10 @@ export function RecipesDesktopPage(): JSX.Element {
     }
   }
 
-  // Draw what's cached, then quietly check upstream for edits — a recipe
-  // renamed, re-costed or re-hopped on Brewer's Friend lands on its own rather
-  // than waiting for someone to think of pressing refresh. Deliberately silent:
+  // Draw what's cached, then quietly check the shared library for edits made by
+  // another client. Deliberately silent:
   // nothing spins, and a check that fails leaves the cached grid alone. Only
-  // what actually changed comes back, so an unchanged account never redraws.
+  // what actually changed comes back, so an unchanged library never redraws.
   //
   // The check is sequenced after the cached read rather than run alongside it,
   // so a slow fermenter lookup can't let fresh data land first and then be
@@ -729,6 +729,26 @@ export function RecipesDesktopPage(): JSX.Element {
     }
   }
 
+  async function importLegacyRecipes(): Promise<void> {
+    if (importing) return;
+    setImporting(true);
+    setNotice(null);
+    try {
+      const result = await api.importBrewersFriendRecipes();
+      invalidateRecipes();
+      await Promise.all([load(true), loadStats(true)]);
+      setNotice(
+        result.imported > 0
+          ? `Imported ${result.imported} recipe${result.imported === 1 ? '' : 's'} from Brewer’s Friend${result.skipped ? `; ${result.skipped} already existed` : ''}.`
+          : `No new recipes to import${result.skipped ? `; ${result.skipped} already existed` : ''}.`,
+      );
+    } catch (e) {
+      setError(asCleanMessage(e));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   // The tank's own colour: the style of the beer in it, or — once it's empty and
   // someone has said — whether it still needs washing.
   const activeColor = active ? getRecipeColor(active, colors) : null;
@@ -770,13 +790,32 @@ export function RecipesDesktopPage(): JSX.Element {
           <div className="min-w-0">
             <h1 className="text-lg font-semibold tracking-tight text-zinc-50">Recipes</h1>
             <p className="mt-0.5 text-sm text-zinc-500">
-              Your Brewer&rsquo;s Friend recipes. Open one for the full brew sheet, or set what
-              is in the fermenter — that&rsquo;s the beer shown on the Overview and the kiosk.
+              Your BrewPlanner recipe library. Build recipes here, open a full brew sheet, or
+              set what is in the fermenter.
             </p>
           </div>
           {/* Search, sort and refresh; wraps rather than overflowing once the
               sort picker joins them on a narrow window. */}
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {controllable && (
+              <Link
+                to="/recipes/new"
+                className="rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-3 py-2 text-sm font-semibold text-white shadow transition hover:brightness-110"
+              >
+                + New recipe
+              </Link>
+            )}
+            {controllable && (
+              <button
+                type="button"
+                onClick={() => void importLegacyRecipes()}
+                disabled={importing}
+                title="One-way import; existing BrewPlanner recipes are never overwritten"
+                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
+              >
+                {importing ? 'Importing…' : 'Import from Brewer’s Friend'}
+              </button>
+            )}
             {recipes != null && recipes.length > 0 && (
               <>
                 <input
@@ -840,9 +879,7 @@ export function RecipesDesktopPage(): JSX.Element {
                 </span>
               </>
             )}
-            {/* The server caches the list for a few minutes; this forces a
-                re-read after editing a recipe on Brewer's Friend. Prices are
-                cached separately and only re-read once they're on the page. */}
+            {/* Reload the shared app library, including changes from another client. */}
             <button
               type="button"
               onClick={() => {
@@ -850,8 +887,8 @@ export function RecipesDesktopPage(): JSX.Element {
                 if (stats) void loadStats(true);
               }}
               disabled={refreshing}
-              title="Refresh from Brewer's Friend"
-              aria-label="Refresh from Brewer's Friend"
+              title="Reload recipe library"
+              aria-label="Reload recipe library"
               className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
             >
               {refreshing ? '…' : '↻'}
@@ -862,6 +899,11 @@ export function RecipesDesktopPage(): JSX.Element {
         {error && (
           <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
             {error}
+          </div>
+        )}
+        {notice && (
+          <div className="mb-5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200">
+            {notice}
           </div>
         )}
 
@@ -948,7 +990,8 @@ export function RecipesDesktopPage(): JSX.Element {
           </div>
         ) : recipes.length === 0 ? (
           <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
-            No recipes found in your Brewer&rsquo;s Friend account.
+            No recipes yet. Create one from scratch or import your existing Brewer&rsquo;s Friend
+            library.
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
@@ -1053,6 +1096,14 @@ function RecipeCard({
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
           {recipe.name}
         </span>
+        {recipe.origin === 'brewersfriend' && (
+          <span
+            className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300"
+            title="Originally imported from Brewer's Friend"
+          >
+            BF
+          </span>
+        )}
       </span>
       <span className="w-full truncate pl-[18px] text-xs text-zinc-500">
         {describeRecipe(recipe)}

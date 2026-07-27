@@ -112,6 +112,36 @@ export const settings = sqliteTable('settings', {
 });
 
 /**
+ * BrewPlanner's recipe library. The editable brew sheet is stored as validated
+ * JSON because it is a single aggregate: every save replaces the recipe and
+ * its ordered ingredient/mash lists together. Imported Brewer's Friend ids are
+ * kept as the app id so existing keg links and bookmarks continue to work;
+ * recipes created here use UUIDs.
+ */
+export const recipes = sqliteTable(
+  'recipes',
+  {
+    id: text('id').primaryKey(),
+    /** 'local' | 'brewersfriend'. Origin is provenance, not the source of reads. */
+    origin: text('origin').notNull().default('local'),
+    brewersFriendId: text('brewers_friend_id'),
+    brewersFriendUrl: text('brewers_friend_url').notNull().default(''),
+    /** JSON encoded RecipeEditInput; parsed with recipeEditSchema on every read. */
+    recipe: text('recipe').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+    updatedAt: text('updated_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+  },
+  (t) => [
+    unique('recipes_brewers_friend_id_unq').on(t.brewersFriendId),
+    index('recipes_created_at_idx').on(t.createdAt),
+  ],
+);
+
+/**
  * Satellite devices that push telemetry to the hub (fermentation-pressure Pi,
  * brew controller, …). Each device authenticates with its own API key; only a
  * SHA-256 hash of that key is stored. The key is high-entropy and random, so an

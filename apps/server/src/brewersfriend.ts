@@ -11,7 +11,7 @@ import type {
   RecipeWaterProfile,
   RecipeYeast,
 } from '@checklist/shared';
-import { predictBeerColor } from '@checklist/shared';
+import { DEFAULT_RECIPE_SETTINGS, predictBeerColor } from '@checklist/shared';
 import {
   priceFermentable,
   priceHop,
@@ -66,6 +66,16 @@ interface BrewersFriendRecipe {
   id: string | number;
   title?: string;
   stylename?: string;
+  stylecategory?: string;
+  stylesubcategory?: string;
+  batchtarget?: string;
+  boilsize?: string | number;
+  boilsize_pre?: string | number;
+  boilsize_post?: string | number;
+  boilsizeunit?: string;
+  boiltime?: string | number;
+  efficiency?: string | number;
+  pitchrate?: string;
   abv?: string | number;
   /** Tinseth is the estimate the site itself headlines. */
   ibutinseth?: string | number;
@@ -106,6 +116,10 @@ interface BrewersFriendRecipe {
   created?: string;
   date_created?: string;
   createdat?: string;
+  updated_at?: string;
+  updated?: string;
+  date_updated?: string;
+  updatedat?: string;
   mashnotes?: string;
   notes_mash?: string;
   waterprofile?: string;
@@ -129,6 +143,9 @@ interface BrewersFriendMashStep {
   steptime?: string | number;
   amount?: string | number;
   unit?: string;
+  starttemp?: string | number;
+  starttempunit?: string;
+  description?: string;
 }
 
 interface RecipesResponse {
@@ -166,6 +183,7 @@ async function get(params: Record<string, string>, apiKey: string): Promise<Reci
 function toRecipe(r: BrewersFriendRecipe): Recipe {
   return {
     id: str(r.id),
+    origin: 'brewersfriend',
     name: str(r.title) || 'Untitled recipe',
     style: styleName(r),
     // Normalize to a bare number string and drop any "%" the API includes.
@@ -177,7 +195,13 @@ function toRecipe(r: BrewersFriendRecipe): Recipe {
     ebc: recipeColorEbc(r, null).ebc,
     url: publicUrl(r),
     createdAt: createdAt(r),
+    updatedAt: updatedAt(r),
   };
+}
+
+function numberOrNull(v: unknown): number | null {
+  const n = Number(str(v));
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 /**
@@ -194,6 +218,10 @@ function styleName(r: BrewersFriendRecipe): string {
 /** The recipe's creation date, under whichever key this account's plan uses. */
 function createdAt(r: BrewersFriendRecipe): string {
   return str(r.created_at) || str(r.created) || str(r.date_created) || str(r.createdat);
+}
+
+function updatedAt(r: BrewersFriendRecipe): string {
+  return str(r.updated_at) || str(r.updated) || str(r.date_updated) || str(r.updatedat);
 }
 
 /**
@@ -255,9 +283,12 @@ async function fetchAllRaw(
   apiKey: string,
   extra: Record<string, string> = {},
 ): Promise<BrewersFriendRecipe[]> {
+  // Brewer's Friend lowers the page cap to 20 when ingredient arrays are
+  // requested. Respecting it matters for the one-time full-library import.
+  const pageSize = extra.ingredients === 'true' ? 20 : PAGE_SIZE;
   const page = (offset: number): Record<string, string> => ({
     sort: 'created_at:-1',
-    limit: String(PAGE_SIZE),
+    limit: String(pageSize),
     offset: String(offset),
     ...extra,
   });
@@ -265,22 +296,22 @@ async function fetchAllRaw(
   const first = await get(page(0), apiKey);
   const firstBatch = first.recipes ?? [];
   const all = [...firstBatch];
-  if (firstBatch.length < PAGE_SIZE) return all;
+  if (firstBatch.length < pageSize) return all;
 
   const total = Number(first.count);
-  if (Number.isFinite(total) && total > PAGE_SIZE) {
+  if (Number.isFinite(total) && total > pageSize) {
     const offsets: number[] = [];
-    for (let o = PAGE_SIZE; o < total; o += PAGE_SIZE) offsets.push(o);
+    for (let o = pageSize; o < total; o += pageSize) offsets.push(o);
     const pages = await Promise.all(offsets.map((o) => get(page(o), apiKey)));
     for (const p of pages) all.push(...(p.recipes ?? []));
     return all;
   }
 
   // Total unknown — walk serially until a page comes back short.
-  for (let offset = PAGE_SIZE; ; offset += PAGE_SIZE) {
+  for (let offset = pageSize; ; offset += pageSize) {
     const batch = (await get(page(offset), apiKey)).recipes ?? [];
     all.push(...batch);
-    if (batch.length < PAGE_SIZE) return all;
+    if (batch.length < pageSize) return all;
   }
 }
 
@@ -400,11 +431,7 @@ function recipeStats(r: BrewersFriendRecipe): RecipeStats {
   };
 }
 
-/**
- * Fetch one recipe with its full ingredient list. Not cached: it's opened
- * deliberately (one recipe at a time) and a brewer editing a recipe on Brewer's
- * Friend should see the change on the next open.
- */
+/** Fetch one legacy recipe with its full ingredient list. */
 export async function getRecipe(id: string): Promise<RecipeDetail> {
   const apiKey = process.env.BREWERS_FRIEND_API_KEY;
   if (!apiKey) throw new BrewersFriendNotConfiguredError();
@@ -412,7 +439,51 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
   const body = await get({ id, ingredients: 'true' }, apiKey);
   const r = (body.recipes ?? [])[0];
   if (!r) throw new RecipeNotFoundError(id);
+  return toRecipeDetail(r);
+}
 
+/**
+ * Read every complete upstream brew sheet for a one-way import. The page walk
+ * uses Brewer's Friend's lower 20-recipe cap for ingredient-bearing responses.
+ */
+export async function readRecipesForImport(): Promise<RecipeDetail[]> {
+  const apiKey = process.env.BREWERS_FRIEND_API_KEY;
+  if (!apiKey) throw new BrewersFriendNotConfiguredError();
+  const raw = await fetchAllRaw(apiKey, { ingredients: 'true' });
+
+  // Some account/API-plan combinations return the collection successfully but
+  // omit its ingredient arrays. Fetch just those recipes individually before
+  // committing the import; a partial migration would otherwise look complete
+  // and leave the user with permanently empty brew sheets.
+  for (let i = 0; i < raw.length; i += STATS_FETCH_CONCURRENCY) {
+    const batch = raw.slice(i, i + STATS_FETCH_CONCURRENCY);
+    await Promise.all(
+      batch.map(async (recipe, batchIndex) => {
+        if (hasIngredientPayload(recipe)) return;
+        const body = await get({ id: str(recipe.id), ingredients: 'true' }, apiKey);
+        const complete = (body.recipes ?? [])[0];
+        if (!complete) throw new RecipeNotFoundError(str(recipe.id));
+        raw[i + batchIndex] = complete;
+      }),
+    );
+  }
+  return raw.map(toRecipeDetail);
+}
+
+function hasIngredientPayload(recipe: BrewersFriendRecipe): boolean {
+  return [
+    recipe.fermentables,
+    recipe.hops,
+    recipe.yeasts,
+    recipe.others,
+    recipe.miscs,
+    recipe.misc,
+    recipe.other_ingredients,
+    recipe.otheringredients,
+  ].some((lines) => Array.isArray(lines));
+}
+
+function toRecipeDetail(r: BrewersFriendRecipe): RecipeDetail {
   const batchSizeL = batchSizeLiters(r);
   const color = recipeColorEbc(r, batchSizeL);
   // Costed once over every ingredient, so repeats of the same product pool into
@@ -427,8 +498,21 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
 
   return {
     id: str(r.id),
+    origin: 'brewersfriend',
     name: str(r.title) || 'Untitled recipe',
     style: styleName(r),
+    settings: {
+      ...DEFAULT_RECIPE_SETTINGS,
+      styleCategory: str(r.stylecategory),
+      styleSubcategory: str(r.stylesubcategory) || styleName(r),
+      batchTarget: str(r.batchtarget) || DEFAULT_RECIPE_SETTINGS.batchTarget,
+      boilSizePreL: volumeLiters(r.boilsize_pre ?? r.boilsize, r.boilsizeunit),
+      boilSizePostL: volumeLiters(r.boilsize_post, r.boilsizeunit),
+      boilTimeMinutes: numberOrNull(r.boiltime) ?? DEFAULT_RECIPE_SETTINGS.boilTimeMinutes,
+      efficiencyPercent:
+        numberOrNull(r.efficiency) ?? DEFAULT_RECIPE_SETTINGS.efficiencyPercent,
+      pitchRate: str(r.pitchrate) || DEFAULT_RECIPE_SETTINGS.pitchRate,
+    },
     og: str(r.og),
     preBoilGravity: strOrNull(r.boilgravity),
     postBoilGravity: strOrNull(r.post_boilgravity),
@@ -438,6 +522,8 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
     ebc: color.ebc,
     ebcEstimated: color.estimated,
     url: publicUrl(r),
+    createdAt: createdAt(r) || new Date().toISOString(),
+    updatedAt: updatedAt(r) || createdAt(r) || new Date().toISOString(),
     batchSizeL,
     mashTemp: mashTemp(r),
     fermentationTemp: fermentationTemp(r),
@@ -463,11 +549,13 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
  * "0 L batch" instead of no batch size at all.
  */
 function batchSizeLiters(r: BrewersFriendRecipe): number | null {
-  const raw = str(r.batchsize);
-  if (raw === '') return null;
-  const size = Number(raw);
-  if (!Number.isFinite(size) || size <= 0) return null;
-  const unit = (r.batchsizeunit ?? 'l').toLowerCase();
+  return volumeLiters(r.batchsize, r.batchsizeunit);
+}
+
+function volumeLiters(value: unknown, rawUnit: unknown): number | null {
+  const size = numberOrNull(value);
+  if (size == null) return null;
+  const unit = str(rawUnit || 'l').toLowerCase();
   if (unit === 'gal' || unit === 'gallon' || unit === 'gallons') {
     return Math.round(size * 3.78541 * 100) / 100;
   }
@@ -670,12 +758,20 @@ function fermentables(r: BrewersFriendRecipe): RecipeFermentable[] {
     const name = str(f.name);
     const grams = toGrams(f.amount, f.unit);
     const ebc = lovibondToEbc(f.lovibond);
+    const directPpg = numberOrNull(f.ppg ?? f.ppg_points ?? f.points ?? f.potential);
+    const yieldPercent = numberOrNull(f.yield);
+    const ppg = directPpg == null
+      ? (yieldPercent == null ? null : yieldPercent * 46 / 100)
+      : directPpg > 1 && directPpg < 2
+        ? (directPpg - 1) * 1_000
+        : directPpg;
     return {
       name,
       amount: str(f.amount),
       unit: str(f.unit),
       percent: str(f.percent),
       ebc,
+      ppg,
       grams,
       // The grain's colour goes into the match, so a pale malt can't be costed
       // as a roasted one that happens to share a word in its name.
@@ -739,6 +835,8 @@ function hops(r: BrewersFriendRecipe): RecipeHop[] {
       timeUnit: time === '' ? ('' as const) : stage === 'Dry Hop' ? ('day' as const) : ('min' as const),
       aa: str(h.aa),
       ibu: str(h.ibu),
+      form: str(h.form) || str(h.hopform) || 'Pellet',
+      utilization: str(h.utilization) || str(h.util),
       temp: hopstandTempC(h.hopstand_temp, stage),
     };
   });
@@ -811,6 +909,12 @@ function otherIngredients(r: BrewersFriendRecipe): RecipeOtherIngredient[] {
         unit: str(m.unit),
         use: str(m.otheruse) || str(m.miscuse) || str(m.use),
         time: str(m.othertime) || str(m.misctime) || str(m.time),
+        timeUnit:
+          (str(m.timeunit).toLowerCase().startsWith('day')
+            ? 'day'
+            : str(m.othertime ?? m.misctime ?? m.time)
+              ? 'min'
+              : '') as 'day' | 'min' | '',
         type: str(m.othertype) || str(m.type),
         grams,
         units,
@@ -852,18 +956,23 @@ function mashGuidelines(r: BrewersFriendRecipe): RecipeMashGuidelines | null {
       name: str(s.mashtype) || str(s.name),
       temp: temp ? `${temp}°C` : null,
       time: str(s.mashtime) || str(s.steptime),
+      amountUnit: str(s.unit),
+      startTemp: strOrNull(s.starttemp),
+      type: str(s.mashtype) || str(s.name),
+      description: str(s.description),
     };
-    if (amount) step.amount = `${amount} ${str(s.unit)}`.trim();
+    if (amount) step.amount = amount;
     return step;
   });
   const notes = strOrNull(r.mashnotes) ?? strOrNull(r.notes_mash);
   if (steps.length === 0 && !notes) return null;
-  return { steps, notes };
+  return { startingThicknessLPerKg: null, grainTempC: null, steps, notes };
 }
 
 /** The recipe's target water chemistry, or null when it specifies none. */
 function waterProfile(r: BrewersFriendRecipe): RecipeWaterProfile | null {
   const profile: RecipeWaterProfile = {
+    sourceName: null,
     name: strOrNull(r.waterprofile),
     ph: strOrNull(r.ph),
     notes: strOrNull(r.waternotes),

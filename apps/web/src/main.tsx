@@ -23,6 +23,7 @@ import { KioskMusicPage } from './pages/KioskMusic';
 import { KioskTodosPage } from './pages/KioskTodos';
 import { LoginPage } from './pages/Login';
 import { RecipeDetailPage } from './pages/RecipeDetail';
+import { RecipeCreatePage } from './pages/RecipeCreate';
 import { RecipesDesktopPage } from './pages/RecipesDesktop';
 import { SettingsDesktopPage } from './pages/SettingsDesktop';
 import { TodosPage } from './pages/Todos';
@@ -154,7 +155,7 @@ const router = createBrowserRouter([
       </RequireAuth>
     ),
   },
-  // The Brewer's Friend recipe library, reached from the sidebar: the list, then
+  // The BrewPlanner recipe library, reached from the sidebar: the list, then
   // one recipe's full brew sheet. Desktop/phone only — the kiosk deliberately has
   // no recipe screen (its fermenter card just shows what's currently in the tank).
   {
@@ -162,6 +163,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <RecipesDesktopPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/recipes/new',
+    element: (
+      <RequireAuth control>
+        <RecipeCreatePage />
       </RequireAuth>
     ),
   },

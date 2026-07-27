@@ -2,38 +2,33 @@ import type { Recipe, RecipeDetail, RecipeStatsResponse } from '@checklist/share
 import { api } from './api';
 
 /**
- * Session-lived cache for everything that comes out of Brewer's Friend.
+ * Session-lived cache for BrewPlanner's database-backed recipe library.
  *
- * The server proxies an upstream that is slow enough to feel — half a second or
- * so — and none of it changes while the dashboard is open, so paying that cost
- * again every time the brewer opens a recipe and comes back is pure waste. Each
- * fetch is kept for as long as the tab lives; the Recipes page's refresh button
- * is what clears it.
+ * Each fetch is kept for as long as the tab lives, so returning from a brew
+ * sheet does not redraw and reprice the same data. The Recipes page's reload
+ * button clears it.
  *
  * Promises are cached rather than values, so two components asking at once share
  * one request. A rejected promise is dropped from the cache, so a failure is
  * retried on the next ask instead of being remembered as "no recipes".
  *
- * The cache is stale-while-revalidate: {@link revalidateRecipes} re-reads
- * upstream in the background and reports back only what actually changed, so a
- * recipe edited on Brewer's Friend shows up without the brewer having to think
- * about refreshing, and without a page that already has the answer waiting.
+ * The cache is stale-while-revalidate: {@link revalidateRecipes} re-reads the
+ * shared server library in the background and reports only what changed, so an
+ * edit from another client appears without delaying the cached first paint.
  */
 
 let recipesPromise: Promise<Recipe[]> | null = null;
 let statsPromise: Promise<RecipeStatsResponse> | null = null;
 const detailPromises = new Map<string, Promise<RecipeDetail>>();
 
-/** When each was last read from upstream, for the revalidation throttle. */
+/** When each was last read from the server, for the revalidation throttle. */
 let recipesCheckedAt = 0;
 let statsCheckedAt = 0;
 
 /**
- * How long a background check waits before it's worth making again. Brewer's
- * Friend rate-limits an account that walks its pages too often, and a brewer
- * bouncing between the grid and a brew sheet would otherwise re-read the whole
- * account on every trip. The refresh button ignores this — an explicit ask is
- * always honoured immediately.
+ * How long a background check waits before it is worth making again. A brewer
+ * bouncing between the grid and a brew sheet should not re-read the whole
+ * library on every trip. The reload button ignores this throttle.
  */
 const REVALIDATE_AFTER_MS = 60_000;
 
@@ -45,7 +40,7 @@ function keep<T>(promise: Promise<T>, forget: () => void): Promise<T> {
   });
 }
 
-/** The account's recipe list. `force` re-reads it (and drops the cached copy). */
+/** The app's recipe list. `force` re-reads it (and drops the cached copy). */
 export function loadRecipes(force = false): Promise<Recipe[]> {
   if (force || !recipesPromise) {
     recipesCheckedAt = Date.now();
@@ -86,13 +81,8 @@ export interface RecipeRevalidation {
 }
 
 /**
- * Re-read the account in the background and report only what changed.
- *
- * Both reads are forced past the *server's* cache, which is the point: an
- * unforced read would be answered from the server's own copy and could never
- * notice a recipe edited upstream. Failures are swallowed — a background check
- * that can't reach Brewer's Friend leaves the cached data on screen rather than
- * replacing a working page with an error.
+ * Re-read the library in the background and report only what changed. Failures
+ * are swallowed so a transient server error leaves the cached data on screen.
  *
  * Does nothing until there's something cached to compare against; the first
  * visit is already reading fresh data through {@link loadRecipes}.
@@ -151,9 +141,8 @@ function sameJson(a: unknown, b: unknown): boolean {
 }
 
 /**
- * Drop everything, so the next read goes upstream. Used by the refresh button:
- * a brewer who has just edited a recipe on Brewer's Friend means the whole set,
- * brew sheets included, not only the list.
+ * Drop everything, so the next read comes from the server. This includes cached
+ * brew sheets as well as the list and derived stats.
  */
 export function invalidateRecipes(): void {
   recipesPromise = null;

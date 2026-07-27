@@ -197,6 +197,10 @@ const RULES: Rule[] = [
   { method: 'POST', re: /^\/api\/alerts\/clear$/, build: () => ({ entity: 'Alert', action: 'Cleared all alerts' }) },
 
   // --- Active recipe --------------------------------------------------------
+  { method: 'POST', re: /^\/api\/recipes$/, build: ({ body }) => ({ entity: 'Recipe', action: `Created recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
+  { method: 'PUT', re: /^\/api\/recipes\/([^/]+)$/, build: ({ body }) => ({ entity: 'Recipe', action: `Edited recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
+  { method: 'DELETE', re: /^\/api\/recipes\/([^/]+)$/, build: () => ({ entity: 'Recipe', action: 'Deleted a recipe from BrewPlanner' }) },
+  { method: 'POST', re: /^\/api\/recipes\/import\/brewersfriend$/, build: () => ({ entity: 'Recipe', action: 'Imported recipes from Brewer\'s Friend' }) },
   { method: 'PUT', re: /^\/api\/recipe$/, build: ({ body }) => ({ entity: 'Recipe', action: `Set the active recipe${str(body, 'name') ? ` to "${str(body, 'name')}"` : ''}` }) },
   { method: 'DELETE', re: /^\/api\/recipe$/, build: () => ({ entity: 'Recipe', action: 'Cleared the active recipe' }) },
   { method: 'PUT', re: /^\/api\/fermenter$/, build: ({ body }) => ({ entity: 'Recipe', action: `Marked the fermenter ${str(body, 'state') === 'clean' ? 'clean' : 'dirty'}` }) },

@@ -65,6 +65,7 @@ interface HopEntry {
   price_dkk?: number | null;
   price_per_kg_dkk?: number | null;
   package_size_g?: number | null;
+  alpha_acid_percent?: number | null;
 }
 
 interface YeastEntry {
@@ -131,6 +132,8 @@ interface PricedItem {
   /** Colour range the shop states, EBC. Null for hops and yeast. */
   ebcMin: number | null;
   ebcMax: number | null;
+  /** Alpha acid percentage for hop catalogue entries. */
+  aa?: number | null;
   /** Out of stock at the shop; used only to break ties, never to hide a price. */
   soldout: boolean;
 }
@@ -495,6 +498,7 @@ function catalogue(): Catalogue {
           packageSizeG: size,
           ebcMin: null,
           ebcMax: null,
+          aa: num(h.alpha_acid_percent),
           soldout: false,
         },
       ];
@@ -993,6 +997,9 @@ function toOption(m: Match, defaultId: string | null, selectedId: string | null)
     usedDkk: m.fraction == null ? null : money(m.fraction * m.item.packagePriceDkk),
     isDefault: m.item.id === defaultId,
     isSelected: m.item.id === selectedId,
+    ebcMin: m.item.ebcMin,
+    ebcMax: m.item.ebcMax,
+    aa: m.item.aa ?? null,
   };
 }
 
@@ -1037,6 +1044,7 @@ export function searchCatalogue(
   query: string,
   qty: Quantity,
   selectedId: string | null = null,
+  limit = SEARCH_LIMIT,
 ): PriceOption[] {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const items = catalogueFor(kind).filter((item) => !item.soldout);
@@ -1049,7 +1057,7 @@ export function searchCatalogue(
   return hits
     .map((item) => ({ item, fraction: packageFraction(item, qty) }))
     .sort((a, b) => buyIn(a) - buyIn(b))
-    .slice(0, SEARCH_LIMIT)
+    .slice(0, limit)
     .map((m) => toOption(m, null, selectedId));
 }
 

@@ -17,6 +17,8 @@ import {
   priceSearchQuerySchema,
   reorderStepsSchema,
   reorderTodosSchema,
+  recipeEditSchema,
+  recipeIngredientCatalogQuerySchema,
   setActiveRecipeSchema,
   stepIdParamSchema,
   updateChecklistSchema,
@@ -35,6 +37,8 @@ import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
 import * as prices from '../prices.js';
 import { pricingInfo } from '../prices.js';
 import { deleteOverride as deletePriceOverride, saveOverride as savePriceOverride } from '../priceOverrides.js';
+import { ensureInitialRecipeImport, importFromBrewersFriend } from '../recipeImport.js';
+import * as recipeRepo from '../recipeRepo.js';
 import * as telegram from '../notify/telegram.js';
 import * as repo from '../repo.js';
 import {
@@ -45,7 +49,11 @@ import {
 } from '../system/update.js';
 
 /** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
-function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T | null {
+function parse<S extends z.ZodTypeAny>(
+  schema: S,
+  data: unknown,
+  reply: FastifyReply,
+): z.output<S> | null {
   const result = schema.safeParse(data);
   if (!result.success) {
     reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });
@@ -55,7 +63,7 @@ function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T |
 }
 
 /**
- * Shared failure handling for the two Brewer's Friend proxy routes: a missing
+ * Shared failure handling for Brewer's Friend import requests: a missing
  * API key is a configuration problem the user can fix (503, message shown on the
  * page), anything else is an upstream failure (502).
  */
@@ -267,49 +275,111 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return listAudit(query.limit);
   });
 
-  // --- Brewer's Friend recipes -----------------------------------------
-  // List the account's recipes (server-side proxy; the API key stays on the
-  // server). Served from a short server-side cache; `?refresh=1` (the Recipes
-  // page's refresh button) forces a re-walk of the upstream pages.
-  // 503 when no key is configured; 502 if the upstream call fails.
-  app.get('/recipes', async (req, reply) => {
-    const { refresh } = req.query as { refresh?: string };
+  // --- App-owned recipe library -------------------------------------------
+  // The first read after upgrading performs a one-way legacy import. A failed
+  // import is logged without taking down the local library, so new recipes can
+  // still be created while Brewer's Friend is unavailable.
+  app.get('/recipes', async (req) => {
     try {
-      return await bf.listRecipes(refresh === '1' || refresh === 'true');
+      await ensureInitialRecipeImport();
+    } catch (err) {
+      req.log.warn(err, 'Initial Brewer\'s Friend recipe import failed');
+    }
+    return recipeRepo.listRecipes();
+  });
+
+  // Explicit retry / later import. Existing ids are skipped, so importing can
+  // never overwrite a recipe that has already been edited in BrewPlanner.
+  app.post('/recipes/import/brewersfriend', adminOnly, async (req, reply) => {
+    try {
+      return await importFromBrewersFriend();
     } catch (err) {
       return recipeError(err, req, reply);
     }
   });
 
-  // Per-recipe cost and hop rate for the whole account, for the grid's price and
-  // hops/L sorts. Registered before /recipes/:id, and matched ahead of it
-  // regardless — a static segment beats a parametric one in Fastify's router.
-  //
-  // Heavy upstream (every recipe's ingredient list) but cached for half an hour,
-  // so the Recipes page only asks for it when one of those sorts is chosen.
-  app.get('/recipes/stats', async (req, reply) => {
-    const { refresh } = req.query as { refresh?: string };
-    try {
-      const stats = await bf.listRecipeStats(refresh === '1' || refresh === 'true');
-      return { stats, pricing: pricingInfo() };
-    } catch (err) {
-      return recipeError(err, req, reply);
-    }
+  app.get('/recipes/stats', async () => ({
+    stats: recipeRepo.listRecipeStats(),
+    pricing: pricingInfo(),
+  }));
+
+  app.get('/recipes/catalog', async (req, reply) => {
+    const query = parse(recipeIngredientCatalogQuerySchema, req.query, reply);
+    if (!query) return;
+    const quantity = query.kind === 'yeast'
+      ? { grams: null, units: 1 }
+      : { grams: 1_000, units: null };
+    const combined = [
+      ...prices.searchCatalogue(query.kind, query.q ?? '', quantity, null, 200).map((option) => ({
+        name: option.label,
+        source: 'catalogue' as const,
+        ebcMin: option.ebcMin ?? null,
+        ebcMax: option.ebcMax ?? null,
+        ebc: option.ebcMin != null && option.ebcMax != null
+          ? (option.ebcMin + option.ebcMax) / 2
+          : option.ebcMin ?? option.ebcMax ?? null,
+        aa: option.aa ?? null,
+      })),
+      ...recipeRepo.listRecipeIngredientOptions(query.kind, query.q ?? ''),
+    ];
+    combined.sort((a, b) => {
+      const aValue = query.kind === 'fermentable' ? a.ebc : query.kind === 'hop' ? a.aa : null;
+      const bValue = query.kind === 'fermentable' ? b.ebc : query.kind === 'hop' ? b.aa : null;
+      if (aValue != null || bValue != null) {
+        if (aValue == null) return 1;
+        if (bValue == null) return -1;
+        if (aValue !== bValue) return aValue - bValue;
+      }
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+    const seen = new Set<string>();
+    return combined.filter((option) => {
+      const key = option.name.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 60);
   });
 
-  // One recipe's full brew sheet — ingredients, mash schedule and water targets.
-  // A separate (much heavier) upstream call than the list, so the Recipes page
-  // only makes it when a detail view is opened.
+  app.post('/recipes', adminOnly, async (req, reply) => {
+    const body = parse(recipeEditSchema, req.body, reply);
+    if (!body) return;
+    return reply.status(201).send(recipeRepo.createRecipe(body));
+  });
+
   app.get('/recipes/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    try {
-      return await bf.getRecipe(id);
-    } catch (err) {
-      if (err instanceof bf.RecipeNotFoundError) {
-        return reply.status(404).send({ error: err.message });
-      }
-      return recipeError(err, req, reply);
+    const recipe = recipeRepo.getRecipe(id);
+    return recipe ?? reply.status(404).send({ error: 'Recipe not found' });
+  });
+
+  app.put('/recipes/:id', adminOnly, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = parse(recipeEditSchema, req.body, reply);
+    if (!body) return;
+    const saved = recipeRepo.updateRecipe(id, body);
+    if (!saved) return reply.status(404).send({ error: 'Recipe not found' });
+    const active = repo.getActiveRecipe();
+    if (active?.id === id) {
+      repo.setActiveRecipe({
+        ...active,
+        name: saved.name,
+        style: saved.style,
+        abv: saved.abv,
+        ibu: saved.ibu,
+        ebc: saved.ebc,
+      });
     }
+    return saved;
+  });
+
+  app.delete('/recipes/:id', adminOnly, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!recipeRepo.deleteRecipe(id)) {
+      return reply.status(404).send({ error: 'Recipe not found' });
+    }
+    if (repo.getActiveRecipe()?.id === id) repo.clearActiveRecipe();
+    return reply.status(204).send();
   });
 
   // The single "currently in the fermenter" recipe shown on the kiosk card.

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export * from './recipeCalculations.js';
+
 /**
  * Shared types and validation schemas used by both the server and the web app.
  * Keeping these in one place guarantees the API contract stays in sync.
@@ -101,17 +103,19 @@ export interface AuthState {
 }
 
 // ---------------------------------------------------------------------------
-// Brewer's Friend recipes
+// BrewPlanner recipe library (with optional Brewer's Friend provenance)
 // ---------------------------------------------------------------------------
 
 /**
  * A recipe from the user's Brewer's Friend account, normalized down to the
- * fields the list views need. The server proxies the Brewer's Friend API (key
+ * fields the list views need. The server reads the BrewPlanner recipe library
  * held server-side) and maps each recipe to this shape. The full brew sheet —
  * ingredients, mash, water — is a separate, heavier fetch: {@link RecipeDetail}.
  */
 export interface Recipe {
   id: string;
+  /** Where this app-owned recipe originally came from. */
+  origin?: RecipeOrigin;
   name: string;
   /** Beer style (e.g. "West Coast IPA"); may be empty if the recipe has none. */
   style: string;
@@ -134,7 +138,38 @@ export interface Recipe {
    * active-recipe selection saved by an older build won't have it.
    */
   createdAt?: string;
+  /** Last save in BrewPlanner. Missing on active-recipe snapshots from old builds. */
+  updatedAt?: string;
 }
+
+export type RecipeOrigin = 'local' | 'brewersfriend';
+
+/** Brewing-system and calculation choices that belong to one recipe. */
+export interface RecipeSettings {
+  styleCategory: string;
+  styleSubcategory: string;
+  batchTarget: string;
+  boilSizePreL: number | null;
+  boilSizePostL: number | null;
+  autoBoilSizePre: boolean;
+  autoBoilSizePost: boolean;
+  boilTimeMinutes: number | null;
+  efficiencyPercent: number | null;
+  pitchRate: string;
+}
+
+export const DEFAULT_RECIPE_SETTINGS: RecipeSettings = {
+  styleCategory: '',
+  styleSubcategory: '',
+  batchTarget: 'Fermenter',
+  boilSizePreL: null,
+  boilSizePostL: null,
+  autoBoilSizePre: false,
+  autoBoilSizePost: false,
+  boilTimeMinutes: 60,
+  efficiencyPercent: 80,
+  pitchRate: 'Manufacturer recommended',
+};
 
 /**
  * The single "currently in the fermenter" recipe selection (GET/PUT /api/recipe).
@@ -251,6 +286,11 @@ export interface PriceOption {
   isDefault: boolean;
   /** True for the listing currently in effect. */
   isSelected: boolean;
+  /** Malt colour range carried by the catalogue listing. */
+  ebcMin?: number | null;
+  ebcMax?: number | null;
+  /** Hop alpha acid percentage carried by the catalogue listing. */
+  aa?: number | null;
 }
 
 /**
@@ -381,6 +421,8 @@ export interface RecipeFermentable {
   percent: string;
   /** Grain colour in EBC, converted from the API's Lovibond; null if unknown. */
   ebc: number | null;
+  /** Extract potential in points per pound per gallon; estimated by name when absent. */
+  ppg: number | null;
   /** Weight in grams, normalized from `amount`/`unit`; null if unreadable. */
   grams: number | null;
   price: IngredientPrice | null;
@@ -425,6 +467,10 @@ export interface RecipeHop {
   aa: string;
   /** This addition's own IBU contribution. */
   ibu: string;
+  /** Pellet, leaf/whole, plug, extract, or another custom form. */
+  form: string;
+  /** Hopstand utilisation percentage when explicitly overridden. */
+  utilization: string;
   /**
    * Whirlpool/hopstand temperature in °C — only set where it means something
    * (a whirlpool/hopstand). Empty elsewhere, including for the boiling-point
@@ -482,8 +528,10 @@ export interface RecipeOtherIngredient {
   unit: string;
   /** "Mash", "Boil", "Primary"… */
   use: string;
-  /** Time in minutes, as a bare number string. */
+  /** Contact time as a bare number string. */
   time: string;
+  /** Unit for `time`; other ingredients commonly use minutes or days. */
+  timeUnit: 'min' | 'day' | '';
   /** "Water Agt", "Fining", "Spice"… */
   type: string;
   /** Weight in grams, normalized from `amount`/`unit`; null if unreadable. */
@@ -503,9 +551,19 @@ export interface RecipeMashStep {
   time: string;
   /** Infusion/strike amount with unit, when the step lists one. */
   amount?: string;
+  /** Unit for the separately editable infusion/strike amount. */
+  amountUnit: string;
+  /** Starting liquor/grain temperature in °C, when specified. */
+  startTemp: string | null;
+  /** Strike, infusion, temperature, decoction, sparge, or a custom type. */
+  type: string;
+  /** Optional step description. */
+  description: string;
 }
 
 export interface RecipeMashGuidelines {
+  startingThicknessLPerKg: number | null;
+  grainTempC: number | null;
   steps: RecipeMashStep[];
   notes: string | null;
 }
@@ -518,6 +576,8 @@ export interface RecipeMashGuidelines {
  * weight of gypsum.
  */
 export interface RecipeWaterProfile {
+  /** Source-water preset/profile name. */
+  sourceName: string | null;
   /** Profile name ("Balanced", "Burton"…); null when unnamed. */
   name: string | null;
   /** Target mash pH; null when unset. */
@@ -545,6 +605,7 @@ export interface RecipeWaterProfile {
  */
 export interface RecipeDetail {
   id: string;
+  origin: RecipeOrigin;
   name: string;
   style: string;
   /** Original gravity, e.g. "1.062". */
@@ -568,8 +629,13 @@ export interface RecipeDetail {
   ebcEstimated: boolean;
   /** Public Brewer's Friend recipe page URL. */
   url: string;
+  /** Recipe creation time (upstream for imports, local clock for new recipes). */
+  createdAt: string;
+  /** Last save in BrewPlanner. */
+  updatedAt: string;
   /** Batch size in litres (converted from gallons if needed); null if unknown. */
   batchSizeL: number | null;
+  settings: RecipeSettings;
   /** Headline mash temperature, pre-formatted (e.g. "67°C"); null if unknown. */
   mashTemp: string | null;
   /** Primary fermentation temperature, pre-formatted; null if unknown. */
@@ -586,6 +652,56 @@ export interface RecipeDetail {
   pricing: RecipePricing;
   /** What the batch costs in ingredients. */
   cost: RecipeCost;
+}
+
+// Recipe fields accepted by PUT /api/recipes/:id. Server-derived weights,
+// catalogue matches and totals deliberately do not travel back from the form.
+export type RecipeFermentableEdit = Omit<RecipeFermentable, 'grams' | 'price'>;
+export type RecipeHopEdit = Omit<RecipeHop, 'grams' | 'price'>;
+export type RecipeYeastEdit = Omit<RecipeYeast, 'grams' | 'units' | 'price'>;
+export type RecipeOtherIngredientEdit = Omit<RecipeOtherIngredient, 'grams' | 'units' | 'price'>;
+
+/** Full editable snapshot stored for a recipe. */
+export interface RecipeEditInput {
+  name: string;
+  style: string;
+  settings: RecipeSettings;
+  og: string;
+  preBoilGravity: string | null;
+  postBoilGravity: string | null;
+  fg: string;
+  abv: string;
+  ibu: string;
+  ebc: string;
+  /** Preserves the caveat when the displayed colour came from the grain bill. */
+  ebcEstimated: boolean;
+  batchSizeL: number | null;
+  mashTemp: string | null;
+  fermentationTemp: string | null;
+  fermentables: RecipeFermentableEdit[];
+  hops: RecipeHopEdit[];
+  yeast: RecipeYeastEdit[];
+  otherIngredients: RecipeOtherIngredientEdit[];
+  mashGuidelines: RecipeMashGuidelines | null;
+  waterProfile: RecipeWaterProfile | null;
+}
+
+/** Result of a one-way import from the configured Brewer's Friend account. */
+export interface RecipeImportResult {
+  imported: number;
+  skipped: number;
+}
+
+export interface RecipeIngredientOption {
+  name: string;
+  source: 'catalogue' | 'recipe';
+  /** Malt colour selected with the ingredient, in EBC. */
+  ebc?: number | null;
+  /** Catalogue range shown in the picker when the malt spans several colours. */
+  ebcMin?: number | null;
+  ebcMax?: number | null;
+  /** Hop alpha acid percentage selected with the ingredient. */
+  aa?: number | null;
 }
 
 /** A costed group of ingredient lines — one section of a recipe, or one stage. */
@@ -1784,6 +1900,137 @@ export const setActiveRecipeSchema = z.object({
 });
 export type SetActiveRecipeInput = z.infer<typeof setActiveRecipeSchema>;
 
+// --- Local recipe editing -------------------------------------------------
+
+const shortRecipeText = z.string().trim().max(100);
+const ingredientName = z.string().trim().min(1, 'Ingredient name is required').max(300);
+const amountText = z.string().trim().max(30);
+const optionalRecipeText = z.string().trim().max(2_000).nullable();
+
+const recipeFermentableEditSchema = z.object({
+  name: ingredientName,
+  amount: amountText,
+  unit: shortRecipeText,
+  percent: amountText,
+  ebc: z.number().nonnegative().max(2_000).nullable(),
+  ppg: z.number().nonnegative().max(100).nullable().default(null),
+});
+
+const recipeHopEditSchema = z.object({
+  name: ingredientName,
+  amount: amountText,
+  unit: shortRecipeText,
+  use: z.string().trim().max(200),
+  stage: z.enum(['Mash', 'First Wort', 'Boil', 'Whirlpool', 'Dry Hop', 'Other']),
+  time: amountText,
+  timeUnit: z.enum(['min', 'day', '']),
+  aa: amountText,
+  ibu: amountText,
+  form: shortRecipeText.default('Pellet'),
+  utilization: amountText.default(''),
+  temp: amountText,
+});
+
+const recipeYeastEditSchema = z.object({
+  name: ingredientName,
+  lab: z.string().trim().max(200),
+  attenuation: amountText,
+  amount: amountText,
+  amountUnit: shortRecipeText,
+  type: shortRecipeText,
+  form: shortRecipeText,
+  flocculation: shortRecipeText,
+  minTempC: z.number().min(-20).max(100).nullable(),
+  maxTempC: z.number().min(-20).max(100).nullable(),
+  alcoholTolerance: shortRecipeText,
+  starter: z.boolean(),
+});
+
+const recipeOtherIngredientEditSchema = z.object({
+  name: ingredientName,
+  amount: amountText,
+  unit: shortRecipeText,
+  use: z.string().trim().max(200),
+  time: amountText,
+  timeUnit: z.enum(['min', 'day', '']).default(''),
+  type: shortRecipeText,
+});
+
+const recipeMashGuidelinesSchema = z.object({
+  steps: z
+    .array(
+      z.object({
+        name: z.string().trim().max(200),
+        temp: z.string().trim().max(30).nullable(),
+        time: amountText,
+        amount: z.string().trim().max(100).optional(),
+        amountUnit: shortRecipeText.default(''),
+        startTemp: z.string().trim().max(30).nullable().default(null),
+        type: shortRecipeText.default(''),
+        description: z.string().trim().max(500).default(''),
+      }),
+    )
+    .max(100),
+  startingThicknessLPerKg: z.number().positive().max(100).nullable().default(null),
+  grainTempC: z.number().min(-20).max(100).nullable().default(null),
+  notes: optionalRecipeText,
+});
+
+const recipeWaterProfileSchema = z.object({
+  sourceName: z.string().trim().max(200).nullable().default(null),
+  name: z.string().trim().max(200).nullable(),
+  ph: z.string().trim().max(30).nullable(),
+  notes: optionalRecipeText,
+  calcium: amountText.nullable(),
+  magnesium: amountText.nullable(),
+  sodium: amountText.nullable(),
+  chloride: amountText.nullable(),
+  sulfate: amountText.nullable(),
+  bicarbonate: amountText.nullable(),
+});
+
+const recipeSettingsSchema = z
+  .object({
+    styleCategory: z.string().trim().max(300).default(''),
+    styleSubcategory: z.string().trim().max(300).default(''),
+    batchTarget: shortRecipeText.default('Fermenter'),
+    boilSizePreL: z.number().positive().max(1_000_000).nullable().default(null),
+    boilSizePostL: z.number().positive().max(1_000_000).nullable().default(null),
+    autoBoilSizePre: z.boolean().default(false),
+    autoBoilSizePost: z.boolean().default(false),
+    boilTimeMinutes: z.number().positive().max(10_000).nullable().default(60),
+    efficiencyPercent: z.number().min(0).max(100).nullable().default(80),
+    pitchRate: z.string().trim().max(200).default('Manufacturer recommended'),
+  })
+  .default({});
+
+/** Full recipe form body. Arrays replace their corresponding ingredient lists. */
+export const recipeEditSchema = z.object({
+  name: z.string().trim().min(1, 'Recipe name is required').max(300),
+  style: z.string().trim().max(300),
+  settings: recipeSettingsSchema,
+  og: amountText,
+  preBoilGravity: amountText.nullable(),
+  postBoilGravity: amountText.nullable(),
+  fg: amountText,
+  abv: amountText,
+  ibu: amountText,
+  ebc: amountText,
+  ebcEstimated: z.boolean(),
+  batchSizeL: z.number().positive().max(1_000_000).nullable(),
+  mashTemp: z.string().trim().max(30).nullable(),
+  fermentationTemp: z.string().trim().max(30).nullable(),
+  fermentables: z.array(recipeFermentableEditSchema).max(500),
+  hops: z.array(recipeHopEditSchema).max(500),
+  yeast: z.array(recipeYeastEditSchema).max(100),
+  otherIngredients: z.array(recipeOtherIngredientEditSchema).max(500),
+  mashGuidelines: recipeMashGuidelinesSchema.nullable(),
+  waterProfile: recipeWaterProfileSchema.nullable(),
+}).transform((value): RecipeEditInput => ({
+  ...value,
+  settings: { ...DEFAULT_RECIPE_SETTINGS, ...value.settings },
+}));
+
 /**
  * Body for `PUT /api/fermenter` — whether the empty fermenter has been washed.
  * There's no "unknown" to send: that's only the state of never having been told.
@@ -1796,6 +2043,12 @@ export type FermenterStateInput = z.infer<typeof fermenterStateSchema>;
 // --- Ingredient price overrides --------------------------------------------
 
 const ingredientKindSchema = z.enum(['fermentable', 'hop', 'yeast', 'other']);
+
+/** Search both the local shop catalogue and ingredients used in saved recipes. */
+export const recipeIngredientCatalogQuerySchema = z.object({
+  kind: ingredientKindSchema,
+  q: z.string().trim().max(200).optional(),
+});
 
 /**
  * Query for `GET /api/prices/options` — which ingredient the picker is open on.

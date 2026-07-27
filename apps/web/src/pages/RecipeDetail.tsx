@@ -3,6 +3,7 @@ import type {
   HopStage,
   Recipe,
   RecipeDetail,
+  RecipeEditInput,
   RecipeFermentable,
   RecipeHop,
   RecipeOtherIngredient,
@@ -12,12 +13,13 @@ import type {
 } from '@checklist/shared';
 import { HOP_STAGE_ORDER, ebcColor, predictBeerColor, sumCost } from '@checklist/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { IngredientName, PriceCell } from '../components/PricePicker';
 import type { PricedLine } from '../components/PricePicker';
+import { RecipeEditor } from '../components/RecipeEditor';
 import { invalidateRecipes, loadRecipeDetail } from '../recipeStore';
 import { asCleanMessage } from '../util';
 
@@ -134,6 +136,7 @@ function hopTiming(hop: RecipeHop): string {
 
 export function RecipeDetailPage(): JSX.Element {
   const { id = '' } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { auth } = useAuth();
   const controllable = canControl(auth);
 
@@ -141,6 +144,9 @@ export function RecipeDetailPage(): JSX.Element {
   const [active, setActive] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<SectionKey, boolean>>(loadCollapsed);
 
   function toggle(key: SectionKey): void {
@@ -225,6 +231,40 @@ export function RecipeDetailPage(): JSX.Element {
     }
   }
 
+  async function saveEdit(draft: RecipeEditInput): Promise<void> {
+    if (editSaving) return;
+    setEditSaving(true);
+    setError(null);
+    try {
+      const saved = await api.updateRecipe(id, draft);
+      invalidateRecipes();
+      setRecipe(saved);
+      if (active?.id === saved.id) {
+        setActive({ ...active, name: saved.name, style: saved.style, abv: saved.abv, ibu: saved.ibu, ebc: saved.ebc });
+      }
+      setEditing(false);
+    } catch (e) {
+      setError(asCleanMessage(e));
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function deleteRecipe(): Promise<void> {
+    if (!recipe || deleting) return;
+    if (!window.confirm(`Delete “${recipe.name}” from BrewPlanner? This cannot be undone.`)) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.deleteRecipe(recipe.id);
+      invalidateRecipes();
+      navigate('/recipes', { replace: true });
+    } catch (e) {
+      setError(asCleanMessage(e));
+      setDeleting(false);
+    }
+  }
+
   // Section costs, summed the same way everywhere via the shared helper.
   const costs = useMemo(
     () =>
@@ -280,6 +320,23 @@ export function RecipeDetailPage(): JSX.Element {
     );
   }
 
+  if (editing) {
+    return (
+      <DashboardShell active="recipes">
+        <main className="w-full max-w-[1100px] px-5 py-5">
+          <BackLink />
+          <div className="mt-4 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#f06a5c]">Edit recipe</p>
+              <h1 className="mt-0.5 text-xl font-semibold tracking-tight text-zinc-50">{recipe.name}</h1>
+            </div>
+          </div>
+          <RecipeEditor recipe={recipe} saving={editSaving} error={error} onSave={saveEdit} onCancel={() => { setEditing(false); setError(null); }} />
+        </main>
+      </DashboardShell>
+    );
+  }
+
   // What the beer actually pours: the malt colour, restained by any fruit in
   // the other-ingredients list. The swatch means "what's in the glass", so a
   // fruited sour shows red here rather than the straw its grain bill implies.
@@ -320,6 +377,25 @@ export function RecipeDetailPage(): JSX.Element {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {controllable && (
+              <button
+                type="button"
+                onClick={() => { setError(null); setEditing(true); }}
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 hover:text-white"
+              >
+                Edit recipe
+              </button>
+            )}
+            {controllable && (
+              <button
+                type="button"
+                onClick={() => void deleteRecipe()}
+                disabled={deleting}
+                className="rounded-lg border border-red-500/30 px-3 py-1.5 text-sm font-medium text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            )}
             {recipe.url && (
               <a
                 href={recipe.url}
@@ -351,6 +427,13 @@ export function RecipeDetailPage(): JSX.Element {
             )}
           </div>
         </header>
+
+        {recipe.origin === 'brewersfriend' && (
+          <div className="mt-3 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-2.5 text-sm text-sky-100">
+            Imported from Brewer&rsquo;s Friend. This brew sheet now lives in BrewPlanner; its
+            original link is retained for reference.
+          </div>
+        )}
 
         {/* The numbers, in brew order: gravities → ABV/IBU/colour → temps. */}
         <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
@@ -503,6 +586,17 @@ export function RecipeDetailPage(): JSX.Element {
               open={!collapsed.mash}
               onToggle={() => toggle('mash')}
             >
+              {(recipe.mashGuidelines.startingThicknessLPerKg != null ||
+                recipe.mashGuidelines.grainTempC != null) && (
+                <div className="flex flex-wrap gap-3 border-b border-zinc-800 px-4 py-2 text-xs text-zinc-400">
+                  {recipe.mashGuidelines.startingThicknessLPerKg != null && (
+                    <span>Thickness {recipe.mashGuidelines.startingThicknessLPerKg} L/kg</span>
+                  )}
+                  {recipe.mashGuidelines.grainTempC != null && (
+                    <span>Grain {recipe.mashGuidelines.grainTempC}°C</span>
+                  )}
+                </div>
+              )}
               <ol className="divide-y divide-zinc-800">
                 {recipe.mashGuidelines.steps.map((s, i) => (
                   <li key={i} className="flex items-center gap-3 px-4 py-2.5">
@@ -510,10 +604,18 @@ export function RecipeDetailPage(): JSX.Element {
                       {i + 1}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm text-zinc-100">
-                      {s.name || `Step ${i + 1}`}
+                      {s.type || s.name || `Step ${i + 1}`}
+                      {s.description && (
+                        <span className="ml-2 text-xs text-zinc-500">{s.description}</span>
+                      )}
                     </span>
                     <span className="shrink-0 text-sm text-zinc-400">
-                      {[s.temp, s.time && `${s.time} min`, s.amount].filter(Boolean).join(' · ')}
+                      {[
+                        s.startTemp && `start ${s.startTemp}°C`,
+                        s.temp,
+                        s.time && `${s.time} min`,
+                        s.amount && `${s.amount}${s.amountUnit ? ` ${s.amountUnit}` : ''}`,
+                      ].filter(Boolean).join(' · ')}
                     </span>
                   </li>
                 ))}
@@ -708,6 +810,7 @@ function FermentableRow({
         {f.amount} {f.unit}
         {f.percent && <span className="text-zinc-500"> · {fmt(f.percent, 1)}%</span>}
         {f.ebc != null && <span className="text-zinc-500"> · {f.ebc} EBC</span>}
+        {f.ppg != null && <span className="text-zinc-500"> · {f.ppg} PPG</span>}
       </span>
       <PriceCell
         line={line}
@@ -735,7 +838,7 @@ function OtherRow({
         className="min-w-0 flex-1 text-sm text-zinc-100"
       />
       <span className="shrink-0 text-sm text-zinc-400">
-        {[`${m.amount}${m.unit ? ` ${m.unit}` : ''}`, m.type, m.use, m.time && `${m.time} min`]
+        {[`${m.amount}${m.unit ? ` ${m.unit}` : ''}`, m.type, m.use, m.time && `${m.time} ${m.timeUnit || 'min'}`]
           .filter(Boolean)
           .join(' · ')}
       </span>
@@ -949,8 +1052,10 @@ function HopRow({
         <div className="mt-0.5 truncate text-xs text-zinc-500">
           {[
             `${h.amount}${h.unit ? ` ${h.unit}` : ''}`,
+            h.form,
             hopTiming(h),
             h.temp && `@ ${h.temp}°C`,
+            h.utilization && `${h.utilization}% utilisation`,
             // The recipe's own wording, but only when it says more than the
             // stage heading already does.
             h.use !== stage ? h.use : '',
@@ -1071,6 +1176,11 @@ function WaterSection({
 
   return (
     <div className="space-y-3 p-4">
+      {profile.sourceName && (
+        <div className="text-sm text-zinc-400">
+          Source water: <span className="text-zinc-200">{profile.sourceName}</span>
+        </div>
+      )}
       {present.length > 0 && (
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
           {present.map((ion) => (

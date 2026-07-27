@@ -37,6 +37,9 @@ import type {
   Reading,
   Recipe,
   RecipeDetail,
+  RecipeEditInput,
+  RecipeImportResult,
+  RecipeIngredientOption,
   RecipeStatsResponse,
   Step,
   Todo,
@@ -339,17 +342,31 @@ export const api = {
   // Brewer's Friend recipes. listRecipes proxies the user's account via the
   // server (the API key stays server-side); the active recipe is the one shown
   // on the kiosk fermenter card.
-  // The server caches the list for a few minutes — `refresh` forces it to
-  // re-read the account (the Recipes page's refresh button).
-  listRecipes: (refresh = false) =>
-    request<Recipe[]>(refresh ? '/recipes?refresh=1' : '/recipes'),
-  // Every recipe's cost and hop rate, for the Recipes grid's price and hops/L
-  // sorts. Heavy upstream and cached server-side for half an hour, so it's
-  // fetched only when one of those sorts is actually chosen.
-  listRecipeStats: (refresh = false) =>
-    request<RecipeStatsResponse>(refresh ? '/recipes/stats?refresh=1' : '/recipes/stats'),
+  // `_refresh` is retained for the session-cache call sites; the server-side
+  // library is already the source of truth.
+  listRecipes: (_refresh = false) => request<Recipe[]>('/recipes'),
+  // Every recipe's cost and hop rate, derived from its stored ingredient list.
+  listRecipeStats: (_refresh = false) => request<RecipeStatsResponse>('/recipes/stats'),
   // One recipe's full brew sheet (ingredients, mash, water), for the detail page.
   getRecipe: (id: string) => request<RecipeDetail>(`/recipes/${encodeURIComponent(id)}`),
+  createRecipe: (recipe: RecipeEditInput) =>
+    request<RecipeDetail>('/recipes', {
+      method: 'POST',
+      body: JSON.stringify(recipe),
+    }),
+  updateRecipe: (id: string, recipe: RecipeEditInput) =>
+    request<RecipeDetail>(`/recipes/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(recipe),
+    }),
+  deleteRecipe: (id: string) =>
+    request<void>(`/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  importBrewersFriendRecipes: () =>
+    request<RecipeImportResult>('/recipes/import/brewersfriend', { method: 'POST' }),
+  searchRecipeIngredients: (kind: IngredientKind, q: string) =>
+    request<RecipeIngredientOption[]>(
+      `/recipes/catalog?${new URLSearchParams({ kind, q }).toString()}`,
+    ),
   getActiveRecipe: () => request<ActiveRecipe>('/recipe').then((r) => r.recipe),
   setActiveRecipe: (recipe: Recipe) =>
     request<ActiveRecipe>('/recipe', {

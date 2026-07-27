@@ -16,12 +16,12 @@
  *     sending all of them every turn would cost more than the answer is worth,
  *     and bury the retrieved book passages in a wall of ingredient lines.
  *
- * Both read through brewersfriend.ts, which caches upstream — asking Bruce three
- * questions about the same recipe is one Brewer's Friend call, not three.
+ * Both read BrewPlanner's local recipe library, so advice works without an
+ * external service or API key after the legacy import.
  */
 
 import type { Recipe, RecipeDetail } from '@checklist/shared';
-import * as bf from '../brewersfriend.js';
+import * as recipeRepo from '../recipeRepo.js';
 
 /** The tool the model calls to pull one recipe's full brew sheet. */
 export const RECIPE_TOOL = {
@@ -85,7 +85,7 @@ export function matchRecipe(recipes: Recipe[], wanted: string): Recipe | null {
   return best?.recipe ?? null;
 }
 
-/** `"4.5"` → `"4.5"`, `""`/null → null. Keeps empty upstream fields out of the text. */
+/** `"4.5"` → `"4.5"`, `""`/null → null. Keeps empty fields out of the text. */
 function value(raw: string | null | undefined): string | null {
   const text = raw?.trim();
   return text ? text : null;
@@ -132,6 +132,7 @@ export function renderRecipe(recipe: RecipeDetail): string {
             const extras = [
               value(f.percent) ? `${f.percent} %` : null,
               f.ebc != null ? `${Math.round(f.ebc)} EBC` : null,
+              f.ppg != null ? `${Math.round(f.ppg)} PPG` : null,
             ].filter(Boolean);
             return `- ${f.amount} ${f.unit} ${f.name}${extras.length ? ` (${extras.join(', ')})` : ''}`;
           })
@@ -154,6 +155,8 @@ export function renderRecipe(recipe: RecipeDetail): string {
             const detail = [
               value(h.aa) ? `${h.aa} % AA` : null,
               value(h.ibu) ? `${h.ibu} IBU` : null,
+              value(h.form),
+              value(h.utilization) ? `${h.utilization} % utilisation` : null,
             ].filter(Boolean);
             return `- ${h.amount} ${h.unit} ${h.name} — ${when}${detail.length ? ` (${detail.join(', ')})` : ''}`;
           })
@@ -184,7 +187,7 @@ export function renderRecipe(recipe: RecipeDetail): string {
       '## Other ingredients\n' +
         recipe.otherIngredients
           .map((o) => {
-            const when = [o.use, value(o.time) ? `${o.time} min` : null].filter(Boolean).join(', ');
+            const when = [o.use, value(o.time) ? `${o.time} ${o.timeUnit || 'min'}` : null].filter(Boolean).join(', ');
             return `- ${o.amount} ${o.unit} ${o.name}${when ? ` — ${when}` : ''}`;
           })
           .join('\n'),
@@ -195,7 +198,7 @@ export function renderRecipe(recipe: RecipeDetail): string {
   if (mash && (mash.steps.length > 0 || mash.notes)) {
     const steps = mash.steps
       .map((s) =>
-        `- ${[s.name || 'Rest', s.temp, value(s.time) ? `${s.time} min` : null, s.amount]
+        `- ${[s.type || s.name || 'Rest', s.startTemp ? `start ${s.startTemp} °C` : null, s.temp, value(s.time) ? `${s.time} min` : null, s.amount ? `${s.amount}${s.amountUnit ? ` ${s.amountUnit}` : ''}` : null, s.description]
           .filter(Boolean)
           .join(' — ')}`,
       )
@@ -208,6 +211,7 @@ export function renderRecipe(recipe: RecipeDetail): string {
     parts.push(
       `## Target water profile${water.name ? ` — ${water.name}` : ''}\n` +
         facts([
+          ['Source water', water.sourceName],
           ['Ca²⁺', water.calcium != null ? `${water.calcium} ppm` : null],
           ['Mg²⁺', water.magnesium != null ? `${water.magnesium} ppm` : null],
           ['Na⁺', water.sodium != null ? `${water.sodium} ppm` : null],
@@ -234,13 +238,7 @@ export function renderRecipe(recipe: RecipeDetail): string {
  * answering questions about beer; he simply doesn't have the shelf that turn.
  */
 export async function recipeShelf(): Promise<string | null> {
-  if (!bf.isConfigured()) return null;
-  let recipes: Recipe[];
-  try {
-    recipes = await bf.listRecipes();
-  } catch {
-    return null;
-  }
+  const recipes = recipeRepo.listRecipes();
   if (recipes.length === 0) return null;
 
   return recipes
@@ -267,34 +265,20 @@ export async function recipeShelf(): Promise<string | null> {
  * than silently attributed to the recipe the brewer asked about.
  */
 export async function runRecipeTool(wanted: string): Promise<{ text: string; matched: string | null }> {
-  if (!bf.isConfigured()) {
-    return { text: 'Brewer\'s Friend is not configured on this server, so there are no recipes to read.', matched: null };
-  }
-
-  let recipes: Recipe[];
-  try {
-    recipes = await bf.listRecipes();
-  } catch {
-    return { text: 'Brewer\'s Friend could not be reached just now, so the recipe could not be read.', matched: null };
-  }
+  const recipes = recipeRepo.listRecipes();
 
   const match = matchRecipe(recipes, wanted);
   if (!match) {
     const names = recipes.map((r) => r.name).join(', ');
     return {
-      text: `No recipe matches "${wanted}". The recipes on this account are: ${names || 'none'}.`,
+      text: `No recipe matches "${wanted}". The recipes in BrewPlanner are: ${names || 'none'}.`,
       matched: null,
     };
   }
 
-  let detail: RecipeDetail;
-  try {
-    detail = await bf.getRecipe(match.id);
-  } catch (err) {
-    if (err instanceof bf.RecipeNotFoundError) {
-      return { text: `"${match.name}" is in the list but its brew sheet could not be found.`, matched: null };
-    }
-    return { text: `The brew sheet for "${match.name}" could not be read just now.`, matched: null };
+  const detail: RecipeDetail | null = recipeRepo.getRecipe(match.id);
+  if (!detail) {
+    return { text: `"${match.name}" is in the list but its brew sheet could not be found.`, matched: null };
   }
 
   const link = detail.url ? `\n\nRecipe page: ${detail.url}` : '';
