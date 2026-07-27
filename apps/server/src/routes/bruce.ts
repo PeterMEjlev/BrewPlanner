@@ -246,7 +246,13 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
     const question = addMessage(conversationId, 'user', body.message);
     try {
       const answer = await answerQuestion(body.message, history);
-      const stored = addMessage(conversationId, 'assistant', answer.text, answer.sources);
+      const stored = addMessage(
+        conversationId,
+        'assistant',
+        answer.text,
+        answer.sources,
+        answer.costUsd,
+      );
       // Name the thread after what it turned out to be about. Only takes
       // effect on an untitled thread, so a rename is never clobbered.
       titleFromFirstMessage(conversationId, body.message);

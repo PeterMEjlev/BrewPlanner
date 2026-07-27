@@ -141,6 +141,13 @@
       "when": 1785153744543,
       "tag": "0019_military_madame_web",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1785164244548,
+      "tag": "0020_magenta_lethal_legion",
+      "breakpoints": true
     }
   ]
 }

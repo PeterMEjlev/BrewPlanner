@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   BruceChatMessage,
   BruceChatState,
+  BruceConversation,
   BruceIndexJob,
   BruceInstructions,
   BruceKnowledgeState,
@@ -40,15 +41,27 @@ const STATE_LOOK: Record<BruceState, { label: string; dot: string; pulse: boolea
   speaking: { label: 'Speaking…', dot: 'bg-sky-400', pulse: true },
 };
 
-/** Shown on an empty thread — also a hint at what he actually knows about. */
-const STARTERS = [
-  'What mash pH should I target for a pale ale, and why?',
-  'How do I build a Burton-on-Trent water profile from RO water?',
-  'What does high bicarbonate do to a dark beer?',
-];
+/** The app's warm accent, as used by every other primary button. */
+const ACCENT_BUTTON =
+  'bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white transition enabled:hover:brightness-110 disabled:opacity-40';
+
+/** Where the real numbers live — this page only estimates (see server bruce/cost.ts). */
+const OPENAI_BILLING_URL = 'https://platform.openai.com/settings/organization/billing/overview';
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+/**
+ * A thread's running cost, short enough to sit in a list row.
+ *
+ * Three decimals: one question of a cheap model lands around $0.002, so
+ * anything coarser reads as free. Below a tenth of a cent it says so rather
+ * than rounding to $0.000, which would look like a bug.
+ */
+function formatCost(usd: number): string {
+  if (usd < 0.0005) return '<$0.001';
+  return usd < 1 ? `$${usd.toFixed(3)}` : `$${usd.toFixed(2)}`;
 }
 
 // --- Chat -------------------------------------------------------------------
@@ -181,6 +194,33 @@ function ModelPicker({
   );
 }
 
+/**
+ * The line under a thread's title: how big it is, what it has cost, and when it
+ * was last used. Shared by the sidebar and the narrow-screen popover so the two
+ * can't drift apart.
+ *
+ * The cost is an estimate the server works out from OpenAI's reported token
+ * counts, and is simply absent on threads it couldn't price — nothing is shown
+ * then, rather than a $0.000 that would read as "free".
+ */
+function ConversationMeta({ conversation }: { conversation: BruceConversation }): JSX.Element {
+  return (
+    <div className="text-[10px] text-zinc-500">
+      {conversation.messages === 0
+        ? 'empty'
+        : `${conversation.messages} message${conversation.messages === 1 ? '' : 's'}`}
+      {conversation.costUsd != null && (
+        <span className="tabular-nums" title="Approximate OpenAI cost of this chat">
+          {' · '}
+          {formatCost(conversation.costUsd)}
+        </span>
+      )}
+      {' · '}
+      {relativeTime(conversation.updatedAt)}
+    </div>
+  );
+}
+
 /** Thread switcher: pick, start, rename or delete a conversation. */
 function ConversationMenu({
   state,
@@ -218,7 +258,7 @@ function ConversationMenu({
               close();
               onNew();
             }}
-            className="mb-1 block w-full rounded-lg px-2 py-1.5 text-left text-xs font-medium text-emerald-400 transition hover:bg-zinc-800/60"
+            className={`mb-1 block w-full rounded-lg px-2 py-1.5 text-left text-xs font-medium ${ACCENT_BUTTON}`}
           >
             + New chat
           </button>
@@ -258,13 +298,7 @@ function ConversationMenu({
                     className="min-w-0 flex-1 text-left"
                   >
                     <div className="truncate text-xs text-zinc-100">{conversation.title}</div>
-                    <div className="text-[10px] text-zinc-500">
-                      {conversation.messages === 0
-                        ? 'empty'
-                        : `${conversation.messages} message${conversation.messages === 1 ? '' : 's'}`}
-                      {' · '}
-                      {relativeTime(conversation.updatedAt)}
-                    </div>
+                    <ConversationMeta conversation={conversation} />
                   </button>
                   <button
                     type="button"
@@ -332,7 +366,7 @@ function ChatsPanel({
           type="button"
           onClick={onNew}
           title="Start a new chat"
-          className="rounded-lg px-1.5 py-0.5 text-xs font-medium text-emerald-400 transition hover:bg-zinc-800/60"
+          className={`rounded-lg px-2 py-0.5 text-xs font-medium ${ACCENT_BUTTON}`}
         >
           + New
         </button>
@@ -377,13 +411,7 @@ function ChatsPanel({
                   <div className={`truncate text-xs ${active ? 'text-zinc-100' : 'text-zinc-300'}`}>
                     {conversation.title}
                   </div>
-                  <div className="text-[10px] text-zinc-600">
-                    {conversation.messages === 0
-                      ? 'empty'
-                      : `${conversation.messages} message${conversation.messages === 1 ? '' : 's'}`}
-                    {' · '}
-                    {relativeTime(conversation.updatedAt)}
-                  </div>
+                  <ConversationMeta conversation={conversation} />
                 </button>
                 <button
                   type="button"
@@ -564,6 +592,16 @@ function Chat(): JSX.Element {
           </h2>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* The per-chat figures on this page are estimates; this is the bill. */}
+          <a
+            href={OPENAI_BILLING_URL}
+            target="_blank"
+            rel="noreferrer"
+            title="Your real OpenAI spend, on platform.openai.com"
+            className="text-xs text-zinc-500 transition hover:text-zinc-300"
+          >
+            OpenAI billing ↗
+          </a>
           {state?.configured && (
             <ModelPicker
               state={state}
@@ -591,27 +629,6 @@ function Chat(): JSX.Element {
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto pr-1" style={{ maxHeight: '62vh' }}>
         {state == null && !error && <p className="text-sm text-zinc-500">Loading…</p>}
-
-        {state != null && state.messages.length === 0 && pending == null && (
-          <div className="py-6">
-            <p className="mb-3 text-sm text-zinc-500">
-              Ask about water chemistry, mash pH, or anything else in the brewery library.
-            </p>
-            <div className="flex flex-col items-start gap-2">
-              {STARTERS.map((starter) => (
-                <button
-                  key={starter}
-                  type="button"
-                  disabled={!canAsk}
-                  onClick={() => void send(starter)}
-                  className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-left text-sm text-zinc-400 transition enabled:hover:border-zinc-700 enabled:hover:text-zinc-200 disabled:opacity-50"
-                >
-                  {starter}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {state?.messages.map((message) => <ChatBubble key={message.id} message={message} />)}
 
@@ -662,7 +679,7 @@ function Chat(): JSX.Element {
           <button
             type="submit"
             disabled={!canAsk || !draft.trim()}
-            className="shrink-0 self-end rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition enabled:hover:bg-emerald-500 disabled:opacity-40"
+            className={`shrink-0 self-end rounded-lg px-4 py-2 text-sm font-medium ${ACCENT_BUTTON}`}
           >
             {pending ? 'Asking…' : 'Ask'}
           </button>

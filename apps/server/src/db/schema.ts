@@ -320,6 +320,14 @@ export const bruceMessages = sqliteTable(
     content: text('content').notNull(),
     /** JSON array of { title, section?, page? } — assistant turns only. */
     sources: text('sources'),
+    /**
+     * What this answer cost in US dollars, estimated from the token counts
+     * OpenAI reported and the price table in bruce/cost.ts. Assistant turns
+     * only, and null for turns answered before this was recorded or priced
+     * with a model the table doesn't know — the thread list then sums only
+     * what it actually knows rather than showing a confident zero.
+     */
+    costUsd: real('cost_usd'),
     createdAt: text('created_at')
       .notNull()
       .default(sql`(CURRENT_TIMESTAMP)`),

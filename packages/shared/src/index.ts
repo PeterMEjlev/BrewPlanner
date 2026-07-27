@@ -2166,6 +2166,14 @@ export interface BruceConversation {
   createdAt: string;
   /** Last activity — the thread list is ordered by this. */
   updatedAt: string;
+  /**
+   * Roughly what this thread has cost in US dollars: the sum of the priced
+   * answers in it, from the token counts OpenAI reported. An estimate, not the
+   * invoice — see the server's bruce/cost.ts. Absent when nothing in the
+   * thread could be priced (older turns, or an unknown model), so the UI can
+   * say nothing rather than claim it was free.
+   */
+  costUsd?: number;
 }
 
 /** A model the picker offers, with plain-language guidance on when to use it. */

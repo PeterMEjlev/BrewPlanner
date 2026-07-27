@@ -29,6 +29,8 @@ import { embedQuery } from '../knowledge/embed.js';
 import { knowledgeDir, libraryOutline, search } from '../knowledge/store.js';
 import { openaiKey, OpenAIError, openaiGet, openaiPost } from '../openai.js';
 import { getSetting, setSetting } from '../repo.js';
+import type { TokenUsage } from './cost.js';
+import { estimateCostUsd } from './cost.js';
 
 /**
  * Chat model, in order of precedence: whatever was picked on the Bruce page,
@@ -306,6 +308,8 @@ interface ResponsesReply {
     type: string;
     content?: { type: string; text?: string }[];
   }[];
+  /** Token counts for this call — priced by cost.ts. */
+  usage?: TokenUsage;
 }
 
 /**
@@ -342,6 +346,8 @@ function renderPassage(
 export interface ChatAnswer {
   text: string;
   sources: BruceChatSource[];
+  /** Roughly what this answer cost in USD; null when it couldn't be priced. */
+  costUsd: number | null;
 }
 
 /**
@@ -431,5 +437,7 @@ export async function answerQuestion(
     );
   }
 
-  return { text, sources };
+  // Priced from the counts OpenAI just reported, not from the request — a
+  // retry, a reasoning step or a truncated answer all move the real number.
+  return { text, sources, costUsd: estimateCostUsd(model, reply.usage) };
 }

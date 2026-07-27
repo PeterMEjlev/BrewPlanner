@@ -43,27 +43,37 @@ function toPublicMessage(row: typeof bruceMessages.$inferSelect): BruceChatMessa
 
 // --- Threads ----------------------------------------------------------------
 
-/** Every thread, most recently used first, with a count for the list. */
+/** Every thread, most recently used first, with a count and running cost. */
 export function listConversations(): BruceConversation[] {
-  const counts = db
-    .select({ id: bruceMessages.conversationId, n: sql<number>`count(*)` })
+  const totals = db
+    .select({
+      id: bruceMessages.conversationId,
+      n: sql<number>`count(*)`,
+      // SUM over all-null costs is null, which is the answer we want: a thread
+      // whose turns predate cost tracking has an unknown cost, not a zero one.
+      cost: sql<number | null>`sum(${bruceMessages.costUsd})`,
+    })
     .from(bruceMessages)
     .groupBy(bruceMessages.conversationId)
     .all();
-  const byId = new Map(counts.map((c) => [c.id, c.n]));
+  const byId = new Map(totals.map((t) => [t.id, t]));
 
   return db
     .select()
     .from(bruceConversations)
     .orderBy(desc(bruceConversations.updatedAt), desc(bruceConversations.id))
     .all()
-    .map((row) => ({
-      id: row.id,
-      title: row.title,
-      messages: byId.get(row.id) ?? 0,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }));
+    .map((row) => {
+      const total = byId.get(row.id);
+      return {
+        id: row.id,
+        title: row.title,
+        messages: total?.n ?? 0,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        ...(total?.cost != null ? { costUsd: total.cost } : {}),
+      };
+    });
 }
 
 export function createConversation(title = 'New chat'): BruceConversation {
@@ -130,12 +140,19 @@ export function listMessages(conversationId: number, limit = MAX_MESSAGES_PER_CO
     .map(toPublicMessage);
 }
 
-/** Append one turn and bump the thread's activity time. */
+/**
+ * Append one turn and bump the thread's activity time.
+ *
+ * `costUsd` is what that answer is estimated to have cost (see bruce/cost.ts);
+ * pass it only on assistant turns, and leave it out when the answer could not
+ * be priced so the thread's total stays honest about what it doesn't know.
+ */
 export function addMessage(
   conversationId: number,
   role: 'user' | 'assistant',
   content: string,
   sources?: BruceChatSource[],
+  costUsd?: number | null,
 ): BruceChatMessage {
   const row = db
     .insert(bruceMessages)
@@ -144,6 +161,7 @@ export function addMessage(
       role,
       content,
       sources: sources && sources.length > 0 ? JSON.stringify(sources) : null,
+      costUsd: costUsd ?? null,
     })
     .returning()
     .get();
