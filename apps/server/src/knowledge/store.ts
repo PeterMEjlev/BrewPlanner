@@ -220,7 +220,11 @@ export function knowledgeStatus(): BruceKnowledgeStatus {
   }
 
   const { manifest } = index;
-  const documents = manifest.sources.map((s) => ({ title: s.title, passages: s.passages }));
+  const documents = manifest.sources.map((s) => ({
+    file: s.file,
+    title: s.title,
+    passages: s.passages,
+  }));
   const base = {
     documents,
     passages: manifest.chunks.length,

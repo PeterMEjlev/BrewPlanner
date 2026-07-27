@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   BruceChatMessage,
   BruceChatState,
+  BruceKnowledgeStatus,
   BruceServiceStatus,
   BruceState,
   BruceTranscriptEntry,
@@ -99,14 +100,65 @@ function KnowledgeNote({ state }: { state: BruceChatState }): JSX.Element {
   if (!state.knowledge.ready) {
     return <p className="text-xs text-amber-500/90">{state.knowledge.problem}</p>;
   }
-  const titles = state.knowledge.documents.map((d) => d.title).join(', ');
+  if (state.knowledge.documents.length === 0) {
+    return <p className="text-xs text-zinc-600">Nothing indexed from the brewery library yet.</p>;
+  }
   return (
-    <div className="text-xs text-zinc-600">
-      <span className="text-zinc-500">
-        {state.knowledge.passages.toLocaleString()} passages from {titles || 'the brewery library'}
-      </span>
-      {state.knowledge.problem && <span className="ml-1 text-amber-500/90">· {state.knowledge.problem}</span>}
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-600">
+      <KnowledgeLibrary knowledge={state.knowledge} />
+      {state.knowledge.problem && <span className="text-amber-500/90">{state.knowledge.problem}</span>}
     </div>
+  );
+}
+
+/**
+ * The shelf itself: which books Bruce answers from, and how much of each was
+ * indexed. Behind a popover because the titles are long and the answer to
+ * "what has he read?" is wanted occasionally, not on every glance — but the
+ * trigger still carries the summary so a glance is usually enough.
+ */
+function KnowledgeLibrary({ knowledge }: { knowledge: BruceKnowledgeStatus }): JSX.Element {
+  const books = knowledge.documents.length;
+  return (
+    <Popover
+      title="Which books Bruce answers from"
+      width="w-80"
+      label={
+        <span className="truncate">
+          {books} {books === 1 ? 'book' : 'books'} · {knowledge.passages.toLocaleString()} passages
+        </span>
+      }
+    >
+      {() => (
+        <>
+          <p className="px-2 pb-1 pt-1.5 text-[11px] text-zinc-500">
+            Answers are retrieved from these files in <code className="text-zinc-400">knowledge/</code>.
+          </p>
+          {knowledge.documents.map((doc) => (
+            <div key={doc.file} className="rounded-lg px-2 py-1.5">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-medium text-zinc-100">{doc.title}</span>
+                <span className="ml-auto shrink-0 text-[10px] text-zinc-500">
+                  {doc.passages.toLocaleString()} passages
+                </span>
+              </div>
+              <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-500" title={doc.file}>
+                {doc.file}
+              </p>
+            </div>
+          ))}
+          {knowledge.builtAt && (
+            <p
+              className="border-t border-zinc-800 px-2 pb-1 pt-1.5 text-[11px] text-zinc-500"
+              title={new Date(knowledge.builtAt).toLocaleString()}
+            >
+              Indexed {relativeTime(knowledge.builtAt)}. Adding or editing a book means rebuilding —
+              see <code className="text-zinc-400">npm run knowledge</code>.
+            </p>
+          )}
+        </>
+      )}
+    </Popover>
   );
 }
 

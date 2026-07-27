@@ -2148,8 +2148,8 @@ export interface BruceKnowledgeStatus {
   ready: boolean;
   /** Why it isn't ready (missing, stale, unreadable) — shown as-is in the UI. */
   problem?: string;
-  /** One entry per indexed document, in title order. */
-  documents: { title: string; passages: number }[];
+  /** One entry per indexed document, in title order. `file` is its name in knowledge/. */
+  documents: { file: string; title: string; passages: number }[];
   /** Total indexed passages. */
   passages: number;
   /** ISO timestamp of the last index build. */
