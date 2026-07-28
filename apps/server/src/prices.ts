@@ -122,6 +122,14 @@ interface PricedItem {
   id: string;
   /** Name shown in the UI so the brewer can see what a line was priced against. */
   label: string;
+  /**
+   * The listing's own name with the producer left off — what the ingredient is
+   * called rather than how the shop files it. A recipe calls for mango purée;
+   * "Ponthier" identifies the tub it was bought in. Absent on the synthetic
+   * items a manual price or a built-in rule stands up, which have no listing
+   * behind them and fall back to the label.
+   */
+  ingredientName?: string;
   /** Match key: the significant words of the name. */
   tokens: string[];
   pricePerKgDkk: number | null;
@@ -474,6 +482,7 @@ function catalogue(): Catalogue {
           // Producer included so "Pilsner Malt" is identifiable when three
           // different maltsters sell one.
           label: [m.producer, m.name].filter(Boolean).join(' '),
+          ingredientName: m.name,
           tokens: tokenizeWords(m.name),
           pricePerKgDkk: perKg,
           packagePriceDkk: num(m.price_per_100g_dkk) ?? (perKg * size) / 1000,
@@ -492,6 +501,7 @@ function catalogue(): Catalogue {
         {
           id: h.id ?? `hop:${h.name}`,
           label: h.name,
+          ingredientName: h.name,
           tokens: tokenizeWords(h.name),
           pricePerKgDkk: perKg,
           packagePriceDkk: num(h.price_dkk) ?? (perKg * size) / 1000,
@@ -517,6 +527,7 @@ function catalogue(): Catalogue {
         {
           id: y.id ?? `yeast:${y.manufacturer ?? ''}:${y.name}`,
           label: [y.manufacturer, y.name].filter(Boolean).join(' '),
+          ingredientName: y.name,
           tokens: tokenizeWords(y.name),
           pricePerKgDkk: size == null ? null : (price / size) * 1000,
           packagePriceDkk: price,
@@ -548,6 +559,7 @@ function catalogue(): Catalogue {
         {
           id: o.id ?? `other:${o.producer ?? o.brand ?? ''}:${o.name}`,
           label: [o.producer ?? o.brand, o.name].filter(Boolean).join(' '),
+          ingredientName: o.name,
           tokens: tokenizeWords(o.name),
           pricePerKgDkk:
             perKg ?? (pack.sizeG == null ? null : (pack.price / pack.sizeG) * 1000),
@@ -991,6 +1003,7 @@ function toOption(m: Match, defaultId: string | null, selectedId: string | null)
   return {
     catalogueId: m.item.id,
     label: m.item.label,
+    ingredientName: m.item.ingredientName ?? m.item.label,
     pricePerKgDkk: m.item.pricePerKgDkk == null ? null : money(m.item.pricePerKgDkk),
     packagePriceDkk: money(m.item.packagePriceDkk),
     packageSizeG: m.item.packageSizeG,

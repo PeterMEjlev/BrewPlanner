@@ -42,10 +42,77 @@ const STYLE_GROUPS: Array<[string, string[]]> = [
   ['X. Local and Modern Styles', ['Catharina Sour', 'Italian Grape Ale', 'New Zealand Pilsner', 'West Coast IPA', 'New England IPA', 'Pastry Sour', 'Smoothie Sour', 'Cold IPA', 'Brut IPA']],
 ];
 
-export const STYLE_CATEGORIES = STYLE_GROUPS.map(([value]) => value);
-export const STYLE_SUBCATEGORIES: StyleChoice[] = STYLE_GROUPS.flatMap(([category, styles]) =>
-  styles.map((value) => ({ category, value })),
-);
+/**
+ * The families this brewery actually brews, each with the substyles worth
+ * telling apart — what the editor's "Style category" dropdown holds out of the
+ * box, so picking a style isn't 34 BJCP groups deep on the first click. The
+ * brewer can add any of those groups to the dropdown and drop families they
+ * never use; see `recipeStyleCategories` in settings.ts.
+ *
+ * Unlike a BJCP group heading, a family here is a usable style in its own right
+ * — a Brown Ale or a Weissbeer is saved under the family alone, which is why
+ * two of them carry no substyles. Values are stored on the recipe verbatim, so
+ * they read as style names rather than codes; styleRanges.ts knows where each
+ * one's vital statistics live.
+ */
+const BREWERY_STYLE_GROUPS: Array<[string, string[]]> = [
+  ['IPA', ['New England IPA', 'Imperial IPA', 'Double IPA']],
+  ['Stout', ['Imperial Stout', 'Oatmeal Stout']],
+  ['Brown Ale', []],
+  ['Weissbeer', []],
+  ['Sour', ['Berliner Weisse', 'Gose']],
+  ['Pilsner', ['Italian Pilsner', 'German Pilsner (Pils)']],
+];
+
+/** What the dropdown starts with, and what "Reset" puts back. */
+export const DEFAULT_STYLE_CATEGORIES = BREWERY_STYLE_GROUPS.map(([category]) => category);
+
+const FAMILIES = new Set(DEFAULT_STYLE_CATEGORIES);
+const SUBSTYLES = new Map<string, string[]>([...BREWERY_STYLE_GROUPS, ...STYLE_GROUPS]);
+
+/**
+ * Every category the brewer can put in the dropdown: the families first, then
+ * the full BJCP taxonomy for the batch that falls outside them.
+ */
+export const ALL_STYLE_CATEGORIES = [...SUBSTYLES.keys()];
+
+/** A category's substyles — empty both for one that has none and one we don't know. */
+export function substylesFor(category: string): string[] {
+  return SUBSTYLES.get(category) ?? [];
+}
+
+/**
+ * Every substyle the app knows, once each, with the categories it sits under —
+ * a New England IPA is both a member of the brewery's IPA family and a BJCP
+ * local style. Keyed by name because that is what a recipe stores: hiding
+ * "New England IPA" hides the beer, not one taxonomy's copy of it.
+ */
+export const ALL_SUBSTYLES: Array<{ value: string; categories: string[] }> = (() => {
+  const owners = new Map<string, string[]>();
+  for (const [category, styles] of SUBSTYLES) {
+    for (const value of styles) {
+      const existing = owners.get(value);
+      if (existing) existing.push(category);
+      else owners.set(value, [category]);
+    }
+  }
+  return [...owners].map(([value, categories]) => ({ value, categories }));
+})();
+
+/** Whether we know the category, so an empty substyle list means "has none". */
+export function isKnownStyleCategory(category: string): boolean {
+  return SUBSTYLES.has(category);
+}
+
+/**
+ * Whether the category names a beer on its own. A family does — "Brown Ale" is
+ * a style — so a recipe can be saved under it directly. A BJCP group heading
+ * only collects styles ("13. Brown British Beer" is not something you brew) and
+ * leaves the recipe's style to the substyle field.
+ */
+export function categoryIsStyle(category: string): boolean {
+  return FAMILIES.has(category);
+}
 
 export const BATCH_TARGETS = ['Fermenter', 'Kettle', 'Packaging'];
 export const WEIGHT_UNITS = ['kg', 'g', 'lb', 'oz'];

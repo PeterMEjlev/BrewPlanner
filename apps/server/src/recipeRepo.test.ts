@@ -28,7 +28,7 @@ function recipe(name: string): RecipeEditInput {
     batchSizeL: 20,
     mashTemp: '67°C',
     fermentationTemp: '19°C',
-    fermentables: [{ name: 'Pale Ale Malt', amount: '4', unit: 'kg', percent: '100', ebc: 6, ppg: 37 }],
+    fermentables: [{ name: 'Pale Ale Malt', amount: '4', unit: 'kg', percent: '100', ebc: 6, ppg: 37, fermentable: null, lateAddition: false }],
     hops: [
       {
         name: 'Citra',
@@ -63,9 +63,13 @@ test('older stored recipe JSON receives the new editor defaults', () => {
       colorFormula: 'daniels',
       diastaticPowerFormula: 'windisch-kolbach',
     },
-    fermentables: legacy.fermentables.map(({ ppg: _ppg, ...line }) => ({
+    // Written before the row carried an extract potential or either of the
+    // Brewer's Friend checkboxes, and with a key the editor never had.
+    fermentables: legacy.fermentables.map((
+      { ppg: _ppg, fermentable: _fermentable, lateAddition: _late, ...line },
+    ) => ({
       ...line,
-      lateAddition: true,
+      steepable: true,
     })),
     hops: legacy.hops.map(({ form: _form, utilization: _util, ...line }) => line),
     mashGuidelines: {
@@ -86,8 +90,11 @@ test('older stored recipe JSON receives the new editor defaults', () => {
   });
 
   assert.deepEqual(parsed.settings, DEFAULT_RECIPE_SETTINGS);
-  assert.equal('lateAddition' in (parsed.fermentables[0] ?? {}), false);
+  assert.equal('steepable' in (parsed.fermentables[0] ?? {}), false);
   assert.equal(parsed.fermentables[0]?.ppg, null);
+  // Null defers to what the fermentable is; nothing imported is late by default.
+  assert.equal(parsed.fermentables[0]?.fermentable, null);
+  assert.equal(parsed.fermentables[0]?.lateAddition, false);
   assert.equal(parsed.hops[0]?.form, 'Pellet');
   assert.equal(parsed.mashGuidelines?.steps[0]?.amountUnit, '');
   assert.equal(parsed.waterProfile?.sourceName, null);
@@ -103,7 +110,7 @@ test('recipe statistics are calculated from the brewing inputs', () => {
     boilSizePostL: 21,
   };
   input.fermentables = [
-    { name: 'Pale Ale Malt', amount: '5', unit: 'kg', percent: '', ebc: 6, ppg: 37 },
+    { name: 'Pale Ale Malt', amount: '5', unit: 'kg', percent: '', ebc: 6, ppg: 37, fermentable: null, lateAddition: false },
   ];
   input.hops = [{
     name: 'Citra',

@@ -11,7 +11,7 @@ import type {
   RecipeWaterProfile,
   RecipeYeast,
 } from '@checklist/shared';
-import { HOP_STAGE_ORDER, ebcColor, predictBeerColor, sumCost } from '@checklist/shared';
+import { HOP_STAGE_ORDER, ebcColor, isFermentableLine, predictBeerColor, sumCost } from '@checklist/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
@@ -811,6 +811,8 @@ function FermentableRow({
         {f.percent && <span className="text-zinc-500"> · {fmt(f.percent, 1)}%</span>}
         {f.ebc != null && <span className="text-zinc-500"> · {f.ebc} EBC</span>}
         {f.ppg != null && <span className="text-zinc-500"> · {f.ppg} PPG</span>}
+        {f.lateAddition && <span className="text-zinc-500" title="Kept out of the boil gravity the hops are utilized against"> · late</span>}
+        {!isFermentableLine(f) && <span className="text-zinc-500" title="Raises the gravity but never attenuates — it lands in the FG"> · unfermentable</span>}
       </span>
       <PriceCell
         line={line}

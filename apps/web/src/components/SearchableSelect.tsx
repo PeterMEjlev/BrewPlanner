@@ -8,6 +8,18 @@ export interface SearchableOption {
   description?: string;
   ebc?: number | null;
   aa?: number | null;
+  /**
+   * Colour to show as a dot beside the option, as #rrggbb — the same keg-board
+   * palette a style pours as everywhere else in the app. Set for beer styles, so
+   * a category dropdown reads as the spread of beers it is rather than a list
+   * of names. Null for a style the palette doesn't recognise.
+   */
+  swatchColor?: string | null;
+  /**
+   * Listed but not selectable. Shown greyed rather than dropped so the option's
+   * absence reads as a precondition the caller can explain, not as a gap.
+   */
+  disabled?: boolean;
 }
 
 interface SearchableSelectProps {
@@ -74,6 +86,8 @@ export function SearchableSelect({
   useEffect(() => setActiveIndex(0), [query, options]);
 
   function choose(option: SearchableOption): void {
+    // Covers the Enter key too, which reaches this without passing the button.
+    if (option.disabled) return;
     setText(option.value);
     setQuery('');
     onChange(option.value, option);
@@ -174,12 +188,29 @@ export function SearchableSelect({
               type="button"
               role="option"
               aria-selected={option.value === value}
+              aria-disabled={option.disabled}
+              disabled={option.disabled}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => choose(option)}
-              className={`block w-full rounded-md px-3 py-2 text-left transition ${index === activeIndex ? 'bg-zinc-800' : 'hover:bg-zinc-900'}`}
+              className={`block w-full rounded-md px-3 py-2 text-left transition ${
+                option.disabled
+                  ? 'cursor-not-allowed opacity-40'
+                  : index === activeIndex ? 'bg-zinc-800' : 'hover:bg-zinc-900'
+              }`}
             >
-              <span className="block text-sm font-medium text-zinc-100">{option.label ?? option.value}</span>
-              {option.description && <span className="mt-0.5 block text-[11px] text-zinc-500">{option.description}</span>}
+              <span className="flex items-start gap-2">
+                {option.swatchColor != null && (
+                  <span
+                    className="mt-1 h-3 w-3 shrink-0 rounded-full ring-1 ring-white/70"
+                    style={{ backgroundColor: option.swatchColor }}
+                    aria-hidden
+                  />
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-zinc-100">{option.label ?? option.value}</span>
+                  {option.description && <span className="mt-0.5 block text-[11px] text-zinc-500">{option.description}</span>}
+                </span>
+              </span>
             </button>
           ))}
           {!loading && shown.length === 0 && (

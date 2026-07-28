@@ -100,6 +100,33 @@ const STYLE_RANGES: Record<string, StyleRange> = {
   'X5': { name: 'New Zealand Pilsner', ibu: [25, 45], abv: [4.5, 5.8], ebc: [3.9, 11.8] },
 };
 
+/**
+ * Style names that no entry above matches by name, mapped onto the code whose
+ * vital statistics they are judged against. Mostly the short list the recipe
+ * editor offers, plus the spellings recipes arrive with.
+ *
+ * A bare family name resolves to the family's mainstream member so a recipe
+ * saved as "Stout" or "Brown Ale" — the short list has no substyle for either —
+ * still gets a range to sit in. That is a default for an unspecified beer, not
+ * a claim that the two are the same style.
+ */
+const STYLE_ALIASES: Record<string, string> = {
+  neipa: '21C',
+  'new england ipa': '21C',
+  // Two names for one beer: BJCP files both under 22A.
+  'imperial ipa': '22A',
+  'german pilsner': '5D',
+  'german pilsner (pils)': '5D',
+  // A German Pils dry-hopped with noble hops; BJCP has no entry of its own.
+  'italian pilsner': '5D',
+  weissbeer: '10A',
+  ipa: '21A',
+  stout: '20B',
+  sour: '28D',
+  'brown ale': '19C',
+  pilsner: '5D',
+};
+
 function normalized(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 }
@@ -110,6 +137,7 @@ export function rangeForStyle(style: string): StyleRange | null {
   if (code && STYLE_RANGES[code]) return STYLE_RANGES[code];
   const wanted = normalized(style.replace(/^\s*(?:\d{1,2}[a-z]|x\d)\.\s*/i, ''));
   if (!wanted) return null;
-  if (wanted === 'new england ipa' || wanted === 'neipa') return STYLE_RANGES['21C'] ?? null;
+  const alias = STYLE_ALIASES[wanted];
+  if (alias && STYLE_RANGES[alias]) return STYLE_RANGES[alias];
   return Object.values(STYLE_RANGES).find((range) => normalized(range.name) === wanted) ?? null;
 }

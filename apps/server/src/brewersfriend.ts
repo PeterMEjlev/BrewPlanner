@@ -204,6 +204,13 @@ function numberOrNull(v: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** A checkbox as this API reports one: `1`, `"1"`, `true` or `"true"`. */
+function flag(v: unknown): boolean {
+  if (typeof v === 'boolean') return v;
+  const value = str(v).toLowerCase();
+  return value === '1' || value === 'true';
+}
+
 /**
  * The recipe's style, with BJCP's category prefix dropped. The guidelines file
  * every hoppy variant under one entry — "Specialty IPA: New England IPA",
@@ -772,6 +779,13 @@ function fermentables(r: BrewersFriendRecipe): RecipeFermentable[] {
       percent: str(f.percent),
       ebc,
       ppg,
+      // Both boxes are the brewer's own call on Brewer's Friend, so an import
+      // carries them across when the account's response has them; null lets the
+      // fermentable's own nature decide, which is what an older export gets.
+      fermentable: f.not_fermentable == null && f.notfermentable == null
+        ? null
+        : !flag(f.not_fermentable ?? f.notfermentable),
+      lateAddition: flag(f.late_addition ?? f.lateaddition ?? f.late),
       grams,
       // The grain's colour goes into the match, so a pale malt can't be costed
       // as a roasted one that happens to share a word in its name.
@@ -966,7 +980,9 @@ function mashGuidelines(r: BrewersFriendRecipe): RecipeMashGuidelines | null {
   });
   const notes = strOrNull(r.mashnotes) ?? strOrNull(r.notes_mash);
   if (steps.length === 0 && !notes) return null;
-  return { startingThicknessLPerKg: null, grainTempC: null, steps, notes };
+  // Never auto: an imported step is Brewer's Friend's own number, not this
+  // app's guess to override.
+  return { startingThicknessLPerKg: null, grainTempC: null, autoStrikeVolume: false, steps, notes };
 }
 
 /** The recipe's target water chemistry, or null when it specifies none. */

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { DashboardShell } from '../components/DashboardShell';
-import { RecipeEditor } from '../components/RecipeEditor';
+import { DEFAULT_MASH_THICKNESS_L_PER_KG, defaultFirstMashStep, RecipeEditor } from '../components/RecipeEditor';
 import { invalidateRecipes } from '../recipeStore';
 import { asCleanMessage } from '../util';
 
@@ -25,7 +25,8 @@ const EMPTY_RECIPE: RecipeDetail = {
   url: '',
   createdAt: '',
   updatedAt: '',
-  batchSizeL: null,
+  // This brewery's usual batch size, so a new recipe opens on real numbers.
+  batchSizeL: 55,
   mashTemp: null,
   fermentationTemp: null,
   fermentables: [{
@@ -35,6 +36,8 @@ const EMPTY_RECIPE: RecipeDetail = {
     percent: '',
     ebc: null,
     ppg: null,
+    fermentable: null,
+    lateAddition: false,
     grams: null,
     price: null,
   }],
@@ -73,9 +76,10 @@ const EMPTY_RECIPE: RecipeDetail = {
   }],
   otherIngredients: [],
   mashGuidelines: {
-    startingThicknessLPerKg: 3,
+    startingThicknessLPerKg: DEFAULT_MASH_THICKNESS_L_PER_KG,
     grainTempC: null,
-    steps: [],
+    autoStrikeVolume: true,
+    steps: [defaultFirstMashStep()],
     notes: null,
   },
   waterProfile: null,

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { DEFAULT_STYLE_CATEGORIES } from './recipeCatalog';
 
 /**
  * Kiosk-local preferences the brewer can tune from the Settings screen. These
@@ -40,6 +41,23 @@ export interface Settings {
    */
   kegWarnDays: number;
   kegOldDays: number;
+  /**
+   * The categories the recipe editor's "Style category" dropdown offers, in the
+   * order shown. Defaults to the brewery's own families; the brewer can add any
+   * BJCP group from the full taxonomy and remove what they never brew, so the
+   * dropdown stays a short list of *their* beers rather than a catalogue.
+   *
+   * A recipe's own category is always selectable even when it isn't listed —
+   * removing "Sour" here does not orphan the sours already saved.
+   */
+  recipeStyleCategories: string[];
+  /**
+   * Substyles the brewer has taken out of the "Style / subcategory" dropdown,
+   * by name. A removal list rather than a keep list: every substyle of a listed
+   * category is offered by default, so adding a category brings its substyles
+   * with it instead of leaving the second dropdown empty.
+   */
+  recipeHiddenSubstyles: string[];
 }
 
 /**
@@ -58,6 +76,8 @@ export const DEFAULT_SETTINGS: Settings = {
   // watching, then likely past its best.
   kegWarnDays: 60,
   kegOldDays: 180,
+  recipeStyleCategories: DEFAULT_STYLE_CATEGORIES,
+  recipeHiddenSubstyles: [],
 };
 
 // Tuning bounds + step sizes, shared by the steppers so clamping and the UI
@@ -85,12 +105,26 @@ export const KEG_OLD_DAYS = { min: 5, max: 730, step: 5 } as const;
 const STORAGE_KEY = 'brewplanner.settings';
 const BAR_TO_PSI = 14.5038;
 
+/** A stored value only if it really is a list of strings, else the default. */
+function stringList(value: unknown, fallback: string[]): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : fallback;
+}
+
 function load(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
     // Merge over defaults so a partial/older stored blob still yields every key.
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
+    const stored = { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
+    // Every other setting is a scalar the UI clamps on the way in; the style
+    // lists are the ones that could arrive as something other than they claim.
+    return {
+      ...stored,
+      recipeStyleCategories: stringList(stored.recipeStyleCategories, DEFAULT_SETTINGS.recipeStyleCategories),
+      recipeHiddenSubstyles: stringList(stored.recipeHiddenSubstyles, DEFAULT_SETTINGS.recipeHiddenSubstyles),
+    };
   } catch {
     return DEFAULT_SETTINGS;
   }

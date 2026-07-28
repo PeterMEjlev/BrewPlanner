@@ -154,6 +154,16 @@ export interface RecipeSettings {
   autoBoilSizePre: boolean;
   autoBoilSizePost: boolean;
   boilTimeMinutes: number | null;
+  /**
+   * The equipment side of the boil volumes — properties of the kettle and
+   * burner rather than of the beer, but stored per recipe because that is where
+   * Brewer's Friend keeps them and a recipe imported from there carries its own.
+   * See {@link autoBoilVolumes} for how the three combine.
+   */
+  /** Litres the kettle drives off per hour of boil. */
+  boilOffLPerHour: number | null;
+  /** Wort left behind with the trub when the kettle is drained. */
+  trubChillerLossL: number | null;
   efficiencyPercent: number | null;
   pitchRate: string;
 }
@@ -164,9 +174,13 @@ export const DEFAULT_RECIPE_SETTINGS: RecipeSettings = {
   batchTarget: 'Fermenter',
   boilSizePreL: null,
   boilSizePostL: null,
-  autoBoilSizePre: false,
-  autoBoilSizePost: false,
+  autoBoilSizePre: true,
+  autoBoilSizePost: true,
   boilTimeMinutes: 60,
+  // Read off this brewery's Brewer's Friend equipment profile, so a recipe built
+  // here lands on the volumes it would have there — see {@link autoBoilVolumes}.
+  boilOffLPerHour: 7,
+  trubChillerLossL: 2,
   efficiencyPercent: 80,
   pitchRate: 'Manufacturer recommended',
 };
@@ -276,6 +290,8 @@ export interface PriceOption {
   catalogueId: string;
   /** Product name as the shop lists it, producer included. */
   label: string;
+  /** The same listing without the producer — what the ingredient itself is called. */
+  ingredientName: string;
   pricePerKgDkk: number | null;
   packagePriceDkk: number;
   /** Null for a pitchable unit the shop sells without a stated weight. */
@@ -423,6 +439,17 @@ export interface RecipeFermentable {
   ebc: number | null;
   /** Extract potential in points per pound per gallon; estimated by name when absent. */
   ppg: number | null;
+  /**
+   * Whether yeast can reach these points. Null defers to what the fermentable
+   * is — lactose and maltodextrin don't ferment — and an explicit value is the
+   * brewer overriding that.
+   */
+  fermentable: boolean | null;
+  /**
+   * Added late enough that the boil never sees it, so it stays out of the boil
+   * gravity the hops are utilized against while still counting towards OG.
+   */
+  lateAddition: boolean;
   /** Weight in grams, normalized from `amount`/`unit`; null if unreadable. */
   grams: number | null;
   price: IngredientPrice | null;
@@ -564,6 +591,13 @@ export interface RecipeMashStep {
 export interface RecipeMashGuidelines {
   startingThicknessLPerKg: number | null;
   grainTempC: number | null;
+  /**
+   * Whether the first step's amount is the mash thickness applied to the grain
+   * bill, recomputed as either changes, rather than a number the brewer typed.
+   * Only ever governs `steps[0]` — a later infusion or sparge addition has no
+   * formula to switch back to.
+   */
+  autoStrikeVolume: boolean;
   steps: RecipeMashStep[];
   notes: string | null;
 }
@@ -1914,6 +1948,8 @@ const recipeFermentableEditSchema = z.object({
   percent: amountText,
   ebc: z.number().nonnegative().max(2_000).nullable(),
   ppg: z.number().nonnegative().max(100).nullable().default(null),
+  fermentable: z.boolean().nullable().default(null),
+  lateAddition: z.boolean().default(false),
 });
 
 const recipeHopEditSchema = z.object({
@@ -1973,6 +2009,7 @@ const recipeMashGuidelinesSchema = z.object({
     .max(100),
   startingThicknessLPerKg: z.number().positive().max(100).nullable().default(null),
   grainTempC: z.number().min(-20).max(100).nullable().default(null),
+  autoStrikeVolume: z.boolean().default(false),
   notes: optionalRecipeText,
 });
 
@@ -1996,9 +2033,11 @@ const recipeSettingsSchema = z
     batchTarget: shortRecipeText.default('Fermenter'),
     boilSizePreL: z.number().positive().max(1_000_000).nullable().default(null),
     boilSizePostL: z.number().positive().max(1_000_000).nullable().default(null),
-    autoBoilSizePre: z.boolean().default(false),
-    autoBoilSizePost: z.boolean().default(false),
+    autoBoilSizePre: z.boolean().default(true),
+    autoBoilSizePost: z.boolean().default(true),
     boilTimeMinutes: z.number().positive().max(10_000).nullable().default(60),
+    boilOffLPerHour: z.number().min(0).max(1_000_000).nullable().default(7),
+    trubChillerLossL: z.number().min(0).max(1_000_000).nullable().default(2),
     efficiencyPercent: z.number().min(0).max(100).nullable().default(80),
     pitchRate: z.string().trim().max(200).default('Manufacturer recommended'),
   })

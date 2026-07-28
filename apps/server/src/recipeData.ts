@@ -153,6 +153,7 @@ export function editableRecipe(recipe: RecipeDetail): RecipeEditInput {
       ? {
           startingThicknessLPerKg: recipe.mashGuidelines.startingThicknessLPerKg,
           grainTempC: recipe.mashGuidelines.grainTempC,
+          autoStrikeVolume: recipe.mashGuidelines.autoStrikeVolume,
           steps: recipe.mashGuidelines.steps.map((step) => ({ ...step })),
           notes: recipe.mashGuidelines.notes,
         }

@@ -311,7 +311,11 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       : { grams: 1_000, units: null };
     const combined = [
       ...prices.searchCatalogue(query.kind, query.q ?? '', quantity, null, 200).map((option) => ({
-        name: option.label,
+        // The purées are the shop's listings, and every one of them opens with
+        // the same brand: a recipe calls for mango purée, not for Ponthier. Malt
+        // and yeast keep their producer — three maltsters sell a "Pilsner Malt",
+        // and the name is how the brewer tells them apart.
+        name: query.kind === 'other' ? option.ingredientName : option.label,
         source: 'catalogue' as const,
         ebcMin: option.ebcMin ?? null,
         ebcMax: option.ebcMax ?? null,
