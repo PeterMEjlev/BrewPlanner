@@ -1,6 +1,6 @@
 import { DEFAULT_RECIPE_SETTINGS } from '@checklist/shared';
-import type { RecipeDetail, RecipeEditInput } from '@checklist/shared';
-import { useState } from 'react';
+import type { OutdoorTemperature, RecipeDetail, RecipeEditInput } from '@checklist/shared';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { DashboardShell } from '../components/DashboardShell';
@@ -62,7 +62,7 @@ const EMPTY_RECIPE: RecipeDetail = {
     lab: '',
     attenuation: '',
     amount: '1',
-    amountUnit: 'pkg',
+    amountUnit: 'each',
     type: 'Ale',
     form: 'Dry',
     flocculation: '',
@@ -87,10 +87,49 @@ const EMPTY_RECIPE: RecipeDetail = {
   cost: { usedDkk: 0, buyDkk: 0, priced: 0, unpriced: 0, purchase: [] },
 };
 
+/**
+ * The temperature the grain is assumed to start at, looked up once per page
+ * open. The editor takes its opening draft when it mounts and never re-reads
+ * it, so the sheet waits for the lookup to settle rather than having a figure
+ * appear under the brewer mid-edit; a failed or slow lookup simply leaves the
+ * field empty, which is where it stood before.
+ */
+function useOutdoorTemperature(): { settled: boolean; reading: OutdoorTemperature | null } {
+  const [state, setState] = useState<{ settled: boolean; reading: OutdoorTemperature | null }>({
+    settled: false,
+    reading: null,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    const settle = (reading: OutdoorTemperature | null) => {
+      if (!cancelled) setState({ settled: true, reading });
+    };
+    // Never hold the page hostage to the weather: the editor opens regardless.
+    const giveUp = window.setTimeout(() => settle(null), 4_000);
+    void api
+      .getOutdoorTemperature()
+      .then(settle)
+      .catch(() => settle(null))
+      .finally(() => window.clearTimeout(giveUp));
+    return () => {
+      cancelled = true;
+      window.clearTimeout(giveUp);
+    };
+  }, []);
+  return state;
+}
+
 export function RecipeCreatePage(): JSX.Element {
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const outdoor = useOutdoorTemperature();
+  const blank = useMemo<RecipeDetail>(() => ({
+    ...EMPTY_RECIPE,
+    mashGuidelines: EMPTY_RECIPE.mashGuidelines
+      ? { ...EMPTY_RECIPE.mashGuidelines, grainTempC: outdoor.reading?.temperatureC ?? null }
+      : null,
+  }), [outdoor.reading]);
 
   async function create(recipe: RecipeEditInput): Promise<void> {
     if (saving) return;
@@ -108,26 +147,26 @@ export function RecipeCreatePage(): JSX.Element {
 
   return (
     <DashboardShell active="recipes">
-      <main className="w-full max-w-[1100px] px-5 py-5">
+      {/* Wider than the pages that only read a recipe: the editor spends this
+          width on a contents rail and a column of live statistics either side
+          of the sheet, not on the sheet itself. */}
+      <main className="w-full max-w-[1600px] px-5 py-5">
         <Link to="/recipes" className="text-sm text-zinc-400 transition hover:text-zinc-100">
           ← Recipes
         </Link>
-        <div className="mt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#f06a5c]">New recipe</p>
-          <h1 className="mt-0.5 text-xl font-semibold tracking-tight text-zinc-50">
-            Build a recipe from scratch
-          </h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            Add your batch details and ingredients; recipe statistics update as you build.
+        {outdoor.settled ? (
+          <RecipeEditor
+            recipe={blank}
+            saving={saving}
+            error={error}
+            onSave={create}
+            onCancel={() => navigate('/recipes')}
+          />
+        ) : (
+          <p className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-6 text-sm text-zinc-500">
+            Opening a blank brew sheet…
           </p>
-        </div>
-        <RecipeEditor
-          recipe={EMPTY_RECIPE}
-          saving={saving}
-          error={error}
-          onSave={create}
-          onCancel={() => navigate('/recipes')}
-        />
+        )}
       </main>
     </DashboardShell>
   );

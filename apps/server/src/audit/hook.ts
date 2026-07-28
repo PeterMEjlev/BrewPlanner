@@ -197,6 +197,9 @@ const RULES: Rule[] = [
   { method: 'POST', re: /^\/api\/alerts\/clear$/, build: () => ({ entity: 'Alert', action: 'Cleared all alerts' }) },
 
   // --- Active recipe --------------------------------------------------------
+  // Costing the sheet in the editor saves nothing — it's a POST only because the
+  // whole draft is the question, and it repeats as the brewer types.
+  { method: 'POST', re: /^\/api\/recipes\/price$/, build: () => null },
   { method: 'POST', re: /^\/api\/recipes$/, build: ({ body }) => ({ entity: 'Recipe', action: `Created recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
   { method: 'PUT', re: /^\/api\/recipes\/([^/]+)$/, build: ({ body }) => ({ entity: 'Recipe', action: `Edited recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
   { method: 'DELETE', re: /^\/api\/recipes\/([^/]+)$/, build: () => ({ entity: 'Recipe', action: 'Deleted a recipe from BrewPlanner' }) },

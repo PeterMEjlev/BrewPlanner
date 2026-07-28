@@ -720,6 +720,19 @@ export interface RecipeEditInput {
   waterProfile: RecipeWaterProfile | null;
 }
 
+/**
+ * Today's daytime average outdoor temperature where the brewery is, used as the
+ * grain temperature a new recipe starts from. Null `temperatureC` is never
+ * sent — the endpoint answers with nothing at all when the lookup failed.
+ */
+export interface OutdoorTemperature {
+  temperatureC: number;
+  /** The date the average is for, as the weather service's local calendar day. */
+  observedAt: string;
+  /** Where it was taken, for the hint under the field. */
+  location: string;
+}
+
 /** Result of a one-way import from the configured Brewer's Friend account. */
 export interface RecipeImportResult {
   imported: number;
@@ -736,6 +749,29 @@ export interface RecipeIngredientOption {
   ebcMax?: number | null;
   /** Hop alpha acid percentage selected with the ingredient. */
   aa?: number | null;
+  /** What the producer states about a yeast strain, for the editor to fill in. */
+  yeast?: RecipeYeastSpec | null;
+}
+
+/**
+ * A yeast strain's published characteristics, as the recipe editor writes them
+ * onto a pitch when the brewer picks the strain — the same fields Brewer's
+ * Friend fills in. Everything is optional in practice: a field is empty (or
+ * null, for the temperatures) where the producer states nothing.
+ */
+export interface RecipeYeastSpec {
+  lab: string;
+  /** "Ale", "Lager", "Wheat", "Brett"… */
+  type: string;
+  /** "Dry" or "Liquid". */
+  form: string;
+  /** Typical apparent attenuation %, as a bare number string. */
+  attenuation: string;
+  flocculation: string;
+  /** Bottom and top of the producer's recommended range, °C. */
+  minTempC: number | null;
+  maxTempC: number | null;
+  alcoholTolerance: string;
 }
 
 /** A costed group of ingredient lines — one section of a recipe, or one stage. */
@@ -770,6 +806,26 @@ export function sumCost(lines: { price: IngredientPrice | null }[]): CostTotal {
     }
   }
   return { usedDkk: Math.round(usedDkk * 100) / 100, priced, unpriced };
+}
+
+/**
+ * What an unsaved recipe costs (POST /api/recipes/price) — the editor's live
+ * readout while a brew sheet is being filled in.
+ *
+ * Costed server-side for the same reason a saved recipe is: the catalogue and
+ * the brewer's price overrides only exist there, and `cost.buyDkk` pools repeats
+ * of one product before rounding up to whole packages. The per-section totals
+ * come back with it so each section header can carry its own figure without the
+ * client re-deriving what the server already worked out.
+ */
+export interface RecipeCostBreakdown {
+  fermentables: CostTotal;
+  hops: CostTotal;
+  yeast: CostTotal;
+  other: CostTotal;
+  /** The whole sheet, including the buying figure and its shopping list. */
+  cost: RecipeCost;
+  pricing: RecipePricing;
 }
 
 // ---------------------------------------------------------------------------
@@ -2043,8 +2099,11 @@ const recipeSettingsSchema = z
   })
   .default({});
 
-/** Full recipe form body. Arrays replace their corresponding ingredient lists. */
-export const recipeEditSchema = z.object({
+/**
+ * The fields a recipe form sends. Kept as a plain shape so the draft-pricing
+ * body below can be built from the same fields with one of them relaxed.
+ */
+const recipeEditFields = {
   name: z.string().trim().min(1, 'Recipe name is required').max(300),
   style: z.string().trim().max(300),
   settings: recipeSettingsSchema,
@@ -2065,10 +2124,26 @@ export const recipeEditSchema = z.object({
   otherIngredients: z.array(recipeOtherIngredientEditSchema).max(500),
   mashGuidelines: recipeMashGuidelinesSchema.nullable(),
   waterProfile: recipeWaterProfileSchema.nullable(),
-}).transform((value): RecipeEditInput => ({
+};
+
+/** Full recipe form body. Arrays replace their corresponding ingredient lists. */
+export const recipeEditSchema = z.object(recipeEditFields).transform((value): RecipeEditInput => ({
   ...value,
   settings: { ...DEFAULT_RECIPE_SETTINGS, ...value.settings },
 }));
+
+/**
+ * Body for `POST /api/recipes/price` — a recipe as it currently stands in the
+ * editor, costed without being saved. The same sheet an edit sends, except it
+ * needn't be named yet: a brew sheet is priced while it is being filled in, and
+ * the name is often the last thing typed.
+ */
+export const recipeDraftSchema = z
+  .object({ ...recipeEditFields, name: z.string().trim().max(300) })
+  .transform((value): RecipeEditInput => ({
+    ...value,
+    settings: { ...DEFAULT_RECIPE_SETTINGS, ...value.settings },
+  }));
 
 /**
  * Body for `PUT /api/fermenter` — whether the empty fermenter has been washed.

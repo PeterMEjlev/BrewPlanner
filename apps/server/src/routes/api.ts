@@ -17,10 +17,12 @@ import {
   priceSearchQuerySchema,
   reorderStepsSchema,
   reorderTodosSchema,
+  recipeDraftSchema,
   recipeEditSchema,
   recipeIngredientCatalogQuerySchema,
   setActiveRecipeSchema,
   stepIdParamSchema,
+  sumCost,
   updateChecklistSchema,
   updateKegSchema,
   updateStepSchema,
@@ -37,8 +39,11 @@ import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
 import * as prices from '../prices.js';
 import { pricingInfo } from '../prices.js';
 import { deleteOverride as deletePriceOverride, saveOverride as savePriceOverride } from '../priceOverrides.js';
+import { hydrateRecipe } from '../recipeData.js';
 import { ensureInitialRecipeImport, importFromBrewersFriend } from '../recipeImport.js';
 import * as recipeRepo from '../recipeRepo.js';
+import { outdoorTemperature } from '../weather.js';
+import { yeastSpecFor } from '../yeastStrains.js';
 import * as telegram from '../notify/telegram.js';
 import * as repo from '../repo.js';
 import {
@@ -83,6 +88,12 @@ function recipeError(err: unknown, req: FastifyRequest, reply: FastifyReply): Fa
  * which is gated in the web app).
  */
 const adminOnly = { preHandler: requireAdmin };
+
+/**
+ * Stand-in identity for a recipe that isn't saved yet, so the pricing pass can
+ * reuse the same hydration the library does. Nothing in a cost depends on it.
+ */
+const DRAFT_METADATA = { id: '', origin: 'local' as const, url: '', createdAt: '', updatedAt: '' };
 
 export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // Every route below requires authentication, except when the request is
@@ -314,7 +325,8 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         // The purées are the shop's listings, and every one of them opens with
         // the same brand: a recipe calls for mango purée, not for Ponthier. Malt
         // and yeast keep their producer — three maltsters sell a "Pilsner Malt",
-        // and the name is how the brewer tells them apart.
+        // two labs sell a Voss kveik, and the name is how the brewer tells them
+        // apart in a single field.
         name: query.kind === 'other' ? option.ingredientName : option.label,
         source: 'catalogue' as const,
         ebcMin: option.ebcMin ?? null,
@@ -323,12 +335,29 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
           ? (option.ebcMin + option.ebcMax) / 2
           : option.ebcMin ?? option.ebcMax ?? null,
         aa: option.aa ?? null,
+        // The shop lists a sachet, not a strain: what the yeast attenuates to
+        // and ferments at comes from the producer's own figures.
+        yeast: query.kind === 'yeast' ? yeastSpecFor(option.label) : null,
       })),
-      ...recipeRepo.listRecipeIngredientOptions(query.kind, query.q ?? ''),
+      ...recipeRepo
+        .listRecipeIngredientOptions(query.kind, query.q ?? '')
+        .map((option) =>
+          query.kind === 'yeast'
+            ? { ...option, yeast: yeastSpecFor(option.name, option.yeast) }
+            : option,
+        ),
     ];
+    const attenuation = (option: { yeast?: { attenuation: string } | null }) => {
+      const parsed = Number.parseFloat(option.yeast?.attenuation ?? '');
+      return Number.isFinite(parsed) ? parsed : null;
+    };
     combined.sort((a, b) => {
-      const aValue = query.kind === 'fermentable' ? a.ebc : query.kind === 'hop' ? a.aa : null;
-      const bValue = query.kind === 'fermentable' ? b.ebc : query.kind === 'hop' ? b.aa : null;
+      const aValue = query.kind === 'fermentable'
+        ? a.ebc
+        : query.kind === 'hop' ? a.aa : query.kind === 'yeast' ? attenuation(a) : null;
+      const bValue = query.kind === 'fermentable'
+        ? b.ebc
+        : query.kind === 'hop' ? b.aa : query.kind === 'yeast' ? attenuation(b) : null;
       if (aValue != null || bValue != null) {
         if (aValue == null) return 1;
         if (bValue == null) return -1;
@@ -342,13 +371,40 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).slice(0, 60);
+      // The yeast picker sorts and regroups what it is given — by attenuation,
+      // temperature, flocculation and the rest — so it has to be given the whole
+      // shelf rather than the first 60 of it, or "sort by tolerance" would only
+      // ever reorder the least attenuative sachets.
+    }).slice(0, query.kind === 'yeast' ? 250 : 60);
   });
+
+  // What it is outside the brewhouse, which a new recipe's grain temperature
+  // starts from. Answers `{ outdoor: null }` rather than an error when the
+  // lookup is unavailable: the editor simply opens with the field empty.
+  app.get('/weather/outdoor', async () => ({ outdoor: await outdoorTemperature() }));
 
   app.post('/recipes', adminOnly, async (req, reply) => {
     const body = parse(recipeEditSchema, req.body, reply);
     if (!body) return;
     return reply.status(201).send(recipeRepo.createRecipe(body));
+  });
+
+  // What the sheet in the editor would cost, without saving it. A POST because
+  // the whole draft is the question, but it changes nothing — the catalogue and
+  // the brewer's price overrides only exist server-side, so the editor can't
+  // work this out for itself.
+  app.post('/recipes/price', async (req, reply) => {
+    const body = parse(recipeDraftSchema, req.body, reply);
+    if (!body) return;
+    const priced = hydrateRecipe(DRAFT_METADATA, body);
+    return {
+      fermentables: sumCost(priced.fermentables),
+      hops: sumCost(priced.hops),
+      yeast: sumCost(priced.yeast),
+      other: sumCost(priced.otherIngredients),
+      cost: priced.cost,
+      pricing: priced.pricing,
+    };
   });
 
   app.get('/recipes/:id', async (req, reply) => {

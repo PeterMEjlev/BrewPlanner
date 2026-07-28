@@ -77,7 +77,7 @@ export function listRecipeIngredientOptions(
 ): RecipeIngredientOption[] {
   const wanted = query.trim().toLocaleLowerCase();
   const options = new Map<string, RecipeIngredientOption>();
-  const add = (name: string, metadata: Pick<RecipeIngredientOption, 'ebc' | 'aa'> = {}) => {
+  const add = (name: string, metadata: Pick<RecipeIngredientOption, 'ebc' | 'aa' | 'yeast'> = {}) => {
     const trimmed = name.trim();
     if (!trimmed || (wanted && !trimmed.toLocaleLowerCase().includes(wanted))) return;
     const key = trimmed.toLocaleLowerCase();
@@ -87,6 +87,7 @@ export function listRecipeIngredientOptions(
       source: 'recipe',
       ebc: existing?.ebc ?? metadata.ebc ?? null,
       aa: existing?.aa ?? metadata.aa ?? null,
+      yeast: existing?.yeast ?? metadata.yeast ?? null,
     });
   };
   for (const row of db.select().from(recipes).all()) {
@@ -99,7 +100,24 @@ export function listRecipeIngredientOptions(
         add(line.name, { aa: Number.isFinite(aa) ? aa : null });
       }
     } else if (kind === 'yeast') {
-      for (const line of input.yeast) add(line.name);
+      // A strain this brewery has pitched before is described by how the recipe
+      // it came from describes it, which beats the built-in table: the numbers
+      // travelled with the recipe from Brewer's Friend, and where the brewer
+      // has since corrected one, the correction is what should come back.
+      for (const line of input.yeast) {
+        add(line.name, {
+          yeast: {
+            lab: line.lab,
+            type: line.type,
+            form: line.form,
+            attenuation: line.attenuation,
+            flocculation: line.flocculation,
+            minTempC: line.minTempC,
+            maxTempC: line.maxTempC,
+            alcoholTolerance: line.alcoholTolerance,
+          },
+        });
+      }
     } else {
       for (const line of input.otherIngredients) add(line.name);
     }

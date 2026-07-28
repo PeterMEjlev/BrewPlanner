@@ -4,9 +4,8 @@
 - Water Calculator page: review if water calc math is correct
 
 
-- New Recipe: Mash guideline: switch the position of Start temp and time. and then switch start and target, so from left to right it reads start, target, type for that row. 
+- add relevant values / settings from new recipe page to settings (in a new section called recipes)
 
-- Recipe page: grain temp: fetch the current daytime temp in 2820 Gentofte, Denmark and use that as the default value when creating a recipe
 
 - Recipe page: Backup all recipes (once every day) into a suitable file format into: https://drive.google.com/drive/folders/1wYK4s0UCvFI7rQF_WoqhD-Q6DSd03NUC?usp=sharing. also add a manual "backup now" button.
 

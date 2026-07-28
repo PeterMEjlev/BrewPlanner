@@ -2,6 +2,7 @@ import {
   applyRecipeCalculations,
   calculateRecipe,
   DEFAULT_RECIPE_SETTINGS,
+  ebcColor,
   estimateFermentablePpg,
   getRecipeColor,
   HOP_STAGE_ORDER,
@@ -9,7 +10,9 @@ import {
   withAutoBoilVolumes,
 } from '@checklist/shared';
 import type {
+  CostTotal,
   HopStage,
+  RecipeCostBreakdown,
   RecipeDetail,
   RecipeEditInput,
   RecipeFermentableEdit,
@@ -19,8 +22,11 @@ import type {
   RecipeSettings,
   RecipeWaterProfile,
   RecipeYeastEdit,
+  RecipeYeastSpec,
 } from '@checklist/shared';
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '../api';
+import { kr } from '../money';
 import { TARGET_PRESETS } from '../water';
 import {
   ALL_STYLE_CATEGORIES,
@@ -41,13 +47,13 @@ import {
   WATER_SOURCES,
   WEIGHT_UNITS,
   YEAST_FORMS,
-  YEAST_TYPES,
 } from '../recipeCatalog';
 import type { StyleChoice } from '../recipeCatalog';
 import { setSetting, useSettings } from '../settings';
 import { rangeForStyle } from '../styleRanges';
 import { useKegContentColors } from '../kegContentColors';
 import { IngredientSearchSelect, SearchableSelect } from './SearchableSelect';
+import { SheetSection } from './SheetSection';
 
 interface Props {
   recipe: RecipeDetail;
@@ -55,6 +61,173 @@ interface Props {
   error: string | null;
   onSave: (recipe: RecipeEditInput) => Promise<void>;
   onCancel: () => void;
+}
+
+/**
+ * The three ingredient lists whose rows fill themselves in from the catalogue,
+ * and so have something worth locking. Mash steps and "other ingredients" are
+ * typed from scratch, so they have no lock.
+ */
+type LockedLines = 'fermentables' | 'hops' | 'yeast';
+
+/**
+ * The editor's own panels, folded away one at a time like the recipe page's are.
+ * Kept under a separate key from the reading sheet: which sections a brewer
+ * wants open to *write* a recipe isn't the same question as which they want open
+ * to brew from it.
+ */
+type EditorSectionKey =
+  | 'setup'
+  | 'fermentables'
+  | 'hops'
+  | 'yeast'
+  | 'other'
+  | 'mash'
+  | 'water';
+
+const COLLAPSE_KEY = 'brewplanner.recipeEditorSections';
+
+/**
+ * Every section opens expanded — a recipe being built is a form to fill in, and
+ * a form that starts folded up hides what still needs answering. Folding one
+ * away is then remembered, the same as on the recipe page.
+ */
+const ALL_OPEN: Record<EditorSectionKey, boolean> = {
+  setup: false,
+  fermentables: false,
+  hops: false,
+  yeast: false,
+  other: false,
+  mash: false,
+  water: false,
+};
+
+function loadCollapsed(): Record<EditorSectionKey, boolean> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_KEY);
+    if (!raw) return ALL_OPEN;
+    return { ...ALL_OPEN, ...(JSON.parse(raw) as Partial<Record<EditorSectionKey, boolean>>) };
+  } catch {
+    return ALL_OPEN;
+  }
+}
+
+function rememberCollapsed(next: Record<EditorSectionKey, boolean>): Record<EditorSectionKey, boolean> {
+  try {
+    localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
+  } catch {
+    // Per-browser convenience only.
+  }
+  return next;
+}
+
+/**
+ * The contents rail beside the sheet, in the order the sections are laid out.
+ * The statistics aren't in it: they are a readout rather than a section to fill
+ * in, and they are either already on screen beside the sheet or sitting at the
+ * top of it.
+ *
+ * Labels are the rail's own rather than the section headings': a heading has
+ * the width of the sheet to explain itself in, and "Other ingredients"
+ * truncated to fit an 11rem rail says less than "Other" does.
+ */
+const SECTION_RAIL: Array<{ key: EditorSectionKey; icon: string; label: string }> = [
+  { key: 'setup', icon: '📋', label: 'Recipe setup' },
+  { key: 'fermentables', icon: '🌾', label: 'Fermentables' },
+  { key: 'hops', icon: '🌿', label: 'Hops' },
+  { key: 'yeast', icon: '🧫', label: 'Yeast' },
+  { key: 'other', icon: '🧪', label: 'Other' },
+  { key: 'mash', icon: '🌡️', label: 'Mash guidelines' },
+  { key: 'water', icon: '💧', label: 'Water chemistry' },
+];
+
+/** Where the rail's links land, and what the position marker measures. */
+function sectionAnchor(key: EditorSectionKey): string {
+  return `recipe-section-${key}`;
+}
+
+/**
+ * How far down the page the "you are here" line sits, in pixels. A section
+ * counts as the one being worked on once its header has scrolled to within this
+ * much of the top; on the line itself, a section would only light up its entry
+ * after its header had left the screen entirely.
+ */
+const SECTION_LINE_PX = 96;
+
+/** Breathing room left above a section the rail has just jumped to. */
+const SECTION_SCROLL_MARGIN_PX = 12;
+
+/**
+ * Which section the sheet is scrolled to, so the rail doubles as a position
+ * marker rather than only a set of links.
+ *
+ * Measured on scroll rather than with an IntersectionObserver, the same way the
+ * library reader's contents follow the reading position: "the last header above
+ * the line" is one pass over eight elements and says exactly what it means.
+ * Coalesced onto animation frames so a fast scroll measures once per paint, and
+ * re-measured whenever `layout` changes — folding a section away moves every
+ * section under it without scrolling the page at all.
+ */
+function useSectionInView(layout: unknown, landed: SectionLanding | null): EditorSectionKey | null {
+  const [here, setHere] = useState<EditorSectionKey | null>(null);
+  useEffect(() => {
+    let frame = 0;
+    const measure = (): void => {
+      frame = 0;
+      // Sitting exactly where a rail jump left the page: the section that was
+      // asked for is a better answer than any measurement — see SectionLanding.
+      if (landed && Math.abs(window.scrollY - landed.y) <= 2) {
+        setHere(landed.key);
+        return;
+      }
+      // At the foot of the page the last sections can never reach the line —
+      // the page runs out of scroll while they are still halfway down the
+      // screen — so scrolling to the bottom means the last section, or the rail
+      // would never light up the water chemistry it ends on.
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
+        setHere(SECTION_RAIL[SECTION_RAIL.length - 1]?.key ?? null);
+        return;
+      }
+      let current: EditorSectionKey | null = null;
+      // In document order, so the last one to start above the line is the one
+      // being worked on.
+      for (const { key } of SECTION_RAIL) {
+        const header = document.getElementById(sectionAnchor(key));
+        if (header && header.getBoundingClientRect().top <= SECTION_LINE_PX) current = key;
+      }
+      // Above the first header — which is where the page opens — the first
+      // section is still the one in front of you.
+      setHere(current ?? SECTION_RAIL[0]?.key ?? null);
+    };
+    const onScroll = (): void => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    measure();
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [layout, landed]);
+  return here;
+}
+
+/**
+ * Where a rail jump left the page, and which section it was asked for.
+ *
+ * While the page is still sitting on that exact spot, the click outranks the
+ * measured position. It has to: the last few sections share the screen at the
+ * foot of the sheet and none of them can be brought to the marker line, so
+ * "mash guidelines" and "water chemistry" are the same scroll position and only
+ * the click tells them apart. Any real scroll moves the page off the spot and
+ * hands the answer back to the measurement.
+ */
+interface SectionLanding {
+  key: EditorSectionKey;
+  /** Scroll position the jump settled on, already clamped to the page. */
+  y: number;
 }
 
 const fieldClass =
@@ -172,6 +345,59 @@ function totalWeight(lines: Array<{ amount: string; unit: string }>, displayUnit
   return `${Math.round(value * 100) / 100} ${displayUnit}`;
 }
 
+/** What the shop's litres weigh, at the 1 g/ml the server prices them by. */
+const VOLUME_TO_KG: Record<string, number> = { l: 1, ml: 0.001, liter: 1, litre: 1 };
+
+/**
+ * The "other ingredients" section's total for its title. Unlike the grain bill
+ * or the hop schedule this list mixes what it's measured in — 3 kg of mango
+ * purée, 5 ml of lactic acid, one Whirlfloc tablet — so it totals what can be
+ * weighed (litres at the 1 g/ml the costing already assumes) and leaves
+ * everything counted rather than weighed out of the figure. Null when nothing
+ * in the section has a weight, which is the whole of a section of tablets.
+ *
+ * Scaled to what it's totalling: a purée-led sour reads better as "4.2 kg" than
+ * as 4,200 g, and 15 g of gypsum reads worse as 0.02 kg.
+ */
+function totalOtherWeight(lines: Array<{ amount: string; unit: string }>): string | null {
+  let kilograms = 0;
+  for (const line of lines) {
+    const parsed = nullableNumber(line.amount);
+    if (parsed == null) continue;
+    const unit = line.unit.trim().toLocaleLowerCase();
+    const factor = WEIGHT_TO_KG[unit] ?? VOLUME_TO_KG[unit];
+    if (factor != null) kilograms += parsed * factor;
+  }
+  if (kilograms <= 0) return null;
+  return kilograms >= 1
+    ? `${Math.round(kilograms * 100) / 100} kg`
+    : `${Math.round(kilograms * 100_000) / 100} g`;
+}
+
+/**
+ * A section's cost for its title — "254 kr", and a note when the figure is
+ * short because the catalogue doesn't stock something. Empty while nothing in
+ * the section has been priced, so a section nobody has filled in yet keeps a
+ * plain title.
+ */
+function costParts(cost: CostTotal | null | undefined): string[] {
+  if (!cost) return [];
+  const parts: string[] = [];
+  if (cost.priced > 0) parts.push(kr(cost.usedDkk, 0));
+  if (cost.unpriced > 0) parts.push(`${cost.unpriced} unpriced`);
+  return parts;
+}
+
+/**
+ * A section title's trailing summary: how many rows, what they weigh, what they
+ * cost. Joined with dashes so the figures read as one line of separate facts
+ * rather than as a sum.
+ */
+function sectionMeta(...parts: Array<string | number | null | undefined>): string | undefined {
+  const shown = parts.filter((part) => part != null && part !== '').map(String);
+  return shown.length > 0 ? shown.join(' - ') : undefined;
+}
+
 /** Strike water per kilo of grain when the recipe hasn't said otherwise. */
 export const DEFAULT_MASH_THICKNESS_L_PER_KG = 3;
 
@@ -208,6 +434,70 @@ function options(values: readonly string[]): { value: string }[] {
   return values.map((value) => ({ value }));
 }
 
+/** A row nobody has named yet isn't an ingredient, so it isn't costed either. */
+function costableDraft(draft: RecipeEditInput): RecipeEditInput {
+  const named = <T extends { name: string }>(lines: T[]): T[] =>
+    lines.filter((line) => line.name.trim() !== '');
+  return {
+    ...draft,
+    fermentables: named(draft.fermentables),
+    hops: named(draft.hops),
+    yeast: named(draft.yeast),
+    otherIngredients: named(draft.otherIngredients),
+  };
+}
+
+/**
+ * Just the parts of a draft a price depends on. Used to decide when to ask the
+ * server again: writing the mash notes or renaming the recipe can't change what
+ * it costs, and shouldn't spend a round trip finding that out.
+ */
+function costSignature(draft: RecipeEditInput): string {
+  return JSON.stringify([
+    draft.fermentables.map((l) => [l.name, l.amount, l.unit, l.ebc]),
+    draft.hops.map((l) => [l.name, l.amount, l.unit]),
+    draft.yeast.map((l) => [l.name, l.amount, l.amountUnit]),
+    draft.otherIngredients.map((l) => [l.name, l.amount, l.unit]),
+    draft.batchSizeL,
+  ]);
+}
+
+/**
+ * What the sheet costs as it stands, re-asked as the ingredients change.
+ *
+ * The prices live in the server's catalogue (and in the brewer's own overrides),
+ * so an unsaved recipe has to ask rather than work it out — hence the debounce:
+ * typing "3.5" into an amount shouldn't be four questions. Null until the first
+ * answer arrives, and again if one fails: a stale cost quietly attached to a
+ * changed grain bill would be worse than no cost at all.
+ */
+function useDraftCost(draft: RecipeEditInput): RecipeCostBreakdown | null {
+  const [cost, setCost] = useState<RecipeCostBreakdown | null>(null);
+  // The signature decides *when* to ask; the ref is what's actually asked, so
+  // the request carries the draft as it stands when the debounce finally fires.
+  const latest = useRef(draft);
+  latest.current = draft;
+  const signature = useMemo(() => costSignature(draft), [draft]);
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void api
+        .priceRecipe(costableDraft(latest.current))
+        .then((next) => {
+          if (!cancelled) setCost(next);
+        })
+        .catch(() => {
+          if (!cancelled) setCost(null);
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [signature]);
+  return cost;
+}
+
 export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props): JSX.Element {
   const initial = useMemo(() => editable(recipe), [recipe]);
   const [draft, setDraft] = useState<RecipeEditInput>(initial);
@@ -219,6 +509,9 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
   // the draft until the box is unticked or the recipe saved.
   const effective = useMemo(() => withAutoBoilVolumes(withDerivedStrikeVolume(draft)), [draft]);
   const calculation = useMemo(() => calculateRecipe(effective), [effective]);
+  // What it costs, from the server's catalogue — the one figure on this page
+  // that can't be worked out in the browser.
+  const cost = useDraftCost(draft);
   const styleRange = useMemo(
     () => rangeForStyle(draft.settings.styleSubcategory || draft.style),
     [draft.settings.styleSubcategory, draft.style],
@@ -229,6 +522,32 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
   const kegColors = useKegContentColors();
   const [editingCategories, setEditingCategories] = useState(false);
   const [editingSubstyles, setEditingSubstyles] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<EditorSectionKey, boolean>>(loadCollapsed);
+  // A rail jump asked for but not yet made, and where the last one landed —
+  // see goToSection and SectionLanding.
+  const [pendingJump, setPendingJump] = useState<{ key: EditorSectionKey } | null>(null);
+  const [landed, setLanded] = useState<SectionLanding | null>(null);
+  // Which section the rail should light up. Folding one changes where every
+  // section under it sits, so the collapse map is what re-measures the page.
+  const inView = useSectionInView(collapsed, landed);
+  useEffect(() => {
+    if (!pendingJump) return;
+    // Runs after the commit that unfolded the target, so the page is already as
+    // tall as it is going to be and the scroll can land where it was asked to.
+    const header = document.getElementById(sectionAnchor(pendingJump.key));
+    setPendingJump(null);
+    if (!header) return;
+    const wanted = header.getBoundingClientRect().top + window.scrollY - SECTION_SCROLL_MARGIN_PX;
+    // Clamped here rather than left to the browser, so the landing spot the
+    // marker watches for is the one the page will actually come to rest on.
+    const y = Math.min(
+      Math.max(wanted, 0),
+      Math.max(document.documentElement.scrollHeight - window.innerHeight, 0),
+    );
+    setLanded({ key: pendingJump.key, y });
+    window.scrollTo({ top: y, behavior: 'smooth' });
+  }, [pendingJump]);
+  const [locked, setLocked] = useState<Record<LockedLines, boolean[]>>({ fermentables: [], hops: [], yeast: [] });
   const categories = useMemo(() => {
     // The recipe's saved category stays selectable even when the brewer has
     // taken it out of the dropdown — a Brewer's Friend import arrives filed
@@ -262,6 +581,33 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
 
   function cancel(): void {
     if (!dirty || window.confirm('Discard your unsaved recipe changes?')) onCancel();
+  }
+
+  /** Fold a section away (or back), remembering it for the next recipe. */
+  function toggle(key: EditorSectionKey): void {
+    setCollapsed((prev) => rememberCollapsed({ ...prev, [key]: !prev[key] }));
+  }
+
+  /**
+   * Go to a section from the rail. A folded one is unfolded on the way: asking
+   * for the water chemistry and landing on a closed lid isn't arriving there.
+   *
+   * The scroll waits for that unfolding to be drawn rather than happening
+   * alongside it. A browser clamps a scroll to the document it currently has,
+   * and while the last section is folded the page is too short to bring it to
+   * the top — scrolling first would stop short and stay there, since growing
+   * the page afterwards doesn't scroll it.
+   */
+  function goToSection(key: EditorSectionKey): void {
+    setCollapsed((prev) => (prev[key] ? rememberCollapsed({ ...prev, [key]: false }) : prev));
+    // Boxed so that asking for the same section twice is two requests rather
+    // than a no-op React can skip re-rendering for.
+    setPendingJump({ key });
+  }
+
+  /** The props every section shares: where it is, whether it's open, and how to change that. */
+  function section(key: EditorSectionKey): { id: string; open: boolean; onToggle: () => void } {
+    return { id: sectionAnchor(key), open: !collapsed[key], onToggle: () => toggle(key) };
   }
 
   function updateSettings(patch: Partial<RecipeSettings>): void {
@@ -298,339 +644,452 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
   }
 
   return (
-    <form
-      className="mt-4 space-y-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        // Saved from the effective draft, so the strike volume the brewer has
-        // been reading is the one that lands on the sheet.
-        void onSave(applyRecipeCalculations(withDerivedStrikeVolume(draft)));
-      }}
-    >
-      <div className="rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-        <div className="font-semibold">Stored in BrewPlanner</div>
-        <p className="mt-0.5 text-sky-200/80">
-          {recipe.url
-            ? 'This recipe was imported from Brewer’s Friend. Changes are saved to the app; the original link remains available for reference.'
-            : 'Search the local catalogues or type a custom ingredient. The complete brew sheet is saved directly to BrewPlanner.'}
-        </p>
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
-          {error}
-        </div>
-      )}
-
-      <EditorSection title="Recipe setup" description="The same core setup fields used by the Brewer’s Friend editor.">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Recipe name" value={draft.name} required className="sm:col-span-2 lg:col-span-4" onChange={(name) => setDraft((d) => ({ ...d, name }))} />
-          <div className="sm:col-span-2">
-            <SearchableSelect
-              label="Style category"
-              value={draft.settings.styleCategory}
-              options={categories.map((value) => ({ value, swatchColor: getRecipeColor({ name: '', style: value }, kegColors) }))}
-              onChange={selectStyleCategory}
-            />
-            <EditListToggle open={editingCategories} onToggle={() => setEditingCategories((open) => !open)} />
+    // `items-start` is what lets the rail and the statistics stick: stretched to
+    // the sheet's full height they would have nowhere to travel.
+    <div className="mt-4 flex items-start gap-4">
+      <SectionRail here={inView} onGo={goToSection} />
+      {/* Column-reverse below 2xl, so the statistics sit above the sheet on a
+          laptop rather than at the foot of it; a row once there is width for a
+          column of their own beside it. */}
+      <div className="flex min-w-0 flex-1 flex-col-reverse items-start gap-4 2xl:flex-row">
+      <form
+        className="w-full min-w-0 space-y-4 2xl:flex-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          // Saved from the effective draft, so the strike volume the brewer has
+          // been reading is the one that lands on the sheet.
+          void onSave(applyRecipeCalculations(withDerivedStrikeVolume(draft)));
+        }}
+      >
+        {error && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+            {error}
           </div>
-          <div className="sm:col-span-2">
-            <SearchableSelect
-              label="Style / subcategory"
-              value={substyle}
-              options={styleChoices.map((choice) => ({ value: choice.value, description: choice.category, swatchColor: getRecipeColor({ name: '', style: choice.value }, kegColors) }))}
-              onChange={selectStyleSubcategory}
-              placeholder={knownCategory && styleChoices.length === 0
-                ? `No substyles — saved as ${draft.settings.styleCategory}`
-                : undefined}
-              testId="recipe-style-select"
-            />
-            <EditListToggle open={editingSubstyles} onToggle={() => setEditingSubstyles((open) => !open)} />
+        )}
+
+        <EditorSection title="Recipe setup" icon="📋" description="The same core setup fields used by the Brewer’s Friend editor." {...section('setup')}>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Recipe name" value={draft.name} required className="sm:col-span-2 lg:col-span-4" onChange={(name) => setDraft((d) => ({ ...d, name }))} />
+            <div className="sm:col-span-2">
+              <SearchableSelect
+                label="Style category"
+                value={draft.settings.styleCategory}
+                options={categories.map((value) => ({ value, swatchColor: getRecipeColor({ name: '', style: value }, kegColors) }))}
+                onChange={selectStyleCategory}
+              />
+              <EditListToggle open={editingCategories} onToggle={() => setEditingCategories((open) => !open)} />
+            </div>
+            <div className="sm:col-span-2">
+              <SearchableSelect
+                label="Style / subcategory"
+                value={substyle}
+                options={styleChoices.map((choice) => ({ value: choice.value, description: choice.category, swatchColor: getRecipeColor({ name: '', style: choice.value }, kegColors) }))}
+                onChange={selectStyleSubcategory}
+                placeholder={knownCategory && styleChoices.length === 0
+                  ? `No substyles — saved as ${draft.settings.styleCategory}`
+                  : undefined}
+                testId="recipe-style-select"
+              />
+              <EditListToggle open={editingSubstyles} onToggle={() => setEditingSubstyles((open) => !open)} />
+            </div>
+            {editingCategories && (
+              <StyleCategoryEditor
+                categories={prefs.recipeStyleCategories}
+                onChange={(next) => setSetting('recipeStyleCategories', next)}
+                className="sm:col-span-2 lg:col-span-4"
+              />
+            )}
+            {editingSubstyles && (
+              <SubstyleEditor
+                categories={prefs.recipeStyleCategories}
+                hiddenSubstyles={prefs.recipeHiddenSubstyles}
+                onChange={(next) => setSetting('recipeHiddenSubstyles', next)}
+                className="sm:col-span-2 lg:col-span-4"
+              />
+            )}
+
+            <Field label="Batch size" value={draft.batchSizeL} suffix="L" type="number" step="any" onChange={(value) => setDraft((d) => ({ ...d, batchSizeL: nullableNumber(value) }))} />
+            <SelectField label="Batch target" value={draft.settings.batchTarget} options={options(BATCH_TARGETS)} onChange={(batchTarget) => updateSettings({ batchTarget })} />
+            <Field label="Boil time" value={draft.settings.boilTimeMinutes} suffix="min" type="number" step="any" onChange={(value) => updateSettings({ boilTimeMinutes: nullableNumber(value) })} />
+            <Field label="Brewhouse efficiency" value={draft.settings.efficiencyPercent} suffix="%" type="number" step="any" onChange={(value) => updateSettings({ efficiencyPercent: nullableNumber(value) })} />
+
+            <div>
+              <Field
+                label="Pre-boil size"
+                value={effective.settings.boilSizePreL}
+                suffix="L"
+                type="number"
+                step="any"
+                disabled={draft.settings.autoBoilSizePre}
+                placeholder={draft.settings.autoBoilSizePre ? 'Needs a batch size' : undefined}
+                onChange={(value) => updateSettings({ boilSizePreL: nullableNumber(value) })}
+              />
+              <Check
+                label="Calculate automatically"
+                checked={draft.settings.autoBoilSizePre}
+                // Unticking hands back the number the box was showing, so the
+                // brewer adjusts the calculated volume instead of an empty field.
+                onChange={(autoBoilSizePre) => updateSettings(autoBoilSizePre
+                  ? { autoBoilSizePre }
+                  : { autoBoilSizePre, boilSizePreL: effective.settings.boilSizePreL })}
+              />
+            </div>
+            <div>
+              <Field
+                label="Post-boil size"
+                value={effective.settings.boilSizePostL}
+                suffix="L"
+                type="number"
+                step="any"
+                disabled={draft.settings.autoBoilSizePost}
+                placeholder={draft.settings.autoBoilSizePost ? 'Needs a batch size' : undefined}
+                onChange={(value) => updateSettings({ boilSizePostL: nullableNumber(value) })}
+              />
+              <Check
+                label="Calculate automatically"
+                checked={draft.settings.autoBoilSizePost}
+                onChange={(autoBoilSizePost) => updateSettings(autoBoilSizePost
+                  ? { autoBoilSizePost }
+                  : { autoBoilSizePost, boilSizePostL: effective.settings.boilSizePostL })}
+              />
+            </div>
           </div>
-          {editingCategories && (
-            <StyleCategoryEditor
-              categories={prefs.recipeStyleCategories}
-              onChange={(next) => setSetting('recipeStyleCategories', next)}
-              className="sm:col-span-2 lg:col-span-4"
-            />
-          )}
-          {editingSubstyles && (
-            <SubstyleEditor
-              categories={prefs.recipeStyleCategories}
-              hiddenSubstyles={prefs.recipeHiddenSubstyles}
-              onChange={(next) => setSetting('recipeHiddenSubstyles', next)}
-              className="sm:col-span-2 lg:col-span-4"
-            />
-          )}
+        </EditorSection>
 
-          <Field label="Batch size" value={draft.batchSizeL} suffix="L" type="number" step="any" onChange={(value) => setDraft((d) => ({ ...d, batchSizeL: nullableNumber(value) }))} />
-          <SelectField label="Batch target" value={draft.settings.batchTarget} options={options(BATCH_TARGETS)} onChange={(batchTarget) => updateSettings({ batchTarget })} />
-          <Field label="Boil time" value={draft.settings.boilTimeMinutes} suffix="min" type="number" step="any" onChange={(value) => updateSettings({ boilTimeMinutes: nullableNumber(value) })} />
-          <Field label="Brewhouse efficiency" value={draft.settings.efficiencyPercent} suffix="%" type="number" step="any" onChange={(value) => updateSettings({ efficiencyPercent: nullableNumber(value) })} />
-
-          <div>
-            <Field
-              label="Pre-boil size"
-              value={effective.settings.boilSizePreL}
-              suffix="L"
-              type="number"
-              step="any"
-              disabled={draft.settings.autoBoilSizePre}
-              placeholder={draft.settings.autoBoilSizePre ? 'Needs a batch size' : undefined}
-              onChange={(value) => updateSettings({ boilSizePreL: nullableNumber(value) })}
-            />
-            <Check
-              label="Calculate automatically"
-              checked={draft.settings.autoBoilSizePre}
-              // Unticking hands back the number the box was showing, so the
-              // brewer adjusts the calculated volume instead of an empty field.
-              onChange={(autoBoilSizePre) => updateSettings(autoBoilSizePre
-                ? { autoBoilSizePre }
-                : { autoBoilSizePre, boilSizePreL: effective.settings.boilSizePreL })}
-            />
-          </div>
-          <div>
-            <Field
-              label="Post-boil size"
-              value={effective.settings.boilSizePostL}
-              suffix="L"
-              type="number"
-              step="any"
-              disabled={draft.settings.autoBoilSizePost}
-              placeholder={draft.settings.autoBoilSizePost ? 'Needs a batch size' : undefined}
-              onChange={(value) => updateSettings({ boilSizePostL: nullableNumber(value) })}
-            />
-            <Check
-              label="Calculate automatically"
-              checked={draft.settings.autoBoilSizePost}
-              onChange={(autoBoilSizePost) => updateSettings(autoBoilSizePost
-                ? { autoBoilSizePost }
-                : { autoBoilSizePost, boilSizePostL: effective.settings.boilSizePostL })}
-            />
-          </div>
-        </div>
-      </EditorSection>
-
-      <EditorSection title="Calculated recipe statistics" description="Updates live from the grain bill, batch volumes, hops, yeast attenuation, and water profile. Mash pH is an estimate.">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-          <CalculatedStat label="Pre-boil gravity" value={calculation.preBoilGravity} decimals={3} />
-          <CalculatedStat label="Post-boil gravity" value={calculation.postBoilGravity} decimals={3} />
-          <CalculatedStat label="Original gravity" value={calculation.originalGravity} decimals={3} />
-          <CalculatedStat label="Final gravity" value={calculation.finalGravity} decimals={3} />
-          <CalculatedStat label="ABV" value={calculation.abv} decimals={2} suffix="%" range={styleRange?.abv} compareToStyle />
-          <CalculatedStat label="IBU" value={calculation.ibu} decimals={1} range={styleRange?.ibu} compareToStyle />
-          <CalculatedStat label="EBC" value={calculation.ebc} decimals={1} range={styleRange?.ebc} compareToStyle />
-          <CalculatedStat label="Mash pH estimate" value={calculation.mashPh} decimals={2} />
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Mash temperature" value={draft.mashTemp} placeholder="67°C" onChange={(value) => setDraft((d) => ({ ...d, mashTemp: nullable(value) }))} />
-          <Field label="Fermentation temperature" value={draft.fermentationTemp} placeholder="19°C" onChange={(value) => setDraft((d) => ({ ...d, fermentationTemp: nullable(value) }))} />
-        </div>
-      </EditorSection>
-
-      <div className="grid items-start gap-4 xl:grid-cols-2">
-        <div className="space-y-4">
-          <EditorSection title="Fermentables" count={draft.fermentables.length} total={totalWeight(draft.fermentables, 'kg') ?? undefined} onAdd={() => setDraft((d) => ({ ...d, fermentables: [...d.fermentables, blankFermentable()] }))}>
-            <div className="space-y-3">
-              {draft.fermentables.map((line, index) => (
-                <LineCard key={index} label={`Fermentable ${index + 1}`} onRemove={() => setDraft((d) => ({ ...d, fermentables: d.fermentables.filter((_, i) => i !== index) }))}>
-                  <div className="grid gap-3 sm:grid-cols-8">
-                    <Field label="Amount" value={line.amount} suffix="kg" className="sm:col-span-2" onChange={(amount) => updateFermentable(index, { amount, unit: 'kg' })} />
-                    <IngredientSearchSelect kind="fermentable" label="Malt / fermentable" value={line.name} className="sm:col-span-4" onChange={(name, option) => updateFermentable(index, { name, ebc: option?.ebc ?? null, ppg: estimateFermentablePpg(name) })} />
-                    <ReadOnlyField label="Selected colour" value={line.ebc} decimals={1} suffix="EBC" className="sm:col-span-2" />
-                    {/* Filled in from the malt, and editable off a maltster's analysis sheet — this is what the gravities are calculated from. */}
-                    <Field label="Extract potential" value={line.ppg} suffix="PPG" type="number" step="any" className="sm:col-span-2" disabled={!line.name.trim()} placeholder="Pick a malt" onChange={(value) => updateFermentable(index, { ppg: nullableNumber(value) })} />
-                    <ReadOnlyField label="Share" value={calculation.fermentablePercents[index]} decimals={1} suffix="%" className="sm:col-span-2" />
-                    <div className="flex flex-wrap items-end gap-x-5 sm:col-span-4">
-                      <Check
-                        label="Late addition"
-                        checked={line.lateAddition}
-                        title="Added after the boil has done its work — kept out of the boil gravity the hops are utilized against, but still counted in the OG."
-                        onChange={(lateAddition) => updateFermentable(index, { lateAddition })}
-                      />
-                      <Check
-                        label="Not fermentable"
-                        checked={!isFermentableLine(line)}
-                        title="Lactose, maltodextrin and the like: raises the gravity but never attenuates, so it lands in the FG instead of turning into alcohol."
-                        onChange={(notFermentable) => updateFermentable(index, { fermentable: !notFermentable })}
-                      />
-                    </div>
+        <EditorSection title="Fermentables" icon="🌾" meta={sectionMeta(draft.fermentables.length, totalWeight(draft.fermentables, 'kg'), ...costParts(cost?.fermentables))} {...section('fermentables')} onAdd={() => setDraft((d) => ({ ...d, fermentables: [...d.fermentables, blankFermentable()] }))}>
+          <div className="space-y-3">
+            {draft.fermentables.map((line, index) => (
+              <LineCard
+                key={index}
+                label={`Fermentable ${index + 1}`}
+                locked={isLocked('fermentables', index)}
+                onToggleLock={() => setLineLock('fermentables', index, !isLocked('fermentables', index))}
+                onRemove={() => {
+                  setDraft((d) => ({ ...d, fermentables: d.fermentables.filter((_, i) => i !== index) }));
+                  dropLineLock('fermentables', index);
+                }}
+              >
+                <div className="grid gap-3 sm:grid-cols-8">
+                  <Field label="Amount" value={line.amount} suffix="kg" className="sm:col-span-2" disabled={isLocked('fermentables', index)} onChange={(amount) => updateFermentable(index, { amount, unit: 'kg' })} />
+                  <IngredientSearchSelect kind="fermentable" label="Malt / fermentable" value={line.name} className="sm:col-span-4" disabled={isLocked('fermentables', index)} onChange={(name, option) => {
+                    updateFermentable(index, { name, ebc: option?.ebc ?? null, ppg: estimateFermentablePpg(name) });
+                    setLineLock('fermentables', index, Boolean(option));
+                  }} />
+                  <ReadOnlyField label="Selected colour" value={line.ebc} decimals={1} suffix="EBC" className="sm:col-span-2" />
+                  {/* Filled in from the malt, and editable off a maltster's analysis sheet — this is what the gravities are calculated from. */}
+                  <Field label="Extract potential" value={line.ppg} suffix="PPG" type="number" step="any" className="sm:col-span-2" disabled={!line.name.trim() || isLocked('fermentables', index)} placeholder="Pick a malt" onChange={(value) => updateFermentable(index, { ppg: nullableNumber(value) })} />
+                  <ReadOnlyField label="Share" value={calculation.fermentablePercents[index]} decimals={1} suffix="%" className="sm:col-span-2" />
+                  <div className="flex flex-wrap items-end gap-x-5 sm:col-span-4">
+                    <Check
+                      label="Late addition"
+                      checked={line.lateAddition}
+                      disabled={isLocked('fermentables', index)}
+                      title="Added after the boil has done its work — kept out of the boil gravity the hops are utilized against, but still counted in the OG."
+                      onChange={(lateAddition) => updateFermentable(index, { lateAddition })}
+                    />
+                    <Check
+                      label="Not fermentable"
+                      checked={!isFermentableLine(line)}
+                      disabled={isLocked('fermentables', index)}
+                      title="Lactose, maltodextrin and the like: raises the gravity but never attenuates, so it lands in the FG instead of turning into alcohol."
+                      onChange={(notFermentable) => updateFermentable(index, { fermentable: !notFermentable })}
+                    />
                   </div>
-                </LineCard>
-              ))}
-              <Empty message="No fermentables" show={draft.fermentables.length === 0} />
-            </div>
-          </EditorSection>
+                </div>
+              </LineCard>
+            ))}
+            <Empty message="No fermentables" show={draft.fermentables.length === 0} />
+          </div>
+        </EditorSection>
 
-          <EditorSection title="Mash guidelines" count={draft.mashGuidelines?.steps.length} onAdd={() => setDraft((d) => {
-            const steps = d.mashGuidelines?.steps ?? [];
-            const isFirst = steps.length === 0;
-            return {
-              ...d,
-              mashGuidelines: {
-                startingThicknessLPerKg: d.mashGuidelines?.startingThicknessLPerKg ?? DEFAULT_MASH_THICKNESS_L_PER_KG,
-                grainTempC: d.mashGuidelines?.grainTempC ?? null,
-                autoStrikeVolume: isFirst ? true : d.mashGuidelines?.autoStrikeVolume ?? false,
-                steps: [...steps, isFirst ? defaultFirstMashStep() : blankMashStep()],
-                notes: d.mashGuidelines?.notes ?? null,
-              },
-            };
-          })}>
-            <div className="mb-3 grid gap-3 sm:grid-cols-2">
-              <Field label="Starting mash thickness" value={draft.mashGuidelines?.startingThicknessLPerKg} suffix="L/kg" type="number" step="any" onChange={(value) => updateMashHeader({ startingThicknessLPerKg: nullableNumber(value) })} />
-              <Field label="Grain temperature" value={draft.mashGuidelines?.grainTempC} suffix="°C" type="number" step="any" onChange={(value) => updateMashHeader({ grainTempC: nullableNumber(value) })} />
-            </div>
-            <div className="space-y-3">
-              {(draft.mashGuidelines?.steps ?? []).map((line, index) => (
-                <LineCard key={index} label={`Mash step ${index + 1}`} onRemove={() => setDraft((d) => ({ ...d, mashGuidelines: mashWith(d, { steps: (d.mashGuidelines?.steps ?? []).filter((_, i) => i !== index) }) }))}>
+        <EditorSection title="Hops" icon="🌿" meta={sectionMeta(draft.hops.length, totalWeight(draft.hops, 'g'), ...costParts(cost?.hops))} {...section('hops')} onAdd={() => setDraft((d) => ({ ...d, hops: [...d.hops, blankHop()] }))}>
+          <div className="space-y-3">
+            {draft.hops.map((line, index) => (
+              <LineCard
+                key={index}
+                label={`Hop addition ${index + 1}`}
+                locked={isLocked('hops', index)}
+                onToggleLock={() => setLineLock('hops', index, !isLocked('hops', index))}
+                onRemove={() => {
+                  setDraft((d) => ({ ...d, hops: d.hops.filter((_, i) => i !== index) }));
+                  dropLineLock('hops', index);
+                }}
+              >
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-8">
+                  <Field label="Amount" value={line.amount} disabled={isLocked('hops', index)} onChange={(amount) => updateHop(index, { amount })} />
+                  <SelectField label="Unit" value={line.unit} options={options(WEIGHT_UNITS)} disabled={isLocked('hops', index)} onChange={(unit) => updateHop(index, { unit })} />
+                  <IngredientSearchSelect kind="hop" label="Hop" value={line.name} className="sm:col-span-2 lg:col-span-4" disabled={isLocked('hops', index)} onChange={(name, option) => {
+                    updateHop(index, { name, aa: option?.aa == null ? '' : String(option.aa) });
+                    setLineLock('hops', index, option?.aa != null);
+                  }} />
+                  <Field label="Alpha acid" value={line.aa} suffix="%" className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(aa) => updateHop(index, { aa })} />
+                  <Field label={line.stage === 'Dry Hop' ? 'Contact time' : 'Time'} value={line.time} className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(time) => updateHop(index, { time })} />
+                  <SelectField label="Time unit" value={line.timeUnit} options={[{ value: '', label: '—' }, { value: 'min', label: 'Minutes' }, { value: 'day', label: 'Days' }]} className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(timeUnit) => updateHop(index, { timeUnit: timeUnit as RecipeHopEdit['timeUnit'] })} />
+                  <SelectField label="Form" value={line.form} options={options(HOP_FORMS)} className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(form) => updateHop(index, { form })} />
+                  <SelectField label="Use" value={line.stage} options={options(HOP_STAGE_ORDER)} className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(value) => {
+                    const stage = value as HopStage;
+                    updateHop(index, { stage, use: stage, timeUnit: stage === 'Dry Hop' ? 'day' : 'min' });
+                  }} />
+                  <ReadOnlyField label="IBU contribution" value={calculation.hopIbus[index]} decimals={2} className="lg:col-span-2" />
+                </div>
+              </LineCard>
+            ))}
+            <Empty message="No hop additions" show={draft.hops.length === 0} />
+          </div>
+        </EditorSection>
+
+        <EditorSection title="Yeast" icon="🧫" meta={sectionMeta(draft.yeast.length, ...costParts(cost?.yeast))} {...section('yeast')} onAdd={() => setDraft((d) => ({ ...d, yeast: [...d.yeast, blankYeast()] }))}>
+          <div className="space-y-3">
+            {draft.yeast.map((line, index) => (
+              <LineCard
+                key={index}
+                label={`Yeast ${index + 1}`}
+                locked={isLocked('yeast', index)}
+                onToggleLock={() => setLineLock('yeast', index, !isLocked('yeast', index))}
+                onRemove={() => {
+                  setDraft((d) => ({ ...d, yeast: d.yeast.filter((_, i) => i !== index) }));
+                  dropLineLock('yeast', index);
+                }}
+              >
+                {/* Grouped into its own row per purpose rather than one wide
+                    grid: six-plus fields sharing a row leave no width for
+                    "Attenuation" or "Medium-High" to sit in without spilling
+                    into their neighbour, on a laptop or a phone. */}
+                <div className="space-y-3">
+                  {/* One field for the whole pitch: the catalogue names the
+                      producer as part of the strain ("Fermentis SafAle
+                      US-05"), and picking one fills the Lab in behind it, so
+                      a second box asking for the lab only asked twice. */}
+                  <IngredientSearchSelect kind="yeast" label="Yeast / culture" value={line.name} disabled={isLocked('yeast', index)} onChange={(name, option) => {
+                    updateYeast(index, { name, ...yeastFromStrain(option?.yeast) });
+                    setLineLock('yeast', index, Boolean(option?.yeast));
+                  }} />
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <Field label="Amount" value={line.amount} disabled={isLocked('yeast', index)} onChange={(amount) => updateYeast(index, { amount })} />
+                    <SelectField label="Unit" value={line.amountUnit} options={options([...COUNT_UNITS, ...WEIGHT_UNITS])} disabled={isLocked('yeast', index)} onChange={(amountUnit) => updateYeast(index, { amountUnit })} />
+                    <Field label="Attenuation" value={line.attenuation} suffix="%" disabled={isLocked('yeast', index)} onChange={(attenuation) => updateYeast(index, { attenuation })} />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <SelectField label="Form" value={line.form} options={options(YEAST_FORMS)} disabled={isLocked('yeast', index)} onChange={(form) => updateYeast(index, { form })} />
+                    <SelectField label="Flocculation" value={line.flocculation} options={options(FLOCCULATION_OPTIONS)} disabled={isLocked('yeast', index)} onChange={(flocculation) => updateYeast(index, { flocculation })} />
+                  </div>
+                  {/* Three across, not four: "Medium-High" is a tolerance as
+                      well as a flocculation, and a quarter of this card is
+                      too narrow to spell it. */}
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <div>
-                      {/* Reads from the effective draft so an auto-calculated
-                          first step shows the strike volume the grain bill
-                          implies. */}
-                      <Field
-                        label="Amount"
-                        value={effective.mashGuidelines?.steps[index]?.amount ?? line.amount ?? ''}
-                        disabled={index === 0 && (draft.mashGuidelines?.autoStrikeVolume ?? false)}
-                        onChange={(amount) => updateMashStep(index, { amount })}
+                    <RangeField
+                      label="Optimum temp"
+                      min={line.minTempC}
+                      max={line.maxTempC}
+                      suffix="°C"
+                      placeholder="18 – 22"
+                      disabled={isLocked('yeast', index)}
+                      onChange={(minTempC, maxTempC) => updateYeast(index, { minTempC, maxTempC })}
+                    />
+                    <Field label="Alcohol tolerance" value={line.alcoholTolerance} disabled={isLocked('yeast', index)} onChange={(alcoholTolerance) => updateYeast(index, { alcoholTolerance })} />
+                    <Check label="Starter required" checked={line.starter} className="self-end pb-2" disabled={isLocked('yeast', index)} onChange={(starter) => updateYeast(index, { starter })} />
+                  </div>
+                  {/* One fermentation temperature per batch, not per pitch —
+                      shown once, on the first yeast line, rather than
+                      repeated (and editable in six places) across every
+                      addition. Still locks with that line: a locked card
+                      reads as fully settled, not settled except one field. */}
+                  {index === 0 && (
+                    <Field label="Fermentation temperature" value={draft.fermentationTemp} suffix="°C" className="sm:max-w-[12rem]" disabled={isLocked('yeast', index)} onChange={(value) => setDraft((d) => ({ ...d, fermentationTemp: nullable(value) }))} />
+                  )}
+                </div>
+              </LineCard>
+            ))}
+            <Empty message="No yeast" show={draft.yeast.length === 0} />
+            <SearchableSelect label="Pitch rate" value={draft.settings.pitchRate} options={options(PITCH_RATES)} onChange={(pitchRate) => updateSettings({ pitchRate })} className="sm:max-w-xs" />
+          </div>
+        </EditorSection>
+
+        <EditorSection title="Other ingredients" icon="🧪" meta={sectionMeta(draft.otherIngredients.length, totalOtherWeight(draft.otherIngredients), ...costParts(cost?.other))} metaTitle="Totals what can be weighed — litres at 1 g/ml, the same as the costing. Tablets and other counted additions aren't in the figure." {...section('other')} onAdd={() => setDraft((d) => ({ ...d, otherIngredients: [...d.otherIngredients, blankOther()] }))}>
+          <div className="space-y-3">
+            {draft.otherIngredients.map((line, index) => (
+              <LineCard key={index} label={`Ingredient ${index + 1}`} onRemove={() => setDraft((d) => ({ ...d, otherIngredients: d.otherIngredients.filter((_, i) => i !== index) }))}>
+                <div className="grid gap-3 sm:grid-cols-6">
+                  <Field label="Amount" value={line.amount} onChange={(amount) => updateOther(index, { amount })} />
+                  <SelectField label="Unit" value={line.unit} options={options([...WEIGHT_UNITS, ...VOLUME_UNITS, ...COUNT_UNITS])} onChange={(unit) => updateOther(index, { unit })} />
+                  <IngredientSearchSelect kind="other" label="Ingredient" value={line.name} className="sm:col-span-4" onChange={(name) => updateOther(index, { name })} />
+                  <Field label="Time" value={line.time} onChange={(time) => updateOther(index, { time })} />
+                  <SelectField label="Time unit" value={line.timeUnit} options={[{ value: '', label: '—' }, { value: 'min', label: 'Minutes' }, { value: 'day', label: 'Days' }]} onChange={(timeUnit) => updateOther(index, { timeUnit: timeUnit as RecipeOtherIngredientEdit['timeUnit'] })} />
+                  <SelectField label="Type" value={line.type} options={options(OTHER_TYPES)} className="sm:col-span-2" onChange={(type) => updateOther(index, { type })} />
+                  <SelectField label="Use" value={line.use} options={options(OTHER_USES)} className="sm:col-span-2" onChange={(use) => updateOther(index, { use })} />
+                </div>
+              </LineCard>
+            ))}
+            <Empty message="No other ingredients" show={draft.otherIngredients.length === 0} />
+          </div>
+        </EditorSection>
+
+        <EditorSection title="Mash guidelines" icon="🌡️" meta={mashStepMeta(draft.mashGuidelines?.steps.length)} {...section('mash')} onAdd={() => setDraft((d) => {
+          const steps = d.mashGuidelines?.steps ?? [];
+          const isFirst = steps.length === 0;
+          return {
+            ...d,
+            mashGuidelines: {
+              startingThicknessLPerKg: d.mashGuidelines?.startingThicknessLPerKg ?? DEFAULT_MASH_THICKNESS_L_PER_KG,
+              grainTempC: d.mashGuidelines?.grainTempC ?? null,
+              autoStrikeVolume: isFirst ? true : d.mashGuidelines?.autoStrikeVolume ?? false,
+              steps: [...steps, isFirst ? defaultFirstMashStep() : blankMashStep()],
+              notes: d.mashGuidelines?.notes ?? null,
+            },
+          };
+        })}>
+          <div className="mb-3 grid gap-3 sm:grid-cols-2">
+            <Field label="Starting mash thickness" value={draft.mashGuidelines?.startingThicknessLPerKg} suffix="L/kg" type="number" step="any" onChange={(value) => updateMashHeader({ startingThicknessLPerKg: nullableNumber(value) })} />
+            <Field label="Grain temperature" value={draft.mashGuidelines?.grainTempC} suffix="°C" type="number" step="any" onChange={(value) => updateMashHeader({ grainTempC: nullableNumber(value) })} />
+          </div>
+          <div className="space-y-3">
+            {(draft.mashGuidelines?.steps ?? []).map((line, index) => (
+              <LineCard key={index} label={`Mash step ${index + 1}`} onRemove={() => setDraft((d) => ({ ...d, mashGuidelines: mashWith(d, { steps: (d.mashGuidelines?.steps ?? []).filter((_, i) => i !== index) }) }))}>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    {/* Reads from the effective draft so an auto-calculated
+                        first step shows the strike volume the grain bill
+                        implies. */}
+                    <Field
+                      label="Amount"
+                      value={effective.mashGuidelines?.steps[index]?.amount ?? line.amount ?? ''}
+                      disabled={index === 0 && (draft.mashGuidelines?.autoStrikeVolume ?? false)}
+                      onChange={(amount) => updateMashStep(index, { amount })}
+                    />
+                    {index === 0 && (
+                      <Check
+                        label="Calculate automatically"
+                        checked={draft.mashGuidelines?.autoStrikeVolume ?? false}
+                        // Unticking hands back the number the box was showing,
+                        // so the brewer adjusts the strike volume instead of
+                        // an empty field.
+                        onChange={(autoStrikeVolume) => updateMashHeader(autoStrikeVolume
+                          ? { autoStrikeVolume }
+                          : {
+                              autoStrikeVolume,
+                              steps: (draft.mashGuidelines?.steps ?? []).map((step, i) => i === 0
+                                ? { ...step, amount: effective.mashGuidelines?.steps[0]?.amount ?? step.amount }
+                                : step),
+                            })}
                       />
-                      {index === 0 && (
-                        <Check
-                          label="Calculate automatically"
-                          checked={draft.mashGuidelines?.autoStrikeVolume ?? false}
-                          // Unticking hands back the number the box was showing,
-                          // so the brewer adjusts the strike volume instead of
-                          // an empty field.
-                          onChange={(autoStrikeVolume) => updateMashHeader(autoStrikeVolume
-                            ? { autoStrikeVolume }
-                            : {
-                                autoStrikeVolume,
-                                steps: (draft.mashGuidelines?.steps ?? []).map((step, i) => i === 0
-                                  ? { ...step, amount: effective.mashGuidelines?.steps[0]?.amount ?? step.amount }
-                                  : step),
-                              })}
-                        />
-                      )}
-                    </div>
-                    <SelectField label="Unit" value={line.amountUnit} options={options(VOLUME_UNITS)} onChange={(amountUnit) => updateMashStep(index, { amountUnit })} />
-                    <Field label="Start temperature" value={line.startTemp} suffix="°C" onChange={(value) => updateMashStep(index, { startTemp: nullable(value) })} />
-                    <Field label="Target temperature" value={line.temp} suffix="°C" onChange={(value) => updateMashStep(index, { temp: nullable(value) })} />
-                    <Field label="Time" value={line.time} suffix="min" onChange={(time) => updateMashStep(index, { time })} />
-                    <SelectField label="Type" value={line.type || line.name} options={options(MASH_TYPES)} onChange={(type) => updateMashStep(index, { type, name: type })} />
-                    <Field label="Description" value={line.description} className="sm:col-span-2 lg:col-span-3" onChange={(description) => updateMashStep(index, { description })} />
+                    )}
                   </div>
-                </LineCard>
-              ))}
-              <label className="block text-xs font-medium text-zinc-400">
-                Mash notes
-                <textarea className={`${fieldClass} min-h-20 resize-y`} value={draft.mashGuidelines?.notes ?? ''} onChange={(event) => updateMashHeader({ notes: nullable(event.target.value) })} />
-              </label>
-            </div>
-          </EditorSection>
+                  <SelectField label="Unit" value={line.amountUnit} options={options(VOLUME_UNITS)} onChange={(amountUnit) => updateMashStep(index, { amountUnit })} />
+                  <Field label="Time" value={line.time} suffix="min" onChange={(time) => updateMashStep(index, { time })} />
+                  {/* Start, target, type: the row reads in the order the step
+                      happens — the water goes in at one temperature, settles
+                      at another, and that is what makes it a strike or a
+                      decoction. */}
+                  <Field label="Start temperature" value={line.startTemp} suffix="°C" onChange={(value) => updateMashStep(index, { startTemp: nullable(value) })} />
+                  <Field label="Target temperature" value={line.temp} suffix="°C" onChange={(value) => updateMashStep(index, { temp: nullable(value) })} />
+                  <SelectField label="Type" value={line.type || line.name} options={options(MASH_TYPES)} onChange={(type) => updateMashStep(index, { type, name: type })} />
+                  <Field label="Description" value={line.description} className="sm:col-span-2 lg:col-span-3" onChange={(description) => updateMashStep(index, { description })} />
+                </div>
+              </LineCard>
+            ))}
+            <label className="block text-xs font-medium text-zinc-400">
+              Mash notes
+              <textarea className={`${fieldClass} min-h-20 resize-y`} value={draft.mashGuidelines?.notes ?? ''} onChange={(event) => updateMashHeader({ notes: nullable(event.target.value) })} />
+            </label>
+          </div>
+        </EditorSection>
+
+        <EditorSection title="Water chemistry" icon="💧" meta={draft.waterProfile?.name ?? undefined} description="Source water, target profile, and target ion levels in ppm." {...section('water')}>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <SearchableSelect label="Source water" value={draft.waterProfile?.sourceName ?? ''} options={options(WATER_SOURCES)} onChange={(value) => updateWater({ sourceName: nullable(value) })} className="sm:col-span-2" />
+            <SearchableSelect label="Target water" value={draft.waterProfile?.name ?? ''} options={TARGET_PRESETS.map((preset) => ({ value: preset.name, description: preset.note }))} onChange={chooseWaterTarget} className="sm:col-span-2" />
+            <ReadOnlyField label="Estimated mash pH" value={calculation.mashPh} decimals={2} />
+            {waterFields.map(({ key, label }) => (
+              <Field key={key} label={label} value={draft.waterProfile?.[key]} suffix="ppm" onChange={(value) => updateWater({ [key]: nullable(value) })} />
+            ))}
+            <label className="block text-xs font-medium text-zinc-400 sm:col-span-2 lg:col-span-4">
+              Water notes
+              <textarea className={`${fieldClass} min-h-20 resize-y`} value={draft.waterProfile?.notes ?? ''} onChange={(event) => updateWater({ notes: nullable(event.target.value) })} />
+            </label>
+          </div>
+        </EditorSection>
+
+        <div className="sticky bottom-3 z-30 flex items-center justify-end gap-2 rounded-xl border border-zinc-700 bg-zinc-900/95 p-3 shadow-2xl backdrop-blur">
+          <button type="button" onClick={cancel} disabled={saving} className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50">
+            Cancel
+          </button>
+          <button type="submit" disabled={saving || !dirty} className="rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-4 py-2 text-sm font-semibold text-white shadow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save recipe'}
+          </button>
         </div>
+      </form>
 
-        <div className="space-y-4">
-          <EditorSection title="Hops" count={draft.hops.length} total={totalWeight(draft.hops, 'g') ?? undefined} onAdd={() => setDraft((d) => ({ ...d, hops: [...d.hops, blankHop()] }))}>
-            <div className="space-y-3">
-              {draft.hops.map((line, index) => (
-                <LineCard key={index} label={`Hop addition ${index + 1}`} onRemove={() => setDraft((d) => ({ ...d, hops: d.hops.filter((_, i) => i !== index) }))}>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-8">
-                    <Field label="Amount" value={line.amount} onChange={(amount) => updateHop(index, { amount })} />
-                    <SelectField label="Unit" value={line.unit} options={options(WEIGHT_UNITS)} onChange={(unit) => updateHop(index, { unit })} />
-                    <IngredientSearchSelect kind="hop" label="Hop" value={line.name} className="sm:col-span-2 lg:col-span-4" onChange={(name, option) => updateHop(index, { name, aa: option?.aa == null ? '' : String(option.aa) })} />
-                    <Field label="Alpha acid" value={line.aa} suffix="%" className="lg:col-span-2" onChange={(aa) => updateHop(index, { aa })} />
-                    <Field label={line.stage === 'Dry Hop' ? 'Contact time' : 'Time'} value={line.time} className="lg:col-span-2" onChange={(time) => updateHop(index, { time })} />
-                    <SelectField label="Time unit" value={line.timeUnit} options={[{ value: '', label: '—' }, { value: 'min', label: 'Minutes' }, { value: 'day', label: 'Days' }]} className="lg:col-span-2" onChange={(timeUnit) => updateHop(index, { timeUnit: timeUnit as RecipeHopEdit['timeUnit'] })} />
-                    <SelectField label="Form" value={line.form} options={options(HOP_FORMS)} className="lg:col-span-2" onChange={(form) => updateHop(index, { form })} />
-                    <SelectField label="Use" value={line.stage} options={options(HOP_STAGE_ORDER)} className="lg:col-span-2" onChange={(value) => {
-                      const stage = value as HopStage;
-                      updateHop(index, { stage, use: stage, timeUnit: stage === 'Dry Hop' ? 'day' : 'min' });
-                    }} />
-                    <ReadOnlyField label="IBU contribution" value={calculation.hopIbus[index]} decimals={2} className="lg:col-span-2" />
-                  </div>
-                </LineCard>
-              ))}
-              <Empty message="No hop additions" show={draft.hops.length === 0} />
-            </div>
-          </EditorSection>
-
-          <EditorSection title="Other ingredients" count={draft.otherIngredients.length} onAdd={() => setDraft((d) => ({ ...d, otherIngredients: [...d.otherIngredients, blankOther()] }))}>
-            <div className="space-y-3">
-              {draft.otherIngredients.map((line, index) => (
-                <LineCard key={index} label={`Ingredient ${index + 1}`} onRemove={() => setDraft((d) => ({ ...d, otherIngredients: d.otherIngredients.filter((_, i) => i !== index) }))}>
-                  <div className="grid gap-3 sm:grid-cols-6">
-                    <Field label="Amount" value={line.amount} onChange={(amount) => updateOther(index, { amount })} />
-                    <SelectField label="Unit" value={line.unit} options={options([...WEIGHT_UNITS, ...VOLUME_UNITS, ...COUNT_UNITS])} onChange={(unit) => updateOther(index, { unit })} />
-                    <IngredientSearchSelect kind="other" label="Ingredient" value={line.name} className="sm:col-span-4" onChange={(name) => updateOther(index, { name })} />
-                    <Field label="Time" value={line.time} onChange={(time) => updateOther(index, { time })} />
-                    <SelectField label="Time unit" value={line.timeUnit} options={[{ value: '', label: '—' }, { value: 'min', label: 'Minutes' }, { value: 'day', label: 'Days' }]} onChange={(timeUnit) => updateOther(index, { timeUnit: timeUnit as RecipeOtherIngredientEdit['timeUnit'] })} />
-                    <SelectField label="Type" value={line.type} options={options(OTHER_TYPES)} className="sm:col-span-2" onChange={(type) => updateOther(index, { type })} />
-                    <SelectField label="Use" value={line.use} options={options(OTHER_USES)} className="sm:col-span-2" onChange={(use) => updateOther(index, { use })} />
-                  </div>
-                </LineCard>
-              ))}
-              <Empty message="No other ingredients" show={draft.otherIngredients.length === 0} />
-            </div>
-          </EditorSection>
-
-          <EditorSection title="Water chemistry" description="Source water, target profile, and target ion levels in ppm.">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <SearchableSelect label="Source water" value={draft.waterProfile?.sourceName ?? ''} options={options(WATER_SOURCES)} onChange={(value) => updateWater({ sourceName: nullable(value) })} className="sm:col-span-2" />
-              <SearchableSelect label="Target water" value={draft.waterProfile?.name ?? ''} options={TARGET_PRESETS.map((preset) => ({ value: preset.name, description: preset.note }))} onChange={chooseWaterTarget} className="sm:col-span-2" />
-              <ReadOnlyField label="Estimated mash pH" value={calculation.mashPh} decimals={2} />
-              {waterFields.map(({ key, label }) => (
-                <Field key={key} label={label} value={draft.waterProfile?.[key]} suffix="ppm" onChange={(value) => updateWater({ [key]: nullable(value) })} />
-              ))}
-              <label className="block text-xs font-medium text-zinc-400 sm:col-span-2 lg:col-span-4">
-                Water notes
-                <textarea className={`${fieldClass} min-h-20 resize-y`} value={draft.waterProfile?.notes ?? ''} onChange={(event) => updateWater({ notes: nullable(event.target.value) })} />
-              </label>
-            </div>
-          </EditorSection>
-
-          <EditorSection title="Yeast" count={draft.yeast.length} onAdd={() => setDraft((d) => ({ ...d, yeast: [...d.yeast, blankYeast()] }))}>
-            <div className="space-y-3">
-              {draft.yeast.map((line, index) => (
-                <LineCard key={index} label={`Yeast ${index + 1}`} onRemove={() => setDraft((d) => ({ ...d, yeast: d.yeast.filter((_, i) => i !== index) }))}>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-                    <IngredientSearchSelect kind="yeast" label="Yeast / culture" value={line.name} className="sm:col-span-2 lg:col-span-4" onChange={(name) => updateYeast(index, { name })} />
-                    <Field label="Lab" value={line.lab} className="lg:col-span-2" onChange={(lab) => updateYeast(index, { lab })} />
-                    <Field label="Amount" value={line.amount} onChange={(amount) => updateYeast(index, { amount })} />
-                    <SelectField label="Unit" value={line.amountUnit} options={options([...COUNT_UNITS, ...WEIGHT_UNITS])} onChange={(amountUnit) => updateYeast(index, { amountUnit })} />
-                    <Field label="Attenuation" value={line.attenuation} suffix="%" onChange={(attenuation) => updateYeast(index, { attenuation })} />
-                    <SelectField label="Type" value={line.type} options={options(YEAST_TYPES)} onChange={(type) => updateYeast(index, { type })} />
-                    <SelectField label="Form" value={line.form} options={options(YEAST_FORMS)} onChange={(form) => updateYeast(index, { form })} />
-                    <SelectField label="Flocculation" value={line.flocculation} options={options(FLOCCULATION_OPTIONS)} onChange={(flocculation) => updateYeast(index, { flocculation })} />
-                    <Field label="Min temperature" value={line.minTempC} suffix="°C" type="number" step="any" onChange={(value) => updateYeast(index, { minTempC: nullableNumber(value) })} />
-                    <Field label="Max temperature" value={line.maxTempC} suffix="°C" type="number" step="any" onChange={(value) => updateYeast(index, { maxTempC: nullableNumber(value) })} />
-                    <Field label="Alcohol tolerance" value={line.alcoholTolerance} onChange={(alcoholTolerance) => updateYeast(index, { alcoholTolerance })} />
-                    <Check label="Starter required" checked={line.starter} className="self-end pb-2" onChange={(starter) => updateYeast(index, { starter })} />
-                  </div>
-                </LineCard>
-              ))}
-              <Empty message="No yeast" show={draft.yeast.length === 0} />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <SearchableSelect label="Pitch rate" value={draft.settings.pitchRate} options={options(PITCH_RATES)} onChange={(pitchRate) => updateSettings({ pitchRate })} />
-                <Field label="Fermentation temperature" value={draft.fermentationTemp} suffix="°C" onChange={(value) => setDraft((d) => ({ ...d, fermentationTemp: nullable(value) }))} />
-              </div>
-            </div>
-          </EditorSection>
+      {/* The numbers the sheet is being built towards, kept beside it rather
+          than in the stack: every one of them moves as an ingredient is typed,
+          and watching a gravity answer is half the reason for typing it. Sticky,
+          and allowed to scroll inside itself on a short window so the foot of
+          the card is never out of reach. */}
+      <aside className="w-full 2xl:sticky 2xl:top-5 2xl:max-h-[calc(100vh-2.5rem)] 2xl:w-80 2xl:shrink-0 2xl:overflow-y-auto">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+          <h2 className="flex items-center gap-2.5 text-sm font-semibold text-zinc-100">
+            <span aria-hidden>📊</span>
+            Recipe statistics
+          </h2>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            Live from the grain bill, volumes, hops and yeast. Mash pH is an estimate; the cost comes from the shop catalogue.
+          </p>
+          {/* Two across in the column, a wide row of tiles when the card is
+              stacked above the sheet — the same tiles either way, only the grid
+              changes. */}
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-2">
+            <CalculatedStat label="Pre-boil gravity" value={calculation.preBoilGravity} decimals={3} />
+            <CalculatedStat label="Post-boil gravity" value={calculation.postBoilGravity} decimals={3} />
+            <CalculatedStat label="Original gravity" value={calculation.originalGravity} decimals={3} />
+            <CalculatedStat label="Final gravity" value={calculation.finalGravity} decimals={3} />
+            <CalculatedStat label="ABV" value={calculation.abv} decimals={2} suffix="%" range={styleRange?.abv} compareToStyle />
+            <CalculatedStat label="IBU" value={calculation.ibu} decimals={1} range={styleRange?.ibu} compareToStyle />
+            {/* The colour that number means, which is what a brewer actually
+                pictures when reading an EBC. */}
+            <CalculatedStat label="EBC" value={calculation.ebc} decimals={1} range={styleRange?.ebc} compareToStyle swatch={ebcColor(calculation.ebc)} />
+            <CalculatedStat label="Mash pH estimate" value={calculation.mashPh} decimals={2} />
+            {/* What the batch costs to fill, beside what it's brewed to. The
+                amounts used rather than the packages bought: that's the figure
+                that belongs to this recipe, and the one every section title
+                adds up to. */}
+            <CostStat label="Ingredient cost" cost={cost} />
+            <CostStat label="Cost per litre" cost={cost} perLitre={draft.batchSizeL} />
+          </div>
         </div>
+      </aside>
       </div>
-
-      <div className="sticky bottom-3 z-30 flex items-center justify-end gap-2 rounded-xl border border-zinc-700 bg-zinc-900/95 p-3 shadow-2xl backdrop-blur">
-        <button type="button" onClick={cancel} disabled={saving} className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50">
-          Cancel
-        </button>
-        <button type="submit" disabled={saving || !dirty} className="rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-4 py-2 text-sm font-semibold text-white shadow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
-          {saving ? 'Saving…' : 'Save recipe'}
-        </button>
-      </div>
-    </form>
+    </div>
   );
 
   function updateFermentable(index: number, patch: Partial<RecipeFermentableEdit>): void {
     setDraft((d) => ({ ...d, fermentables: d.fermentables.map((line, i) => i === index ? { ...line, ...patch } : line) }));
+  }
+
+  /**
+   * Whether a line's catalogue figures are being protected. Off by default:
+   * an empty row, or one whose ingredient was typed rather than picked, has
+   * nothing the catalogue vouched for to protect.
+   */
+  function isLocked(kind: LockedLines, index: number): boolean {
+    return locked[kind][index] ?? false;
+  }
+
+  /**
+   * Lock a line the moment its ingredient is chosen from the catalogue, since
+   * that is when the fields fill themselves in. Typing a name by hand instead
+   * leaves it open — a custom malt's own numbers are the brewer's to enter.
+   */
+  function setLineLock(kind: LockedLines, index: number, value: boolean): void {
+    setLocked((current) => {
+      if ((current[kind][index] ?? false) === value) return current;
+      const next = [...current[kind]];
+      next[index] = value;
+      return { ...current, [kind]: next };
+    });
+  }
+
+  /** Keep the flags lined up with the rows when one is taken out of the middle. */
+  function dropLineLock(kind: LockedLines, index: number): void {
+    setLocked((current) => ({ ...current, [kind]: current[kind].filter((_, i) => i !== index) }));
   }
   function updateHop(index: number, patch: Partial<RecipeHopEdit>): void {
     setDraft((d) => ({ ...d, hops: d.hops.map((line, i) => i === index ? { ...line, ...patch } : line) }));
@@ -678,39 +1137,76 @@ function mashWith(draft: RecipeEditInput, patch: Partial<NonNullable<RecipeEditI
 }
 
 /**
- * One panel of the brew sheet, collapsible so a long recipe can be worked on a
- * section at a time. Every section opens expanded — a new recipe is a form to
- * fill in, and a form that starts folded up hides what still needs answering.
+ * The contents rail down the left of the sheet: one line per section, lit on
+ * whichever the page is scrolled to. A brew sheet is eight panels tall by the
+ * time it has a grain bill in it, and reaching the water chemistry from the
+ * fermentables shouldn't be a scroll.
+ *
+ * Hidden below `lg`, where the page has no width to give it and the sheet
+ * itself is what the screen is for — the same call the library reader's
+ * contents make on a phone.
  */
-function EditorSection({ title, description, count, total, onAdd, children }: { title: string; description?: string; count?: number; total?: string; onAdd?: () => void; children: React.ReactNode }): JSX.Element {
-  const [open, setOpen] = useState(true);
-  const bodyId = useId();
+function SectionRail({ here, onGo }: { here: EditorSectionKey | null; onGo: (key: EditorSectionKey) => void }): JSX.Element {
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-      <div className="flex items-start gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen((current) => !current)}
-          aria-expanded={open}
-          aria-controls={bodyId}
-          className="flex min-w-0 flex-1 items-start gap-2 text-left"
-        >
-          <span className={`mt-1 shrink-0 text-[10px] text-zinc-500 transition-transform ${open ? 'rotate-90' : ''}`} aria-hidden>▶</span>
-          <span className="min-w-0">
-            <h2 className="text-base font-semibold text-zinc-100">
-              {title}
-              {count != null && <span className="ml-2 font-normal text-zinc-500">{count}</span>}
-              {total && <span className="ml-2 font-normal text-zinc-500">{total}</span>}
-            </h2>
-            {description && <p className="mt-0.5 text-xs text-zinc-500">{description}</p>}
-          </span>
-        </button>
-        {/* Adding a row to a folded section would drop it out of sight, so it
-            unfolds first — the brewer asked to fill something in. */}
-        {onAdd && <button type="button" onClick={() => { setOpen(true); onAdd(); }} className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs font-semibold text-zinc-300 transition hover:bg-zinc-800">+ Add</button>}
+    <nav aria-label="Recipe sections" className="sticky top-5 hidden w-44 shrink-0 lg:block">
+      <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600">
+        Sections
       </div>
-      {open && <div id={bodyId} className="mt-3">{children}</div>}
-    </section>
+      {SECTION_RAIL.map(({ key, icon, label }) => {
+        const active = key === here;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onGo(key)}
+            title={label}
+            aria-current={active ? 'location' : undefined}
+            className={`mb-0.5 flex w-full items-center gap-2 border-l-2 py-1.5 pl-2.5 pr-2 text-left text-xs leading-snug transition ${
+              active
+                ? 'border-[#f87a68] font-medium text-zinc-200'
+                : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
+            }`}
+          >
+            <span aria-hidden className="shrink-0 text-[13px]">{icon}</span>
+            <span className="truncate">{label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** "3 steps" for a mash section's title, or nothing while it has none. */
+function mashStepMeta(steps: number | undefined): string | undefined {
+  return steps ? `${steps} step${steps === 1 ? '' : 's'}` : undefined;
+}
+
+/**
+ * One panel of the brew sheet being written — the same collapsible card the
+ * recipe page reads a saved sheet from, so a section is recognisably the same
+ * thing in both places, with the editor's "+ Add" in its header.
+ */
+function EditorSection({ id, title, icon, meta, metaTitle, description, open, onToggle, onAdd, children }: { id: string; title: string; icon: string; meta?: string; metaTitle?: string; description?: string; open: boolean; onToggle: () => void; onAdd?: () => void; children: React.ReactNode }): JSX.Element {
+  return (
+    <SheetSection
+      id={id}
+      title={title}
+      icon={icon}
+      meta={meta}
+      metaTitle={metaTitle}
+      description={description}
+      open={open}
+      onToggle={onToggle}
+      action={
+        // Adding a row to a folded section would drop it out of sight, so it
+        // unfolds first — the brewer asked to fill something in.
+        onAdd && (
+          <button type="button" onClick={() => { if (!open) onToggle(); onAdd(); }} className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs font-semibold text-zinc-300 transition hover:bg-zinc-800">+ Add</button>
+        )
+      }
+    >
+      <div className="p-4">{children}</div>
+    </SheetSection>
   );
 }
 
@@ -891,12 +1387,30 @@ function SubstyleEditor({ categories, hiddenSubstyles, onChange, className = '' 
   );
 }
 
-function LineCard({ label, onRemove, children }: { label: string; onRemove: () => void; children: React.ReactNode }): JSX.Element {
+function LineCard({ label, onRemove, locked, onToggleLock, children }: { label: string; onRemove: () => void; locked?: boolean; onToggleLock?: () => void; children: React.ReactNode }): JSX.Element {
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-950/35 p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{label}</span>
-        <button type="button" onClick={onRemove} className="rounded px-2 py-1 text-xs text-zinc-500 transition hover:bg-red-500/10 hover:text-red-300" aria-label={`Remove ${label}`}>Remove</button>
+        <div className="flex items-center gap-1">
+          {onToggleLock && (
+            <button
+              type="button"
+              onClick={onToggleLock}
+              aria-pressed={locked ?? false}
+              aria-label={`${locked ? 'Unlock' : 'Lock'} the catalogue figures on ${label}`}
+              title={locked
+                ? 'These figures came from the catalogue. Unlock to type your own.'
+                : 'Lock the catalogue figures so they cannot be changed by accident.'}
+              className={`rounded px-2 py-1 text-xs transition ${
+                locked ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300'
+              }`}
+            >
+              {locked ? '🔒 Locked' : '🔓 Unlocked'}
+            </button>
+          )}
+          <button type="button" onClick={onRemove} className="rounded px-2 py-1 text-xs text-zinc-500 transition hover:bg-red-500/10 hover:text-red-300" aria-label={`Remove ${label}`}>Remove</button>
+        </div>
       </div>
       {children}
     </div>
@@ -927,11 +1441,79 @@ function Field({ label, value, onChange, suffix, className = '', required = fals
   );
 }
 
+/**
+ * A low–high pair as the one thing it describes: a yeast's optimum temperature
+ * is a range, and two boxes asking for its ends separately read as two settings
+ * to decide rather than one figure to copy off the sachet.
+ *
+ * What is typed is kept as typed until the field is left, so a range can be
+ * written left to right — "18 –" parses to no maximum, and re-formatting it
+ * mid-keystroke would take the dash back out again.
+ */
+function RangeField({ label, min, max, onChange, suffix, placeholder, className = '', disabled = false }: { label: string; min: number | null; max: number | null; onChange: (min: number | null, max: number | null) => void; suffix?: string; placeholder?: string; className?: string; disabled?: boolean }): JSX.Element {
+  const [typed, setTyped] = useState<string | null>(null);
+  return (
+    <label className={`block text-xs font-medium text-zinc-400 ${className}`}>
+      {label}
+      <div className="relative">
+        <input
+          className={`${fieldClass} ${suffixPadding(suffix)} disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-400`}
+          value={typed ?? formatRange(min, max)}
+          placeholder={placeholder}
+          disabled={disabled}
+          onChange={(event) => {
+            setTyped(event.target.value);
+            const [low, high] = parseRange(event.target.value);
+            onChange(low, high);
+          }}
+          onBlur={() => setTyped(null)}
+        />
+        {suffix && <span className="pointer-events-none absolute inset-y-0 right-3 top-1 flex items-center text-xs text-zinc-600">{suffix}</span>}
+      </div>
+    </label>
+  );
+}
+
+function formatRange(min: number | null, max: number | null): string {
+  if (min == null && max == null) return '';
+  if (min == null) return `– ${max}`;
+  if (max == null || max === min) return String(min);
+  return `${min} – ${max}`;
+}
+
+/** "18 – 22", "18-22", "18 to 22" and "18 22" all read as the same range. */
+function parseRange(value: string): [number | null, number | null] {
+  const ends = /^\s*(-?[\d.,]+)?\s*(?:to|[–—-])?\s*(-?[\d.,]+)?\s*$/i.exec(value);
+  if (!ends) return [null, null];
+  return [nullableNumber(ends[1] ?? ''), nullableNumber(ends[2] ?? '')];
+}
+
+/** The producer's figures for a picked strain, as a patch for the pitch line. */
+function yeastFromStrain(spec: RecipeYeastSpec | null | undefined): Partial<RecipeYeastEdit> {
+  if (!spec) return {};
+  return {
+    ...(spec.lab ? { lab: spec.lab } : {}),
+    ...(spec.type ? { type: spec.type } : {}),
+    ...(spec.form ? { form: spec.form } : {}),
+    ...(spec.attenuation ? { attenuation: spec.attenuation } : {}),
+    ...(spec.flocculation ? { flocculation: spec.flocculation } : {}),
+    ...(spec.alcoholTolerance ? { alcoholTolerance: spec.alcoholTolerance } : {}),
+    ...(spec.minTempC != null || spec.maxTempC != null
+      ? { minTempC: spec.minTempC, maxTempC: spec.maxTempC }
+      : {}),
+  };
+}
+
 function ReadOnlyField({ label, value, decimals, suffix, className = '' }: { label: string; value: number | null | undefined; decimals: number; suffix?: string; className?: string }): JSX.Element {
   return (
     <label className={`block text-xs font-medium text-zinc-400 ${className}`}>
       {label}
-      <div className={`${fieldClass} flex min-h-[38px] items-center justify-between bg-zinc-900 text-zinc-200`}>
+      {/* Same grey a locked or disabled field wears — this one is never
+          editable at all, so it should never read as brighter than one that
+          merely can't be touched right now. `!` forces the override: this is a
+          plain div with no `:disabled` state to out-specificity fieldClass's
+          own bg-zinc-950, unlike the real inputs. */}
+      <div className={`${fieldClass} flex min-h-[38px] cursor-not-allowed items-center justify-between !bg-zinc-900 text-zinc-400`}>
         <span>{value == null ? '—' : value.toFixed(decimals)}</span>
         {suffix && <span className="text-xs text-zinc-600">{suffix}</span>}
       </div>
@@ -939,7 +1521,7 @@ function ReadOnlyField({ label, value, decimals, suffix, className = '' }: { lab
   );
 }
 
-function CalculatedStat({ label, value, decimals, suffix = '', range, compareToStyle = false }: { label: string; value: number | null; decimals: number; suffix?: string; range?: [number, number]; compareToStyle?: boolean }): JSX.Element {
+function CalculatedStat({ label, value, decimals, suffix = '', range, compareToStyle = false, swatch }: { label: string; value: number | null; decimals: number; suffix?: string; range?: [number, number]; compareToStyle?: boolean; /** Colour the figure stands for, shown as a dot beside it. */ swatch?: string | null }): JSX.Element {
   const status = value == null
     ? { text: 'Needs more inputs', className: 'text-zinc-500' }
     : !range
@@ -952,33 +1534,94 @@ function CalculatedStat({ label, value, decimals, suffix = '', range, compareToS
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2.5">
       <div className="text-[11px] font-medium text-zinc-500">{label}</div>
-      <div className="mt-0.5 text-xl font-semibold tabular-nums text-zinc-100">
-        {value == null ? '—' : value.toFixed(decimals)}
-        {value != null && suffix && <span className="ml-1 text-xs font-normal text-zinc-500">{suffix}</span>}
+      <div className="mt-0.5 flex items-center gap-2 text-xl font-semibold tabular-nums text-zinc-100">
+        <span>
+          {value == null ? '—' : value.toFixed(decimals)}
+          {value != null && suffix && <span className="ml-1 text-xs font-normal text-zinc-500">{suffix}</span>}
+        </span>
+        {swatch && (
+          <span
+            className="h-3.5 w-3.5 shrink-0 rounded-full"
+            style={{ backgroundColor: swatch }}
+            title={`${value?.toFixed(decimals)} EBC`}
+            aria-hidden
+          />
+        )}
       </div>
       {(compareToStyle || value == null) && <div className={`mt-1 text-[10px] ${status.className}`}>{status.text}</div>}
     </div>
   );
 }
 
-function SelectField({ label, value, options: choices, onChange, className = '' }: { label: string; value: string; options: Array<{ value: string; label?: string }>; onChange: (value: string) => void; className?: string }): JSX.Element {
+/**
+ * What the sheet costs, in the same row as what it's brewed to. Two figures out
+ * of one breakdown: the batch total, and — with a batch size to divide by — what
+ * that is per litre.
+ *
+ * The amounts used, not the packages to buy: buying a 100 g bag for a 30 g
+ * addition is a shopping decision, and pinning it to the recipe would make the
+ * cost jump every time an addition crossed a bag boundary. Coverage is stated
+ * rather than assumed: a total over a grain bill the shop doesn't stock has to
+ * say how much of itself is missing.
+ */
+function CostStat({ label, cost, perLitre }: { label: string; cost: RecipeCostBreakdown | null; perLitre?: number | null }): JSX.Element {
+  const total = cost?.cost;
+  const value = total == null || total.priced === 0 || (perLitre != null && perLitre <= 0)
+    ? null
+    : perLitre == null
+      ? kr(total.usedDkk, 0)
+      : kr(total.usedDkk / perLitre, 2);
+  const note = cost == null
+    ? 'Waiting for prices'
+    : !cost.pricing.available
+      ? 'No price catalogue'
+      : total && total.priced === 0
+        ? 'Nothing priced yet'
+        : perLitre != null && !(perLitre > 0)
+          ? 'Needs a batch size'
+          : total && total.unpriced > 0
+            ? `${total.unpriced} unpriced`
+            : null;
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2.5">
+      <div className="text-[11px] font-medium text-zinc-500">{label}</div>
+      <div className="mt-0.5 text-xl font-semibold tabular-nums text-zinc-100">{value ?? '—'}</div>
+      {note && (
+        <div className={`mt-1 text-[10px] ${value != null ? 'text-amber-300' : 'text-zinc-500'}`}>{note}</div>
+      )}
+    </div>
+  );
+}
+
+function SelectField({ label, value, options: choices, onChange, className = '', disabled = false }: { label: string; value: string; options: Array<{ value: string; label?: string }>; onChange: (value: string) => void; className?: string; disabled?: boolean }): JSX.Element {
   const all = choices.some((choice) => choice.value === value) || value === ''
     ? choices
     : [{ value }, ...choices];
   return (
     <label className={`block text-xs font-medium text-zinc-400 ${className}`}>
       {label}
-      <select className={fieldClass} value={value} onChange={(event) => onChange(event.target.value)}>
+      <select
+        className={`${fieldClass} disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-400`}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      >
         {all.map((choice) => <option key={choice.value} value={choice.value}>{choice.label ?? choice.value}</option>)}
       </select>
     </label>
   );
 }
 
-function Check({ label, checked, onChange, className = '', title }: { label: string; checked: boolean; onChange: (checked: boolean) => void; className?: string; title?: string }): JSX.Element {
+function Check({ label, checked, onChange, className = '', title, disabled = false }: { label: string; checked: boolean; onChange: (checked: boolean) => void; className?: string; title?: string; disabled?: boolean }): JSX.Element {
   return (
-    <label title={title} className={`mt-2 flex items-center gap-2 text-xs font-medium text-zinc-400 ${className}`}>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 rounded border-zinc-600 bg-zinc-950 accent-[#e95449]" />
+    <label title={title} className={`mt-2 flex items-center gap-2 text-xs font-medium ${disabled ? 'text-zinc-600' : 'text-zinc-400'} ${className}`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 rounded border-zinc-600 bg-zinc-950 accent-[#e95449] disabled:cursor-not-allowed disabled:opacity-50"
+      />
       {label}
     </label>
   );
@@ -995,7 +1638,7 @@ function blankHop(): RecipeHopEdit {
   return { name: '', amount: '', unit: 'g', use: 'Boil', stage: 'Boil', time: '', timeUnit: 'min', aa: '', ibu: '', form: 'Pellet', utilization: '', temp: '' };
 }
 function blankYeast(): RecipeYeastEdit {
-  return { name: '', lab: '', attenuation: '', amount: '1', amountUnit: 'pkg', type: 'Ale', form: 'Dry', flocculation: '', minTempC: null, maxTempC: null, alcoholTolerance: '', starter: false };
+  return { name: '', lab: '', attenuation: '', amount: '1', amountUnit: 'each', type: 'Ale', form: 'Dry', flocculation: '', minTempC: null, maxTempC: null, alcoholTolerance: '', starter: false };
 }
 function blankOther(): RecipeOtherIngredientEdit {
   return { name: '', amount: '', unit: 'g', use: 'Boil', time: '', timeUnit: 'min', type: 'Flavor' };

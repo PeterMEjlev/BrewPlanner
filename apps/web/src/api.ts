@@ -32,10 +32,12 @@ import type {
   MetricTotal,
   NotificationSettings,
   NowPlaying,
+  OutdoorTemperature,
   PriceOption,
   PriceOverrideInput,
   Reading,
   Recipe,
+  RecipeCostBreakdown,
   RecipeDetail,
   RecipeEditInput,
   RecipeImportResult,
@@ -359,6 +361,13 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(recipe),
     }),
+  // What the sheet in the editor costs as it stands. Saves nothing: the prices
+  // live in the server's catalogue, so an unsaved draft has to ask for them.
+  priceRecipe: (recipe: RecipeEditInput) =>
+    request<RecipeCostBreakdown>('/recipes/price', {
+      method: 'POST',
+      body: JSON.stringify(recipe),
+    }),
   deleteRecipe: (id: string) =>
     request<void>(`/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   importBrewersFriendRecipes: () =>
@@ -367,6 +376,10 @@ export const api = {
     request<RecipeIngredientOption[]>(
       `/recipes/catalog?${new URLSearchParams({ kind, q }).toString()}`,
     ),
+  // Today's daytime average outside — where a new recipe's grain temperature
+  // starts. Null whenever the weather service couldn't be reached.
+  getOutdoorTemperature: () =>
+    request<{ outdoor: OutdoorTemperature | null }>('/weather/outdoor').then((r) => r.outdoor),
   getActiveRecipe: () => request<ActiveRecipe>('/recipe').then((r) => r.recipe),
   setActiveRecipe: (recipe: Recipe) =>
     request<ActiveRecipe>('/recipe', {

@@ -20,6 +20,8 @@ import { DashboardShell } from '../components/DashboardShell';
 import { IngredientName, PriceCell } from '../components/PricePicker';
 import type { PricedLine } from '../components/PricePicker';
 import { RecipeEditor } from '../components/RecipeEditor';
+import { SheetSection } from '../components/SheetSection';
+import { kr } from '../money';
 import { invalidateRecipes, loadRecipeDetail } from '../recipeStore';
 import { asCleanMessage } from '../util';
 
@@ -104,18 +106,6 @@ function toG(amount: string, unit: string): number {
  * smell of anything.
  */
 const AROMA_STAGES: HopStage[] = ['Whirlpool', 'Dry Hop'];
-
-/**
- * Danish kroner. Small amounts keep øre (a 20.80 kr hop addition), totals round
- * to whole kroner — nobody cares about øre on a 1,247 kr batch, and the grouping
- * makes the figure readable at a glance.
- */
-function kr(amount: number, decimals = 2): string {
-  return `${amount.toLocaleString('en-GB', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })} kr`;
-}
 
 /** A section's cost for its header: "254 kr", plus a note when coverage is short. */
 function costMeta(cost: CostTotal): string {
@@ -323,7 +313,10 @@ export function RecipeDetailPage(): JSX.Element {
   if (editing) {
     return (
       <DashboardShell active="recipes">
-        <main className="w-full max-w-[1100px] px-5 py-5">
+        {/* Wider than the read view below: the editor spends this width on a
+            contents rail and a column of live statistics either side of the
+            sheet, not on the sheet itself. */}
+        <main className="w-full max-w-[1600px] px-5 py-5">
           <BackLink />
           <div className="mt-4 flex items-start justify-between gap-3">
             <div>
@@ -485,7 +478,7 @@ export function RecipeDetailPage(): JSX.Element {
 
         <div className="mt-4 space-y-3">
           {recipe.fermentables.length > 0 && totals && costs && (
-            <Section
+            <SheetSection
               title="Fermentables"
               icon="🌾"
               meta={[`${totals.grainKg.toFixed(2)} kg`, costMeta(costs.fermentables)]
@@ -504,11 +497,11 @@ export function RecipeDetailPage(): JSX.Element {
                   />
                 ))}
               </ul>
-            </Section>
+            </SheetSection>
           )}
 
           {recipe.hops.length > 0 && totals && costs && (
-            <Section
+            <SheetSection
               title="Hops"
               icon="🌿"
               meta={[
@@ -523,13 +516,13 @@ export function RecipeDetailPage(): JSX.Element {
               onToggle={() => toggle('hops')}
             >
               <HopSchedule hops={recipe.hops} editable={controllable} onChanged={reprice} />
-            </Section>
+            </SheetSection>
           )}
 
           {/* Fruit purées live here, and in a sour they can outweigh the grain
               bill in cost — so this section is costed like any other. */}
           {recipe.otherIngredients.length > 0 && costs && (
-            <Section
+            <SheetSection
               title="Other ingredients"
               icon="🧪"
               meta={[`${recipe.otherIngredients.length}`, costMeta(costs.other)]
@@ -548,11 +541,11 @@ export function RecipeDetailPage(): JSX.Element {
                   />
                 ))}
               </ul>
-            </Section>
+            </SheetSection>
           )}
 
           {recipe.yeast.length > 0 && costs && (
-            <Section
+            <SheetSection
               title="Yeast"
               icon="🧫"
               meta={costMeta(costs.yeast)}
@@ -569,11 +562,11 @@ export function RecipeDetailPage(): JSX.Element {
                   />
                 ))}
               </ul>
-            </Section>
+            </SheetSection>
           )}
 
           {recipe.mashGuidelines && (
-            <Section
+            <SheetSection
               title="Mash guidelines"
               icon="🌡️"
               meta={
@@ -626,11 +619,11 @@ export function RecipeDetailPage(): JSX.Element {
                   </li>
                 )}
               </ol>
-            </Section>
+            </SheetSection>
           )}
 
           {recipe.waterProfile && (
-            <Section
+            <SheetSection
               title="Water profile"
               icon="💧"
               meta={recipe.waterProfile.name ?? undefined}
@@ -638,7 +631,7 @@ export function RecipeDetailPage(): JSX.Element {
               onToggle={() => toggle('water')}
             >
               <WaterSection profile={recipe.waterProfile} recipe={recipe} />
-            </Section>
+            </SheetSection>
           )}
         </div>
       </main>
@@ -708,58 +701,6 @@ function Stat({
         )}
       </div>
     </div>
-  );
-}
-
-/** A collapsible block of the brew sheet. */
-function Section({
-  title,
-  icon,
-  meta,
-  metaTitle,
-  open,
-  onToggle,
-  children,
-}: {
-  title: string;
-  icon: string;
-  /** Summary shown next to the title (a total, a count, a profile name). */
-  meta?: string;
-  /** Tooltip explaining `meta` when the number needs a caveat. */
-  metaTitle?: string;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}): JSX.Element {
-  // Deliberately not `overflow-hidden`: an ingredient row's price picker is
-  // positioned against its own row and would be clipped at the section's edge.
-  // The header rounds its own corners instead, which is all the clipping did.
-  return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className={`flex w-full items-center gap-2.5 px-4 py-3 text-left transition hover:bg-zinc-800/50 ${
-          open ? 'rounded-t-xl' : 'rounded-xl'
-        }`}
-      >
-        <span aria-hidden>{icon}</span>
-        <span className="text-sm font-semibold text-zinc-100">{title}</span>
-        {meta && (
-          <span className="truncate text-xs text-zinc-500" title={metaTitle}>
-            {meta}
-          </span>
-        )}
-        <span
-          className={`ml-auto shrink-0 text-zinc-500 transition-transform ${open ? '' : '-rotate-90'}`}
-          aria-hidden
-        >
-          ⌄
-        </span>
-      </button>
-      {open && <div className="border-t border-zinc-800">{children}</div>}
-    </section>
   );
 }
 
