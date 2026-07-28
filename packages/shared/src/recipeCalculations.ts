@@ -1,4 +1,4 @@
-import type { RecipeEditInput, RecipeHopEdit } from './index.js';
+import type { HopStage, RecipeEditInput, RecipeHopEdit } from './index.js';
 
 export interface RecipeCalculationResult {
   originalGravity: number | null;
@@ -215,15 +215,63 @@ function tinsethUtilization(minutes: number, gravity: number): number {
   return 1.65 * Math.pow(0.000125, gravity - 1) * (1 - Math.exp(-0.04 * minutes)) / 4.15;
 }
 
+/**
+ * What a whirlpool charge is worth in bitterness when the addition says nothing
+ * about how it was held — a flat 5%, the figure Brewer's Friend uses for a
+ * hopstand of unstated length and temperature.
+ */
+const WHIRLPOOL_DEFAULT_UTILIZATION = 5;
+
+/**
+ * How many °C below boiling halves the rate at which alpha acid isomerises.
+ * Follows Malowicki's rate constants closely enough for a recipe sheet: a stand
+ * held at 80 °C extracts roughly a seventh of what the same time at a rolling
+ * boil would, which is why a big flame-out charge smells of hops without
+ * bittering like one.
+ */
+const WHIRLPOOL_HALVING_C = 7;
+
+/**
+ * The share of a whirlpool addition's alpha acid that isomerises, as a
+ * percentage — the one number that makes a hopstand's time and temperature
+ * matter.
+ *
+ * Three answers, in order of how much the recipe has said. A utilization typed
+ * on the addition is the brewer's own measurement and wins outright. A stand
+ * with both a time and a temperature is worked out: Tinseth for the contact
+ * time, scaled down for the heat that isn't there. An addition that states
+ * neither keeps the flat figure the app has always used, so an imported sheet's
+ * IBUs don't move the day this got smarter.
+ */
+function whirlpoolUtilization(hop: RecipeHopEdit, boilGravity: number): number {
+  const stated = recipeNumber(hop.utilization);
+  if (stated != null && stated >= 0) return stated;
+  // A hopstand is timed in minutes; anything measured in days is a dry hop
+  // filed under the wrong stage, and reading "3" off it as 3 minutes would
+  // quietly bitter the beer.
+  const minutes = hop.timeUnit === 'day' ? null : recipeNumber(hop.time);
+  const temp = recipeNumber(hop.temp);
+  if (minutes == null || minutes <= 0 || temp == null) return WHIRLPOOL_DEFAULT_UTILIZATION;
+  // Never above a boil's own rate: a whirlpool "at 105 °C" is a misread
+  // thermometer, not extra bitterness.
+  const heat = Math.min(1, Math.pow(2, (temp - 100) / WHIRLPOOL_HALVING_C));
+  return tinsethUtilization(minutes, boilGravity) * 100 * heat;
+}
+
 function hopIbu(recipe: RecipeEditInput, hop: RecipeHopEdit, boilGravity: number): number | null {
   const grams = weightGrams(hop.amount, hop.unit);
   const alpha = recipeNumber(hop.aa);
-  const batchLitres = recipe.settings.boilSizePostL ?? recipe.batchSizeL;
+  // Bitterness is a concentration in the finished beer, so the isomerised alpha
+  // is diluted into the batch — not into the kettle. Dividing by the post-boil
+  // volume instead charged the recipe for the trub the hops never leave with,
+  // which read every batch a few percent less bitter than it pours. Post-boil
+  // only stands in when there is no batch size to work from.
+  const batchLitres = recipe.batchSizeL ?? recipe.settings.boilSizePostL;
   if (grams == null || alpha == null || batchLitres == null || batchLitres <= 0) return null;
   if (hop.stage === 'Dry Hop' || hop.stage === 'Other') return 0;
 
   if (hop.stage === 'Whirlpool') {
-    const utilization = 5;
+    const utilization = whirlpoolUtilization(hop, boilGravity);
     return grams * (alpha / 100) * (utilization / 100) * 1000 / batchLitres;
   }
 
@@ -420,6 +468,179 @@ export function calculateRecipe(recipe: RecipeEditInput): RecipeCalculationResul
     mashPh: recipeMashPh(recipe, fermentablePercents),
     hopIbus,
     fermentablePercents,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Aroma hopping rate
+// ---------------------------------------------------------------------------
+
+/**
+ * The stages that actually put aroma in the beer. Boil (and mash/first-wort)
+ * additions are left out of the hop-rate figure — that number describes aroma
+ * intensity, and a big bittering charge would inflate it without making the
+ * beer smell of anything.
+ */
+export const AROMA_HOP_STAGES: HopStage[] = ['Whirlpool', 'Dry Hop'];
+
+/**
+ * Grams of aroma hops per litre of batch — the brewery's shorthand for how
+ * hoppy a beer smells, and the figure a hazy IPA is actually written to. Null
+ * without a batch size to divide by, or before any aroma addition has a weight:
+ * a rate of zero would read as a decision rather than as an empty sheet.
+ */
+export function aromaHopRate(
+  hops: Array<{ amount: string; unit: string; stage: HopStage }>,
+  batchSizeL: number | null,
+): number | null {
+  if (batchSizeL == null || batchSizeL <= 0) return null;
+  const grams = hops
+    .filter((hop) => AROMA_HOP_STAGES.includes(hop.stage))
+    .reduce((sum, hop) => sum + (weightGrams(hop.amount, hop.unit) ?? 0), 0);
+  return grams > 0 ? grams / batchSizeL : null;
+}
+
+// ---------------------------------------------------------------------------
+// How long fermentation will take
+// ---------------------------------------------------------------------------
+
+/** The strain families that ferment on visibly different clocks. */
+export type YeastFamily = 'ale' | 'lager' | 'kveik' | 'mixed';
+
+/**
+ * How each family behaves: how long it takes a 1.050 wort to reach terminal
+ * gravity at the temperature it is usually held at.
+ *
+ * The reference temperature is not the strain's optimum — it is the temperature
+ * the base figure was measured at, which is what makes the Q10 scaling below
+ * mean anything. Kveik is the outlier in both columns: pitched at 30 °C it can
+ * be done in two days, which is the whole reason brewers keep it.
+ */
+const YEAST_FAMILIES: Record<YeastFamily, { days: number; refC: number; label: string }> = {
+  ale: { days: 5, refC: 20, label: 'Ale yeast' },
+  lager: { days: 14, refC: 11, label: 'Lager yeast' },
+  kveik: { days: 3, refC: 30, label: 'Kveik' },
+  // Brett, lacto and the blended cultures: primary is the quick part, and the
+  // beer is not finished when it stops bubbling.
+  mixed: { days: 60, refC: 20, label: 'Mixed culture' },
+};
+
+const KVEIK = /kveik|voss|hornindal|lutra|opshaug|framgarden|ebbegarden|sigmund|hothead|oslo/i;
+const MIXED = /brett|sour|lacto|pedio|brux|wild|mixed|philly|funk/i;
+const LAGER = /lager|pilsner yeast|w-?34\/?70|s-?23|s-?189|diamond|augustiner|urquell/i;
+
+/** Which clock a pitch runs on, from what the recipe says about the strain. */
+function yeastFamily(yeast: { name: string; type: string }): YeastFamily {
+  const said = `${yeast.type} ${yeast.name}`;
+  if (KVEIK.test(said)) return 'kveik';
+  if (MIXED.test(said)) return 'mixed';
+  if (LAGER.test(said)) return 'lager';
+  return 'ale';
+}
+
+/** What a recipe's pitch is expected to do, and how long it will take doing it. */
+export interface FermentationEstimate {
+  /** Days to terminal gravity — the middle of the range below. */
+  days: number;
+  /** The spread worth planning around; a hydrometer still has the last word. */
+  minDays: number;
+  maxDays: number;
+  /** The temperature the estimate was made at, °C. */
+  temperatureC: number;
+  /** True when that temperature came from the strain rather than the recipe. */
+  temperatureAssumed: boolean;
+  family: YeastFamily;
+  /** One line saying what drove the figure, for the readout's tooltip. */
+  note: string;
+}
+
+/** The middle of a strain's stated range, when the recipe names no temperature. */
+function optimumTemp(yeast: { minTempC: number | null; maxTempC: number | null }): number | null {
+  if (yeast.minTempC != null && yeast.maxTempC != null) return (yeast.minTempC + yeast.maxTempC) / 2;
+  return yeast.minTempC ?? yeast.maxTempC;
+}
+
+/** Gravity the base figures are quoted at. */
+const REFERENCE_OG_POINTS = 50;
+
+/**
+ * Roughly how many days the primary fermentation will take: the strain, the
+ * temperature it's held at, and how much sugar it has to get through.
+ *
+ * Three things move it, each the way brewers already talk about them:
+ *
+ * - **The strain.** A lager at 11 °C is a fortnight where an ale at 20 °C is
+ *   under a week, and kveik at 30 °C is a long weekend.
+ * - **The temperature.** Yeast follows the usual rule of thumb for reaction
+ *   rates — about twice as fast for every 10 °C — so the same beer fermented
+ *   cool takes proportionally longer. Clamped either side, because a strain
+ *   held far outside its range stalls rather than continuing the curve.
+ * - **The gravity.** More sugar is more work, and a big beer also stresses the
+ *   yeast doing it, so the figure grows a little faster than linearly.
+ *
+ * This is a planning number for "when is the fermenter free", not a substitute
+ * for two matching hydrometer readings — which is why it comes with a range and
+ * a note rather than a single confident day count. Null when the sheet names no
+ * yeast at all: with nothing pitched there is nothing to estimate.
+ */
+export function estimateFermentationDays(input: {
+  /**
+   * Original gravity, e.g. 1.062 — as a number, or as a recipe writes it. Null
+   * (or unreadable) falls back to a 1.050 wort.
+   */
+  og: number | string | null;
+  /**
+   * The recipe's fermentation temperature — "18", "18 °C" or the number. Null
+   * falls back to the strain's own range.
+   */
+  temperatureC: number | string | null;
+  yeast: Array<{ name: string; type: string; minTempC: number | null; maxTempC: number | null }>;
+}): FermentationEstimate | null {
+  const pitched = input.yeast.filter((line) => line.name.trim() !== '');
+  if (pitched.length === 0) return null;
+  // The slowest pitch decides: a mixed-fermentation beer is not done when its
+  // sacch is, and a co-pitch is finished when the last strain is.
+  const families = pitched.map(yeastFamily);
+  const family = (['mixed', 'lager', 'ale', 'kveik'] as YeastFamily[]).find((candidate) =>
+    families.includes(candidate),
+  ) ?? 'ale';
+  const profile = YEAST_FAMILIES[family];
+
+  const stated = recipeNumber(input.temperatureC);
+  const assumed = stated == null;
+  const temperatureC = stated
+    ?? pitched.map(optimumTemp).find((value): value is number => value != null)
+    ?? profile.refC;
+
+  // Q10 = 2: every 10 °C below the reference roughly doubles the time, and
+  // every 10 above roughly halves it. Bounded because the relationship stops
+  // holding at the edges — a strain pushed far past its range doesn't finish in
+  // an afternoon, and one chilled far below it stalls rather than merely
+  // slowing.
+  const heat = Math.min(4, Math.max(0.35, Math.pow(2, (profile.refC - temperatureC) / 10)));
+
+  const og = recipeNumber(input.og);
+  const points = og == null ? REFERENCE_OG_POINTS : Math.max(1, (og - 1) * 1000);
+  const work = Math.min(3, Math.max(0.6, Math.pow(points / REFERENCE_OG_POINTS, 0.8)));
+
+  const days = Math.max(1, Math.round(profile.days * heat * work));
+  return {
+    days,
+    minDays: Math.max(1, Math.round(days * 0.7)),
+    maxDays: Math.max(2, Math.ceil(days * 1.4)),
+    temperatureC,
+    temperatureAssumed: assumed,
+    family,
+    note: [
+      `${profile.label} at ${Math.round(temperatureC)} °C`,
+      assumed ? '(the strain’s own range — the recipe names no fermentation temperature)' : null,
+      og == null ? 'on an assumed 1.050 wort' : `on a ${og.toFixed(3)} wort`,
+      '— time to terminal gravity, before any diacetyl rest, cold crash or conditioning.',
+      family === 'mixed' ? 'A mixed culture keeps working for months after that.' : null,
+      'Confirm with two matching hydrometer readings.',
+    ]
+      .filter(Boolean)
+      .join(' '),
   };
 }
 

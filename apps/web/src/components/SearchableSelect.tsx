@@ -292,6 +292,7 @@ export function IngredientSearchSelect({
   className,
   required = true,
   disabled = false,
+  catalogueOnly = false,
 }: {
   kind: IngredientKind;
   label: string;
@@ -300,6 +301,12 @@ export function IngredientSearchSelect({
   className?: string;
   required?: boolean;
   disabled?: boolean;
+  /**
+   * Offer the shop's listings only, leaving out what past recipes have called
+   * for. What a recipe already contains is a fine suggestion while editing it;
+   * a blank sheet is better filled from what can actually be bought.
+   */
+  catalogueOnly?: boolean;
 }): JSX.Element {
   const [search, setSearch] = useState<string | null>(null);
   const [options, setOptions] = useState<SearchableOption[]>([]);
@@ -311,7 +318,7 @@ export function IngredientSearchSelect({
     let cancelled = false;
     setLoading(true);
     const timer = window.setTimeout(() => {
-      void api.searchRecipeIngredients(kind, search)
+      void api.searchRecipeIngredients(kind, search, { catalogueOnly })
         .then((results) => {
           if (cancelled) return;
           setOptions(results.map((option) => {
@@ -351,7 +358,7 @@ export function IngredientSearchSelect({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [kind, search]);
+  }, [kind, search, catalogueOnly]);
 
   const sorted = useMemo(
     () => (kind === 'yeast' ? sortYeastOptions(options, sort) : options),

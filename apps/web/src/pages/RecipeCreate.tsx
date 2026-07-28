@@ -1,10 +1,16 @@
 import { DEFAULT_RECIPE_SETTINGS } from '@checklist/shared';
-import type { OutdoorTemperature, RecipeDetail, RecipeEditInput } from '@checklist/shared';
+import type {
+  OutdoorTemperature,
+  RecipeDefaults,
+  RecipeDetail,
+  RecipeEditInput,
+} from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { DashboardShell } from '../components/DashboardShell';
-import { DEFAULT_MASH_THICKNESS_L_PER_KG, defaultFirstMashStep, RecipeEditor } from '../components/RecipeEditor';
+import { defaultFirstMashStep, RecipeEditor } from '../components/RecipeEditor';
+import { useRecipeDefaults } from '../recipeDefaults';
 import { invalidateRecipes } from '../recipeStore';
 import { asCleanMessage } from '../util';
 
@@ -75,17 +81,40 @@ const EMPTY_RECIPE: RecipeDetail = {
     price: null,
   }],
   otherIngredients: [],
-  mashGuidelines: {
-    startingThicknessLPerKg: DEFAULT_MASH_THICKNESS_L_PER_KG,
-    grainTempC: null,
-    autoStrikeVolume: true,
-    steps: [defaultFirstMashStep()],
-    notes: null,
-  },
+  mashGuidelines: null,
   waterProfile: null,
   pricing: { currency: 'DKK', lastChecked: '', source: '', available: false },
   cost: { usedDkk: 0, buyDkk: 0, priced: 0, unpriced: 0, purchase: [] },
 };
+
+/**
+ * The blank sheet as the brewhouse writes it: the empty rows above, with every
+ * figure a recipe *starts* from taken from the Recipes settings rather than
+ * from this file. Only the opening draft — once the brewer changes a volume
+ * here it belongs to the recipe, and later editing the setting won't move it.
+ */
+function blankRecipe(defaults: RecipeDefaults, grainTempC: number | null): RecipeDetail {
+  return {
+    ...EMPTY_RECIPE,
+    batchSizeL: defaults.batchSizeL,
+    settings: {
+      ...EMPTY_RECIPE.settings,
+      batchTarget: defaults.batchTarget,
+      boilTimeMinutes: defaults.boilTimeMinutes,
+      efficiencyPercent: defaults.efficiencyPercent,
+      boilOffLPerHour: defaults.boilOffLPerHour,
+      trubChillerLossL: defaults.trubChillerLossL,
+      pitchRate: defaults.pitchRate,
+    },
+    mashGuidelines: {
+      startingThicknessLPerKg: defaults.mashThicknessLPerKg,
+      grainTempC,
+      autoStrikeVolume: true,
+      steps: [defaultFirstMashStep(defaults)],
+      notes: null,
+    },
+  };
+}
 
 /**
  * The temperature the grain is assumed to start at, looked up once per page
@@ -124,12 +153,11 @@ export function RecipeCreatePage(): JSX.Element {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const outdoor = useOutdoorTemperature();
-  const blank = useMemo<RecipeDetail>(() => ({
-    ...EMPTY_RECIPE,
-    mashGuidelines: EMPTY_RECIPE.mashGuidelines
-      ? { ...EMPTY_RECIPE.mashGuidelines, grainTempC: outdoor.reading?.temperatureC ?? null }
-      : null,
-  }), [outdoor.reading]);
+  const defaults = useRecipeDefaults();
+  const blank = useMemo<RecipeDetail>(
+    () => blankRecipe(defaults, outdoor.reading?.temperatureC ?? null),
+    [defaults, outdoor.reading],
+  );
 
   async function create(recipe: RecipeEditInput): Promise<void> {
     if (saving) return;
@@ -161,6 +189,10 @@ export function RecipeCreatePage(): JSX.Element {
             error={error}
             onSave={create}
             onCancel={() => navigate('/recipes')}
+            // A blank sheet is filled from the shop: the ingredient pickers
+            // offer Humlecentralen's catalogue only, not the names older
+            // recipes happened to use — those can be neither priced nor bought.
+            catalogueOnly
           />
         ) : (
           <p className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-6 text-sm text-zinc-500">

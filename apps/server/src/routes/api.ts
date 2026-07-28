@@ -17,12 +17,14 @@ import {
   priceSearchQuerySchema,
   reorderStepsSchema,
   reorderTodosSchema,
+  recipeDefaultsSchema,
   recipeDraftSchema,
   recipeEditSchema,
   recipeIngredientCatalogQuerySchema,
   setActiveRecipeSchema,
   stepIdParamSchema,
   sumCost,
+  unpricedIngredients,
   updateChecklistSchema,
   updateKegSchema,
   updateStepSchema,
@@ -39,6 +41,7 @@ import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
 import * as prices from '../prices.js';
 import { pricingInfo } from '../prices.js';
 import { deleteOverride as deletePriceOverride, saveOverride as savePriceOverride } from '../priceOverrides.js';
+import { recipeBackupStatus, runRecipeBackup } from '../recipeBackup.js';
 import { hydrateRecipe } from '../recipeData.js';
 import { ensureInitialRecipeImport, importFromBrewersFriend } from '../recipeImport.js';
 import * as recipeRepo from '../recipeRepo.js';
@@ -314,6 +317,13 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     pricing: pricingInfo(),
   }));
 
+  // --- Recipe backups -----------------------------------------------------
+  // What the nightly backup last did, and a way to take one now. The manual run
+  // is an admin action because it publishes the whole library to Drive.
+  app.get('/recipes/backup', async () => recipeBackupStatus());
+
+  app.post('/recipes/backup', adminOnly, async (req) => runRecipeBackup('manual', req.log));
+
   app.get('/recipes/catalog', async (req, reply) => {
     const query = parse(recipeIngredientCatalogQuerySchema, req.query, reply);
     if (!query) return;
@@ -339,13 +349,18 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         // and ferments at comes from the producer's own figures.
         yeast: query.kind === 'yeast' ? yeastSpecFor(option.label) : null,
       })),
-      ...recipeRepo
-        .listRecipeIngredientOptions(query.kind, query.q ?? '')
-        .map((option) =>
-          query.kind === 'yeast'
-            ? { ...option, yeast: yeastSpecFor(option.name, option.yeast) }
-            : option,
-        ),
+      // What past recipes have called for — dropped when the caller asked for
+      // the shop only (a new recipe, which should be written from what can
+      // actually be bought and priced).
+      ...(query.catalogueOnly === 'true'
+        ? []
+        : recipeRepo
+            .listRecipeIngredientOptions(query.kind, query.q ?? '')
+            .map((option) =>
+              query.kind === 'yeast'
+                ? { ...option, yeast: yeastSpecFor(option.name, option.yeast) }
+                : option,
+            )),
     ];
     const attenuation = (option: { yeast?: { attenuation: string } | null }) => {
       const parsed = Number.parseFloat(option.yeast?.attenuation ?? '');
@@ -404,6 +419,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       other: sumCost(priced.otherIngredients),
       cost: priced.cost,
       pricing: priced.pricing,
+      // Which ingredients the total is missing, so the editor can offer to
+      // price them rather than only report that something is unpriced.
+      unpricedLines: unpricedIngredients(priced),
     };
   });
 
@@ -614,6 +632,16 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // --- Keg content colours ---------------------------------------------
   // The shared keg/beer palette used by `/api/kegs` (including Garmin) and the
   // web inventory views.
+  // The figures a blank brew sheet opens on. Readable by anyone who can see the
+  // recipes; changing what every future recipe starts from is an admin action.
+  app.get('/recipe-defaults', async () => repo.getRecipeDefaults());
+
+  app.put('/recipe-defaults', adminOnly, async (req, reply) => {
+    const body = parse(recipeDefaultsSchema, req.body, reply);
+    if (!body) return;
+    return repo.setRecipeDefaults(body);
+  });
+
   app.get('/keg-content-colors', async () => repo.getKegContentColors());
 
   app.put('/keg-content-colors', adminOnly, async (req, reply) => {

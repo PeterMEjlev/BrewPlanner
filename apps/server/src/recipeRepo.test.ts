@@ -167,7 +167,10 @@ test('recipe statistics are calculated from the brewing inputs', () => {
       utilization: '',
     }],
   });
-  assert.ok(whirlpool.hopIbus[0] != null && Math.abs(whirlpool.hopIbus[0] - 11.9048) < 0.001);
+  // 50 g at 10% alpha, the flat 5% whirlpool utilization, into the 20 L batch:
+  // 50 × 0.10 × 0.05 × 1000 / 20. The divisor is the batch rather than the 21 L
+  // post-boil volume — bitterness is a concentration in the finished beer.
+  assert.ok(whirlpool.hopIbus[0] != null && Math.abs(whirlpool.hopIbus[0] - 12.5) < 0.001);
 });
 
 test('recipe library supports local CRUD and non-destructive legacy imports', async () => {

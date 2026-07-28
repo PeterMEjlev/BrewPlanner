@@ -4,10 +4,6 @@
 - Water Calculator page: review if water calc math is correct
 
 
-- add relevant values / settings from new recipe page to settings (in a new section called recipes)
-
-
-- Recipe page: Backup all recipes (once every day) into a suitable file format into: https://drive.google.com/drive/folders/1wYK4s0UCvFI7rQF_WoqhD-Q6DSd03NUC?usp=sharing. also add a manual "backup now" button.
 
 - ## Add support for
   - Electricity (Watt) usage

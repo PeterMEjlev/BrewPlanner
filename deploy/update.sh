@@ -67,8 +67,42 @@ write_status running
 
 echo "==> BrewPlanner update in: $REPO_DIR"
 
-echo "==> git pull (fast-forward only)"
-git pull --ff-only
+echo "==> git fetch"
+git fetch
+
+# Nothing under the repo on the Pi is authored there — it is a deploy checkout,
+# not a workspace. But files do get pasted in by hand (a knowledge doc, a config
+# scratch copy), and if a later commit adds that same path, git refuses to
+# overwrite the untracked copy and the ENTIRE deploy aborts before the build.
+# So: move any untracked file that the incoming commits would clobber into a
+# timestamped backup beside the DB, then let the fast-forward proceed.
+UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+if [ -n "$UPSTREAM" ]; then
+  echo "==> checking for untracked files in the way of $UPSTREAM"
+  BACKUP_DIR="$DATA_DIR/update-backups/$(date -u +%Y%m%dT%H%M%SZ)"
+  # Only ADDED paths can collide: a path upstream merely modifies was already
+  # tracked at HEAD, so the local file there is tracked too, not untracked.
+  # -z + read -d '' keeps paths with spaces/unicode intact.
+  while IFS= read -r -d '' path; do
+    [ -e "$path" ] || continue
+    if git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+      continue  # tracked: git handles it
+    fi
+    mkdir -p "$BACKUP_DIR/$(dirname "$path")"
+    mv "$path" "$BACKUP_DIR/$path"
+    echo "    moved untracked $path -> $BACKUP_DIR/$path"
+  done < <(git diff -z --name-only --diff-filter=A --no-renames "HEAD..$UPSTREAM")
+fi
+
+echo "==> git merge (fast-forward only)"
+if [ -n "$UPSTREAM" ]; then
+  # Merge the exact ref we just scanned, rather than re-fetching and possibly
+  # fast-forwarding onto commits that arrived after the check above.
+  git merge --ff-only "$UPSTREAM"
+else
+  echo "    (no upstream configured for this branch — falling back to git pull)"
+  git pull --ff-only
+fi
 
 echo "==> npm install"
 npm install

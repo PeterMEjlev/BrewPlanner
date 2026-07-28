@@ -69,6 +69,47 @@ export function listRecipeStats(): RecipeStats[] {
   return listRecipeDetails().map(recipeStats);
 }
 
+/**
+ * Every stored recipe as the sheet the brewer wrote, with the identity it was
+ * saved under — what a backup holds, and what restoring one would replay.
+ *
+ * The editable sheet rather than the hydrated detail: prices and gram weights
+ * are worked out from the shop catalogue on every read, so backing them up
+ * would store today's prices as though they were part of the recipe.
+ *
+ * A row whose stored JSON no longer parses is reported rather than thrown on:
+ * one unreadable recipe must not be the reason the other forty go un-backed-up.
+ */
+export function listRecipeBackups(): { entries: RecipeBackupEntry[]; unreadable: string[] } {
+  const entries: RecipeBackupEntry[] = [];
+  const unreadable: string[] = [];
+  for (const row of db.select().from(recipes).orderBy(desc(recipes.createdAt)).all()) {
+    try {
+      entries.push({
+        id: row.id,
+        origin: row.origin === 'brewersfriend' ? 'brewersfriend' : 'local',
+        url: row.brewersFriendUrl,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        recipe: rowInput(row),
+      });
+    } catch {
+      unreadable.push(row.id);
+    }
+  }
+  return { entries, unreadable };
+}
+
+/** One recipe in a backup file: its identity, and the sheet itself. */
+export interface RecipeBackupEntry {
+  id: string;
+  origin: RecipeOrigin;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  recipe: RecipeEditInput;
+}
+
 /** Ingredients already used in this library, including brewing metadata for the comboboxes. */
 export function listRecipeIngredientOptions(
   kind: IngredientKind,

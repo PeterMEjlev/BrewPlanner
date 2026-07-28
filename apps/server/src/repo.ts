@@ -10,6 +10,7 @@ import type {
   KegContentColors,
   NotificationSettings,
   Recipe,
+  RecipeDefaults,
   Step,
   Todo,
 } from '@checklist/shared';
@@ -18,6 +19,7 @@ import {
   DEFAULT_GRAPH_COLORS,
   DEFAULT_KEG_CONTENT_COLORS,
   DEFAULT_NOTIFICATION_SETTINGS,
+  DEFAULT_RECIPE_DEFAULTS,
 } from '@checklist/shared';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from './db/index.js';
@@ -352,6 +354,7 @@ const NOTIFY_SETTINGS_KEY = 'notify_settings';
 const GRAPH_COLORS_KEY = 'graph_colors';
 const KEG_CONTENT_COLORS_KEY = 'keg_content_colors';
 const DEVICE_SOURCES_KEY = 'device_sources';
+const RECIPE_DEFAULTS_KEY = 'recipe_defaults';
 
 /** Upsert a key-value setting (exported for the notification dedup markers). */
 export function setSetting(key: string, value: string): void {
@@ -426,6 +429,27 @@ export function getKegContentColors(): KegContentColors {
 export function setKegContentColors(c: KegContentColors): KegContentColors {
   setSetting(KEG_CONTENT_COLORS_KEY, JSON.stringify(c));
   return c;
+}
+
+/**
+ * The figures a blank brew sheet opens on, merged over the brewery's own so a
+ * partial or older stored blob still yields every key. Read by the new-recipe
+ * page and edited from the desktop Settings page; shared by every screen,
+ * because they describe the brewhouse rather than the browser.
+ */
+export function getRecipeDefaults(): RecipeDefaults {
+  const raw = getSetting(RECIPE_DEFAULTS_KEY);
+  if (!raw) return DEFAULT_RECIPE_DEFAULTS;
+  try {
+    return { ...DEFAULT_RECIPE_DEFAULTS, ...(JSON.parse(raw) as Partial<RecipeDefaults>) };
+  } catch {
+    return DEFAULT_RECIPE_DEFAULTS;
+  }
+}
+
+export function setRecipeDefaults(d: RecipeDefaults): RecipeDefaults {
+  setSetting(RECIPE_DEFAULTS_KEY, JSON.stringify(d));
+  return d;
 }
 
 /**

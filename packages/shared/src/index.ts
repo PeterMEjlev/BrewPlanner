@@ -186,6 +186,115 @@ export const DEFAULT_RECIPE_SETTINGS: RecipeSettings = {
 };
 
 /**
+ * The figures a blank brew sheet opens on (GET/PUT /api/recipe-defaults).
+ *
+ * Server-shared rather than per-browser: these describe the brewhouse, not the
+ * screen looking at it. The kettle boils off what it boils off whether the
+ * recipe is being written on the kiosk, a laptop or the phone, so all three
+ * should start a new recipe on the same numbers.
+ *
+ * Only what a *new* recipe starts from. Changing them never touches a recipe
+ * already saved — a sheet keeps the volumes and efficiency it was brewed to.
+ */
+export interface RecipeDefaults {
+  /** Litres into the fermenter — this brewery's usual batch. */
+  batchSizeL: number;
+  /** Whether the batch size means the fermenter or the kettle. */
+  batchTarget: string;
+  boilTimeMinutes: number;
+  /** Brewhouse efficiency %, what the mash is expected to actually extract. */
+  efficiencyPercent: number;
+  /** Litres the kettle drives off per hour — see {@link autoBoilVolumes}. */
+  boilOffLPerHour: number;
+  /** Litres left behind with the trub and in the chiller. */
+  trubChillerLossL: number;
+  pitchRate: string;
+  /** Strike water per kilo of grain, which sets the first mash step's volume. */
+  mashThicknessLPerKg: number;
+  /** Temperature the strike water goes in at… */
+  mashStrikeTempC: number;
+  /** …and the temperature the mash settles to. */
+  mashTargetTempC: number;
+  /** How long that first rest holds. */
+  mashStepMinutes: number;
+}
+
+/**
+ * This brewery's own numbers, which is where these started life — hardcoded in
+ * the new-recipe page and the mash section until they became editable.
+ */
+export const DEFAULT_RECIPE_DEFAULTS: RecipeDefaults = {
+  batchSizeL: 55,
+  batchTarget: 'Fermenter',
+  boilTimeMinutes: 60,
+  efficiencyPercent: 80,
+  boilOffLPerHour: 7,
+  trubChillerLossL: 2,
+  pitchRate: 'Manufacturer recommended',
+  mashThicknessLPerKg: 3,
+  mashStrikeTempC: 71,
+  mashTargetTempC: 69,
+  mashStepMinutes: 60,
+};
+
+/**
+ * A recipe-library backup file, as written to the Pi and uploaded to Drive.
+ *
+ * Deliberately the editable sheet of each recipe and nothing derived: prices,
+ * gram weights and costs are worked out from the shop catalogue on every read,
+ * so storing them would be backing up the shop rather than the recipe. Restoring
+ * is a replay of `POST /api/recipes` over `recipes[].recipe`.
+ */
+export interface RecipeBackupFile {
+  app: 'BrewPlanner';
+  kind: 'recipe-library';
+  /** Bumped if the shape ever changes, so a restore knows what it is reading. */
+  version: 1;
+  exportedAt: string;
+  recipeCount: number;
+  /** Ids whose stored sheet could not be parsed, so a short file says why. */
+  unreadableIds: string[];
+  recipes: Array<{
+    id: string;
+    origin: RecipeOrigin;
+    url: string;
+    createdAt: string;
+    updatedAt: string;
+    recipe: RecipeEditInput;
+  }>;
+}
+
+/** What one backup run did (POST /api/recipes/backup). */
+export interface RecipeBackupResult {
+  at: string;
+  /** True when a scheduled run found nothing had changed since the last one. */
+  skipped: boolean;
+  filename: string | null;
+  recipeCount: number;
+  unreadableIds: string[];
+  localPath: string | null;
+  driveFileId: string | null;
+  /** Why the Drive half didn't happen; the local copy is written regardless. */
+  driveError: string | null;
+}
+
+/** Backup state without taking one (GET /api/recipes/backup). */
+export interface RecipeBackupStatus {
+  lastRunAt: string | null;
+  lastOkAt: string | null;
+  lastError: string | null;
+  lastFilename: string | null;
+  lastRecipeCount: number | null;
+  lastDriveFileId: string | null;
+  driveConfigured: boolean;
+  /** Which credential the server is set up with, or null for none. */
+  driveAuthMethod: 'oauth' | 'service-account' | null;
+  driveFolderId: string;
+  localDir: string;
+  keepLocal: number;
+}
+
+/**
  * The single "currently in the fermenter" recipe selection (GET/PUT /api/recipe).
  * `recipe` is null when nothing has been chosen yet.
  */
@@ -826,6 +935,82 @@ export interface RecipeCostBreakdown {
   /** The whole sheet, including the buying figure and its shopping list. */
   cost: RecipeCost;
   pricing: RecipePricing;
+  /** What the total is missing, so the editor can offer to fill it in. */
+  unpricedLines: UnpricedIngredient[];
+}
+
+/**
+ * One ingredient a recipe's cost is missing — everything needed both to show it
+ * and to price it. The shop doesn't stock everything (and doesn't always name
+ * what it does stock the way a recipe does), so a total drawn over part of a
+ * grain bill has to be able to say which part, and let the brewer fix it.
+ *
+ * One entry per ingredient, not per addition: a price is stored against the
+ * ingredient's name, so three dry-hop charges of the same Citra are a single
+ * decision. `grams`/`units` are pooled across those additions, which is also
+ * what makes the picker's "cheapest package" answer the right question.
+ */
+export interface UnpricedIngredient {
+  kind: IngredientKind;
+  name: string;
+  /** Total weight the recipe calls for; null when it counts packs instead. */
+  grams: number | null;
+  /** Packs/vials, for an ingredient the recipe counts rather than weighs. */
+  units: number | null;
+  /** Malt colour, part of the automatic match (fermentables only). */
+  ebc: number | null;
+  /** How many additions of it there are, so one row can stand for all of them. */
+  additions: number;
+}
+
+/**
+ * The ingredients a recipe couldn't be costed on: every line the pricing pass
+ * left without a figure, pooled per ingredient. Used by the server to report a
+ * draft's gaps and by the recipe page to list a saved one's.
+ *
+ * A line with an amount nobody can read (a blank, or "some") lands here too,
+ * with no weight and no count — it is genuinely uncosted, and saying so is more
+ * use than leaving it out of both the total and the explanation.
+ */
+export function unpricedIngredients(recipe: {
+  fermentables: RecipeFermentable[];
+  hops: RecipeHop[];
+  yeast: RecipeYeast[];
+  otherIngredients: RecipeOtherIngredient[];
+}): UnpricedIngredient[] {
+  const pooled = new Map<string, UnpricedIngredient>();
+  const add = (
+    kind: IngredientKind,
+    line: { name: string; price: IngredientPrice | null; grams: number | null },
+    extra: { units?: number | null; ebc?: number | null } = {},
+  ): void => {
+    if (line.price || line.name.trim() === '') return;
+    const key = `${kind}:${line.name.trim().toLocaleLowerCase()}`;
+    const seen = pooled.get(key);
+    if (!seen) {
+      pooled.set(key, {
+        kind,
+        name: line.name.trim(),
+        grams: line.grams,
+        units: extra.units ?? null,
+        ebc: extra.ebc ?? null,
+        additions: 1,
+      });
+      return;
+    }
+    // A total only means something while every addition states one; mixing "40
+    // g" with an amount nobody could read has to leave the weight unknown.
+    seen.grams = seen.grams == null || line.grams == null ? null : seen.grams + line.grams;
+    const units = extra.units ?? null;
+    seen.units = seen.units == null || units == null ? null : seen.units + units;
+    seen.additions += 1;
+  };
+
+  for (const line of recipe.fermentables) add('fermentable', line, { ebc: line.ebc });
+  for (const line of recipe.hops) add('hop', line);
+  for (const line of recipe.yeast) add('yeast', line, { units: line.units });
+  for (const line of recipe.otherIngredients) add('other', line, { units: line.units });
+  return [...pooled.values()];
 }
 
 // ---------------------------------------------------------------------------
@@ -2146,6 +2331,26 @@ export const recipeDraftSchema = z
   }));
 
 /**
+ * Body for `PUT /api/recipe-defaults` — the figures a blank brew sheet opens on.
+ * Bounds are deliberately generous: a 1 L test batch and a 1,000 L commercial
+ * one are both somebody's brewhouse. They exist to keep a typo from writing a
+ * recipe nobody can brew, not to have an opinion about the kettle.
+ */
+export const recipeDefaultsSchema = z.object({
+  batchSizeL: z.number().positive().max(100_000),
+  batchTarget: z.string().trim().min(1).max(100),
+  boilTimeMinutes: z.number().min(0).max(1_000),
+  efficiencyPercent: z.number().min(1).max(100),
+  boilOffLPerHour: z.number().min(0).max(1_000),
+  trubChillerLossL: z.number().min(0).max(10_000),
+  pitchRate: z.string().trim().min(1).max(200),
+  mashThicknessLPerKg: z.number().positive().max(100),
+  mashStrikeTempC: z.number().min(0).max(120),
+  mashTargetTempC: z.number().min(0).max(120),
+  mashStepMinutes: z.number().min(0).max(1_000),
+}) satisfies z.ZodType<RecipeDefaults>;
+
+/**
  * Body for `PUT /api/fermenter` — whether the empty fermenter has been washed.
  * There's no "unknown" to send: that's only the state of never having been told.
  */
@@ -2158,10 +2363,18 @@ export type FermenterStateInput = z.infer<typeof fermenterStateSchema>;
 
 const ingredientKindSchema = z.enum(['fermentable', 'hop', 'yeast', 'other']);
 
-/** Search both the local shop catalogue and ingredients used in saved recipes. */
+/**
+ * Search both the local shop catalogue and ingredients used in saved recipes.
+ *
+ * `catalogueOnly` drops the second half: a recipe being written from scratch
+ * should offer what the shop actually sells, not whatever a past recipe
+ * happened to name — an old sheet's freehand "Citra (leftovers)" is a spelling,
+ * not a product, and it can't be priced or reordered.
+ */
 export const recipeIngredientCatalogQuerySchema = z.object({
   kind: ingredientKindSchema,
   q: z.string().trim().max(200).optional(),
+  catalogueOnly: z.enum(['true', 'false']).optional(),
 });
 
 /**

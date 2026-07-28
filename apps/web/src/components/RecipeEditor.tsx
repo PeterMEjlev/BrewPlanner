@@ -1,9 +1,11 @@
 import {
   applyRecipeCalculations,
+  aromaHopRate,
   calculateRecipe,
   DEFAULT_RECIPE_SETTINGS,
   ebcColor,
   estimateFermentablePpg,
+  estimateFermentationDays,
   getRecipeColor,
   HOP_STAGE_ORDER,
   isFermentableLine,
@@ -13,6 +15,7 @@ import type {
   CostTotal,
   HopStage,
   RecipeCostBreakdown,
+  RecipeDefaults,
   RecipeDetail,
   RecipeEditInput,
   RecipeFermentableEdit,
@@ -23,6 +26,7 @@ import type {
   RecipeWaterProfile,
   RecipeYeastEdit,
   RecipeYeastSpec,
+  UnpricedIngredient,
 } from '@checklist/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
@@ -49,11 +53,13 @@ import {
   YEAST_FORMS,
 } from '../recipeCatalog';
 import type { StyleChoice } from '../recipeCatalog';
+import { useRecipeDefaults } from '../recipeDefaults';
 import { setSetting, useSettings } from '../settings';
 import { rangeForStyle } from '../styleRanges';
 import { useKegContentColors } from '../kegContentColors';
 import { IngredientSearchSelect, SearchableSelect } from './SearchableSelect';
 import { SheetSection } from './SheetSection';
+import { UnpricedIngredientsDialog } from './UnpricedIngredients';
 
 interface Props {
   recipe: RecipeDetail;
@@ -61,6 +67,13 @@ interface Props {
   error: string | null;
   onSave: (recipe: RecipeEditInput) => Promise<void>;
   onCancel: () => void;
+  /**
+   * Offer only what the shop sells in the ingredient pickers, leaving out the
+   * names past recipes have used. Set when a recipe is being written from
+   * scratch: a blank sheet should be filled from the catalogue, which is what
+   * can be priced and ordered — an old sheet's freehand wording is neither.
+   */
+  catalogueOnly?: boolean;
 }
 
 /**
@@ -471,8 +484,15 @@ function costSignature(draft: RecipeEditInput): string {
  * answer arrives, and again if one fails: a stale cost quietly attached to a
  * changed grain bill would be worse than no cost at all.
  */
-function useDraftCost(draft: RecipeEditInput): RecipeCostBreakdown | null {
+function useDraftCost(draft: RecipeEditInput): {
+  cost: RecipeCostBreakdown | null;
+  /** Ask again without the sheet having changed — after a price was set. */
+  refresh: () => void;
+} {
   const [cost, setCost] = useState<RecipeCostBreakdown | null>(null);
+  // Bumped by `refresh`: a price decision changes what the same draft costs, and
+  // the signature below can't see that happen.
+  const [asked, setAsked] = useState(0);
   // The signature decides *when* to ask; the ref is what's actually asked, so
   // the request carries the draft as it stands when the debounce finally fires.
   const latest = useRef(draft);
@@ -494,11 +514,11 @@ function useDraftCost(draft: RecipeEditInput): RecipeCostBreakdown | null {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [signature]);
-  return cost;
+  }, [signature, asked]);
+  return { cost, refresh: () => setAsked((count) => count + 1) };
 }
 
-export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props): JSX.Element {
+export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogueOnly = false }: Props): JSX.Element {
   const initial = useMemo(() => editable(recipe), [recipe]);
   const [draft, setDraft] = useState<RecipeEditInput>(initial);
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
@@ -511,12 +531,40 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
   const calculation = useMemo(() => calculateRecipe(effective), [effective]);
   // What it costs, from the server's catalogue — the one figure on this page
   // that can't be worked out in the browser.
-  const cost = useDraftCost(draft);
+  const { cost, refresh: repriceDraft } = useDraftCost(draft);
+  // Which ingredients that total is missing — from the same pricing pass as the
+  // figures, so the list names exactly what the cost is short of.
+  const unpriced = cost?.unpricedLines ?? [];
+  // The panel that prices them holds the list it opened with rather than
+  // following this one: pricing an ingredient takes it off `unpriced`, and rows
+  // vanishing from under the brewer as they work down them is no way to work
+  // down them.
+  const [pricingGaps, setPricingGaps] = useState<UnpricedIngredient[] | null>(null);
+  // How long the yeast will need, from the strain, the temperature it's held at
+  // and the gravity it has to work through — the same estimate the recipe page
+  // shows, moving as the sheet is written.
+  const fermentation = useMemo(
+    () => estimateFermentationDays({
+      og: calculation.originalGravity,
+      temperatureC: draft.fermentationTemp,
+      yeast: draft.yeast,
+    }),
+    [calculation.originalGravity, draft.fermentationTemp, draft.yeast],
+  );
+  // Grams of whirlpool and dry hops per litre — the figure the recipe page
+  // carries in its hop section, worth watching while the schedule is written.
+  const aromaRate = useMemo(
+    () => aromaHopRate(draft.hops, draft.batchSizeL),
+    [draft.hops, draft.batchSizeL],
+  );
   const styleRange = useMemo(
     () => rangeForStyle(draft.settings.styleSubcategory || draft.style),
     [draft.settings.styleSubcategory, draft.style],
   );
   const prefs = useSettings();
+  // What a mash section started from scratch is filled in with — the brewhouse's
+  // own figures, not this file's.
+  const recipeDefaults = useRecipeDefaults();
   // The same palette the keg board and recipe list wear a beer's colour from,
   // so a style reads as the same swatch everywhere it shows up.
   const kegColors = useKegContentColors();
@@ -771,7 +819,7 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
               >
                 <div className="grid gap-3 sm:grid-cols-8">
                   <Field label="Amount" value={line.amount} suffix="kg" className="sm:col-span-2" disabled={isLocked('fermentables', index)} onChange={(amount) => updateFermentable(index, { amount, unit: 'kg' })} />
-                  <IngredientSearchSelect kind="fermentable" label="Malt / fermentable" value={line.name} className="sm:col-span-4" disabled={isLocked('fermentables', index)} onChange={(name, option) => {
+                  <IngredientSearchSelect kind="fermentable" label="Malt / fermentable" value={line.name} className="sm:col-span-4" disabled={isLocked('fermentables', index)} catalogueOnly={catalogueOnly} onChange={(name, option) => {
                     updateFermentable(index, { name, ebc: option?.ebc ?? null, ppg: estimateFermentablePpg(name) });
                     setLineLock('fermentables', index, Boolean(option));
                   }} />
@@ -799,6 +847,7 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
               </LineCard>
             ))}
             <Empty message="No fermentables" show={draft.fermentables.length === 0} />
+            <AddRow label="Add a fermentable" onAdd={() => setDraft((d) => ({ ...d, fermentables: [...d.fermentables, blankFermentable()] }))} />
           </div>
         </EditorSection>
 
@@ -818,23 +867,51 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-8">
                   <Field label="Amount" value={line.amount} disabled={isLocked('hops', index)} onChange={(amount) => updateHop(index, { amount })} />
                   <SelectField label="Unit" value={line.unit} options={options(WEIGHT_UNITS)} disabled={isLocked('hops', index)} onChange={(unit) => updateHop(index, { unit })} />
-                  <IngredientSearchSelect kind="hop" label="Hop" value={line.name} className="sm:col-span-2 lg:col-span-4" disabled={isLocked('hops', index)} onChange={(name, option) => {
+                  <IngredientSearchSelect kind="hop" label="Hop" value={line.name} className="sm:col-span-2 lg:col-span-4" disabled={isLocked('hops', index)} catalogueOnly={catalogueOnly} onChange={(name, option) => {
                     updateHop(index, { name, aa: option?.aa == null ? '' : String(option.aa) });
                     setLineLock('hops', index, option?.aa != null);
                   }} />
                   <Field label="Alpha acid" value={line.aa} suffix="%" className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(aa) => updateHop(index, { aa })} />
-                  <Field label={line.stage === 'Dry Hop' ? 'Contact time' : 'Time'} value={line.time} className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(time) => updateHop(index, { time })} />
+                  <Field label={hopTimeLabel(line.stage)} value={line.time} className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(time) => updateHop(index, { time })} />
                   <SelectField label="Time unit" value={line.timeUnit} options={[{ value: '', label: '—' }, { value: 'min', label: 'Minutes' }, { value: 'day', label: 'Days' }]} className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(timeUnit) => updateHop(index, { timeUnit: timeUnit as RecipeHopEdit['timeUnit'] })} />
                   <SelectField label="Form" value={line.form} options={options(HOP_FORMS)} className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(form) => updateHop(index, { form })} />
                   <SelectField label="Use" value={line.stage} options={options(HOP_STAGE_ORDER)} className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(value) => {
                     const stage = value as HopStage;
-                    updateHop(index, { stage, use: stage, timeUnit: stage === 'Dry Hop' ? 'day' : 'min' });
+                    updateHop(index, {
+                      stage,
+                      use: stage,
+                      timeUnit: stage === 'Dry Hop' ? 'day' : 'min',
+                      // A stand temperature only means something in a whirlpool;
+                      // carried onto a boil addition it would read as a claim
+                      // about a kettle that is, by definition, boiling.
+                      ...(stage === 'Whirlpool' ? {} : { temp: '' }),
+                    });
                   }} />
+                  {/* A hopstand is a time *and* a temperature: 20 minutes at 80 °C
+                      and the same 20 minutes at flame-out are different beers, and
+                      the IBU beside it is calculated from both. */}
+                  {line.stage === 'Whirlpool' && (
+                    <Field
+                      label="Stand temperature"
+                      value={line.temp}
+                      suffix="°C"
+                      className="lg:col-span-2"
+                      placeholder="80"
+                      disabled={isLocked('hops', index)}
+                      onChange={(temp) => updateHop(index, { temp })}
+                    />
+                  )}
                   <ReadOnlyField label="IBU contribution" value={calculation.hopIbus[index]} decimals={2} className="lg:col-span-2" />
                 </div>
+                {line.stage === 'Whirlpool' && !line.temp.trim() && (
+                  <p className="mt-2 text-[11px] text-zinc-500">
+                    Without a stand temperature this addition falls back to a flat 5% utilisation. Fill in the temperature and the time above and its bitterness follows both.
+                  </p>
+                )}
               </LineCard>
             ))}
             <Empty message="No hop additions" show={draft.hops.length === 0} />
+            <AddRow label="Add a hop addition" onAdd={() => setDraft((d) => ({ ...d, hops: [...d.hops, blankHop()] }))} />
           </div>
         </EditorSection>
 
@@ -860,7 +937,7 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
                       producer as part of the strain ("Fermentis SafAle
                       US-05"), and picking one fills the Lab in behind it, so
                       a second box asking for the lab only asked twice. */}
-                  <IngredientSearchSelect kind="yeast" label="Yeast / culture" value={line.name} disabled={isLocked('yeast', index)} onChange={(name, option) => {
+                  <IngredientSearchSelect kind="yeast" label="Yeast / culture" value={line.name} disabled={isLocked('yeast', index)} catalogueOnly={catalogueOnly} onChange={(name, option) => {
                     updateYeast(index, { name, ...yeastFromStrain(option?.yeast) });
                     setLineLock('yeast', index, Boolean(option?.yeast));
                   }} />
@@ -901,6 +978,7 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
               </LineCard>
             ))}
             <Empty message="No yeast" show={draft.yeast.length === 0} />
+            <AddRow label="Add a yeast" onAdd={() => setDraft((d) => ({ ...d, yeast: [...d.yeast, blankYeast()] }))} />
             <SearchableSelect label="Pitch rate" value={draft.settings.pitchRate} options={options(PITCH_RATES)} onChange={(pitchRate) => updateSettings({ pitchRate })} className="sm:max-w-xs" />
           </div>
         </EditorSection>
@@ -912,7 +990,7 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
                 <div className="grid gap-3 sm:grid-cols-6">
                   <Field label="Amount" value={line.amount} onChange={(amount) => updateOther(index, { amount })} />
                   <SelectField label="Unit" value={line.unit} options={options([...WEIGHT_UNITS, ...VOLUME_UNITS, ...COUNT_UNITS])} onChange={(unit) => updateOther(index, { unit })} />
-                  <IngredientSearchSelect kind="other" label="Ingredient" value={line.name} className="sm:col-span-4" onChange={(name) => updateOther(index, { name })} />
+                  <IngredientSearchSelect kind="other" label="Ingredient" value={line.name} className="sm:col-span-4" catalogueOnly={catalogueOnly} onChange={(name) => updateOther(index, { name })} />
                   <Field label="Time" value={line.time} onChange={(time) => updateOther(index, { time })} />
                   <SelectField label="Time unit" value={line.timeUnit} options={[{ value: '', label: '—' }, { value: 'min', label: 'Minutes' }, { value: 'day', label: 'Days' }]} onChange={(timeUnit) => updateOther(index, { timeUnit: timeUnit as RecipeOtherIngredientEdit['timeUnit'] })} />
                   <SelectField label="Type" value={line.type} options={options(OTHER_TYPES)} className="sm:col-span-2" onChange={(type) => updateOther(index, { type })} />
@@ -921,23 +999,11 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
               </LineCard>
             ))}
             <Empty message="No other ingredients" show={draft.otherIngredients.length === 0} />
+            <AddRow label="Add an ingredient" onAdd={() => setDraft((d) => ({ ...d, otherIngredients: [...d.otherIngredients, blankOther()] }))} />
           </div>
         </EditorSection>
 
-        <EditorSection title="Mash guidelines" icon="🌡️" meta={mashStepMeta(draft.mashGuidelines?.steps.length)} {...section('mash')} onAdd={() => setDraft((d) => {
-          const steps = d.mashGuidelines?.steps ?? [];
-          const isFirst = steps.length === 0;
-          return {
-            ...d,
-            mashGuidelines: {
-              startingThicknessLPerKg: d.mashGuidelines?.startingThicknessLPerKg ?? DEFAULT_MASH_THICKNESS_L_PER_KG,
-              grainTempC: d.mashGuidelines?.grainTempC ?? null,
-              autoStrikeVolume: isFirst ? true : d.mashGuidelines?.autoStrikeVolume ?? false,
-              steps: [...steps, isFirst ? defaultFirstMashStep() : blankMashStep()],
-              notes: d.mashGuidelines?.notes ?? null,
-            },
-          };
-        })}>
+        <EditorSection title="Mash guidelines" icon="🌡️" meta={mashStepMeta(draft.mashGuidelines?.steps.length)} {...section('mash')} onAdd={addMashStep}>
           <div className="mb-3 grid gap-3 sm:grid-cols-2">
             <Field label="Starting mash thickness" value={draft.mashGuidelines?.startingThicknessLPerKg} suffix="L/kg" type="number" step="any" onChange={(value) => updateMashHeader({ startingThicknessLPerKg: nullableNumber(value) })} />
             <Field label="Grain temperature" value={draft.mashGuidelines?.grainTempC} suffix="°C" type="number" step="any" onChange={(value) => updateMashHeader({ grainTempC: nullableNumber(value) })} />
@@ -987,6 +1053,7 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
                 </div>
               </LineCard>
             ))}
+            <AddRow label="Add a mash step" onAdd={addMashStep} />
             <label className="block text-xs font-medium text-zinc-400">
               Mash notes
               <textarea className={`${fieldClass} min-h-20 resize-y`} value={draft.mashGuidelines?.notes ?? ''} onChange={(event) => updateMashHeader({ notes: nullable(event.target.value) })} />
@@ -1047,15 +1114,44 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
                 pictures when reading an EBC. */}
             <CalculatedStat label="EBC" value={calculation.ebc} decimals={1} range={styleRange?.ebc} compareToStyle swatch={ebcColor(calculation.ebc)} />
             <CalculatedStat label="Mash pH estimate" value={calculation.mashPh} decimals={2} />
+            {/* How hoppy it will smell, which is what the whirlpool and the dry
+                hop are for — the same figure the recipe page carries on its hop
+                section, so a schedule can be written to a rate. */}
+            <CalculatedStat
+              label="Aroma hops"
+              value={aromaRate}
+              decimals={1}
+              suffix="g/L"
+              title="Whirlpool and dry hops per litre of batch. The bittering charge is left out — it adds no aroma."
+            />
+            {/* When the fermenter comes free. An estimate, so it reads as one. */}
+            <CalculatedStat
+              label="Days to ferment"
+              value={fermentation?.days ?? null}
+              decimals={0}
+              prefix="≈"
+              suffix={fermentation && fermentation.days === 1 ? 'day' : 'days'}
+              note={fermentation ? `${fermentation.minDays}–${fermentation.maxDays} days` : 'Needs a yeast'}
+              title={fermentation?.note ?? 'Pick a yeast to estimate how long fermentation will take.'}
+            />
             {/* What the batch costs to fill, beside what it's brewed to. The
                 amounts used rather than the packages bought: that's the figure
                 that belongs to this recipe, and the one every section title
                 adds up to. */}
-            <CostStat label="Ingredient cost" cost={cost} />
-            <CostStat label="Cost per litre" cost={cost} perLitre={draft.batchSizeL} />
+            <CostStat label="Ingredient cost" cost={cost} onShowUnpriced={unpriced.length > 0 ? () => setPricingGaps(unpriced) : undefined} />
+            <CostStat label="Cost per litre" cost={cost} perLitre={draft.batchSizeL} onShowUnpriced={unpriced.length > 0 ? () => setPricingGaps(unpriced) : undefined} />
           </div>
         </div>
       </aside>
+      {pricingGaps && (
+        <UnpricedIngredientsDialog
+          lines={pricingGaps}
+          onClose={() => setPricingGaps(null)}
+          // A price is stored against the ingredient, so the draft's cost has to
+          // be asked for again — nothing on the sheet itself has changed.
+          onChanged={repriceDraft}
+        />
+      )}
       </div>
     </div>
   );
@@ -1099,6 +1195,28 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel }: Props)
   }
   function updateOther(index: number, patch: Partial<RecipeOtherIngredientEdit>): void {
     setDraft((d) => ({ ...d, otherIngredients: d.otherIngredients.map((line, i) => i === index ? { ...line, ...patch } : line) }));
+  }
+  /**
+   * A new rest at the foot of the schedule. The first one a sheet gets is a
+   * strike at the brewhouse's own temperatures with its volume calculated from
+   * the grain bill — the mash every batch here starts from; a later step is a
+   * decision with no default worth guessing, so it starts blank.
+   */
+  function addMashStep(): void {
+    setDraft((d) => {
+      const steps = d.mashGuidelines?.steps ?? [];
+      const isFirst = steps.length === 0;
+      return {
+        ...d,
+        mashGuidelines: {
+          startingThicknessLPerKg: d.mashGuidelines?.startingThicknessLPerKg ?? recipeDefaults.mashThicknessLPerKg,
+          grainTempC: d.mashGuidelines?.grainTempC ?? null,
+          autoStrikeVolume: isFirst ? true : d.mashGuidelines?.autoStrikeVolume ?? false,
+          steps: [...steps, isFirst ? defaultFirstMashStep(recipeDefaults) : blankMashStep()],
+          notes: d.mashGuidelines?.notes ?? null,
+        },
+      };
+    });
   }
   function updateMashStep(index: number, patch: Partial<RecipeMashStep>): void {
     setDraft((d) => ({ ...d, mashGuidelines: mashWith(d, { steps: (d.mashGuidelines?.steps ?? []).map((line, i) => i === index ? { ...line, ...patch } : line) }) }));
@@ -1521,22 +1639,24 @@ function ReadOnlyField({ label, value, decimals, suffix, className = '' }: { lab
   );
 }
 
-function CalculatedStat({ label, value, decimals, suffix = '', range, compareToStyle = false, swatch }: { label: string; value: number | null; decimals: number; suffix?: string; range?: [number, number]; compareToStyle?: boolean; /** Colour the figure stands for, shown as a dot beside it. */ swatch?: string | null }): JSX.Element {
-  const status = value == null
-    ? { text: 'Needs more inputs', className: 'text-zinc-500' }
-    : !range
-      ? { text: 'No BJCP range', className: 'text-zinc-500' }
-      : value < range[0]
-        ? { text: `Below ${range[0]}–${range[1]}`, className: 'text-amber-300' }
-        : value > range[1]
-          ? { text: `Above ${range[0]}–${range[1]}`, className: 'text-amber-300' }
-          : { text: `In range ${range[0]}–${range[1]}`, className: 'text-emerald-300' };
+function CalculatedStat({ label, value, decimals, prefix = '', suffix = '', range, compareToStyle = false, swatch, note, title }: { label: string; value: number | null; decimals: number; /** Sits in front of the figure — "≈" for a figure that is openly approximate. */ prefix?: string; suffix?: string; range?: [number, number]; compareToStyle?: boolean; /** Colour the figure stands for, shown as a dot beside it. */ swatch?: string | null; /** Replaces the style-range line, for a figure no style has a range for. */ note?: string; /** Tooltip, for a figure that needs its caveats spelled out. */ title?: string }): JSX.Element {
+  const status = note != null
+    ? { text: note, className: 'text-zinc-500' }
+    : value == null
+      ? { text: 'Needs more inputs', className: 'text-zinc-500' }
+      : !range
+        ? { text: 'No BJCP range', className: 'text-zinc-500' }
+        : value < range[0]
+          ? { text: `Below ${range[0]}–${range[1]}`, className: 'text-amber-300' }
+          : value > range[1]
+            ? { text: `Above ${range[0]}–${range[1]}`, className: 'text-amber-300' }
+            : { text: `In range ${range[0]}–${range[1]}`, className: 'text-emerald-300' };
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2.5">
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2.5" title={title}>
       <div className="text-[11px] font-medium text-zinc-500">{label}</div>
       <div className="mt-0.5 flex items-center gap-2 text-xl font-semibold tabular-nums text-zinc-100">
         <span>
-          {value == null ? '—' : value.toFixed(decimals)}
+          {value == null ? '—' : `${prefix}${value.toFixed(decimals)}`}
           {value != null && suffix && <span className="ml-1 text-xs font-normal text-zinc-500">{suffix}</span>}
         </span>
         {swatch && (
@@ -1548,7 +1668,7 @@ function CalculatedStat({ label, value, decimals, suffix = '', range, compareToS
           />
         )}
       </div>
-      {(compareToStyle || value == null) && <div className={`mt-1 text-[10px] ${status.className}`}>{status.text}</div>}
+      {(compareToStyle || note != null || value == null) && <div className={`mt-1 text-[10px] ${status.className}`}>{status.text}</div>}
     </div>
   );
 }
@@ -1564,33 +1684,71 @@ function CalculatedStat({ label, value, decimals, suffix = '', range, compareToS
  * rather than assumed: a total over a grain bill the shop doesn't stock has to
  * say how much of itself is missing.
  */
-function CostStat({ label, cost, perLitre }: { label: string; cost: RecipeCostBreakdown | null; perLitre?: number | null }): JSX.Element {
+function CostStat({ label, cost, perLitre, onShowUnpriced }: { label: string; cost: RecipeCostBreakdown | null; perLitre?: number | null; /** Opens the panel that prices what the total is missing; absent when nothing is. */ onShowUnpriced?: () => void }): JSX.Element {
   const total = cost?.cost;
   const value = total == null || total.priced === 0 || (perLitre != null && perLitre <= 0)
     ? null
     : perLitre == null
       ? kr(total.usedDkk, 0)
       : kr(total.usedDkk / perLitre, 2);
-  const note = cost == null
-    ? 'Waiting for prices'
+  // What's short about the figure, and whether it's the kind of shortfall the
+  // brewer can do something about from here — a missing price is, a missing
+  // batch size isn't, and only the ones that are become a control.
+  const note: { text: string; fixable?: boolean } | null = cost == null
+    ? { text: 'Waiting for prices' }
     : !cost.pricing.available
-      ? 'No price catalogue'
+      ? { text: 'No price catalogue' }
       : total && total.priced === 0
-        ? 'Nothing priced yet'
+        ? { text: 'Nothing priced yet', fixable: total.unpriced > 0 }
         : perLitre != null && !(perLitre > 0)
-          ? 'Needs a batch size'
+          ? { text: 'Needs a batch size' }
           : total && total.unpriced > 0
-            ? `${total.unpriced} unpriced`
+            ? { text: `${total.unpriced} unpriced`, fixable: true }
             : null;
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2.5">
       <div className="text-[11px] font-medium text-zinc-500">{label}</div>
       <div className="mt-0.5 text-xl font-semibold tabular-nums text-zinc-100">{value ?? '—'}</div>
       {note && (
-        <div className={`mt-1 text-[10px] ${value != null ? 'text-amber-300' : 'text-zinc-500'}`}>{note}</div>
+        note.fixable && onShowUnpriced ? (
+          <button
+            type="button"
+            onClick={onShowUnpriced}
+            title="Show these ingredients and set their prices"
+            className="mt-1 block text-[10px] text-amber-300 underline decoration-amber-300/40 underline-offset-2 transition hover:decoration-amber-300"
+          >
+            {note.text}
+          </button>
+        ) : (
+          <div className={`mt-1 text-[10px] ${value != null ? 'text-amber-300' : 'text-zinc-500'}`}>{note.text}</div>
+        )
       )}
     </div>
   );
+}
+
+/**
+ * The second "+ Add" for a section, under its last row. The header's one is
+ * where a section is started from; this one is where a list is *continued*, and
+ * after typing a fifth malt the top of the section is a scroll away.
+ */
+function AddRow({ label, onAdd }: { label: string; onAdd: () => void }): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onAdd}
+      className="w-full rounded-lg border border-dashed border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+    >
+      + {label}
+    </button>
+  );
+}
+
+/** What a hop addition's time box is asking for, which the stage decides. */
+function hopTimeLabel(stage: HopStage): string {
+  if (stage === 'Dry Hop') return 'Contact time';
+  if (stage === 'Whirlpool') return 'Stand time';
+  return 'Time';
 }
 
 function SelectField({ label, value, options: choices, onChange, className = '', disabled = false }: { label: string; value: string; options: Array<{ value: string; label?: string }>; onChange: (value: string) => void; className?: string; disabled?: boolean }): JSX.Element {
@@ -1649,19 +1807,20 @@ function blankMashStep(): RecipeMashStep {
 
 /**
  * The mash guideline section's first row, filled in rather than left blank: a
- * single-infusion strike at this brewery's usual temperatures. The amount
- * starts empty — the caller is expected to also turn on `autoStrikeVolume`,
- * which is what makes {@link withDerivedStrikeVolume} fill it from the grain
- * bill. Only the first row gets this treatment; a later mash-out or sparge has
- * no one-size guess worth making, so it still starts from `blankMashStep`.
+ * single-infusion strike at the temperatures the Recipes settings name. The
+ * amount starts empty — the caller is expected to also turn on
+ * `autoStrikeVolume`, which is what makes {@link withDerivedStrikeVolume} fill
+ * it from the grain bill. Only the first row gets this treatment; a later
+ * mash-out or sparge has no one-size guess worth making, so it still starts
+ * from `blankMashStep`.
  */
-export function defaultFirstMashStep(): RecipeMashStep {
+export function defaultFirstMashStep(defaults: RecipeDefaults): RecipeMashStep {
   return {
     name: 'Strike',
     type: 'Strike',
-    startTemp: '71',
-    temp: '69',
-    time: '60',
+    startTemp: String(defaults.mashStrikeTempC),
+    temp: String(defaults.mashTargetTempC),
+    time: String(defaults.mashStepMinutes),
     amount: '',
     amountUnit: 'L',
     description: '',

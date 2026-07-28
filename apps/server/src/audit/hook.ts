@@ -204,6 +204,9 @@ const RULES: Rule[] = [
   { method: 'PUT', re: /^\/api\/recipes\/([^/]+)$/, build: ({ body }) => ({ entity: 'Recipe', action: `Edited recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
   { method: 'DELETE', re: /^\/api\/recipes\/([^/]+)$/, build: () => ({ entity: 'Recipe', action: 'Deleted a recipe from BrewPlanner' }) },
   { method: 'POST', re: /^\/api\/recipes\/import\/brewersfriend$/, build: () => ({ entity: 'Recipe', action: 'Imported recipes from Brewer\'s Friend' }) },
+  // The nightly backup writes no audit row (it isn't a request); a backup
+  // somebody asked for is worth recording, since it copies the library offsite.
+  { method: 'POST', re: /^\/api\/recipes\/backup$/, build: () => ({ entity: 'Recipe', action: 'Backed up the recipe library' }) },
   { method: 'PUT', re: /^\/api\/recipe$/, build: ({ body }) => ({ entity: 'Recipe', action: `Set the active recipe${str(body, 'name') ? ` to "${str(body, 'name')}"` : ''}` }) },
   { method: 'DELETE', re: /^\/api\/recipe$/, build: () => ({ entity: 'Recipe', action: 'Cleared the active recipe' }) },
   { method: 'PUT', re: /^\/api\/fermenter$/, build: ({ body }) => ({ entity: 'Recipe', action: `Marked the fermenter ${str(body, 'state') === 'clean' ? 'clean' : 'dirty'}` }) },
@@ -236,6 +239,7 @@ const RULES: Rule[] = [
   { method: 'PUT', re: /^\/api\/notifications\/settings$/, build: () => ({ entity: 'Settings', action: 'Updated notification settings' }) },
   // A test notification sends a message but changes nothing on the server.
   { method: 'POST', re: /^\/api\/notifications\/test$/, build: () => null },
+  { method: 'PUT', re: /^\/api\/recipe-defaults$/, build: () => ({ entity: 'Settings', action: 'Changed what a new recipe starts from' }) },
   { method: 'PUT', re: /^\/api\/graph-colors$/, build: () => ({ entity: 'Settings', action: 'Updated graph colours' }) },
   { method: 'PUT', re: /^\/api\/keg-content-colors$/, build: () => ({ entity: 'Settings', action: 'Updated keg colours' }) },
 

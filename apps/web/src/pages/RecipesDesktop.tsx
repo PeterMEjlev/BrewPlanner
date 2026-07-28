@@ -3,6 +3,7 @@ import type {
   KegContent,
   KegContentColors,
   Recipe,
+  RecipeBackupStatus,
   RecipeStats,
   RecipeStyleCategory,
 } from '@checklist/shared';
@@ -25,7 +26,7 @@ import {
   loadRecipes,
   revalidateRecipes,
 } from '../recipeStore';
-import { asCleanMessage } from '../util';
+import { asCleanMessage, relativeTime } from '../util';
 
 /**
  * A bare number string from the API as a fixed-decimal string, or null when the
@@ -607,6 +608,8 @@ export function RecipesDesktopPage(): JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [backup, setBackup] = useState<RecipeBackupStatus | null>(null);
+  const [backingUp, setBackingUp] = useState(false);
   const [clearing, setClearing] = useState(false);
   // Whether the tank has been washed, for while it's empty. Null until someone
   // has said — clearing a recipe deliberately doesn't answer it.
@@ -729,6 +732,53 @@ export function RecipesDesktopPage(): JSX.Element {
     }
   }
 
+  // What the nightly backup last managed, read once on open. A failure here is
+  // silent: the page is the recipe library, not a backup console.
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .getRecipeBackupStatus()
+      .then((status) => {
+        if (!cancelled) setBackup(status);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Back the library up now. Always takes a copy — unlike the nightly run,
+   * which skips a day nothing changed — because somebody asked for one.
+   */
+  async function backupNow(): Promise<void> {
+    if (backingUp) return;
+    setBackingUp(true);
+    setNotice(null);
+    setError(null);
+    try {
+      const result = await api.backupRecipes();
+      const status = await api.getRecipeBackupStatus();
+      setBackup(status);
+      const saved = `Backed up ${result.recipeCount} recipe${result.recipeCount === 1 ? '' : 's'}`;
+      // The local copy is the backup; Drive is where it goes to be safe from the
+      // Pi. Saying which half worked is the whole point of the message — and a
+      // server with no Google credentials hasn't failed at anything, so that
+      // reads as a note rather than as a red banner.
+      if (result.driveError && status.driveConfigured) {
+        setError(`${saved} to the Pi, but not to Google Drive. ${result.driveError}`);
+      } else if (result.driveError) {
+        setNotice(`${saved} to the Pi. Google Drive isn’t set up on this server yet, so there is no offsite copy — see deploy/README-recipe-backup.md.`);
+      } else {
+        setNotice(`${saved} to the Pi and to Google Drive.`);
+      }
+    } catch (e) {
+      setError(asCleanMessage(e));
+    } finally {
+      setBackingUp(false);
+    }
+  }
+
   async function importLegacyRecipes(): Promise<void> {
     if (importing) return;
     setImporting(true);
@@ -793,6 +843,7 @@ export function RecipesDesktopPage(): JSX.Element {
               Your BrewPlanner recipe library. Build recipes here, open a full brew sheet, or
               set what is in the fermenter.
             </p>
+            {backup && <BackupLine status={backup} />}
           </div>
           {/* Search, sort and refresh; wraps rather than overflowing once the
               sort picker joins them on a narrow window. */}
@@ -804,6 +855,17 @@ export function RecipesDesktopPage(): JSX.Element {
               >
                 + New recipe
               </Link>
+            )}
+            {controllable && (
+              <button
+                type="button"
+                onClick={() => void backupNow()}
+                disabled={backingUp}
+                title="Write every recipe to a JSON file on the Pi and upload it to the shared Google Drive folder"
+                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
+              >
+                {backingUp ? 'Backing up…' : 'Back up now'}
+              </button>
             )}
             {controllable && (
               <button
@@ -1126,5 +1188,33 @@ function RecipeCard({
         {inFermenter ? '✓ In the fermenter' : ' '}
       </span>
     </Link>
+  );
+}
+
+/**
+ * One line on what the nightly backup last managed. Deliberately quiet: a
+ * backup that is working is not news, so it reads as a timestamp until
+ * something has gone wrong, when it turns amber and says what.
+ *
+ * "Local only" is its own state rather than an error — a Pi with no Google
+ * credentials is backing itself up perfectly well, just not off itself.
+ */
+function BackupLine({ status }: { status: RecipeBackupStatus }): JSX.Element {
+  const when = status.lastOkAt ? relativeTime(status.lastOkAt) : null;
+  // A server with no Google credentials hasn't failed at anything — it is
+  // backing itself up perfectly well, just not off itself. Only a Drive that
+  // was asked for and didn't work is a problem worth colouring.
+  const problem = status.driveConfigured ? status.lastError : null;
+  const detail = problem
+    ?? (status.driveConfigured
+      ? 'Written to the Pi and to the shared Google Drive folder, nightly.'
+      : 'Written to the Pi nightly. Add Google credentials to copy them to Drive as well — see deploy/README-recipe-backup.md.');
+  return (
+    <p className={`mt-1 text-xs ${problem ? 'text-amber-300/90' : 'text-zinc-600'}`} title={detail}>
+      {when
+        ? `Recipes backed up ${when}${status.lastRecipeCount != null ? ` · ${status.lastRecipeCount} recipes` : ''}`
+        : 'Recipes have not been backed up yet'}
+      {problem ? ' · Drive upload failed' : status.driveConfigured ? '' : ' · local only'}
+    </p>
   );
 }

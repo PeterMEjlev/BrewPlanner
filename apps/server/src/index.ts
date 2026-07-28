@@ -15,6 +15,7 @@ import { resolveSessionSecret } from './auth/secret.js';
 import { runMigrations } from './db/index.js';
 import { RETENTION_DAYS, pruneOldReadings } from './devices/retention.js';
 import { runNotificationChecks } from './notify/checks.js';
+import { startRecipeBackupScheduler } from './recipeBackup.js';
 import { isConfigured as telegramConfigured } from './notify/telegram.js';
 import { apiRoutes } from './routes/api.js';
 import { brewSystemRoutes } from './routes/brewSystem.js';
@@ -136,6 +137,7 @@ async function main(): Promise<void> {
     startAlertScheduler(app);
     startNotificationScheduler(app);
     startRetentionScheduler(app);
+    startRecipeBackupScheduler(app.log);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

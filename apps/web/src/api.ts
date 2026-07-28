@@ -37,7 +37,10 @@ import type {
   PriceOverrideInput,
   Reading,
   Recipe,
+  RecipeBackupResult,
+  RecipeBackupStatus,
   RecipeCostBreakdown,
+  RecipeDefaults,
   RecipeDetail,
   RecipeEditInput,
   RecipeImportResult,
@@ -361,6 +364,14 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(recipe),
     }),
+  // The figures a blank brew sheet opens on. Server-shared, so the kiosk, a
+  // laptop and the phone all start a new recipe on the same brewhouse.
+  getRecipeDefaults: () => request<RecipeDefaults>('/recipe-defaults'),
+  updateRecipeDefaults: (defaults: RecipeDefaults) =>
+    request<RecipeDefaults>('/recipe-defaults', {
+      method: 'PUT',
+      body: JSON.stringify(defaults),
+    }),
   // What the sheet in the editor costs as it stands. Saves nothing: the prices
   // live in the server's catalogue, so an unsaved draft has to ask for them.
   priceRecipe: (recipe: RecipeEditInput) =>
@@ -372,9 +383,22 @@ export const api = {
     request<void>(`/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   importBrewersFriendRecipes: () =>
     request<RecipeImportResult>('/recipes/import/brewersfriend', { method: 'POST' }),
-  searchRecipeIngredients: (kind: IngredientKind, q: string) =>
+  // Nightly recipe backups: what the last one did, and a way to take one now.
+  getRecipeBackupStatus: () => request<RecipeBackupStatus>('/recipes/backup'),
+  backupRecipes: () => request<RecipeBackupResult>('/recipes/backup', { method: 'POST' }),
+  // Ingredients to offer in the editor's pickers: the shop's catalogue, plus —
+  // unless `catalogueOnly` — whatever saved recipes have called for before.
+  searchRecipeIngredients: (
+    kind: IngredientKind,
+    q: string,
+    options: { catalogueOnly?: boolean } = {},
+  ) =>
     request<RecipeIngredientOption[]>(
-      `/recipes/catalog?${new URLSearchParams({ kind, q }).toString()}`,
+      `/recipes/catalog?${new URLSearchParams({
+        kind,
+        q,
+        ...(options.catalogueOnly ? { catalogueOnly: 'true' } : {}),
+      }).toString()}`,
     ),
   // Today's daytime average outside — where a new recipe's grain temperature
   // starts. Null whenever the weather service couldn't be reached.

@@ -26,6 +26,9 @@ session-secret
 knowledge-index.json
 knowledge-index.bin
 
+# Untracked files deploy/update.sh moved aside so a pull could fast-forward.
+data/update-backups/
+
 # Editor / OS
 .DS_Store
 .vscode/

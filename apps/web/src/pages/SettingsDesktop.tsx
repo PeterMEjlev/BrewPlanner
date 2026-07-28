@@ -10,6 +10,7 @@ import {
   type GraphColors,
   type KegContentColors,
   type NotificationSettings,
+  type RecipeDefaults,
   type User,
   type UserRole,
 } from '@checklist/shared';
@@ -17,6 +18,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type SystemUpdateStatus } from '../api';
 import { useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
+import { BATCH_TARGETS, PITCH_RATES } from '../recipeCatalog';
+import {
+  resetRecipeDefaults,
+  saveRecipeDefaults,
+  useRecipeDefaults,
+} from '../recipeDefaults';
 import { usePoll } from '../usePoll';
 import { resetGraphColors, saveGraphColors, useGraphColors } from '../graphColors';
 import {
@@ -51,6 +58,7 @@ import { asMessage } from '../util';
 type SettingsCategoryId =
   | 'dashboard'
   | 'sensors'
+  | 'recipes'
   | 'colours'
   | 'notifications'
   | 'account'
@@ -71,6 +79,11 @@ const SETTINGS_CATEGORIES: {
     id: 'sensors',
     label: 'Sensors',
     description: 'Data source and logging interval per sensor',
+  },
+  {
+    id: 'recipes',
+    label: 'Recipes',
+    description: 'What a new brew sheet starts from',
   },
   {
     id: 'colours',
@@ -199,6 +212,8 @@ function renderSettingsCategory(category: SettingsCategoryId): React.ReactNode {
           <LoggingIntervalSection />
         </>
       );
+    case 'recipes':
+      return <RecipeDefaultsSection />;
     case 'colours':
       return (
         <>
@@ -662,6 +677,172 @@ function KegFreshnessSection(): JSX.Element {
       </div>
     </Card>
   );
+}
+
+// --- New recipe defaults (server-shared) ------------------------------------
+
+/** The keys of {@link RecipeDefaults} that hold a number, for the fields below. */
+type NumericRecipeDefault = {
+  [K in keyof RecipeDefaults]: RecipeDefaults[K] extends number ? K : never;
+}[keyof RecipeDefaults];
+
+const RECIPE_DEFAULT_FIELDS: {
+  key: NumericRecipeDefault;
+  label: string;
+  hint?: string;
+  min: number;
+  max: number;
+  step: number;
+}[] = [
+  { key: 'batchSizeL', label: 'Batch size (L)', hint: 'What ends up in the fermenter.', min: 0.5, max: 100_000, step: 0.5 },
+  { key: 'boilTimeMinutes', label: 'Boil time (min)', min: 0, max: 1_000, step: 5 },
+  { key: 'efficiencyPercent', label: 'Brewhouse efficiency (%)', hint: 'What the mash is expected to extract.', min: 1, max: 100, step: 1 },
+  { key: 'boilOffLPerHour', label: 'Boil-off rate (L/h)', hint: 'With the boil time, this sets the pre-boil volume.', min: 0, max: 1_000, step: 0.5 },
+  { key: 'trubChillerLossL', label: 'Trub & chiller loss (L)', hint: 'Left behind in the kettle, so the post-boil volume covers it.', min: 0, max: 10_000, step: 0.5 },
+  { key: 'mashThicknessLPerKg', label: 'Mash thickness (L/kg)', hint: 'Strike water per kilo of grain.', min: 0.1, max: 100, step: 0.1 },
+  { key: 'mashStrikeTempC', label: 'Strike temperature (°C)', hint: 'What the water goes in at…', min: 0, max: 120, step: 0.5 },
+  { key: 'mashTargetTempC', label: 'Mash temperature (°C)', hint: '…and what the mash settles to.', min: 0, max: 120, step: 0.5 },
+  { key: 'mashStepMinutes', label: 'Mash rest (min)', min: 0, max: 1_000, step: 5 },
+];
+
+/**
+ * The brewhouse a new recipe is written for. Server-shared, so the kiosk, a
+ * laptop and the phone all open a blank sheet on the same numbers — and edited
+ * only here, because they describe equipment rather than a screen.
+ */
+function RecipeDefaultsSection(): JSX.Element {
+  const live = useRecipeDefaults();
+  const [draft, setDraft] = useState<RecipeDefaults>(live);
+  // Adopt the server's figures into the draft when they load — but never
+  // clobber edits the user has started (tracked by `touched`).
+  const [touched, setTouched] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!touched) setDraft(live);
+  }, [live, touched]);
+
+  const dirty = (Object.keys(live) as (keyof RecipeDefaults)[]).some((key) => draft[key] !== live[key]);
+
+  const edit = <K extends keyof RecipeDefaults>(key: K, value: RecipeDefaults[K]): void => {
+    setStatus('idle');
+    setTouched(true);
+    setDraft((d) => ({ ...d, [key]: value }));
+  };
+
+  const save = async (): Promise<void> => {
+    setStatus('saving');
+    setError(null);
+    try {
+      await saveRecipeDefaults(draft);
+      setTouched(false);
+      setStatus('saved');
+    } catch (e) {
+      setError(asMessage(e));
+      setStatus('error');
+    }
+  };
+
+  const reset = async (): Promise<void> => {
+    setStatus('saving');
+    setError(null);
+    try {
+      const next = await resetRecipeDefaults();
+      setDraft(next);
+      setTouched(false);
+      setStatus('saved');
+    } catch (e) {
+      setError(asMessage(e));
+      setStatus('error');
+    }
+  };
+
+  return (
+    <Card
+      title="New recipe defaults"
+      hint="The figures a blank brew sheet opens on, shared by every screen. Recipes already saved keep the numbers they were written with — changing these only moves the starting point."
+    >
+      <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+        <Row label="Batch target" hint="Whether the batch size means the fermenter or the kettle.">
+          <select
+            className={`${inputClass} w-44`}
+            value={draft.batchTarget}
+            onChange={(e) => edit('batchTarget', e.target.value)}
+          >
+            {optionsWith(BATCH_TARGETS, draft.batchTarget).map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
+        </Row>
+        {RECIPE_DEFAULT_FIELDS.map((field) => (
+          <Row key={field.key} label={field.label} hint={field.hint}>
+            <input
+              type="number"
+              className={`${inputClass} w-28 text-right tabular-nums`}
+              min={field.min}
+              max={field.max}
+              step={field.step}
+              value={draft[field.key]}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                // Clamped rather than rejected: the server validates the same
+                // bounds, and a half-typed "0" shouldn't fail to save later.
+                if (Number.isFinite(n)) {
+                  edit(field.key, Math.min(field.max, Math.max(field.min, n)));
+                }
+              }}
+            />
+          </Row>
+        ))}
+        <Row label="Pitch rate" hint="Carried onto the yeast section of a new sheet.">
+          <select
+            className={`${inputClass} w-56`}
+            value={draft.pitchRate}
+            onChange={(e) => edit('pitchRate', e.target.value)}
+          >
+            {optionsWith(PITCH_RATES, draft.pitchRate).map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </select>
+        </Row>
+      </div>
+
+      <div className="mt-4 flex items-center gap-3 border-t border-zinc-800 pt-4">
+        <button type="button" className={btnPrimary} onClick={() => void save()} disabled={!dirty || status === 'saving'}>
+          {status === 'saving' ? 'Saving…' : 'Save defaults'}
+        </button>
+        <button
+          type="button"
+          className={btnGhost}
+          onClick={() => void reset()}
+          disabled={status === 'saving'}
+        >
+          Reset to defaults
+        </button>
+        <span className="text-sm text-zinc-500">
+          {error ? (
+            <span className="text-red-400">{error}</span>
+          ) : status === 'saved' ? (
+            'Saved.'
+          ) : dirty ? (
+            'Unsaved changes.'
+          ) : (
+            ''
+          )}
+        </span>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * A dropdown's options with the stored value included even when it isn't one of
+ * them — a figure saved before the list changed stays selectable rather than
+ * silently becoming the first entry.
+ */
+function optionsWith(values: readonly string[], current: string): string[] {
+  return values.includes(current) ? [...values] : [current, ...values];
 }
 
 // --- Graph colours (server-shared) -----------------------------------------

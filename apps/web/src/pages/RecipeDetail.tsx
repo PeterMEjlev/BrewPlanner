@@ -10,8 +10,18 @@ import type {
   RecipePricing,
   RecipeWaterProfile,
   RecipeYeast,
+  UnpricedIngredient,
 } from '@checklist/shared';
-import { HOP_STAGE_ORDER, ebcColor, isFermentableLine, predictBeerColor, sumCost } from '@checklist/shared';
+import {
+  HOP_STAGE_ORDER,
+  aromaHopRate,
+  ebcColor,
+  estimateFermentationDays,
+  isFermentableLine,
+  predictBeerColor,
+  sumCost,
+  unpricedIngredients,
+} from '@checklist/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
@@ -21,6 +31,7 @@ import { IngredientName, PriceCell } from '../components/PricePicker';
 import type { PricedLine } from '../components/PricePicker';
 import { RecipeEditor } from '../components/RecipeEditor';
 import { SheetSection } from '../components/SheetSection';
+import { UnpricedIngredientsDialog } from '../components/UnpricedIngredients';
 import { kr } from '../money';
 import { invalidateRecipes, loadRecipeDetail } from '../recipeStore';
 import { asCleanMessage } from '../util';
@@ -99,14 +110,6 @@ function toG(amount: string, unit: string): number {
   }
 }
 
-/**
- * The stages that actually put aroma in the beer. Boil (and mash/first-wort)
- * additions are excluded from the hop-rate figure — that number describes aroma
- * intensity, and a big bittering charge would inflate it without making the beer
- * smell of anything.
- */
-const AROMA_STAGES: HopStage[] = ['Whirlpool', 'Dry Hop'];
-
 /** A section's cost for its header: "254 kr", plus a note when coverage is short. */
 function costMeta(cost: CostTotal): string {
   const parts: string[] = [];
@@ -115,12 +118,21 @@ function costMeta(cost: CostTotal): string {
   return parts.join(' · ');
 }
 
-/** "20 min", "5 days", or '' when the addition states no time. */
+/**
+ * "20 min", "5 days", or '' when the addition states no time.
+ *
+ * An addition that gives a time but no unit is read as minutes everywhere a
+ * kettle is involved — a whirlpool stand or a boil charge is timed in minutes,
+ * and an imported sheet that leaves the unit off shouldn't lose its stand time.
+ * A dry hop keeps its silence: "5" days and "5" minutes are both plausible
+ * there, and guessing wrong turns a five-day charge into a five-minute one.
+ */
 function hopTiming(hop: RecipeHop): string {
-  if (!hop.time || !hop.timeUnit) return '';
+  if (!hop.time) return '';
   if (hop.timeUnit === 'day') {
     return `${hop.time} ${Number.parseFloat(hop.time) === 1 ? 'day' : 'days'}`;
   }
+  if (!hop.timeUnit && hop.stage === 'Dry Hop') return '';
   return `${hop.time} min`;
 }
 
@@ -271,18 +283,30 @@ export function RecipeDetailPage(): JSX.Element {
 
   const totals = useMemo(() => {
     if (!recipe) return null;
-    const grainKg = recipe.fermentables.reduce((sum, f) => sum + toKg(f.amount, f.unit), 0);
-    const hopsG = recipe.hops.reduce((sum, h) => sum + toG(h.amount, h.unit), 0);
-    const aromaG = recipe.hops
-      .filter((h) => AROMA_STAGES.includes(h.stage))
-      .reduce((sum, h) => sum + toG(h.amount, h.unit), 0);
     return {
-      grainKg,
-      hopsG,
-      // Only meaningful with a batch size to divide by.
-      aromaRate: recipe.batchSizeL ? aromaG / recipe.batchSizeL : null,
+      grainKg: recipe.fermentables.reduce((sum, f) => sum + toKg(f.amount, f.unit), 0),
+      hopsG: recipe.hops.reduce((sum, h) => sum + toG(h.amount, h.unit), 0),
+      aromaRate: aromaHopRate(recipe.hops, recipe.batchSizeL),
     };
   }, [recipe]);
+
+  /**
+   * Roughly how long this beer will take to ferment — the strain, the
+   * temperature the sheet holds it at, and the gravity it has to get through.
+   * A planning figure for when the fermenter comes free, so it says "≈" and
+   * carries its own caveats in the tooltip.
+   */
+  const fermentation = useMemo(
+    () =>
+      recipe
+        ? estimateFermentationDays({
+            og: recipe.og,
+            temperatureC: recipe.fermentationTemp,
+            yeast: recipe.yeast,
+          })
+        : null,
+    [recipe],
+  );
 
   if (error && !recipe) {
     return (
@@ -458,6 +482,17 @@ export function RecipeDetailPage(): JSX.Element {
           />
           {recipe.mashTemp && <Stat label="Mash" value={recipe.mashTemp} />}
           {recipe.fermentationTemp && <Stat label="Fermentation" value={recipe.fermentationTemp} />}
+          {/* When the fermenter comes free, near enough to plan a brew day
+              around. An estimate from the strain, the temperature and the
+              gravity — never a substitute for a hydrometer, which is what the
+              tooltip says. */}
+          {fermentation && (
+            <Stat
+              label="Ferment"
+              value={`≈${fermentation.days} days`}
+              title={`${fermentation.minDays}–${fermentation.maxDays} days. ${fermentation.note}`}
+            />
+          )}
           {/* Grid auto-flow puts this beside EBC (its usual neighbour once the
               gravity/ABV/IBU stats fill the row above); a col-span this wide
               only fits when there's room left in the current row — otherwise it
@@ -471,6 +506,8 @@ export function RecipeDetailPage(): JSX.Element {
                 hops={costs.hops}
                 yeast={costs.yeast}
                 other={costs.other}
+                editable={controllable}
+                onChanged={reprice}
               />
             </div>
           )}
@@ -811,6 +848,8 @@ function CostSummary({
   hops,
   yeast,
   other,
+  editable,
+  onChanged,
 }: {
   recipe: RecipeDetail;
   fermentables: CostTotal;
@@ -818,8 +857,14 @@ function CostSummary({
   yeast: CostTotal;
   /** Fruit purées and the rest — often the biggest line in a sour. */
   other: CostTotal;
-}): JSX.Element | null {
+} & RowPricing): JSX.Element | null {
   const pricing: RecipePricing = recipe.pricing;
+  // Which ingredients the total is short of, for the panel the count opens.
+  const missing = useMemo(() => unpricedIngredients(recipe), [recipe]);
+  // The panel keeps the list it opened with: each price saved re-reads the
+  // recipe, which takes that ingredient off `missing`, and rows disappearing
+  // from under the brewer mid-list is no way to work down one.
+  const [pricingGaps, setPricingGaps] = useState<UnpricedIngredient[] | null>(null);
   // The recipe-wide figures come from the server, which pools repeats of one
   // product before rounding to packages — summing the per-line prices here would
   // charge three bags for three small additions of the same hop.
@@ -882,8 +927,25 @@ function CostSummary({
           <div className="mt-0.5">
             {unpriced > 0 && (
               <span className="text-amber-500/80">
-                {unpriced} of {priced + unpriced} ingredient{priced + unpriced === 1 ? '' : 's'} not
-                in the catalogue
+                {/* The count is the natural place to ask "which ones?", so it
+                    opens the list — and, for an admin, the boxes that price
+                    them. A guest sees the same sentence as plain text. */}
+                {editable && missing.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setPricingGaps(missing)}
+                    title="Show these ingredients and set their prices"
+                    className="underline decoration-amber-500/40 underline-offset-4 transition hover:text-amber-300 hover:decoration-amber-400"
+                  >
+                    {unpriced} of {priced + unpriced} ingredient
+                    {priced + unpriced === 1 ? '' : 's'} not in the catalogue
+                  </button>
+                ) : (
+                  <>
+                    {unpriced} of {priced + unpriced} ingredient
+                    {priced + unpriced === 1 ? '' : 's'} not in the catalogue
+                  </>
+                )}
                 {' · '}
               </span>
             )}
@@ -892,6 +954,13 @@ function CostSummary({
           </div>
         </div>
       </div>
+      {pricingGaps && (
+        <UnpricedIngredientsDialog
+          lines={pricingGaps}
+          onClose={() => setPricingGaps(null)}
+          onChanged={onChanged}
+        />
+      )}
     </section>
   );
 }
@@ -1144,7 +1213,9 @@ function WaterSection({
         <dl className="space-y-1 text-sm">
           {profile.ph && (
             <div className="flex gap-2">
-              <dt className="text-zinc-500">Target pH</dt>
+              {/* The mash pH the grist and water are calculated to land at —
+                  what the editor stores here — not a target anybody typed. */}
+              <dt className="text-zinc-500">Estimated mash pH</dt>
               <dd className="text-zinc-200">{profile.ph}</dd>
             </div>
           )}
