@@ -27,8 +27,22 @@ let nativeActive = true;
 /** Callbacks to fire when the app returns to the foreground. */
 const resumeListeners = new Set<() => void>();
 
-function pollingPaused(): boolean {
-  return !nativeActive || document.visibilityState === 'hidden';
+/** No document under a test runner; there, treat the app as always visible. */
+const hasDocument = typeof document !== 'undefined';
+
+/**
+ * True while nobody is looking — a hidden tab or a backgrounded native app.
+ * Exported so the shared-channel store (sharedPoll.ts) can drive its own timers
+ * with exactly the same rule, rather than inventing a second one.
+ */
+export function pollingPaused(): boolean {
+  return !nativeActive || (hasDocument && document.visibilityState === 'hidden');
+}
+
+/** Run `fn` when the app returns to the foreground. Returns an unsubscribe. */
+export function onResume(fn: () => void): () => void {
+  resumeListeners.add(fn);
+  return () => resumeListeners.delete(fn);
 }
 
 function notifyResume(): void {
@@ -36,7 +50,7 @@ function notifyResume(): void {
   for (const listener of [...resumeListeners]) listener();
 }
 
-document.addEventListener('visibilitychange', notifyResume);
+if (hasDocument) document.addEventListener('visibilitychange', notifyResume);
 
 // In the native app the web view can keep running while backgrounded without a
 // visibilitychange, so track Capacitor's app state as well.

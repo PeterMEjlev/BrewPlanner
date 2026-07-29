@@ -3,7 +3,7 @@ import { Style, StatusBar } from '@capacitor/status-bar';
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
-import { RequireAuth } from './auth';
+import { RequireAuth, clearCachedAuth } from './auth';
 import { hasServerUrl, hydrateConfig, isNative, setUnauthorizedHandler } from './native';
 import { ReopenSetupContext } from './setupContext';
 import { ServerSetup } from './pages/ServerSetup';
@@ -291,6 +291,9 @@ const router = createBrowserRouter([
 // page reload — a reload would break in the bundled native app, which has no
 // server at its localhost origin to serve /login.
 setUnauthorizedHandler(() => {
+  // The session is gone, so the cached auth state RequireAuth renders from is
+  // stale — drop it, or coming back would flash the old signed-in shell.
+  clearCachedAuth();
   void router.navigate('/login');
 });
 

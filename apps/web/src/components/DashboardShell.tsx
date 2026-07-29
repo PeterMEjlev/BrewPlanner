@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { useBrucePhase } from '../bruceActivity';
 import { isUnknownContents } from '../kegs';
+import { SHARED, useShared } from '../sharedPoll';
 import { usePoll } from '../usePoll';
 import {
   BellIcon,
@@ -89,11 +90,13 @@ interface FleetStatus {
  * badges would flash empty and refetch each time you switch pages; seeding the
  * hooks' state from the cache keeps the last known count on screen while the
  * background refresh runs.
+ *
+ * The badges whose endpoint a page also polls (devices, kegs, alerts) have moved
+ * to shared channels — see sharedPoll.ts — which hold the same last value *and*
+ * collapse the two timers into one. What's left here is the badges nothing else
+ * fetches alongside them.
  */
-let cachedFleet: FleetStatus | null = null;
-let cachedKegStatus: KegStatus | null = null;
 let cachedTodoCount: number | null = null;
-let cachedAlertCount: number | null = null;
 let cachedBrewSystem: BrewSystemNavStatus | null = null;
 /**
  * The phone bottom-bar's horizontal scroll offset, remembered across shell
@@ -105,22 +108,15 @@ let cachedNavScrollLeft = 0;
 /**
  * Poll the device fleet so the Devices nav item can show an online/total count
  * and a health dot. Lives in the shell (not a page) because the nav is global,
- * so the badge stays accurate on every screen.
+ * so the badge stays accurate on every screen — which is exactly why it shares
+ * the fleet channel with whatever page is showing rather than polling its own.
  */
 function useFleetStatus(): FleetStatus | null {
-  const [fleet, setFleet] = useState<FleetStatus | null>(cachedFleet);
-  usePoll(async (isStale) => {
-    try {
-      const devices = await api.listDevices();
-      if (!isStale()) {
-        cachedFleet = { online: devices.filter((d) => d.online).length, total: devices.length };
-        setFleet(cachedFleet);
-      }
-    } catch {
-      // Keep the last known counts through a transient failure.
-    }
-  }, FLEET_POLL_MS);
-  return fleet;
+  const { data } = useShared(SHARED.devices, api.listDevices, FLEET_POLL_MS);
+  return useMemo(
+    () => (data ? { online: data.filter((d) => d.online).length, total: data.length } : null),
+    [data],
+  );
 }
 
 /** Dot colour for the fleet's health: green all up, amber some down, red all down. */
@@ -152,22 +148,17 @@ interface KegStatus {
  * every page, and keeps the last counts through a transient fetch failure.
  */
 function useKegStatus(): KegStatus | null {
-  const [kegs, setKegs] = useState<KegStatus | null>(cachedKegStatus);
-  usePoll(async (isStale) => {
-    try {
-      const data = await api.getKegs();
-      if (!isStale()) {
-        cachedKegStatus = {
-          filled: data.filter((k) => !isUnknownContents(k.contents)).length,
-          total: data.length,
-        };
-        setKegs(cachedKegStatus);
-      }
-    } catch {
-      // Keep the last known counts through a transient failure.
-    }
-  }, FLEET_POLL_MS);
-  return kegs;
+  const { data } = useShared(SHARED.kegs, api.getKegs, FLEET_POLL_MS);
+  return useMemo(
+    () =>
+      data
+        ? {
+            filled: data.filter((k) => !isUnknownContents(k.contents)).length,
+            total: data.length,
+          }
+        : null,
+    [data],
+  );
 }
 
 /**
@@ -198,19 +189,8 @@ function useOpenTodoCount(): number | null {
  * Overview and Alerts page counts.
  */
 function useAlertCount(): number {
-  const [count, setCount] = useState<number>(cachedAlertCount ?? 0);
-  usePoll(async (isStale) => {
-    try {
-      const alerts = await api.listAlerts();
-      if (!isStale()) {
-        cachedAlertCount = alerts.filter((a) => a.resolvedAt == null).length;
-        setCount(cachedAlertCount);
-      }
-    } catch {
-      // Keep the last known count through a transient failure.
-    }
-  }, FLEET_POLL_MS);
-  return count;
+  const { data } = useShared(SHARED.alerts, api.listAlerts, FLEET_POLL_MS);
+  return useMemo(() => (data ?? []).filter((a) => a.resolvedAt == null).length, [data]);
 }
 
 /**

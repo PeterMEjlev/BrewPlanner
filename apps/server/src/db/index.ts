@@ -20,6 +20,11 @@ mkdirSync(dirname(databasePath), { recursive: true });
 // devices/retention.ts); everything else goes through the drizzle `db`.
 export const sqlite: Database.Database = new Database(databasePath);
 sqlite.pragma('journal_mode = WAL');
+// The standard pairing for WAL: commits stop fsync'ing the log every time and
+// sync at checkpoints instead. Still crash-safe — a power cut can lose the last
+// transactions but cannot corrupt the database — and it takes a lot of write
+// load off the Pi's SD card, which telemetry ingest hits every few seconds.
+sqlite.pragma('synchronous = NORMAL');
 sqlite.pragma('foreign_keys = ON');
 
 export const db = drizzle(sqlite, { schema });

@@ -54,12 +54,16 @@ import {
 import { SetpointControl } from '../SetpointControl';
 import { formatPressure, useSettings } from '../settings';
 import { ChartRangeProvider, useChartRange } from '../chartRange';
-import { RANGES, listPollMs, useDeviceTotal, useMetricSeries, useMetricSeriesT } from '../useDeviceData';
+import { fermentationDone } from '../ferment';
+import { SHARED, useShared } from '../sharedPoll';
+import { RANGES, useDeviceTotal, useFleet, useMetricSeries, useMetricSeriesT } from '../useDeviceData';
 import { usePoll } from '../usePoll';
 import { relativeTime } from '../util';
 
 const KEG_POLL_MS = 60_000;
 const FERMENT_POLL_MS = 60_000;
+/** The recipe in the tank changes once a brew, so it doesn't need the fleet's rate. */
+const RECIPE_POLL_MS = 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** How much gravity history feeds the forecast fit (compressed into the left half). */
 const GRAVITY_HISTORY_MS = 14 * DAY_MS;
@@ -117,16 +121,6 @@ function isStationGroup(group: DeviceStatus[]): boolean {
 }
 
 // --- Fermentation status ----------------------------------------------------
-
-function fermentationDone(history: Reading[], windowMs: number, thresholdSg: number): boolean {
-  const windowStart = Date.now() - windowMs;
-  const recent = history.filter((r) => Date.parse(r.recordedAt) >= windowStart);
-  if (recent.length < 2) return false;
-  const times = recent.map((r) => Date.parse(r.recordedAt));
-  if (Math.max(...times) - Math.min(...times) < windowMs * 0.8) return false;
-  const values = recent.map((r) => r.value);
-  return Math.max(...values) - Math.min(...values) <= thresholdSg;
-}
 
 interface FermentStatus {
   label: string;
@@ -297,21 +291,6 @@ interface ChartTarget {
 type OpenChart = (target: ChartTarget) => void;
 
 /**
- * Module-level snapshot of the last successful dashboard load, kept alive across
- * route changes (and thus DashboardPage unmounts) so returning to the overview
- * from another page renders instantly from memory instead of flashing the
- * loading skeletons and refetching from scratch. Mirrors the keg inventory's
- * cache (see [useKegs]). The page still kicks off a background refresh on mount
- * and on its poll interval, so the cached view is only ever a moment stale. A
- * full browser reload clears it — "once per session" means once per page load.
- */
-interface DashboardSnapshot {
-  devices: DeviceStatus[];
-  recipe: Recipe | null;
-}
-let cachedDashboard: DashboardSnapshot | null = null;
-
-/**
  * True on phone-sized screens (below Tailwind's `md`, where the shell switches to
  * the bottom-nav layout). Drives the compact dashboard used by the Android app
  * and the website on a phone; desktop keeps the full command-centre layout.
@@ -337,9 +316,6 @@ function useIsMobile(): boolean {
  * it; the sidebar polls its own alert count for the Alerts badge.
  */
 export function DashboardPage(): JSX.Element {
-  const [devices, setDevices] = useState<DeviceStatus[] | null>(() => cachedDashboard?.devices ?? null);
-  const [recipe, setRecipe] = useState<Recipe | null>(() => cachedDashboard?.recipe ?? null);
-  const [error, setError] = useState<string | null>(null);
   const [chart, setChart] = useState<ChartTarget | null>(null);
   // Which tab each fermenter card has open, by station name. The page owns this
   // (rather than the card) because the card's height on a phone follows its tab.
@@ -351,25 +327,14 @@ export function DashboardPage(): JSX.Element {
   const { kegs, loading: kegsLoading, error: kegsError } = useKegs(KEG_POLL_MS);
   const openChart = useCallback((target: ChartTarget) => setChart(target), []);
 
-  const load = useCallback(async () => {
-    try {
-      const [d, r] = await Promise.all([
-        api.listDevices(),
-        api.getActiveRecipe().catch(() => null),
-      ]);
-      setDevices(d);
-      setRecipe(r);
-      setError(null);
-      cachedDashboard = { devices: d, recipe: r };
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load devices');
-    }
-  }, []);
-
-  // Re-poll at the fleet's fastest per-device logging cadence (each device's own
-  // interval, set from the Devices/Settings page) rather than one global rate.
-  const pollMs = listPollMs(devices);
-  usePoll(load, pollMs, [load]);
+  // Both come off shared channels (sharedPoll.ts), which do the job the page's
+  // own module-level snapshot used to: the last values survive navigating away,
+  // so coming back renders instantly instead of flashing the skeletons. The
+  // difference is that the sidebar's device badge now rides the same request,
+  // and the recipe is no longer refetched in lockstep with the fleet — it
+  // changes once a brew, not every few seconds.
+  const { data: devices, error, refresh: reloadFleet } = useFleet();
+  const { data: recipe } = useShared(SHARED.activeRecipe, api.getActiveRecipe, RECIPE_POLL_MS);
 
   // Scroll to a section when the sidebar links here with a hash from another page.
   useEffect(() => {
@@ -418,7 +383,7 @@ export function DashboardPage(): JSX.Element {
               devices={group}
               recipe={recipe}
               controllable={controllable}
-              onRefresh={load}
+              onRefresh={reloadFleet}
               onOpen={openChart}
               compact={compact}
               tab={compact ? fermenterTab(group[0]!.name) : undefined}
@@ -488,7 +453,7 @@ export function DashboardPage(): JSX.Element {
               />
             </div>
             <div className="shrink-0">
-              <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={load} compact />
+              <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={reloadFleet} compact />
             </div>
           </>
         ) : (
@@ -517,7 +482,7 @@ export function DashboardPage(): JSX.Element {
                 controllable={controllable}
               />
               <OperationsPanel />
-              <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={load} />
+              <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={reloadFleet} />
             </aside>
           </div>
         )}

@@ -6,9 +6,9 @@ import {
   matchContentOption,
   parseKegDate,
 } from '@checklist/shared';
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { api } from './api';
-import { usePoll } from './usePoll';
+import { SHARED, publishShared, useShared } from './sharedPoll';
 
 /**
  * Keg inventory lives in a shared Google Sheet — the same one the brew-system
@@ -130,45 +130,34 @@ export interface UseKegs {
 }
 
 /**
- * Module-level cache of the last successful keg fetch, kept alive across hook
- * unmounts so leaving and returning to the dashboard renders the inventory
- * instantly instead of flashing the loading state and refetching from scratch.
- * The hook still refreshes in the background to pick up changes.
+ * The keg inventory, on the channel shared with the sidebar's keg badge (see
+ * sharedPoll.ts). The channel holds the last successful fetch across unmounts,
+ * so leaving and returning to the dashboard renders the inventory instantly
+ * rather than flashing the loading state — what this hook's own module-level
+ * cache used to do — while also collapsing the grid's poll and the badge's into
+ * a single request for a sheet neither of them changes.
+ *
+ * `pollMs` is optional: the desktop editor mounts without one and just reads
+ * whatever the shared channel holds, refreshed by whoever else is subscribed.
  */
-let cachedKegs: Keg[] | null = null;
+const KEGS_IDLE_POLL_MS = 5 * 60_000;
 
-/** Fetch the keg inventory on mount, optionally re-polling every `pollMs`. */
 export function useKegs(pollMs?: number): UseKegs {
-  const [kegs, setKegs] = useState<Keg[]>(() => cachedKegs ?? []);
-  // Only show the loading state on the very first fetch (no cache yet); a
-  // background refresh on a remount shouldn't blank out the existing data.
-  const [loading, setLoading] = useState(cachedKegs === null);
-  const [error, setError] = useState<string | null>(null);
-
-  usePoll(async (isStale) => {
-    try {
-      const data = await fetchKegs();
-      if (isStale()) return;
-      cachedKegs = data;
-      setKegs(data);
-      setError(null);
-    } catch (e) {
-      if (!isStale()) setError(e instanceof Error ? e.message : 'Failed to fetch keg data');
-    } finally {
-      if (!isStale()) setLoading(false);
-    }
-  }, pollMs || null);
+  const { data, error } = useShared(SHARED.kegs, fetchKegs, pollMs || KEGS_IDLE_POLL_MS);
 
   const applyLocalUpdates = useCallback((updated: Keg[]) => {
     const byNumber = new Map(updated.map((k) => [k.number, k]));
-    setKegs((prev) => {
-      const merged = prev.map((k) => byNumber.get(k.number) ?? k);
-      cachedKegs = merged;
-      return merged;
-    });
+    publishShared<Keg[]>(SHARED.kegs, (cur) => cur?.map((k) => byNumber.get(k.number) ?? k) ?? cur);
   }, []);
 
-  return { kegs, loading, error, applyLocalUpdates };
+  return {
+    kegs: data ?? [],
+    // Only the very first fetch shows a loading state; a background refresh on a
+    // remount has data to keep showing.
+    loading: data === null,
+    error,
+    applyLocalUpdates,
+  };
 }
 
 // --- Sorting ----------------------------------------------------------------

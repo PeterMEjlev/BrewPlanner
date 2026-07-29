@@ -4,7 +4,7 @@ import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { CloseIcon } from '../components/icons';
-import { usePoll } from '../usePoll';
+import { SHARED, publishShared, useShared } from '../sharedPoll';
 import { relativeTime } from './Dashboard';
 
 const POLL_MS = 15000;
@@ -53,20 +53,19 @@ function isActive(a: Alert): boolean {
  * restarts and shows resolved alerts too.
  */
 export function AlertsPage(): JSX.Element {
-  const [alerts, setAlerts] = useState<Alert[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Shared with the sidebar's alert badge, which polls the same feed — one
+  // request now serves both, and the optimistic edits below reach the badge too
+  // (dismissing an alert used to leave the count stale until its next poll).
+  const { data: alerts, error: loadError, refresh } = useShared(
+    SHARED.alerts,
+    api.listAlerts,
+    POLL_MS,
+  );
+  const [actionError, setActionError] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
   const { auth } = useAuth();
   const controllable = canControl(auth);
-
-  const load = useCallback(async () => {
-    try {
-      setAlerts(await api.listAlerts());
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load alerts');
-    }
-  }, []);
+  const error = actionError ?? loadError;
 
   /**
    * Dismiss an alert for good. We drop it optimistically — the server omits
@@ -75,16 +74,16 @@ export function AlertsPage(): JSX.Element {
    */
   const dismiss = useCallback(
     async (id: number) => {
-      setAlerts((prev) => prev?.filter((a) => a.id !== id) ?? prev);
+      publishShared<Alert[]>(SHARED.alerts, (cur) => cur?.filter((a) => a.id !== id) ?? cur);
       try {
         await api.dismissAlert(id);
-        setError(null);
+        setActionError(null);
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to dismiss alert');
-        void load();
+        setActionError(e instanceof Error ? e.message : 'Failed to dismiss alert');
+        void refresh();
       }
     },
-    [load],
+    [refresh],
   );
 
   /**
@@ -95,19 +94,17 @@ export function AlertsPage(): JSX.Element {
   const clearAll = useCallback(async () => {
     if (!window.confirm('Clear all alerts? They disappear from the history for good.')) return;
     setClearing(true);
-    setAlerts([]);
+    publishShared<Alert[]>(SHARED.alerts, () => []);
     try {
       await api.clearAlerts();
-      setError(null);
+      setActionError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to clear alerts');
-      void load();
+      setActionError(e instanceof Error ? e.message : 'Failed to clear alerts');
+      void refresh();
     } finally {
       setClearing(false);
     }
-  }, [load]);
-
-  usePoll(load, POLL_MS, [load]);
+  }, [refresh]);
 
   const list = alerts ?? [];
   const activeCount = list.filter(isActive).length;

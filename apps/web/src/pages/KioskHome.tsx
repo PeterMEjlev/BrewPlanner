@@ -3,9 +3,8 @@
   DeviceType,
   LatestReading,
   Reading,
-  Recipe,
 } from '@checklist/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import {
@@ -22,13 +21,17 @@ import {
   TodoIcon,
 } from '../components/icons';
 import { isUnknownContents, useKegs } from '../kegs';
+import { fermentationDone } from '../ferment';
 import { formatPressure, useSettings } from '../settings';
-import { listPollMs } from '../useDeviceData';
+import { SHARED, useShared } from '../sharedPoll';
+import { useFleet } from '../useDeviceData';
 import { usePoll } from '../usePoll';
 import { formatValueParts, metricLabel } from './Dashboard';
 
 /** Keg counts move slowly — re-pull the sheet once a minute for the home tile. */
 const KEG_POLL_MS = 60_000;
+/** The recipe in the tank changes once a brew, not every logging cycle. */
+const RECIPE_POLL_MS = 60_000;
 
 type IconComponent = (props: { className?: string }) => JSX.Element;
 
@@ -137,17 +140,6 @@ function groupRank(group: DeviceStatus[]): number {
  */
 const FERMENT_POLL_MS = 60_000; // gravity moves slowly — re-evaluate once a minute
 
-function fermentationDone(history: Reading[], windowMs: number, thresholdSg: number): boolean {
-  const windowStart = Date.now() - windowMs;
-  const recent = history.filter((r) => Date.parse(r.recordedAt) >= windowStart);
-  if (recent.length < 2) return false;
-  const times = recent.map((r) => Date.parse(r.recordedAt));
-  // Need readings covering most of the window before trusting a "flat" verdict.
-  if (Math.max(...times) - Math.min(...times) < windowMs * 0.8) return false;
-  const values = recent.map((r) => r.value);
-  return Math.max(...values) - Math.min(...values) <= thresholdSg;
-}
-
 interface FermentStatus {
   label: string;
   dotClass: string;
@@ -251,28 +243,21 @@ function hvacColor(value: number): string {
  * remaining sensor + utility cards (brewery temp, keg fridge, power, water).
  */
 export function KioskHomePage(): JSX.Element {
-  const [devices, setDevices] = useState<DeviceStatus[]>([]);
-  const [recipe, setRecipe] = useState<Recipe | null>(null);
-  const [error, setError] = useState<string | null>(null);
   // Keg inventory comes from the shared Google Sheet (read-only here), polled
   // independently so a sheet hiccup never blanks the rest of the dashboard.
   const { kegs } = useKegs(KEG_POLL_MS);
-
-  const load = useCallback(async () => {
-    try {
-      const [d, r] = await Promise.all([api.listDevices(), api.getActiveRecipe()]);
-      setDevices(d);
-      setRecipe(r);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load');
-    }
-  }, []);
-
-  // Poll at the fleet's fastest per-device logging cadence (each device's own
-  // interval) rather than one fixed rate.
-  const pollMs = listPollMs(devices);
-  usePoll(load, pollMs, [load]);
+  // Fleet and recipe on their shared channels (sharedPoll.ts) — polled at the
+  // fleet's own cadence and once a minute respectively, rather than fetched
+  // together on the fast one. Separate now, so a failed recipe read no longer
+  // takes the sensor cards' data down with it.
+  const { data: fleet, error: fleetError } = useFleet();
+  const { data: recipe, error: recipeError } = useShared(
+    SHARED.activeRecipe,
+    api.getActiveRecipe,
+    RECIPE_POLL_MS,
+  );
+  const devices = fleet ?? [];
+  const error = fleetError ?? recipeError;
 
   // The fermenter (a multi-device "station") is the hero on the left; every
   // other sensor — lone watched sensors (brewery + keg-fridge temps) and the

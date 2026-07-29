@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
@@ -18,5 +19,11 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+  },
+  test: {
+    // Only the source tree: `dist` and `android/` both carry built copies of
+    // this app, and discovering tests there would run them twice (or not at all,
+    // for a bundled one).
+    include: ['src/**/*.test.ts'],
   },
 });

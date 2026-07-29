@@ -1,0 +1,37 @@
+name: CI
+
+# Typecheck, test and build every push and pull request. The Pi deploys by
+# pulling this branch and rebuilding (deploy/update.sh), so a build that only
+# fails there means a brewery with no dashboard — this catches it first.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The server and web app typecheck against @checklist/shared's build
+      # output, so it has to exist before anything else runs.
+      - name: Build shared
+        run: npm run build:shared
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # vitest in packages/shared and apps/web; node:test via tsx in apps/server.
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build

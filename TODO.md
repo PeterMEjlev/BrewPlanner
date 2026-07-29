@@ -1,9 +1,6 @@
-- Overview Page: fermenter temp graph doesnt show target temp when opened.
 
 
 
-
-- Water Calculator: None of the presets ask for MAgnesium or Bicarbonate? SHould those fields be removed?
 
 - ## Add support for
   - Electricity (Watt) usage
@@ -40,65 +37,18 @@
 
 # Optimization / improvement suggestions (code review)
 
-Ordered by impact. Themes: unbounded data growth, hot polling paths doing repeated
-full-table work, and tokens that never expire.
+Ordered by impact. The original themes — unbounded data growth, hot polling paths
+doing repeated full-table work, tokens that never expire — are now all addressed;
+what's left is structural.
 
 (Original #1 readings retention, #2 devices hot path, #3 keg-sheet cache, #4 token
-expiry/revocation, and #10 polling pause were completed 2026-07-03. Item numbers
+expiry/revocation, and #10 polling pause were completed 2026-07-03; #6 incremental
+history polling, #7 static cache headers + compression, and #9 the cached auth
+state on 2026-07-29, followed the same day by #5 incremental metric totals, #8
+server hardening, #11 the shared-poll store, and #14 tests + CI. Item numbers
 below are kept stable so cross-references still line up.)
 
-## Backend
-
-### 5. `getMetricTotal` re-scans the entire metric history every 60s
-devices/repo.ts:239-249 runs a window function over the full history of
-energy_kwh/water_l on every call; useDeviceTotal polls it every 60s per client.
-- Incremental caching: keep {lastId, lastValue, total} per (device, metric) in
-  memory; each call processes only `WHERE id > lastId`, adding positive deltas.
-  Seed once at boot. Stays exact; steady-state cost is a few rows.
-
-### 6. History polling refetches the full window every cycle
-useDeviceData.ts:96-104 refetches up to 5000 rows every poll tick (as fast as 5s),
-though only a few new points can exist. Over the tunnel that's hundreds of KB per
-tick per open chart.
-- The API already supports `since`: track newest recordedAt seen, poll with
-  since=lastSeen, append to local state (full fetch only on metric/range change or
-  error). Payloads drop from ~500KB to a few hundred bytes.
-
-### 7. Static assets served with no cache headers, no compression on LAN
-index.ts:104 registers @fastify/static with defaults, so the kiosk/phone
-re-download the ~400KB recharts chunk on every load. Vite fingerprints filenames,
-so /assets/* is safe to cache forever.
-- setHeaders: `public, max-age=31536000, immutable` for /assets/*; `no-cache` for
-  index.html (must revalidate).
-- Add @fastify/compress — the LAN kiosk gets uncompressed 5000-row history JSON
-  today (Cloudflare handles the tunnel side).
-
-### 8. Small server hardening / robustness
-- `PRAGMA synchronous = NORMAL` in db/index.ts:20 (default is FULL; NORMAL is the
-  standard crash-safe WAL pairing and cuts fsync load on SD cards).
-- Graceful shutdown: `process.on('SIGTERM', () => app.close())` + sqlite.close()
-  so systemd restarts don't drop in-flight writes.
-- @fastify/helmet for baseline security headers on the public tunnel hostname.
-
 ## Frontend
-
-### 9. Every route change refetches `/auth/me` and blanks the screen
-Each route wraps its own <RequireAuth> (main.tsx:52-257); the gate starts at
-auth=null on every mount (auth.tsx:52), so every navigation shows "Loading…" until
-/auth/me round-trips — noticeable over the tunnel.
-- Cache last AuthState in module scope (pattern already used everywhere:
-  cachedFleet, cachedKegs…): init from cache, render immediately when cached user
-  exists, revalidate in background. Or hoist a single AuthProvider above the router.
-
-### 11. Duplicate concurrent polls for the same resource
-Module-level caches share results, but each hook instance runs its own interval —
-two components showing the same series fetch it twice; DashboardShell polls
-/api/devices every 15s while the Dashboard page polls the same endpoint separately.
-- A small subscription store (key → one timer + subscriber set), OR adopt
-  @tanstack/react-query (dedupe, retry/backoff, stale-while-revalidate) and
-  delete most hand-rolled cache code in useDeviceData.ts and kegs.ts. (The
-  hidden-tab pause that react-query would also have provided now exists as the
-  shared usePoll hook — a subscription store could build on it.)
 
 ### 12. Split the two giant page files
 Dashboard.tsx = 2,239 lines, SettingsDesktop.tsx = 1,617. Both contain several
@@ -114,18 +64,11 @@ event on each accepted ingest would make dashboards update instantly, cut reques
 volume, and work through the tunnel. Keep polling as fallback. Optional — polling
 does work.
 
-## Tooling
-
-### 14. No tests and no CI
-Not a single test file or workflow. Highest-value / lowest-effort targets: pure
-functions in @checklist/shared and the web app — parseKegs CSV edge cases, the
-gravity forecast fit (gravityForecast.ts), fermentationDone window logic, and the
-notify/checks.ts thresholds (logic that silently misfires rather than crashing).
-Server routes testable via app.inject() against a temp-file SQLite DB
-(DATABASE_PATH already makes this injectable). Add vitest per workspace + a GitHub
-Actions workflow running typecheck + tests + build on push (typecheck already
-wired in root package.json).
-
 ## Next up by impact
-#6 (history polling refetches the full window — the `since` param is already
-there) and #9 (route changes blank the screen waiting on /auth/me).
+#12 (split Dashboard.tsx / SettingsDesktop.tsx — `fermentationDone` has already
+converged into ferment.ts, so the ferment-status hook is the natural next piece)
+and #13 (SSE push instead of polling, now that one shared channel per resource
+would be easy to feed from a single event stream).
+
+Still untested after #14: the notify/checks.ts thresholds, and the keg grid's
+optimistic-edit path.

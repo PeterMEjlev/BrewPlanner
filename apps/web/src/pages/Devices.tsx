@@ -1,5 +1,5 @@
 import { REPORTING_INTERVAL_OPTIONS, type DeviceStatus, type DeviceType } from '@checklist/shared';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import inkbirdIcon from '../assets/inkbird.png';
@@ -7,8 +7,7 @@ import tiltIcon from '../assets/tilt.png';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
-import { listPollMs } from '../useDeviceData';
-import { usePoll } from '../usePoll';
+import { useFleet } from '../useDeviceData';
 import { metricLabel, relativeTime } from './Dashboard';
 
 /**
@@ -182,14 +181,15 @@ export function DevicesPage(): JSX.Element {
   const { auth } = useAuth();
   const editable = canControl(auth);
 
-  const load = useCallback(async () => {
-    try {
-      setDevices(await api.listDevices());
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load devices');
-    }
-  }, []);
+  // The fleet comes off the shared channel, so this page and the sidebar's
+  // Devices badge are one request rather than two. It's mirrored into local
+  // state because an interval edit is applied optimistically on top of it,
+  // until the next poll confirms it.
+  const fleet = useFleet();
+  useEffect(() => {
+    if (fleet.data) setDevices(fleet.data);
+    setError(fleet.error);
+  }, [fleet.data, fleet.error]);
 
   // Save a device's new logging interval, updating the card immediately and
   // reloading on failure so a rejected change doesn't stick visually.
@@ -202,14 +202,11 @@ export function DevicesPage(): JSX.Element {
         await api.setDeviceInterval(id, seconds);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to update interval');
-        void load();
+        void fleet.refresh();
       }
     },
-    [load],
+    [fleet.refresh],
   );
-
-  const pollMs = listPollMs(devices);
-  usePoll(load, pollMs, [load]);
 
   const list = devices ?? [];
   const lastUpdate = latestDeviceTimestamp(list);

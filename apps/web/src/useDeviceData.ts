@@ -1,6 +1,7 @@
 import type { DeviceStatus, LatestReading, Reading } from '@checklist/shared';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
+import { SHARED, type SharedState, useShared } from './sharedPoll';
 import { usePoll } from './usePoll';
 
 /** Poll cadence before a device's own logging interval is known (first fetch). */
@@ -17,6 +18,25 @@ export function listPollMs(
 ): number {
   const secs = (devices ?? []).map((d) => d.reportingIntervalSec).filter((n) => n > 0);
   return secs.length ? Math.min(...secs) * 1000 : DEFAULT_POLL_MS;
+}
+
+/**
+ * The device fleet, from the channel every fleet view shares (Overview, Devices,
+ * the kiosk home, and the sidebar's device badge — see sharedPoll.ts). One
+ * request feeds all of them instead of one per mounted component.
+ *
+ * The cadence is the fleet's own: {@link listPollMs} over the devices we last
+ * saw, fed back as the subscription rate. It settles after the first load — the
+ * default rate fetches once, and the fleet's real fastest interval takes over
+ * from there.
+ */
+export function useFleet(): SharedState<DeviceStatus[]> & { refresh: () => Promise<void> } {
+  const [pollMs, setPollMs] = useState(DEFAULT_POLL_MS);
+  const fleet = useShared(SHARED.devices, api.listDevices, pollMs);
+  useEffect(() => {
+    setPollMs(listPollMs(fleet.data));
+  }, [fleet.data]);
+  return fleet;
 }
 
 /** Selectable history windows, shared by the laptop and touch sensor views. */
@@ -73,6 +93,16 @@ export function useDeviceData(
   const [internalRangeMs, setInternalRangeMs] = useState<number>(DEFAULT_RANGE_MS);
   const [history, setHistory] = useState<Reading[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Where the last successful history fetch got to, so the next one can ask for
+  // the tail instead of the whole window. `key` pins it to the series it was
+  // read for — a different device/metric/range invalidates it; `anchor` is the
+  // newest reading held; `appendable` goes false for a series that turned out
+  // not to support tailing at all. See loadHistory.
+  const cursor = useRef<{ key: string; anchor: Reading | null; appendable: boolean }>({
+    key: '',
+    anchor: null,
+    appendable: true,
+  });
 
   const rangeMs = rangeControl ? rangeControl.get(metric) : internalRangeMs;
   const setRangeMs = useCallback(
@@ -94,12 +124,63 @@ export function useDeviceData(
     }
   }, [deviceId]);
 
-  const loadHistory = useCallback(async () => {
+  /**
+   * Refresh the chart series. Only the first fetch of a series pulls the whole
+   * window (up to 5000 rows, ~500 KB); after that it asks for `since` = the
+   * newest point already held, which on a 5 s tick is a handful of rows —
+   * hundreds of bytes over the tunnel instead of hundreds of kilobytes. The
+   * window still slides: points that have aged past its start are dropped
+   * locally, so nothing grows without bound.
+   *
+   * Tailing is verified, not assumed. `since` is inclusive server-side, so a
+   * real series always hands the anchor reading straight back; when it doesn't,
+   * the response isn't something we can append to — the synthesized history a
+   * mock sensor serves is regenerated per request, ids and all — and we fall
+   * back to reading the whole window, for this fetch and every later one on the
+   * same series. Any failure drops the anchor, so the next tick re-reads the
+   * window rather than building on a series with a hole in it.
+   */
+  const loadHistory = useCallback(async (isStale: () => boolean) => {
     if (!metric) return;
+    const key = `${deviceId}:${metric}:${rangeMs}`;
+    const windowStartMs = Date.now() - rangeMs;
+    const { anchor, appendable } = cursor.current.key === key
+      ? cursor.current
+      : { anchor: null, appendable: true };
+    // An anchor that has aged out of the window has nothing left to append to.
+    const tailing =
+      appendable && anchor != null && Date.parse(anchor.recordedAt) >= windowStartMs;
+
+    const fetchSince = (sinceMs: number): Promise<Reading[]> =>
+      api.getDeviceHistory(deviceId, {
+        metric,
+        since: new Date(sinceMs).toISOString(),
+        limit: 5000,
+      });
+
     try {
-      const since = new Date(Date.now() - rangeMs).toISOString();
-      setHistory(await api.getDeviceHistory(deviceId, { metric, since, limit: 5000 }));
+      let page = await fetchSince(tailing ? Date.parse(anchor!.recordedAt) : windowStartMs);
+      let append = false;
+      let stillAppendable = appendable;
+      if (tailing) {
+        append = page.some((r) => r.id === anchor!.id && r.recordedAt === anchor!.recordedAt);
+        if (!append) {
+          stillAppendable = false;
+          page = await fetchSince(windowStartMs);
+        }
+      }
+      if (isStale()) return;
+      // The API answers newest-first, so page[0] is the new high-water mark.
+      cursor.current = { key, anchor: page[0] ?? null, appendable: stillAppendable };
+      setHistory((prev) => {
+        const kept = append ? prev : [];
+        const seen = new Set(kept.map((r) => r.id));
+        const fresh = page.filter((r) => !seen.has(r.id));
+        const merged = fresh.length ? [...fresh, ...kept] : kept;
+        return merged.filter((r) => Date.parse(r.recordedAt) >= windowStartMs);
+      });
     } catch (e) {
+      cursor.current = { key, anchor: null, appendable };
       setError(e instanceof Error ? e.message : 'Failed to load history');
     }
   }, [deviceId, metric, rangeMs]);

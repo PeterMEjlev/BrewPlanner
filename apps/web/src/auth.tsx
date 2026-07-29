@@ -14,6 +14,24 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/**
+ * The last resolved auth state, kept in module scope like the fleet and keg
+ * caches. Every route wraps its own <RequireAuth>, so without this each
+ * navigation remounted the gate at `null` and showed "Loading…" until
+ * /auth/me round-tripped — a visible blank frame over the tunnel. With it the
+ * gate renders the known state immediately and revalidates in the background.
+ *
+ * Purely a rendering shortcut: the server authorises every request itself, so
+ * a stale cache can't grant access to anything. It's cleared on a 401 (see
+ * main.tsx) and on sign-out, and dies with the page on reload.
+ */
+let cachedAuth: AuthState | null = null;
+
+/** Drop the cached state — called when the server rejects us (session gone). */
+export function clearCachedAuth(): void {
+  cachedAuth = null;
+}
+
 /** Access the current auth state. Only valid inside <RequireAuth>. */
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
@@ -49,18 +67,35 @@ export function RequireAuth({
   children: ReactNode;
   control?: boolean;
 }): JSX.Element {
-  const [auth, setAuth] = useState<AuthState | null>(null);
+  const [auth, setAuth] = useState<AuthState | null>(cachedAuth);
   const [failed, setFailed] = useState(false);
   const location = useLocation();
   const reopenSetup = useReopenSetup();
 
-  const refresh = useCallback(async () => {
-    setAuth(await api.getAuth());
+  const apply = useCallback((next: AuthState) => {
+    // Only a state that passes the gate is worth remembering. Caching a
+    // signed-out one would make the hop from /login to the requested page
+    // bounce straight back to /login off the stale value, before the fresh
+    // /auth/me could land.
+    cachedAuth = next.user || next.isLocal ? next : null;
+    setAuth(next);
   }, []);
 
+  const refresh = useCallback(async () => {
+    apply(await api.getAuth());
+  }, [apply]);
+
   useEffect(() => {
-    api.getAuth().then(setAuth).catch(() => setFailed(true));
-  }, []);
+    api.getAuth()
+      .then(apply)
+      // Only a first load with nothing cached has to show the failure screen.
+      // Once we've rendered a page, a dropped revalidation leaves it standing —
+      // each panel surfaces its own fetch error rather than the whole app
+      // collapsing to "couldn't reach the server" on one flaky request.
+      .catch(() => {
+        if (!cachedAuth) setFailed(true);
+      });
+  }, [apply]);
 
   if (failed) {
     return (

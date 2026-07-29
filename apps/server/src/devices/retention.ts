@@ -5,6 +5,7 @@ import { readings } from '../db/schema.js';
 import { setSetting } from '../repo.js';
 import {
   getMetricTotalBaseline,
+  invalidateMetricTotals,
   invalidateReadingCounts,
   metricTotalBaselineKey,
 } from './repo.js';
@@ -97,6 +98,10 @@ export function pruneOldReadings(log: FastifyBaseLogger): number {
   if (deleted > 0) {
     // The in-memory per-device counts just went stale; re-seed on next read.
     invalidateReadingCounts();
+    // So did the running delta sums: the rows they were summed over are gone,
+    // and their consumption now lives in the baselines set above. Re-seeding
+    // sums only what survived, so the two stop double-counting.
+    invalidateMetricTotals();
     // A big delete can leave the WAL file large; fold it back into the DB.
     sqlite.pragma('wal_checkpoint(TRUNCATE)');
     log.info(`Readings retention: pruned ${deleted} rows older than ${RETENTION_DAYS} days.`);

@@ -8,7 +8,7 @@ import type {
 } from '@checklist/shared';
 import { SET_SETPOINT_COMMAND } from '@checklist/shared';
 import { createHash, randomBytes } from 'node:crypto';
-import { and, asc, desc, eq, gte, inArray, isNull, like, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, like, ne, or, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { deviceCommands, devices, readings, settings } from '../db/schema.js';
 import { getSetting } from '../repo.js';
@@ -173,6 +173,11 @@ export function deleteDeviceByName(name: string): boolean {
   // Drop any total baselines the retention job stored for this device.
   db.delete(settings).where(like(settings.key, `metricTotalBase:${row.id}:%`)).run();
   readingCounts?.delete(row.id);
+  // The readings went with the device (cascade), so its running sums must too —
+  // a re-registered device reusing the id would otherwise inherit them.
+  for (const key of deltaSums.keys()) {
+    if (key.startsWith(`${row.id}:`)) deltaSums.delete(key);
+  }
   return true;
 }
 
@@ -419,6 +424,41 @@ export function getMetricTotalBaseline(deviceId: number, metric: string): number
  * so the total keeps covering the device's whole reporting lifetime.
  */
 export function getMetricTotal(deviceId: number, metric: string): number {
+  return getMetricTotalBaseline(deviceId, metric) + storedDeltaSum(deviceId, metric);
+}
+
+/**
+ * Running delta sums for the cumulative metrics, kept in memory alongside
+ * {@link readingCounts}. The window function above re-reads a metric's entire
+ * history on every call, and every open client polls a device's total once a
+ * minute, so on a years-long table that grew into a repeated full scan on the
+ * synchronous better-sqlite3 handle.
+ *
+ * Instead each (device, metric) remembers where its sum got to, and a later
+ * call folds in only the rows appended since — a handful at steady state. It
+ * stays exact rather than approximate: the sum is the same arithmetic, just
+ * resumed instead of restarted.
+ */
+interface DeltaSumCursor {
+  /** Highest reading id folded into `sum`; the next call reads past it. */
+  lastId: number;
+  /** `recordedAt` of the sort-last row, for the ordering check below. */
+  lastRecordedAt: string;
+  /** Its value — the predecessor the next row's delta is measured against. */
+  lastValue: number;
+  /** Sum of positive step-to-step deltas over every row up to `lastId`. */
+  sum: number;
+}
+
+const deltaSums = new Map<string, DeltaSumCursor>();
+
+/** Drop the cached delta sums; the next read re-seeds them from the table. */
+export function invalidateMetricTotals(): void {
+  deltaSums.clear();
+}
+
+/** Full scan: the sum over a metric's whole stored history, plus a fresh cursor. */
+function seedDeltaSum(deviceId: number, metric: string): DeltaSumCursor | null {
   const row = db.get<{ total: number }>(sql`
     SELECT COALESCE(SUM(CASE WHEN value > prev THEN value - prev ELSE 0 END), 0) AS total
     FROM (
@@ -427,7 +467,86 @@ export function getMetricTotal(deviceId: number, metric: string): number {
       WHERE device_id = ${deviceId} AND metric = ${metric}
     )
   `);
-  return getMetricTotalBaseline(deviceId, metric) + Number(row?.total ?? 0);
+  const scope = and(eq(readings.deviceId, deviceId), eq(readings.metric, metric));
+  // The last row in (recorded_at, id) order is the predecessor of whatever
+  // arrives next; the highest id is where the next incremental read starts.
+  // Out-of-order history makes those two different rows, and each is right for
+  // its own job.
+  const sortLast = db
+    .select({ recordedAt: readings.recordedAt, value: readings.value })
+    .from(readings)
+    .where(scope)
+    .orderBy(desc(readings.recordedAt), desc(readings.id))
+    .limit(1)
+    .get();
+  const highest = db
+    .select({ maxId: sql<number | null>`max(${readings.id})` })
+    .from(readings)
+    .where(scope)
+    .get();
+  if (!sortLast || highest?.maxId == null) return null; // metric has no rows yet
+  return {
+    lastId: highest.maxId,
+    lastRecordedAt: sortLast.recordedAt,
+    lastValue: sortLast.value,
+    sum: Number(row?.total ?? 0),
+  };
+}
+
+/**
+ * Sum of positive step-to-step deltas over a metric's stored rows, resumed from
+ * the cached cursor where possible.
+ *
+ * Resuming is only valid while readings append in timestamp order, which is
+ * what a live sensor does but not what a backfill does. The tail is therefore
+ * checked before it is trusted: it must be non-decreasing in `recordedAt` and
+ * start no earlier than the cursor, so that ordering by id is the same ordering
+ * the window function would have used. Anything else falls back to a full scan.
+ */
+function storedDeltaSum(deviceId: number, metric: string): number {
+  const key = `${deviceId}:${metric}`;
+  const cursor = deltaSums.get(key);
+  if (cursor) {
+    const tail = db
+      .select({ id: readings.id, recordedAt: readings.recordedAt, value: readings.value })
+      .from(readings)
+      .where(
+        and(
+          eq(readings.deviceId, deviceId),
+          eq(readings.metric, metric),
+          gt(readings.id, cursor.lastId),
+        ),
+      )
+      .orderBy(asc(readings.id))
+      .all();
+    if (tail.length === 0) return cursor.sum;
+    const ordered =
+      tail[0]!.recordedAt >= cursor.lastRecordedAt &&
+      tail.every((r, i) => i === 0 || r.recordedAt >= tail[i - 1]!.recordedAt);
+    if (ordered) {
+      let { sum, lastValue } = cursor;
+      for (const r of tail) {
+        if (r.value > lastValue) sum += r.value - lastValue;
+        lastValue = r.value;
+      }
+      const last = tail[tail.length - 1]!;
+      deltaSums.set(key, {
+        lastId: last.id,
+        lastRecordedAt: last.recordedAt,
+        lastValue,
+        sum,
+      });
+      return sum;
+    }
+  }
+
+  const seeded = seedDeltaSum(deviceId, metric);
+  if (!seeded) {
+    deltaSums.delete(key);
+    return 0;
+  }
+  deltaSums.set(key, seeded);
+  return seeded.sum;
 }
 
 /** History for a device, newest first, optionally filtered by metric/since. */
