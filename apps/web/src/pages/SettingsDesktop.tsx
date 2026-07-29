@@ -45,7 +45,7 @@ import {
   useSettings,
   type PressureUnit,
 } from '../settings';
-import { asMessage } from '../util';
+import { asMessage, dateTime } from '../util';
 
 /**
  * Desktop Settings — the mouse-and-keyboard counterpart to the kiosk's touch
@@ -1650,7 +1650,7 @@ function UpdateStatusBadge({
     return (
       <span className="text-sm text-emerald-400">
         Updated
-        {status.finishedAt ? ` ${new Date(status.finishedAt).toLocaleString()}` : ''}
+        {status.finishedAt ? ` ${dateTime(status.finishedAt)}` : ''}
         {status.commit ? ` (${status.commit})` : ''}.
       </span>
     );

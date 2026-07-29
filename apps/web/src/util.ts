@@ -24,6 +24,38 @@ export function homePath(): string {
   return document.documentElement.classList.contains('kiosk') ? '/kiosk' : '/';
 }
 
+/**
+ * The app shows times on a 24-hour clock everywhere — the brewery's own
+ * convention, and unambiguous in a way "3:50 PM" isn't on a log line or a chart
+ * tooltip. Left to the browser, the same page reads 15:50 on the Pi kiosk and
+ * 3:50 PM on a phone set to US English, so the clock part is built by hand
+ * rather than delegated to `toLocaleTimeString`. Only the *time* is pinned:
+ * dates still follow the viewer's locale, so day/month order stays familiar.
+ */
+type Timestamp = string | number | Date;
+
+function toDate(t: Timestamp): Date {
+  return t instanceof Date ? t : new Date(t);
+}
+
+/** Zero-padded 24-hour clock: `08:20`, or `08:20:15` with seconds. */
+export function clockTime(t: Timestamp, withSeconds = false): string {
+  const d = toDate(t);
+  if (Number.isNaN(d.getTime())) return '—';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  if (!withSeconds) return `${hh}:${mm}`;
+  return `${hh}:${mm}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
+/** Date then 24-hour time, e.g. `29 Jul 2026, 15:50` — tooltips and titles. */
+export function dateTime(t: Timestamp, withSeconds = false): string {
+  const d = toDate(t);
+  if (Number.isNaN(d.getTime())) return '—';
+  const date = d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${date}, ${clockTime(d, withSeconds)}`;
+}
+
 /** Compact "x ago" string for a recent ISO timestamp. */
 export function relativeTime(iso: string): string {
   const diffMs = Date.now() - Date.parse(iso);

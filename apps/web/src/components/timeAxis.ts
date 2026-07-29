@@ -8,6 +8,7 @@
  * land on 08:00 / 08:20 / 08:40 and stay round at every zoom level.
  */
 
+import { clockTime } from '../util';
 import type { Span } from './chartZoom';
 
 const SECOND = 1000;
@@ -84,14 +85,6 @@ function ceilWithinDay(t: number, step: number): number {
   return Math.min(day + Math.ceil((t - day) / step) * step, nextDay.getTime());
 }
 
-/** Zero-padded 24-hour clock, e.g. `08:20` — no AM/PM, no locale surprises. */
-function clock(d: Date, withSeconds: boolean): string {
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  if (!withSeconds) return `${hh}:${mm}`;
-  return `${hh}:${mm}:${String(d.getSeconds()).padStart(2, '0')}`;
-}
-
 function dateLabel(d: Date): string {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
@@ -115,7 +108,7 @@ export interface TimeAxis {
 export function timeAxis(view: Span | null, target = DEFAULT_TARGET): TimeAxis {
   const span = view ? view.max - view.min : 0;
   if (!view || !(span > 0)) {
-    return { ticks: undefined, format: (t) => clock(new Date(t), false) };
+    return { ticks: undefined, format: (t) => clockTime(t) };
   }
 
   const step = tickStep(span, target);
@@ -143,7 +136,7 @@ export function timeAxis(view: Span | null, target = DEFAULT_TARGET): TimeAxis {
     if (step >= DAY) return dateLabel(d);
     const midnight = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
     if (midnight && step >= MINUTE) return dateLabel(d);
-    return clock(d, step < MINUTE);
+    return clockTime(d, step < MINUTE);
   };
 
   return { ticks: ticks.length ? ticks : undefined, format };

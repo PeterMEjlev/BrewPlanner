@@ -8,6 +8,7 @@ import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
 import { useFleet } from '../useDeviceData';
+import { dateTime } from '../util';
 import { metricLabel, relativeTime } from './Dashboard';
 
 /**
@@ -95,7 +96,7 @@ function formatRegistered(createdAt: string): string {
 
 /** Full local timestamp for the `title` tooltip on a relative time, e.g. last fetch. */
 function formatAbsolute(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return dateTime(iso);
 }
 
 /** A push cadence as "every 30s" / "every 5m" / "every 2h", or "—" when unknown. */

@@ -15,6 +15,7 @@ import { useGraphColors } from '../graphColors';
 import { SetpointControl } from '../SetpointControl';
 import { timeAxis } from '../components/timeAxis';
 import { RANGES } from '../useDeviceData';
+import { dateTime } from '../util';
 import { usePoll } from '../usePoll';
 
 const POLL_MS = 10000;
@@ -323,7 +324,7 @@ export function TemperaturePage(): JSX.Element {
                   labelStyle={{ color: '#94a3b8' }}
                   itemStyle={{ color: '#e2e8f0' }}
                   cursor={{ stroke: '#334155' }}
-                  labelFormatter={(t) => new Date(t as number).toLocaleString()}
+                  labelFormatter={(t) => dateTime(t as number, true)}
                   formatter={(value, name) => {
                     const num = typeof value === 'number' ? value : Number(value);
                     return [`${num.toFixed(1)} °C`, name];

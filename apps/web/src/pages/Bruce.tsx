@@ -30,7 +30,7 @@ import {
   ThinkingDots,
 } from '../components/icons';
 import { usePoll } from '../usePoll';
-import { relativeTime } from '../util';
+import { clockTime, dateTime, relativeTime } from '../util';
 
 /**
  * The Bruce page: a written conversation with the brewery's assistant, plus
@@ -86,7 +86,7 @@ const ACCENT_BUTTON =
 const OPENAI_BILLING_URL = 'https://platform.openai.com/settings/organization/billing/overview';
 
 function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return clockTime(ts, true);
 }
 
 /**
@@ -1754,7 +1754,7 @@ function LibraryCard(): JSX.Element {
       {knowledge?.builtAt && !running && (
         <p
           className="text-[11px] text-zinc-600"
-          title={new Date(knowledge.builtAt).toLocaleString()}
+          title={dateTime(knowledge.builtAt)}
         >
           Indexed {relativeTime(knowledge.builtAt)}
         </p>

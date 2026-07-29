@@ -21,6 +21,7 @@ import {
 } from '../pages/Dashboard';
 import { useSettings } from '../settings';
 import { RANGES, cumulativeMetricOf, useDeviceData, useDeviceTotal } from '../useDeviceData';
+import { dateTime } from '../util';
 import { withMinSpan } from './charts';
 import { type Span, useChartZoom } from './chartZoom';
 import { type ThinMode, thinForPlot } from './decimate';
@@ -444,7 +445,7 @@ export default function MetricChart({
                     labelStyle={{ color: '#94a3b8' }}
                     itemStyle={{ color: '#e2e8f0' }}
                     cursor={{ stroke: '#334155' }}
-                    labelFormatter={(t) => new Date(t as number).toLocaleString()}
+                    labelFormatter={(t) => dateTime(t as number, true)}
                     formatter={(value) => {
                       const num = typeof value === 'number' ? value : Number(value);
                       return [

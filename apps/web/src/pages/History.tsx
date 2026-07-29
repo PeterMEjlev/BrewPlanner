@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { api } from '../api';
 import { DashboardShell } from '../components/DashboardShell';
 import { usePoll } from '../usePoll';
-import { relativeTime } from '../util';
+import { dateTime, relativeTime } from '../util';
 
 const POLL_MS = 15000;
 
@@ -113,7 +113,7 @@ function HistoryRow({ entry }: { entry: AuditEntry }): JSX.Element {
               </span>
               <span className="font-medium">{entry.username}</span>
             </span>
-            <span title={new Date(entry.createdAt).toLocaleString()}>
+            <span title={dateTime(entry.createdAt)}>
               {relativeTime(entry.createdAt)}
             </span>
           </div>

@@ -5,6 +5,7 @@ import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { CloseIcon } from '../components/icons';
 import { SHARED, publishShared, useShared } from '../sharedPoll';
+import { dateTime } from '../util';
 import { relativeTime } from './Dashboard';
 
 const POLL_MS = 15000;
@@ -202,11 +203,11 @@ function AlertRow({
         <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 font-medium text-zinc-400">
           {SOURCE_LABEL[alert.source]}
         </span>
-        <span title={new Date(alert.createdAt).toLocaleString()}>
+        <span title={dateTime(alert.createdAt)}>
           {relativeTime(alert.createdAt)}
         </span>
         {alert.resolvedAt && (
-          <span className="text-zinc-600" title={new Date(alert.resolvedAt).toLocaleString()}>
+          <span className="text-zinc-600" title={dateTime(alert.resolvedAt)}>
             · resolved {relativeTime(alert.resolvedAt)}
           </span>
         )}

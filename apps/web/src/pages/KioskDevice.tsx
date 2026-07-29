@@ -13,6 +13,7 @@ import { SetpointControl } from '../SetpointControl';
 import { metricColor, useGraphColors } from '../graphColors';
 import { timeAxis } from '../components/timeAxis';
 import { RANGES, cumulativeMetricOf, useDeviceData, useDeviceTotal } from '../useDeviceData';
+import { dateTime } from '../util';
 import {
   StateBadge,
   formatValue,
@@ -224,7 +225,7 @@ export function KioskDevicePage(): JSX.Element {
                   labelStyle={{ color: '#94a3b8' }}
                   itemStyle={{ color: '#e2e8f0' }}
                   cursor={{ stroke: '#334155' }}
-                  labelFormatter={(t) => new Date(t as number).toLocaleString()}
+                  labelFormatter={(t) => dateTime(t as number, true)}
                   formatter={(value) => {
                     const num = typeof value === 'number' ? value : Number(value);
                     return [

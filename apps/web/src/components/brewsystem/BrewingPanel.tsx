@@ -7,6 +7,7 @@ import type {
   BrewTimerState,
 } from '@checklist/shared';
 import { api } from '../../api';
+import { clockTime } from '../../util';
 import styles from './BrewingPanel.module.css';
 import BrewTimer from './BrewTimer';
 import PotCard, { type PotCardState, type PotUpdate } from './PotCard';
@@ -396,7 +397,7 @@ export function BrewingPanel(): JSX.Element {
       {frozenSince != null && (
         <div className={styles.connectionBanner}>
           ⚠ Brew system unreachable — readings frozen since{' '}
-          {new Date(frozenSince).toLocaleTimeString([], { hour12: false })}. Controls are inactive.
+          {clockTime(frozenSince, true)}. Controls are inactive.
         </div>
       )}
       <div className={`${styles.panelBody} ${frozenSince != null ? styles.offline : ''}`}>
