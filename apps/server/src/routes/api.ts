@@ -339,6 +339,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
         // apart in a single field.
         name: query.kind === 'other' ? option.ingredientName : option.label,
         source: 'catalogue' as const,
+        // Also on its own, so the malt picker can group by maltster without
+        // having to work out where the brand stops and the malt starts.
+        producer: option.producer ?? null,
         ebcMin: option.ebcMin ?? null,
         ebcMax: option.ebcMax ?? null,
         ebc: option.ebcMin != null && option.ebcMax != null
@@ -386,11 +389,11 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-      // The yeast picker sorts and regroups what it is given — by attenuation,
-      // temperature, flocculation and the rest — so it has to be given the whole
-      // shelf rather than the first 60 of it, or "sort by tolerance" would only
-      // ever reorder the least attenuative sachets.
-    }).slice(0, query.kind === 'yeast' ? 250 : 60);
+      // The yeast and malt pickers sort and regroup what they are given — by
+      // attenuation, colour, maltster and the rest — so they have to be given
+      // the whole shelf rather than the first 60 of it, or "sort by brand"
+      // would only ever reorder the palest malts.
+    }).slice(0, query.kind === 'yeast' || query.kind === 'fermentable' ? 250 : 60);
   });
 
   // What it is outside the brewhouse, which a new recipe's grain temperature

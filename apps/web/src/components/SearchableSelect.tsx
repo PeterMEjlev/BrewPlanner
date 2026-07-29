@@ -1,4 +1,5 @@
 import type { IngredientKind, RecipeIngredientOption, RecipeYeastSpec } from '@checklist/shared';
+import { ebcColor } from '@checklist/shared';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 
@@ -8,6 +9,8 @@ export interface SearchableOption {
   description?: string;
   ebc?: number | null;
   aa?: number | null;
+  /** Who makes it, for the malt picker to group a shelf of 88 malts by. */
+  producer?: string | null;
   /** Producer figures for a yeast strain, for the editor to fill the line in with. */
   yeast?: RecipeYeastSpec | null;
   /**
@@ -311,7 +314,10 @@ export function IngredientSearchSelect({
   const [search, setSearch] = useState<string | null>(null);
   const [options, setOptions] = useState<SearchableOption[]>([]);
   const [loading, setLoading] = useState(false);
-  const [sort, setSort] = useState<YeastSortKey>('attenuation');
+  const [yeastSort, setYeastSort] = useState<YeastSortKey>('attenuation');
+  // Colour, because that is the order a grain bill is read in: base malts at the
+  // top, the handful of dark specialities that finish it at the bottom.
+  const [maltSort, setMaltSort] = useState<FermentableSortKey>('ebc');
 
   useEffect(() => {
     if (search == null) return;
@@ -332,15 +338,28 @@ export function IngredientSearchSelect({
               : null;
             const brewingMetadata = maltColour ?? hopAlpha;
             const usedBefore = option.source === 'recipe';
+            const provenance = usedBefore ? 'Used in a saved recipe' : 'Local ingredient catalogue';
             return {
               value: option.name,
               label: brewingMetadata ? `${option.name} · ${brewingMetadata}` : option.name,
               // A strain is chosen on its numbers, so a yeast lists them where
-              // the other kinds list where the name came from.
+              // the other kinds list where the name came from. A malt names its
+              // maltster, which is the line the brand sort groups on — worth
+              // more under the name than a note saying where the row came from.
               description: kind === 'yeast'
                 ? yeastSummary(option.yeast, usedBefore)
-                : usedBefore ? 'Used in a saved recipe' : 'Local ingredient catalogue',
-              badge: kind === 'yeast' ? yeastBadge(option.yeast) : null,
+                : kind === 'fermentable'
+                  ? option.producer || provenance
+                  : provenance,
+              badge: kind === 'yeast'
+                ? yeastBadge(option.yeast)
+                : kind === 'fermentable'
+                  ? maltBadge(option.name, option.producer)
+                  : null,
+              // The colour it contributes, approximated from the shop's stated
+              // range — so the shelf reads as the spread of malt it is.
+              swatchColor: kind === 'fermentable' ? ebcColor(option.ebc) : null,
+              producer: option.producer ?? null,
               ebc: option.ebc ?? null,
               aa: option.aa ?? null,
               yeast: option.yeast ?? null,
@@ -360,10 +379,11 @@ export function IngredientSearchSelect({
     };
   }, [kind, search, catalogueOnly]);
 
-  const sorted = useMemo(
-    () => (kind === 'yeast' ? sortYeastOptions(options, sort) : options),
-    [kind, options, sort],
-  );
+  const sorted = useMemo(() => {
+    if (kind === 'yeast') return sortYeastOptions(options, yeastSort);
+    if (kind === 'fermentable') return sortFermentableOptions(options, maltSort);
+    return options;
+  }, [kind, options, yeastSort, maltSort]);
 
   return (
     <SearchableSelect
@@ -378,11 +398,39 @@ export function IngredientSearchSelect({
       required={required}
       className={className}
       disabled={disabled}
-      header={kind === 'yeast' ? <YeastSortPicker value={sort} onChange={setSort} /> : undefined}
+      header={
+        kind === 'yeast' ? <SortPicker options={YEAST_SORTS} value={yeastSort} onChange={setYeastSort} />
+          : kind === 'fermentable' ? <SortPicker options={FERMENTABLE_SORTS} value={maltSort} onChange={setMaltSort} />
+            : undefined
+      }
       // The whole shelf, because it is sorted rather than merely listed: cutting
       // it at 60 would mean "sort by tolerance" reordering a fixed 60 strains.
-      maxShown={kind === 'yeast' ? 250 : undefined}
+      maxShown={kind === 'yeast' || kind === 'fermentable' ? 250 : undefined}
     />
+  );
+}
+
+/** Sort order pinned above a dropdown's list. */
+function SortPicker<Key extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: readonly (readonly [Key, string])[];
+  value: Key;
+  onChange: (value: Key) => void;
+}): JSX.Element {
+  return (
+    <label className="flex items-center gap-2 text-[11px] text-zinc-500">
+      Sort by
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as Key)}
+        className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-[#f06a5c]"
+      >
+        {options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
+      </select>
+    </label>
   );
 }
 
@@ -407,21 +455,6 @@ const YEAST_SORTS = [
 ] as const;
 
 type YeastSortKey = (typeof YEAST_SORTS)[number][0];
-
-function YeastSortPicker({ value, onChange }: { value: YeastSortKey; onChange: (value: YeastSortKey) => void }): JSX.Element {
-  return (
-    <label className="flex items-center gap-2 text-[11px] text-zinc-500">
-      Sort by
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value as YeastSortKey)}
-        className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-[#f06a5c]"
-      >
-        {YEAST_SORTS.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
-      </select>
-    </label>
-  );
-}
 
 /**
  * How the strain ferments, coloured the way it works: ales warm, lagers cool,
@@ -546,5 +579,146 @@ function sortYeastOptions(options: SearchableOption[], sort: YeastSortKey): Sear
     }
     const compared = String(aRank).localeCompare(String(bRank), undefined, { sensitivity: 'base' });
     return compared === 0 ? byName(a, b) : compared;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The malt picker: what a fermentable looks like in the list, and in what order
+// ---------------------------------------------------------------------------
+
+/** What the malt list can be ordered by, in the order the picker offers them. */
+const FERMENTABLE_SORTS = [
+  ['ebc', 'EBC (colour)'],
+  ['type', 'Type of malt'],
+  ['brand', 'Brand'],
+  ['name', 'Name'],
+] as const;
+
+type FermentableSortKey = (typeof FERMENTABLE_SORTS)[number][0];
+
+/**
+ * The families a grain bill is actually assembled from — a base, a colour malt
+ * or two, and whatever the recipe is characterised by — used both as the chip
+ * in front of a malt's name and as the grouping the type sort emits.
+ *
+ * `test` is applied in the order written, which is *not* the order they are
+ * shown in: grain identity has to beat roast, or "Chocolate Rye" would file
+ * under Roasted next to plain Chocolate rather than beside the other ryes. The
+ * shown order is `order`, running roughly pale to dark and then through the
+ * families that are picked for what they do rather than what colour they are.
+ *
+ * Names are matched with the shop's Danish folded the way the price matcher
+ * folds it (ø→o, æ→ae, å→a), so "Røgmalt" and "Rogmalt" land alike.
+ */
+const MALT_FAMILIES: readonly {
+  text: string;
+  order: number;
+  className: string;
+  test: RegExp;
+}[] = [
+  { text: 'Acid', order: 11, className: 'bg-cyan-500/15 text-cyan-300 ring-cyan-500/30', test: /\bacid\b|sauer|saurer|\bsur\b|syre/ },
+  // Not a malt at all, but a fermentable a recipe lists among them — and one
+  // that must not be read as a grain: "Corn Sugar" is not an adjunct grain.
+  { text: 'Sugar', order: 13, className: 'bg-fuchsia-500/15 text-fuchsia-300 ring-fuchsia-500/30', test: /sugar|sukker|dextrose|glucose|sucrose|honey|honning|candi|syrup|sirup|molasses|treacle|lactose|maple/ },
+  { text: 'Smoked', order: 10, className: 'bg-slate-500/15 text-slate-300 ring-slate-500/30', test: /smoke|\brog\b|rogmalt|roget|rauch|peat|torv/ },
+  // Tested before the grains they are made of: rice hulls are a mash aid and
+  // chit malt an unmodified adjunct, whatever cereal is behind them.
+  { text: 'Adjunct', order: 12, className: 'bg-sky-500/15 text-sky-300 ring-sky-500/30', test: /\bchit\b|majs|maize|risflager|risskaller|\brice\b|\bris\b/ },
+  { text: 'Oat', order: 9, className: 'bg-teal-500/15 text-teal-300 ring-teal-500/30', test: /\boat|havre/ },
+  { text: 'Rye', order: 8, className: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30', test: /\brye\b|\brug\b|roggen|cararye/ },
+  // Spelt rides along with the wheats: it is one botanically, and it behaves
+  // like one in the mash tun, which is the part that matters here.
+  { text: 'Wheat', order: 7, className: 'bg-lime-500/15 text-lime-300 ring-lime-500/30', test: /wheat|hvede|weizen|weiss|spelt|carawheat/ },
+  { text: 'Roasted', order: 6, className: 'bg-stone-500/15 text-stone-300 ring-stone-500/30', test: /carafa|chocolate|schokolade|roast|ristet|\bblack\b|special w\b/ },
+  // "cara" leads, so Carafa's roast and Caramunich's caramel are told apart by
+  // the family above rather than by which of these two words appears first.
+  // Purple rather than a warm tone deliberately: Pilsner-through-Munich already
+  // runs yellow → amber → orange → red as a pale-to-dark gradient, and rose sat
+  // close enough to that red to read as the same chip at a glance.
+  { text: 'Caramel', order: 5, className: 'bg-purple-500/15 text-purple-300 ring-purple-500/30', test: /\bcara|caramel|karamel|crystal|krystal|\bamber\b|\brav\b|special b\b|abbey|biscuit|\bbrown\b|arome|aromatic|\bred x\b/ },
+  { text: 'Munich', order: 4, className: 'bg-red-500/15 text-red-300 ring-red-500/30', test: /munich|munchner|muenchner|melano/ },
+  { text: 'Vienna', order: 3, className: 'bg-orange-500/15 text-orange-300 ring-orange-500/30', test: /vienna|wiener/ },
+  { text: 'Pale Ale', order: 2, className: 'bg-amber-500/15 text-amber-300 ring-amber-500/30', test: /pale ale|maris otter|golden promise/ },
+  { text: 'Pilsner', order: 1, className: 'bg-yellow-500/15 text-yellow-300 ring-yellow-500/30', test: /pilsner|pilsener|\bpils\b|bohemian|extra pale/ },
+];
+
+/**
+ * The listing's name without the maltster in front of it. The catalogue names a
+ * malt by its producer ("Crisp Malting Rug"), and classifying the whole string
+ * lets a brand's spelling decide the family — "Crisp" contains "ris", which
+ * would file every one of their malts as a rice adjunct.
+ */
+function withoutProducer(name: string, producer: string | null | undefined): string {
+  const brand = producer?.trim();
+  if (!brand || !name.toLocaleLowerCase().startsWith(brand.toLocaleLowerCase())) return name;
+  return name.slice(brand.length).trim() || name;
+}
+
+/** Fold the Danish letters the shop writes, as the price matcher does. */
+function foldDanish(name: string): string {
+  return name.toLowerCase().replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/å/g, 'a');
+}
+
+/** Which family a malt belongs to, or null for one none of the rules claim. */
+function maltFamily(
+  name: string,
+  producer: string | null | undefined,
+): (typeof MALT_FAMILIES)[number] | null {
+  const folded = foldDanish(withoutProducer(name, producer));
+  return MALT_FAMILIES.find((family) => family.test.test(folded)) ?? null;
+}
+
+/**
+ * What the malt is for, chipped in front of its name — the first thing a grain
+ * bill is sorted by, the same way a yeast's chip answers how it ferments. A
+ * name no rule claims (a freehand line from an old recipe, an extract) goes
+ * unchipped rather than being filed under a family it may not belong to.
+ */
+function maltBadge(name: string, producer: string | null | undefined): SearchableOption['badge'] {
+  const family = maltFamily(name, producer);
+  return family ? { text: family.text, className: family.className } : null;
+}
+
+/**
+ * Order the malt list by one of the things a malt is chosen on. Ascending —
+ * palest, first family, first maltster — with anything the catalogue leaves
+ * unstated sinking to the bottom rather than sorting as a zero.
+ *
+ * Every order settles ties on colour before the name, because that is the
+ * useful second question about a malt: a run of eight caramel malts wants to
+ * read 20 EBC to 450, not "Caraamber, Caraaroma, Carahell".
+ */
+function sortFermentableOptions(
+  options: SearchableOption[],
+  sort: FermentableSortKey,
+): SearchableOption[] {
+  const byName = (a: SearchableOption, b: SearchableOption) =>
+    a.value.localeCompare(b.value, undefined, { sensitivity: 'base' });
+  const byEbc = (a: SearchableOption, b: SearchableOption) => {
+    if (a.ebc == null && b.ebc == null) return byName(a, b);
+    if (a.ebc == null) return 1;
+    if (b.ebc == null) return -1;
+    return a.ebc === b.ebc ? byName(a, b) : a.ebc - b.ebc;
+  };
+  const rank = (option: SearchableOption): number | string | null => {
+    switch (sort) {
+      case 'ebc': return null;
+      case 'type': return maltFamily(option.value, option.producer)?.order ?? null;
+      case 'brand': return option.producer?.trim().toLowerCase() || null;
+      case 'name': return null;
+    }
+  };
+  const tie = sort === 'name' ? byName : byEbc;
+  return [...options].sort((a, b) => {
+    const aRank = rank(a);
+    const bRank = rank(b);
+    if (aRank == null && bRank == null) return tie(a, b);
+    if (aRank == null) return 1;
+    if (bRank == null) return -1;
+    if (typeof aRank === 'number' && typeof bRank === 'number') {
+      return aRank === bRank ? tie(a, b) : aRank - bRank;
+    }
+    const compared = String(aRank).localeCompare(String(bRank), undefined, { sensitivity: 'base' });
+    return compared === 0 ? tie(a, b) : compared;
   });
 }

@@ -9,6 +9,7 @@ import {
   getRecipeColor,
   HOP_STAGE_ORDER,
   isFermentableLine,
+  missingStatInput,
   withAutoBoilVolumes,
 } from '@checklist/shared';
 import type {
@@ -23,12 +24,13 @@ import type {
   RecipeMashStep,
   RecipeOtherIngredientEdit,
   RecipeSettings,
+  RecipeStatKey,
   RecipeWaterProfile,
   RecipeYeastEdit,
   RecipeYeastSpec,
   UnpricedIngredient,
 } from '@checklist/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { kr } from '../money';
 import { TARGET_PRESETS } from '../water';
@@ -72,6 +74,10 @@ interface Props {
    * names past recipes have used. Set when a recipe is being written from
    * scratch: a blank sheet should be filled from the catalogue, which is what
    * can be priced and ordered — an old sheet's freehand wording is neither.
+   *
+   * Doubles as the "this is a blank sheet" signal for which sections open
+   * expanded — see {@link NEW_RECIPE_COLLAPSED} — since the two only ever
+   * happen together in practice.
    */
   catalogueOnly?: boolean;
 }
@@ -115,7 +121,31 @@ const ALL_OPEN: Record<EditorSectionKey, boolean> = {
   water: false,
 };
 
-function loadCollapsed(): Record<EditorSectionKey, boolean> {
+/**
+ * How a blank sheet opens instead: every ingredient section is empty at this
+ * point, so expanding all seven is seven empty lists to scroll past before
+ * reaching the one field — the style, the batch size — actually worth setting
+ * first. Recipe setup stays open for that; the rest unfold as the brewer fills
+ * them in, same as ever.
+ */
+const NEW_RECIPE_COLLAPSED: Record<EditorSectionKey, boolean> = {
+  ...ALL_OPEN,
+  fermentables: true,
+  hops: true,
+  yeast: true,
+  other: true,
+  mash: true,
+  water: true,
+};
+
+/**
+ * `isNew` skips the remembered layout rather than merely seeding it: the point
+ * is a blank sheet opening the same way every time, not the *first* blank sheet
+ * doing so and every one after inheriting whatever was left expanded by the
+ * last recipe worked on.
+ */
+function loadCollapsed(isNew: boolean): Record<EditorSectionKey, boolean> {
+  if (isNew) return NEW_RECIPE_COLLAPSED;
   try {
     const raw = localStorage.getItem(COLLAPSE_KEY);
     if (!raw) return ALL_OPEN;
@@ -557,6 +587,13 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
     () => aromaHopRate(draft.hops, draft.batchSizeL),
     [draft.hops, draft.batchSizeL],
   );
+  // What each blank tile is still waiting for. Read off the same draft the
+  // figures are calculated from, so a tile can never ask for something the
+  // arithmetic already has.
+  const missing = useCallback(
+    (stat: RecipeStatKey) => missingStatInput(effective, stat),
+    [effective],
+  );
   const styleRange = useMemo(
     () => rangeForStyle(draft.settings.styleSubcategory || draft.style),
     [draft.settings.styleSubcategory, draft.style],
@@ -570,7 +607,7 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
   const kegColors = useKegContentColors();
   const [editingCategories, setEditingCategories] = useState(false);
   const [editingSubstyles, setEditingSubstyles] = useState(false);
-  const [collapsed, setCollapsed] = useState<Record<EditorSectionKey, boolean>>(loadCollapsed);
+  const [collapsed, setCollapsed] = useState<Record<EditorSectionKey, boolean>>(() => loadCollapsed(catalogueOnly));
   // A rail jump asked for but not yet made, and where the last one landed —
   // see goToSection and SectionLanding.
   const [pendingJump, setPendingJump] = useState<{ key: EditorSectionKey } | null>(null);
@@ -1104,16 +1141,16 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
               stacked above the sheet — the same tiles either way, only the grid
               changes. */}
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-2">
-            <CalculatedStat label="Pre-boil gravity" value={calculation.preBoilGravity} decimals={3} />
-            <CalculatedStat label="Post-boil gravity" value={calculation.postBoilGravity} decimals={3} />
-            <CalculatedStat label="Original gravity" value={calculation.originalGravity} decimals={3} />
-            <CalculatedStat label="Final gravity" value={calculation.finalGravity} decimals={3} />
-            <CalculatedStat label="ABV" value={calculation.abv} decimals={2} suffix="%" range={styleRange?.abv} compareToStyle />
-            <CalculatedStat label="IBU" value={calculation.ibu} decimals={1} range={styleRange?.ibu} compareToStyle />
+            <CalculatedStat label="Pre-boil gravity" value={calculation.preBoilGravity} decimals={3} emptyNote={missing('preBoilGravity')} />
+            <CalculatedStat label="Post-boil gravity" value={calculation.postBoilGravity} decimals={3} emptyNote={missing('postBoilGravity')} />
+            <CalculatedStat label="Original gravity" value={calculation.originalGravity} decimals={3} emptyNote={missing('originalGravity')} />
+            <CalculatedStat label="Final gravity" value={calculation.finalGravity} decimals={3} emptyNote={missing('finalGravity')} />
+            <CalculatedStat label="ABV" value={calculation.abv} decimals={2} suffix="%" range={styleRange?.abv} compareToStyle emptyNote={missing('abv')} />
+            <CalculatedStat label="IBU" value={calculation.ibu} decimals={1} range={styleRange?.ibu} compareToStyle emptyNote={missing('ibu')} />
             {/* The colour that number means, which is what a brewer actually
                 pictures when reading an EBC. */}
-            <CalculatedStat label="EBC" value={calculation.ebc} decimals={1} range={styleRange?.ebc} compareToStyle swatch={ebcColor(calculation.ebc)} />
-            <CalculatedStat label="Mash pH estimate" value={calculation.mashPh} decimals={2} />
+            <CalculatedStat label="EBC" value={calculation.ebc} decimals={1} range={styleRange?.ebc} compareToStyle swatch={ebcColor(calculation.ebc)} emptyNote={missing('ebc')} />
+            <CalculatedStat label="Mash pH estimate" value={calculation.mashPh} decimals={2} emptyNote={missing('mashPh')} />
             {/* How hoppy it will smell, which is what the whirlpool and the dry
                 hop are for — the same figure the recipe page carries on its hop
                 section, so a schedule can be written to a rate. */}
@@ -1122,6 +1159,7 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
               value={aromaRate}
               decimals={1}
               suffix="g/L"
+              emptyNote={missing('aromaRate')}
               title="Whirlpool and dry hops per litre of batch. The bittering charge is left out — it adds no aroma."
             />
             {/* When the fermenter comes free. An estimate, so it reads as one. */}
@@ -1639,11 +1677,11 @@ function ReadOnlyField({ label, value, decimals, suffix, className = '' }: { lab
   );
 }
 
-function CalculatedStat({ label, value, decimals, prefix = '', suffix = '', range, compareToStyle = false, swatch, note, title }: { label: string; value: number | null; decimals: number; /** Sits in front of the figure — "≈" for a figure that is openly approximate. */ prefix?: string; suffix?: string; range?: [number, number]; compareToStyle?: boolean; /** Colour the figure stands for, shown as a dot beside it. */ swatch?: string | null; /** Replaces the style-range line, for a figure no style has a range for. */ note?: string; /** Tooltip, for a figure that needs its caveats spelled out. */ title?: string }): JSX.Element {
+function CalculatedStat({ label, value, decimals, prefix = '', suffix = '', range, compareToStyle = false, swatch, note, emptyNote, title }: { label: string; value: number | null; decimals: number; /** Sits in front of the figure — "≈" for a figure that is openly approximate. */ prefix?: string; suffix?: string; range?: [number, number]; compareToStyle?: boolean; /** Colour the figure stands for, shown as a dot beside it. */ swatch?: string | null; /** Replaces the style-range line, for a figure no style has a range for. */ note?: string; /** What this particular figure is still waiting for, in place of the generic "needs more inputs". */ emptyNote?: string | null; /** Tooltip, for a figure that needs its caveats spelled out. */ title?: string }): JSX.Element {
   const status = note != null
     ? { text: note, className: 'text-zinc-500' }
     : value == null
-      ? { text: 'Needs more inputs', className: 'text-zinc-500' }
+      ? { text: emptyNote ?? 'Needs more inputs', className: 'text-zinc-500' }
       : !range
         ? { text: 'No BJCP range', className: 'text-zinc-500' }
         : value < range[0]

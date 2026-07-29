@@ -411,6 +411,12 @@ export interface PriceOption {
   isDefault: boolean;
   /** True for the listing currently in effect. */
   isSelected: boolean;
+  /**
+   * Who makes it, on its own rather than only as the opening words of
+   * {@link label} — so a picker can group by maltster without having to guess
+   * where the brand ends and the malt begins. Null where the shop states none.
+   */
+  producer?: string | null;
   /** Malt colour range carried by the catalogue listing. */
   ebcMin?: number | null;
   ebcMax?: number | null;
@@ -851,6 +857,12 @@ export interface RecipeImportResult {
 export interface RecipeIngredientOption {
   name: string;
   source: 'catalogue' | 'recipe';
+  /**
+   * The maltster or lab behind a catalogue listing. Null for a name a past
+   * recipe supplied, which records what was brewed with rather than what was
+   * bought and so says nothing about who made it.
+   */
+  producer?: string | null;
   /** Malt colour selected with the ingredient, in EBC. */
   ebc?: number | null;
   /** Catalogue range shown in the picker when the malt spans several colours. */

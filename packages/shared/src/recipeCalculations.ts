@@ -472,6 +472,163 @@ export function calculateRecipe(recipe: RecipeEditInput): RecipeCalculationResul
 }
 
 // ---------------------------------------------------------------------------
+// Why a figure is still blank
+// ---------------------------------------------------------------------------
+
+/** A figure {@link missingStatInput} can account for the absence of. */
+export type RecipeStatKey =
+  | 'preBoilGravity'
+  | 'postBoilGravity'
+  | 'originalGravity'
+  | 'finalGravity'
+  | 'abv'
+  | 'ibu'
+  | 'ebc'
+  | 'mashPh'
+  | 'aromaRate';
+
+/** Rows that actually put sugar in the wort: something named, and some of it. */
+function contributingFermentables(recipe: RecipeEditInput): RecipeEditInput['fermentables'] {
+  return recipe.fermentables.filter(
+    (line) => line.name.trim() !== '' && (weightPounds(line.amount, line.unit) ?? 0) > 0,
+  );
+}
+
+/** The grain bill's own gap — no malt named, or none of it weighed out. */
+function grainGap(recipe: RecipeEditInput): string | null {
+  if (contributingFermentables(recipe).length > 0) return null;
+  return recipe.fermentables.some((line) => line.name.trim() !== '')
+    ? 'Needs a malt weight'
+    : 'Needs a malt';
+}
+
+/** A volume to dilute the extract into; the one figure every gravity needs. */
+function volumeGap(litres: number | null | undefined): string | null {
+  return litres == null || litres <= 0 ? 'Needs a batch size' : null;
+}
+
+/**
+ * The kettle gravities see only what was in the kettle, so a bill made entirely
+ * of late additions leaves them blank while OG reads perfectly well — which
+ * looks like a bug unless the panel says so.
+ */
+function boiledGrainGap(recipe: RecipeEditInput): string | null {
+  const contributing = contributingFermentables(recipe);
+  return contributing.length > 0 && contributing.every((line) => line.lateAddition)
+    ? 'All malt is a late addition'
+    : null;
+}
+
+/** What FG is waiting on once there is a wort to attenuate. */
+function yeastGap(recipe: RecipeEditInput): string | null {
+  if (attenuation(recipe) != null) return null;
+  return recipe.yeast.some((line) => line.name.trim() !== '')
+    ? 'Needs yeast attenuation'
+    : 'Needs a yeast';
+}
+
+/** Colour is carried by the malt rather than worked out from its name. */
+function colourGap(recipe: RecipeEditInput): string | null {
+  return contributingFermentables(recipe).some((line) => line.ebc != null)
+    ? null
+    : 'Needs a malt colour';
+}
+
+/**
+ * Whether one addition would come out as a figure, mirroring {@link hopIbu}'s
+ * own preconditions. Per row rather than per sheet on purpose: a weight on one
+ * line and an alpha on the next add up to no bitterness at all, and a check
+ * that merely found both somewhere would report the schedule as complete.
+ *
+ * The name is deliberately not required — an unnamed row carrying a weight, an
+ * alpha and a time does bitter the beer, and hopIbu counts it.
+ */
+function hopYieldsIbu(recipe: RecipeEditInput, hop: RecipeHopEdit): boolean {
+  if (weightGrams(hop.amount, hop.unit) == null) return false;
+  if (recipeNumber(hop.aa) == null) return false;
+  // These never bitter, but they do resolve — to a real zero, not to a blank.
+  if (hop.stage === 'Dry Hop' || hop.stage === 'Other' || hop.stage === 'Whirlpool') return true;
+  const minutes = hopMinutes(recipe, hop);
+  return minutes != null && minutes >= 0;
+}
+
+/** Bitterness, in the order the schedule supplies it. */
+function hopGap(recipe: RecipeEditInput): string | null {
+  if (recipe.hops.length === 0) return 'Needs a hop';
+  const gap = volumeGap(recipe.batchSizeL ?? recipe.settings.boilSizePostL);
+  if (gap) return gap;
+  if (recipe.hops.some((hop) => hopYieldsIbu(recipe, hop))) return null;
+
+  const weighed = recipe.hops.some((hop) => weightGrams(hop.amount, hop.unit) != null);
+  const alpha = recipe.hops.some((hop) => recipeNumber(hop.aa) != null);
+  // An untouched template row — the editor starts every sheet with one — is not
+  // a hop missing its weight, it is a hop schedule that hasn't been begun.
+  if (!weighed && !alpha && !recipe.hops.some((hop) => hop.name.trim() !== '')) {
+    return 'Needs a hop';
+  }
+  if (!weighed) return 'Needs a hop weight';
+  if (!alpha) return 'Needs hop alpha acid';
+  // Everything a bittering charge needs except how long it was in the kettle.
+  return 'Needs a boil time';
+}
+
+/**
+ * The aroma rate counts only the stages that put smell in the beer, so a sheet
+ * with a full bittering charge and nothing late still has none of it — mirrors
+ * the weighing {@link aromaHopRate} does.
+ */
+function aromaGap(recipe: RecipeEditInput): string | null {
+  const grams = recipe.hops
+    .filter((hop) => AROMA_HOP_STAGES.includes(hop.stage))
+    .reduce((sum, hop) => sum + (weightGrams(hop.amount, hop.unit) ?? 0), 0);
+  return grams > 0 ? null : 'Needs a whirlpool or dry hop';
+}
+
+/**
+ * What one blank figure on the statistics panel is still waiting for, as a
+ * phrase short enough to sit under it — "Needs a malt weight" rather than a
+ * generic "needs more inputs" repeated down the whole column.
+ *
+ * Each answer names the *first* thing missing in the order the figure is built
+ * up, so it stays true rather than complete: a sheet with no malt and no yeast
+ * asks for the malt, and moves on to the yeast once that arrives. Null means
+ * nothing is missing — the caller should have a figure to show.
+ *
+ * Lives beside {@link calculateRecipe} so the two are read and changed
+ * together; a reason that has drifted from the arithmetic is worse than none.
+ */
+export function missingStatInput(recipe: RecipeEditInput, stat: RecipeStatKey): string | null {
+  const { settings } = recipe;
+  switch (stat) {
+    case 'originalGravity':
+      return grainGap(recipe) ?? volumeGap(recipe.batchSizeL);
+    case 'preBoilGravity':
+      return grainGap(recipe)
+        ?? boiledGrainGap(recipe)
+        ?? volumeGap(settings.boilSizePreL ?? settings.boilSizePostL ?? recipe.batchSizeL);
+    case 'postBoilGravity':
+      return grainGap(recipe)
+        ?? boiledGrainGap(recipe)
+        ?? volumeGap(settings.boilSizePostL ?? recipe.batchSizeL);
+    // Attenuation acts on the OG, so both are prerequisites and the grain bill
+    // is asked for first — there is nothing for a yeast to do without one.
+    case 'finalGravity':
+    case 'abv':
+      return grainGap(recipe) ?? volumeGap(recipe.batchSizeL) ?? yeastGap(recipe);
+    case 'ibu':
+      return hopGap(recipe);
+    case 'ebc':
+      return grainGap(recipe) ?? volumeGap(recipe.batchSizeL) ?? colourGap(recipe);
+    // No batch size in this one: pH comes off the grist's proportions, which a
+    // bill has whether or not anyone has said how much beer it makes.
+    case 'mashPh':
+      return grainGap(recipe) ?? colourGap(recipe);
+    case 'aromaRate':
+      return volumeGap(recipe.batchSizeL) ?? aromaGap(recipe);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Aroma hopping rate
 // ---------------------------------------------------------------------------
 

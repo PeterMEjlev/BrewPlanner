@@ -130,6 +130,12 @@ interface PricedItem {
    * behind them and fall back to the label.
    */
   ingredientName?: string;
+  /**
+   * The maltster, lab or brand behind the listing, kept apart from the label so
+   * a picker can group by it. Absent on hops (the shop names no grower) and on
+   * synthetic items with no listing behind them.
+   */
+  producer?: string | null;
   /** Match key: the significant words of the name. */
   tokens: string[];
   pricePerKgDkk: number | null;
@@ -483,6 +489,7 @@ function catalogue(): Catalogue {
           // different maltsters sell one.
           label: [m.producer, m.name].filter(Boolean).join(' '),
           ingredientName: m.name,
+          producer: m.producer ?? null,
           tokens: tokenizeWords(m.name),
           pricePerKgDkk: perKg,
           packagePriceDkk: num(m.price_per_100g_dkk) ?? (perKg * size) / 1000,
@@ -528,6 +535,7 @@ function catalogue(): Catalogue {
           id: y.id ?? `yeast:${y.manufacturer ?? ''}:${y.name}`,
           label: [y.manufacturer, y.name].filter(Boolean).join(' '),
           ingredientName: y.name,
+          producer: y.manufacturer ?? null,
           tokens: tokenizeWords(y.name),
           pricePerKgDkk: size == null ? null : (price / size) * 1000,
           packagePriceDkk: price,
@@ -560,6 +568,7 @@ function catalogue(): Catalogue {
           id: o.id ?? `other:${o.producer ?? o.brand ?? ''}:${o.name}`,
           label: [o.producer ?? o.brand, o.name].filter(Boolean).join(' '),
           ingredientName: o.name,
+          producer: o.producer ?? o.brand ?? null,
           tokens: tokenizeWords(o.name),
           pricePerKgDkk:
             perKg ?? (pack.sizeG == null ? null : (pack.price / pack.sizeG) * 1000),
@@ -1004,6 +1013,7 @@ function toOption(m: Match, defaultId: string | null, selectedId: string | null)
     catalogueId: m.item.id,
     label: m.item.label,
     ingredientName: m.item.ingredientName ?? m.item.label,
+    producer: m.item.producer ?? null,
     pricePerKgDkk: m.item.pricePerKgDkk == null ? null : money(m.item.pricePerKgDkk),
     packagePriceDkk: money(m.item.packagePriceDkk),
     packageSizeG: m.item.packageSizeG,
