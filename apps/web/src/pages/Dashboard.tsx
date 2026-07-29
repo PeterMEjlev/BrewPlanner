@@ -284,6 +284,13 @@ interface ChartTarget {
   deviceId: number;
   metric?: string;
   title: string;
+  /**
+   * Target temperature to draw across the chart, for the case the chart can't
+   * work out for itself: beer temp is the Tilt's reading, but the setpoint it is
+   * being held to belongs to the Inkbird next to it. Charts on a device that
+   * carries its own setpoint don't need this.
+   */
+  targetC?: number;
 }
 
 /** Opens the enlarge-on-click chart overlay for a metric. */
@@ -530,6 +537,7 @@ export function DashboardPage(): JSX.Element {
           deviceId={chart.deviceId}
           metric={chart.metric}
           title={chart.title}
+          targetC={chart.targetC}
           onClose={() => setChart(null)}
         />
       )}
@@ -1163,7 +1171,16 @@ function FermenterCommandCenter({
                 <NotConnected label="Tilt not connected" compact />
               ) : beer ? (
                 <MetricButton
-                  onClick={() => onOpen({ deviceId: beer.deviceId, metric: 'temp_c', title: `${name} · Beer temperature` })}
+                  onClick={() =>
+                    onOpen({
+                      deviceId: beer.deviceId,
+                      metric: 'temp_c',
+                      title: `${name} · Beer temperature`,
+                      // The Tilt has no setpoint of its own; hand it the
+                      // controller's so the chart can still draw the target.
+                      ...(setpoint ? { targetC: setpoint.reading.value } : {}),
+                    })
+                  }
                 >
                   <TemperatureValue reading={beer.reading} />
                 </MetricButton>

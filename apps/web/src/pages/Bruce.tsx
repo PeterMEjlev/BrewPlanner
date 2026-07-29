@@ -60,6 +60,8 @@ const PHASE_LOOK: Record<
   { label: string; Icon: (props: { className?: string }) => JSX.Element; tint: string }
 > = {
   library: { label: 'Searching the library', Icon: BookIcon, tint: 'text-zinc-400' },
+  // The server sends the titles retrieval landed on as `detail`, so this reads
+  // "Reading the books — Yeast, How to Brew" rather than naming no book at all.
   thinking: { label: 'Reading the books', Icon: BookIcon, tint: 'text-zinc-400' },
   // The one that had to be told apart from the rest: it is slower, it is billed
   // per search, and the answer stops being purely the brewery's own books.

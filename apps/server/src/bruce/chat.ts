@@ -515,6 +515,29 @@ function renderPassage(
   return `[${n}] ${chunk.title}${where ? ` — ${where}` : ''}\n${chunk.text}`;
 }
 
+/**
+ * How many book titles the progress line names before it starts counting.
+ * Two fits on a phone next to "Reading the books —"; a list of six wraps and
+ * stops being readable at the glance it exists for.
+ */
+const BROWSING_TITLES = 2;
+
+/**
+ * Which books are open, for the progress line: "Reading the books — Yeast".
+ *
+ * Plural because that is what actually happens. Retrieval hands the model its
+ * best passages in one go and they routinely come from several books, so there
+ * is no single volume being browsed at a given moment — naming them all is the
+ * truthful version of "which book is he in". They arrive in relevance order, so
+ * the ones that survive the cut are the ones the answer most likely leans on.
+ */
+function browsingDetail(sources: BruceChatSource[]): string | undefined {
+  const titles = [...new Set(sources.map((s) => s.title))];
+  if (titles.length === 0) return undefined;
+  if (titles.length <= BROWSING_TITLES) return titles.join(', ');
+  return `${titles.slice(0, BROWSING_TITLES).join(', ')} +${titles.length - BROWSING_TITLES} more`;
+}
+
 export interface ChatAnswer {
   text: string;
   sources: BruceChatSource[];
@@ -806,8 +829,12 @@ export async function answerQuestion(
   const webPages: BruceChatSource[] = [];
   let reply: ResponsesReply | null = null;
 
+  // Named once here rather than per round: the passages don't change between
+  // tool rounds, so the line would only repeat itself.
+  const browsing = browsingDetail(sources);
+
   for (let round = 1; round <= MAX_TOOL_ROUNDS; round++) {
-    onPhase({ phase: 'thinking' });
+    onPhase({ phase: 'thinking', ...(browsing ? { detail: browsing } : {}) });
 
     try {
       reply = await openaiStream<ResponsesReply>('/responses', body, (event) =>

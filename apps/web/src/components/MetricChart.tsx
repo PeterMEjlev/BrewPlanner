@@ -3,6 +3,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -135,10 +136,17 @@ export default function MetricChart({
   deviceId,
   initialMetric,
   chartHeight = 320,
+  targetC: targetOverride,
 }: {
   deviceId: number;
   initialMetric?: string;
   chartHeight?: number;
+  /**
+   * Target temp for a device that has no setpoint of its own — a Tilt's beer
+   * temp is held to the Inkbird's setpoint, which this chart can't see. Ignored
+   * when the device does carry one.
+   */
+  targetC?: number;
 }): JSX.Element {
   // When rendered inside the dashboard's range provider, the selected window is
   // shared with the matching sparkline preview (keyed by device+metric); on the
@@ -192,6 +200,13 @@ export default function MetricChart({
   const stateMetric = !!chartMetric && isStateMetric(chartMetric);
   const tempMetric = !!chartMetric && isTempMetric(chartMetric);
 
+  // The target the controller is holding to, drawn as a dotted line across the
+  // temp chart — the Overview sparkline carries it, so an enlarged chart without
+  // it lost the one reference that says whether the curve is where it should be.
+  // Only on `temp_c`: on the setpoint's own chart the plotted line *is* the target.
+  const targetC =
+    chartMetric === 'temp_c' ? (setpointReading?.value ?? targetOverride ?? null) : null;
+
   // Full extent of the loaded window — both the unzoomed view and the floor that
   // zooming out returns to.
   const xExtent = useMemo<Span | null>(() => {
@@ -208,8 +223,12 @@ export default function MetricChart({
     const min = Math.min(...values);
     const max = Math.max(...values);
     if (!tempMetric) return { min, max };
-    return niceRange(withMinSpan(min, max, tempMinSpanC));
-  }, [chartData, stateMetric, tempMetric, tempMinSpanC]);
+    // The target has to be inside the domain or its line falls off the chart —
+    // exactly the case where it matters most, a fridge sitting well off setpoint.
+    const withTarget =
+      targetC == null ? { min, max } : { min: Math.min(min, targetC), max: Math.max(max, targetC) };
+    return niceRange(withMinSpan(withTarget.min, withTarget.max, tempMinSpanC));
+  }, [chartData, stateMetric, tempMetric, tempMinSpanC, targetC]);
 
   const zoom = useChartZoom({
     xExtent,
@@ -436,6 +455,23 @@ export default function MetricChart({
                           : num,
                         chartMetric ? metricLabel(chartMetric) : 'value',
                       ];
+                    }}
+                  />
+                )}
+                {targetC != null && (
+                  <ReferenceLine
+                    y={targetC}
+                    stroke={colors.setpoint}
+                    strokeDasharray="2 4"
+                    strokeWidth={1.5}
+                    // Clipped rather than domain-extending: a zoom into a slice
+                    // that excludes the target must stay where the user put it.
+                    ifOverflow="hidden"
+                    label={{
+                      value: `Target ${targetC.toFixed(1)}°C`,
+                      position: 'insideTopRight',
+                      fill: colors.setpoint,
+                      fontSize: 11,
                     }}
                   />
                 )}

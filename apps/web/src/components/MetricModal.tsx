@@ -14,11 +14,14 @@ export function MetricModal({
   deviceId,
   metric,
   title,
+  targetC,
   onClose,
 }: {
   deviceId: number;
   metric?: string;
   title: string;
+  /** Target temp for a chart whose device has no setpoint of its own. */
+  targetC?: number;
   onClose: () => void;
 }): JSX.Element {
   useEffect(() => {
@@ -78,7 +81,12 @@ export function MetricModal({
           <Suspense
             fallback={<p className="py-24 text-center text-sm text-zinc-500">Loading chart…</p>}
           >
-            <MetricChart deviceId={deviceId} initialMetric={metric} chartHeight={300} />
+            <MetricChart
+              deviceId={deviceId}
+              initialMetric={metric}
+              chartHeight={300}
+              targetC={targetC}
+            />
           </Suspense>
         </div>
       </div>
