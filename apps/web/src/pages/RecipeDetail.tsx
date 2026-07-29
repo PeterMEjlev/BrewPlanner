@@ -1179,10 +1179,15 @@ function WaterSection({
 }): JSX.Element {
   const present = IONS.filter((ion) => profile[ion.key] != null);
 
-  // Everything the calculator needs to open on this recipe's target.
+  // Everything the calculator needs to open on this recipe's target. Bicarbonate
+  // rides along but the calculator ignores it — alkalinity is derived there from
+  // mash pH, which the recipe's mash thickness feeds into.
   const params = new URLSearchParams();
   for (const ion of present) params.set(ion.param, String(profile[ion.key]));
   if (recipe.batchSizeL != null) params.set('volume', String(recipe.batchSizeL));
+  if (recipe.mashGuidelines?.startingThicknessLPerKg != null) {
+    params.set('grist', String(recipe.mashGuidelines.startingThicknessLPerKg));
+  }
   params.set('recipe', recipe.name);
   params.set('recipeId', recipe.id);
 

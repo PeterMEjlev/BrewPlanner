@@ -222,6 +222,15 @@ export function BookIcon(props: IconProps): JSX.Element {
   );
 }
 
+/** Right-pointing chevron; rotate it 90° to mark an open disclosure. */
+export function ChevronRightIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="m9 5 7 7-7 7" />
+    </Svg>
+  );
+}
+
 /** Globe, for the Bruce chat's web-search switch. */
 export function GlobeIcon(props: IconProps): JSX.Element {
   return (

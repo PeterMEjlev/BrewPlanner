@@ -1,9 +1,9 @@
 - Overview Page: fermenter temp graph doesnt show target temp when opened.
 
-- Water Calculator page: review the water profile with the chat containing corrections
-- Water Calculator page: review if water calc math is correct
 
 
+
+- Water Calculator: None of the presets ask for MAgnesium or Bicarbonate? SHould those fields be removed?
 
 - ## Add support for
   - Electricity (Watt) usage

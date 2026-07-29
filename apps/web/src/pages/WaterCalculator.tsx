@@ -2,24 +2,35 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { DashboardShell } from '../components/DashboardShell';
 import {
+  DEFAULT_DISTILLED_MASH_PH,
+  DEFAULT_GRIST_RATIO_L_PER_KG,
+  DEFAULT_LIMITS,
   DEFAULT_SOURCE,
   DEFAULT_SOURCE_PH,
+  DEFAULT_TARGET_MASH_PH,
   EMPTY_PROFILE,
   EMPTY_SALTS,
   IONS,
   ION_META,
+  LACTIC_88_MEQ_PER_ML,
   SALTS,
   TARGET_PRESETS,
+  acidMilliequivalents,
   additions,
   alkalinityCaCO3,
+  bicarbonateForResidualAlkalinity,
   caco3ToDH,
   hardnessCaCO3,
+  mashBufferCapacity,
+  predictedMashPh,
   ratioDescriptor,
+  requiredResidualAlkalinity,
   residualAlkalinity,
   resultingProfile,
   suggestSalts,
   sulfateChlorideRatio,
   type Ion,
+  type IonLimits,
   type SaltGrams,
   type SaltId,
   type WaterProfile,
@@ -39,6 +50,20 @@ const STORAGE_KEY = 'brewplanner.watercalc';
 /** Where the brewing water starts: pure RO/distilled, or the brewery's tap water. */
 type SourceMode = 'ro' | 'tap';
 
+/**
+ * What the grist needs of the water, pH-wise. These three drive the bicarbonate
+ * target, which is why the target grid below has no bicarbonate field: alkalinity
+ * is what corrects mash pH, so it's an answer, not a style preference.
+ */
+interface MashState {
+  /** The pH this grist reaches in distilled water — a property of the malt alone. */
+  distilledPh: number;
+  /** Where the mash should land, measured at room temperature. */
+  targetPh: number;
+  /** Strike water per kg of grain: sets how hard the mash resists a pH change. */
+  gristRatioLPerKg: number;
+}
+
 interface CalcState {
   /** Total brewing water (mash + sparge), litres. */
   volumeL: number;
@@ -46,17 +71,42 @@ interface CalcState {
   sourceMode: SourceMode;
   /** The editable tap-water profile, used when sourceMode is 'tap'. */
   source: WaterProfile;
+  /** Flavour ions only — bicarbonate is derived from {@link mash}. */
   target: WaterProfile;
+  /** Upper bounds for the "keep it under this" ions, from the chosen preset. */
+  limits: IonLimits;
+  mash: MashState;
   salts: SaltGrams;
 }
+
+const DEFAULT_MASH: MashState = {
+  distilledPh: DEFAULT_DISTILLED_MASH_PH,
+  targetPh: DEFAULT_TARGET_MASH_PH,
+  gristRatioLPerKg: DEFAULT_GRIST_RATIO_L_PER_KG,
+};
 
 const DEFAULT_STATE: CalcState = {
   volumeL: 30,
   sourceMode: 'ro',
   source: { ...DEFAULT_SOURCE },
   target: { ...TARGET_PRESETS[0]!.profile },
+  limits: { ...TARGET_PRESETS[0]!.limits },
+  mash: { ...DEFAULT_MASH },
   salts: { ...EMPTY_SALTS },
 };
+
+/** The ions a brewer actually picks. Bicarbonate is derived, so it isn't here. */
+const TARGET_IONS: Ion[] = IONS.filter((ion) => ion !== 'hco3');
+
+/** Everything the mash-pH model yields for a given state. */
+function mashChemistry(target: WaterProfile, mash: MashState) {
+  const buffer = mashBufferCapacity(mash.gristRatioLPerKg);
+  const requiredRA = requiredResidualAlkalinity(mash.distilledPh, mash.targetPh, buffer);
+  // Salts can't make water acidic, so a negative requirement floors at zero
+  // bicarbonate and becomes an acid dose instead.
+  const hco3 = Math.max(0, bicarbonateForResidualAlkalinity(requiredRA, target.ca, target.mg));
+  return { buffer, requiredRA, hco3 };
+}
 
 function loadState(): CalcState {
   try {
@@ -65,18 +115,22 @@ function loadState(): CalcState {
       // First visit: open with a worked example — the best-fit salts for the
       // default target from RO water — so the headline answer (grams) is on
       // screen immediately rather than a page full of zeros.
+      const { hco3 } = mashChemistry(DEFAULT_STATE.target, DEFAULT_STATE.mash);
       return {
         ...DEFAULT_STATE,
-        salts: suggestSalts(EMPTY_PROFILE, DEFAULT_STATE.target, DEFAULT_STATE.volumeL),
+        salts: suggestSalts(EMPTY_PROFILE, { ...DEFAULT_STATE.target, hco3 }, DEFAULT_STATE.volumeL),
       };
     }
     const p = JSON.parse(raw) as Partial<CalcState>;
-    // Merge over defaults so a partial/older blob still yields every field.
+    // Merge over defaults so a partial/older blob still yields every field —
+    // including states saved before mash pH drove the bicarbonate target.
     return {
       ...DEFAULT_STATE,
       ...p,
       source: { ...DEFAULT_STATE.source, ...p.source },
       target: { ...DEFAULT_STATE.target, ...p.target },
+      limits: { ...DEFAULT_STATE.limits, ...p.limits },
+      mash: { ...DEFAULT_STATE.mash, ...p.mash },
       salts: { ...DEFAULT_STATE.salts, ...p.salts },
     };
   } catch {
@@ -91,12 +145,16 @@ function loadState(): CalcState {
  * solved — the same "answer on screen immediately" treatment as a first visit.
  *
  * Only the ions actually present are applied; anything the recipe leaves blank
- * keeps its saved value rather than silently becoming zero.
+ * keeps its saved value rather than silently becoming zero. A recipe's stored
+ * bicarbonate is deliberately ignored — alkalinity now comes from the mash-pH
+ * model, so accepting a style-picked figure would overwrite a derived answer
+ * with a guess. The recipe's mash thickness *is* taken, since it sets how hard
+ * the mash resists the pH change.
  */
 function applyQueryParams(base: CalcState, params: URLSearchParams): CalcState {
   const target = { ...base.target };
   let sawIon = false;
-  for (const ion of IONS) {
+  for (const ion of TARGET_IONS) {
     const raw = params.get(ion);
     if (raw === null) continue;
     const n = Number.parseFloat(raw);
@@ -108,8 +166,22 @@ function applyQueryParams(base: CalcState, params: URLSearchParams): CalcState {
 
   const volume = Number.parseFloat(params.get('volume') ?? '');
   const volumeL = Number.isFinite(volume) && volume > 0 ? volume : base.volumeL;
+  const grist = Number.parseFloat(params.get('grist') ?? '');
+  const mash = Number.isFinite(grist) && grist > 0
+    ? { ...base.mash, gristRatioLPerKg: grist }
+    : base.mash;
   const source = base.sourceMode === 'ro' ? EMPTY_PROFILE : base.source;
-  return { ...base, target, volumeL, salts: suggestSalts(source, target, volumeL) };
+  const { hco3 } = mashChemistry(target, mash);
+  return {
+    ...base,
+    target,
+    mash,
+    volumeL,
+    // A recipe arrives with no idea which preset it came from, so grade its ions
+    // as point targets rather than borrowing bands that may not apply.
+    limits: {},
+    salts: suggestSalts(source, { ...target, hco3 }, volumeL),
+  };
 }
 
 export function WaterCalculatorPage(): JSX.Element {
@@ -127,10 +199,18 @@ export function WaterCalculatorPage(): JSX.Element {
     }
   }, [state]);
 
-  const { volumeL, sourceMode, source, target, salts } = state;
+  const { volumeL, sourceMode, source, target, limits, mash, salts } = state;
 
   // RO/distilled starts from pure water (zero ions); tap uses the editable profile.
   const effectiveSource = sourceMode === 'ro' ? EMPTY_PROFILE : source;
+
+  // Bicarbonate isn't chosen, it's solved for: the mash-pH model says how much
+  // alkalinity this grist needs, and that becomes the sixth target.
+  const { buffer, requiredRA, hco3: targetHco3 } = useMemo(
+    () => mashChemistry(target, mash),
+    [target, mash],
+  );
+  const fullTarget = useMemo(() => ({ ...target, hco3: targetHco3 }), [target, targetHco3]);
 
   const added = useMemo(() => additions(salts, volumeL), [salts, volumeL]);
   const result = useMemo(
@@ -138,17 +218,35 @@ export function WaterCalculatorPage(): JSX.Element {
     [effectiveSource, salts, volumeL],
   );
 
+  // Where the mash actually lands with the water as dosed, and what it would
+  // take to bring it down if the salts (or the tap water) overshoot.
+  const achievedRA = residualAlkalinity(result);
+  const mashPh = predictedMashPh(mash.distilledPh, achievedRA, buffer);
+  const acidMEq = achievedRA > requiredRA
+    ? acidMilliequivalents(achievedRA, requiredRA, volumeL)
+    : 0;
+
   const setSourceIon = (ion: Ion, v: number): void =>
     setState((s) => ({ ...s, source: { ...s.source, [ion]: v } }));
+  // Hand-editing an ion drops its preset band: the brewer is stating a figure of
+  // their own, and grading it against a range they've moved away from would be
+  // worse than grading it as the point target they just typed.
   const setTargetIon = (ion: Ion, v: number): void =>
-    setState((s) => ({ ...s, target: { ...s.target, [ion]: v } }));
+    setState((s) => {
+      const next = { ...s.limits };
+      delete next[ion];
+      return { ...s, target: { ...s.target, [ion]: v }, limits: next };
+    });
+  const setMash = (patch: Partial<MashState>): void =>
+    setState((s) => ({ ...s, mash: { ...s.mash, ...patch } }));
   const setSalt = (id: SaltId, v: number): void =>
     setState((s) => ({ ...s, salts: { ...s.salts, [id]: v } }));
 
   const autoSuggest = (): void =>
     setState((s) => {
       const src = s.sourceMode === 'ro' ? EMPTY_PROFILE : s.source;
-      return { ...s, salts: suggestSalts(src, s.target, s.volumeL) };
+      const solved = mashChemistry(s.target, s.mash);
+      return { ...s, salts: suggestSalts(src, { ...s.target, hco3: solved.hco3 }, s.volumeL) };
     });
   const clearSalts = (): void => setState((s) => ({ ...s, salts: { ...EMPTY_SALTS } }));
 
@@ -239,26 +337,96 @@ export function WaterCalculatorPage(): JSX.Element {
               </Card>
             </div>
 
-            <Card title="Target profile" hint="The water you want to brew with. Pick a preset to start, then tweak.">
+            <Card title="Target profile" hint="The flavour ions you want to brew with. Pick a preset to start, then tweak.">
               <div className="mb-4 flex flex-wrap gap-1.5">
-                {TARGET_PRESETS.map((preset) => (
-                  <button
-                    key={preset.name}
-                    type="button"
-                    title={preset.note}
-                    aria-pressed={IONS.every((ion) => target[ion] === preset.profile[ion])}
-                    onClick={() => setState((s) => ({ ...s, target: { ...preset.profile } }))}
-                    className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
-                      IONS.every((ion) => target[ion] === preset.profile[ion])
-                        ? 'border-transparent bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
-                        : 'border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800'
-                    }`}
-                  >
-                    {preset.name}
-                  </button>
-                ))}
+                {TARGET_PRESETS.map((preset) => {
+                  const active = TARGET_IONS.every((ion) => target[ion] === preset.profile[ion]);
+                  return (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      title={preset.note}
+                      aria-pressed={active}
+                      onClick={() =>
+                        setState((s) => ({
+                          ...s,
+                          target: { ...preset.profile },
+                          limits: { ...preset.limits },
+                        }))
+                      }
+                      className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                        active
+                          ? 'border-transparent bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
+                          : 'border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800'
+                      }`}
+                    >
+                      {preset.name}
+                    </button>
+                  );
+                })}
               </div>
-              <IonGrid profile={target} onChange={setTargetIon} idPrefix="tgt" />
+              <IonGrid profile={target} onChange={setTargetIon} idPrefix="tgt" ions={TARGET_IONS} limits={limits} />
+              {/* Bicarbonate is conspicuously absent, so say why rather than
+                  leaving it looking like an oversight. */}
+              <p className="mt-3 border-t border-zinc-800/60 pt-3 text-xs leading-snug text-zinc-500">
+                No bicarbonate here: alkalinity corrects mash pH rather than setting flavour, so it's
+                worked out below from what the grist needs — currently{' '}
+                <span className="font-medium text-zinc-300">{Math.round(targetHco3)} ppm HCO₃⁻</span>.
+                A range shown under an ion is an upper bound, not something to dose up to.
+              </p>
+            </Card>
+
+            <Card
+              title="Mash pH"
+              hint="What the grist needs of the water. This is what sets the bicarbonate target — measure the distilled-water pH if you can; the default assumes a pale all-malt grist."
+            >
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <Field label="Distilled-water pH" hint="This grist, no minerals">
+                  <NumField
+                    value={mash.distilledPh}
+                    min={4}
+                    max={7}
+                    step={0.05}
+                    ariaLabel="Distilled-water mash pH"
+                    onChange={(v) => setMash({ distilledPh: v })}
+                  />
+                </Field>
+                <Field label="Target pH" hint="At room temperature">
+                  <NumField
+                    value={mash.targetPh}
+                    min={4}
+                    max={7}
+                    step={0.05}
+                    ariaLabel="Target mash pH"
+                    onChange={(v) => setMash({ targetPh: v })}
+                  />
+                </Field>
+                <Field label="Mash thickness" hint="Strike water per kg grain">
+                  <NumField
+                    value={mash.gristRatioLPerKg}
+                    min={1}
+                    max={10}
+                    step={0.1}
+                    ariaLabel="Mash thickness, litres per kilogram"
+                    onChange={(v) => setMash({ gristRatioLPerKg: v })}
+                  />
+                  <UnitSuffix>L/kg</UnitSuffix>
+                </Field>
+              </div>
+              <MetricsLine
+                items={[
+                  { label: 'Buffering', value: `${buffer.toFixed(1)} mEq/(pH·L)` },
+                  { label: 'Residual alkalinity needed', value: `${Math.round(requiredRA)} ppm CaCO₃` },
+                  { label: 'Bicarbonate target', value: `${Math.round(targetHco3)} ppm` },
+                ]}
+              />
+              {requiredRA < 0 && (
+                <p className="mt-3 text-xs leading-snug text-zinc-500">
+                  Negative: this grist is already acid enough that the water should carry no
+                  alkalinity at all, and calcium will push mash pH lower still. Salts can't correct
+                  that — see the acid figure in the results.
+                </p>
+              )}
             </Card>
 
             <Card title="Salt additions">
@@ -354,9 +522,10 @@ export function WaterCalculatorPage(): JSX.Element {
                   <tbody>
                     {IONS.map((ion) => {
                       const res = result[ion];
-                      const tgt = target[ion];
+                      const tgt = fullTarget[ion];
+                      const limit = limits[ion];
                       const delta = res - tgt;
-                      const tone = deltaTone(res, tgt);
+                      const tone = deltaTone(res, tgt, limit);
                       return (
                         <tr key={ion} className="border-t border-zinc-800/60">
                           <td className="py-1.5 text-left text-zinc-300">{ION_META[ion].symbol}</td>
@@ -365,11 +534,16 @@ export function WaterCalculatorPage(): JSX.Element {
                             {added[ion] > 0 ? `+${Math.round(added[ion])}` : '—'}
                           </td>
                           <td className="py-1.5 text-right font-semibold text-zinc-100">{Math.round(res)}</td>
-                          <td className="py-1.5 text-right text-zinc-400">{Math.round(tgt)}</td>
+                          {/* A banded ion states the band, so the ✓ beside it is
+                              legible as "inside the range" rather than a near-miss
+                              on a number it plainly doesn't equal. */}
+                          <td className="py-1.5 text-right text-zinc-400">
+                            {limit == null ? Math.round(tgt) : `${Math.round(tgt)}–${Math.round(limit)}`}
+                          </td>
                           <td className={`py-1.5 text-right font-semibold ${TONE_CLASS[tone]}`}>
                             {tone === 'good'
                               ? '✓'
-                              : `${tone === 'over' ? '↑' : '↓'} ${Math.round(Math.abs(delta))}`}
+                              : `${tone === 'over' ? '↑' : '↓'} ${Math.round(Math.abs(tone === 'over' && limit != null ? res - limit : delta))}`}
                           </td>
                         </tr>
                       );
@@ -378,26 +552,61 @@ export function WaterCalculatorPage(): JSX.Element {
                 </table>
               </div>
               <p className="mt-2 text-xs">
-                <span className="text-emerald-400">✓ on target</span>
+                <span className="text-emerald-400">✓ on target / within band</span>
                 <span className="text-zinc-600"> · </span>
                 <span className="text-amber-400">↓ below (add more)</span>
                 <span className="text-zinc-600"> · </span>
                 <span className="text-red-400">↑ above (can't reduce)</span>
               </p>
               <p className="mt-1 text-xs text-zinc-600">
-                All values ppm (mg/L). Salts only add ions — to lower one, start from RO water.
+                All values ppm (mg/L). Salts only add ions — to lower one, start from RO water. The
+                HCO₃⁻ target comes from the mash-pH model, not from the style.
               </p>
 
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <Metric label="Hardness" value={`${Math.round(hardnessCaCO3(result))}`} unit={`ppm · ${caco3ToDH(hardnessCaCO3(result)).toFixed(1)} °dH`} />
                 <Metric label="Alkalinity" value={`${Math.round(alkalinityCaCO3(result))}`} unit="ppm CaCO₃" />
-                <Metric label="Residual alkalinity" value={`${Math.round(residualAlkalinity(result))}`} unit="ppm CaCO₃" />
+                <Metric label="Residual alkalinity" value={`${Math.round(achievedRA)}`} unit={`needs ${Math.round(requiredRA)} ppm CaCO₃`} />
                 <Metric
                   label="SO₄ : Cl ratio"
                   value={ratio == null ? '—' : isFinite(ratio) ? ratio.toFixed(2) : '∞'}
                   unit={ratioDescriptor(ratio)}
                 />
               </div>
+            </Card>
+
+            {/* The point of all the alkalinity arithmetic, stated as the number
+                the brewer will actually meter on brew day. */}
+            <Card title="Predicted mash pH" hint="From the grist's distilled-water pH and the residual alkalinity this water delivers.">
+              <div className="flex items-baseline gap-3">
+                <span className={`text-3xl font-semibold tabular-nums ${TONE_CLASS[phTone(mashPh, mash.targetPh)]}`}>
+                  {mashPh.toFixed(2)}
+                </span>
+                <span className="text-sm text-zinc-500">
+                  target {mash.targetPh.toFixed(2)}
+                  {Math.abs(mashPh - mash.targetPh) >= 0.01 && (
+                    <> · {mashPh > mash.targetPh ? '+' : ''}{(mashPh - mash.targetPh).toFixed(2)}</>
+                  )}
+                </span>
+              </div>
+              {acidMEq > 0.5 ? (
+                <p className="mt-3 text-sm leading-snug text-zinc-300">
+                  Acidify by{' '}
+                  <span className="font-semibold text-zinc-50">
+                    {(acidMEq / LACTIC_88_MEQ_PER_ML).toFixed(1)} mL
+                  </span>{' '}
+                  of 88 % lactic acid across {trimNum(volumeL)} L ({Math.round(acidMEq)} mEq). Salts
+                  can only raise alkalinity, so this is the one adjustment they can't make.
+                </p>
+              ) : (
+                <p className="mt-3 text-sm leading-snug text-zinc-400">
+                  No acid needed — the salt additions land this within reach of the target.
+                </p>
+              )}
+              <p className="mt-2 text-xs leading-snug text-zinc-600">
+                An estimate from the Kolbach/Troester buffering model, sensitive to malt bill and
+                crush. Treat it as a starting dose and check with a meter at mash-in.
+              </p>
             </Card>
           </div>
         </div>
@@ -452,19 +661,27 @@ function UnitSuffix({ children }: { children: React.ReactNode }): JSX.Element {
   return <span className="ml-2 shrink-0 text-sm text-zinc-500">{children}</span>;
 }
 
-/** A 2/3-column grid of the six ion inputs, each labelled with its symbol + unit. */
+/**
+ * A 2/3-column grid of ion inputs, each labelled with its symbol + unit. The
+ * source grid takes all six; the target grid takes five, bicarbonate being
+ * derived. `limits` annotates the ions whose target is an upper bound.
+ */
 function IonGrid({
   profile,
   onChange,
   idPrefix,
+  ions = IONS,
+  limits,
 }: {
   profile: WaterProfile;
   onChange: (ion: Ion, value: number) => void;
   idPrefix: string;
+  ions?: Ion[];
+  limits?: IonLimits;
 }): JSX.Element {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {IONS.map((ion) => (
+      {ions.map((ion) => (
         <label key={ion} className="block" htmlFor={`${idPrefix}-${ion}`}>
           <span className="block text-xs font-medium text-zinc-400">
             {ION_META[ion].label} <span className="text-zinc-600">{ION_META[ion].symbol}</span>
@@ -480,6 +697,11 @@ function IonGrid({
             />
             <UnitSuffix>ppm</UnitSuffix>
           </span>
+          {limits?.[ion] != null && (
+            <span className="mt-0.5 block text-[11px] text-zinc-600">
+              up to {limits[ion]} ppm
+            </span>
+          )}
         </label>
       ))}
     </div>
@@ -515,13 +737,33 @@ function Metric({ label, value, unit }: { label: string; value: string; unit: st
  * How a resulting ion sits against its target: `good` when within ~10 % (min
  * 5 ppm, so small targets like Mg aren't flattered by a fixed floor), else
  * `over` (too much — salts can't remove it) or `under` (add more).
+ *
+ * With a `limit`, the target is a band rather than a point: anything between the
+ * target and the ceiling is on spec. Magnesium and sodium are the cases — their
+ * published ranges start at zero, and grading 8 ppm of magnesium as "8 too high"
+ * against a target of 0 would be a false alarm when the guidance is 0–10.
  */
 type Tone = 'good' | 'over' | 'under';
 
-function deltaTone(result: number, target: number): Tone {
-  const delta = result - target;
+function deltaTone(result: number, target: number, limit?: number): Tone {
   const tolerance = Math.max(5, target * 0.1);
+  if (limit != null) {
+    if (result <= limit + tolerance) return result < target - tolerance ? 'under' : 'good';
+    return 'over';
+  }
+  const delta = result - target;
   if (Math.abs(delta) <= tolerance) return 'good';
+  return delta > 0 ? 'over' : 'under';
+}
+
+/**
+ * Mash pH against its target. Tighter than the ion tolerances because pH is a
+ * log scale: 0.1 either way is the band brewers actually work to, and 0.2 out is
+ * a beer that tastes different.
+ */
+function phTone(predicted: number, target: number): Tone {
+  const delta = predicted - target;
+  if (Math.abs(delta) <= 0.1) return 'good';
   return delta > 0 ? 'over' : 'under';
 }
 

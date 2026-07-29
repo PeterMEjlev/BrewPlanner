@@ -241,28 +241,51 @@ Markdown is rendered, so use it where it earns its place:
 
 Don't bold everything: if half the answer is bold, none of it is.
 
-You have been given passages from the brewing books in this brewery's library.
+You have been given passages from this brewery's library. It holds two kinds of
+source, and they carry different weight:
+
+- Brewing books, transcribed with their page numbers.
+- Brülosophy exBEERiment catalogues — one entry per experiment, each with its
+  purpose, its result and the triangle-test p-value, and a link to the article.
+
 Answer from those passages.
 
 - Base your answer on the passages whenever they cover the question, and cite
-  where it came from inline, like (Water, p. 142). Always give the page. That
+  where it came from inline, like (Water, p. 142). Give the page whenever the
+  passage has one. An exBEERiment has no page, so cite it by catalogue and
+  experiment instead, like (exBEERiments: Hops, "Dry Hop Duration"). That
   citation is what attaches a passage to your answer on screen, so cite every
   passage you actually used — and none that you didn't.
 - If the passages only partly cover it, answer what they support and say
   plainly which part is your own general brewing knowledge.
 - If they don't cover it at all, say so rather than inventing a figure. General
-  brewing advice is fine — just don't attribute it to the books.
-- Never invent a page number, a chapter, or a quotation.
+  brewing advice is fine — just don't attribute it to the library.
+- Never invent a page number, a chapter, a p-value, or a quotation.
 
-If the brewer asks about the library itself — what you know, which books you
-have, what a book covers — answer from the library contents listed below, not
-from the retrieved passages. A question like that legitimately matches no
-passage, so do not say the books don't cover it; say what is on the shelf.
+An exBEERiment is evidence of a particular shape, so say what it actually
+shows rather than reporting it as a finding:
+
+- One brewer, one split batch, a small tasting panel. A significant result means
+  that panel could tell the two beers apart — not that either was better, and
+  not that the difference carries to another recipe or process.
+- A non-significant result means the panel failed to detect a difference. That
+  is worth knowing, and it is the usual outcome for variables brewers worry
+  about, but it is not proof the two are equivalent.
+- Quote the p-value and the panel size when an answer leans on one.
+- Where an exBEERiment and a book disagree, say so and say which is which: the
+  book has the mechanism, the exBEERiment has one test of whether it was
+  perceptible on a brew day. Neither of them settles it alone.
+
+If the brewer asks about the library itself — what you know, which books and
+catalogues you have, what one of them covers — answer from the library contents
+listed below, not from the retrieved passages. A question like that legitimately
+matches no passage, so do not say the library doesn't cover it; say what is on
+the shelf.
 
 The brewer is experienced: don't explain what a mash is. Prefer concrete
 numbers, and give the reasoning behind a recommendation, not just the number.
 Use metric units (°C, litres, grams), since that is what this brewery brews in,
-converting from the books where they use US units.`;
+converting from the library where it uses US units.`;
 
 /** Where a custom persona lives. Instructions, not source material: never indexed. */
 function promptPath(): string {
@@ -333,15 +356,15 @@ const WEB_SEARCH_PROMPT = `--- Searching the web
 
 You can search the web, and should when it genuinely helps:
 
-- The books first. If the retrieved passages answer the question, answer from
+- The library first. If the retrieved passages answer the question, answer from
   them — don't search to double-check what Palmer already told you.
-- Search when the question is about something the books cannot know: a hop
-  variety released after they were written, current stock or prices, a piece of
+- Search when the question is about something the library cannot know: a hop
+  variety released after it was written, current stock or prices, a piece of
   equipment, a supplier, a recent study, anything dated.
 - Say which part came from the web, and cite the page you read it on with its
   title and link.
-- The web is not the library. Where a brewing forum contradicts the books,
-  prefer the books and say the two disagree.`;
+- The web is not the library. Where a brewing forum contradicts the library,
+  prefer the library and say the two disagree.`;
 
 /**
  * Appended when the brewery's recipes could be listed. Written here rather than
@@ -363,14 +386,14 @@ its headline numbers only.
   which is strongest, what was brewed most recently.
 - Advice on a recipe is worth more when it is specific: name the addition or the
   malt you would change, and say by how much.
-- These are the brewer's own recipes, not a book. Cite the books for the
+- These are the brewer's own recipes, not a source. Cite the library for the
   principle, and the recipe for what it currently does.`;
 
 /** The shelf listing, or a note that there is nothing on it. */
 function libraryBlock(): string {
   const library = libraryOutline();
   if (library.length === 0) {
-    return '--- The brewery library\n\nThe library is empty — no books have been indexed yet. Say so if asked, and answer from general brewing knowledge.';
+    return '--- The brewery library\n\nThe library is empty — nothing has been indexed yet. Say so if asked, and answer from general brewing knowledge.';
   }
 
   const total = library.reduce((n, doc) => n + doc.chapters.length, 0);
@@ -383,7 +406,7 @@ function libraryBlock(): string {
     )
     .join('\n');
 
-  return `--- The brewery library\n\nThese are the only books you have. This is the complete list${detailed ? ", with each book's chapters" : ''}:\n\n${shelf}`;
+  return `--- The brewery library\n\nThese are the only sources you have — books and exBEERiment catalogues alike. This is the complete list${detailed ? ', with the chapters or sections of each' : ''}:\n\n${shelf}`;
 }
 
 /**
@@ -616,19 +639,32 @@ function pageNumbers(page: string | undefined): number[] {
   return [...page.matchAll(/\d+/g)].map((m) => Number(m[0]));
 }
 
+/** The longer words of a phrase, which inside a bracket are a deliberate reference. */
+function referenceWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 5);
+}
+
 /**
  * Work out which retrieved passages the answer actually leaned on.
  *
  * The evidence is the answer's own inline citations: the persona asks for
  * `(Water, p. 142)`, so a passage whose pages appear in a bracket is one the
- * model used, and an answer with no book citation at all used no book.
+ * model used, and an answer with no library citation at all used no passage.
  *
- * Deliberately biased towards over-showing. If the answer cites the books in
- * some way this can't attribute to a particular passage — an unusual format, a
- * citation by chapter, a passage that carries no page numbers — everything is
- * marked cited, exactly as it behaved before. The failure this fixes is a claim
- * of provenance that isn't there; quietly hiding a real one would be the same
- * mistake pointed the other way.
+ * An exBEERiment has no page, so it is cited by name — `(exBEERiments: Hops,
+ * "Dry Hop Duration")` — and is attributed on the words a bracket shares with
+ * exactly one passage's title and section. Shared words ("exbeeriments", "hops",
+ * which every catalogue carries) prove a citation happened without saying which
+ * one, so they only count towards the fallback below.
+ *
+ * Deliberately biased towards over-showing. If the answer cites the library in
+ * some way this can't pin to a particular passage — an unusual format, a
+ * citation by chapter — everything is marked cited. The failure this avoids is a
+ * claim of provenance that isn't there; quietly hiding a real one would be the
+ * same mistake pointed the other way.
  */
 function markCited(sources: BruceChatSource[], answer: string): BruceChatSource[] {
   const books = sources.filter((source) => !source.url);
@@ -644,26 +680,46 @@ function markCited(sources: BruceChatSource[], answer: string): BruceChatSource[
     }
   }
 
-  // A book named in a bracket, for the citations that carry no page: match on
-  // the title's longer words, which inside a bracket are a deliberate reference
-  // rather than ordinary prose.
-  const titleWords = new Set(
-    books.flatMap((source) =>
-      source.title
-        .toLowerCase()
-        .split(/[^a-z0-9]+/)
-        .filter((word) => word.length >= 5),
-    ),
-  );
-  const namesABook = brackets.some((bracket) =>
-    bracket
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .some((word) => titleWords.has(word)),
-  );
+  // Which passages each reference word could mean. A word that lands on one
+  // names it; a word several of them share can only say that some passage was
+  // cited, which is what `namesABook` is for.
+  const owners = new Map<string, Set<BruceChatSource>>();
+  for (const source of books) {
+    for (const word of referenceWords(`${source.title} ${source.section ?? ''}`)) {
+      const set = owners.get(word) ?? new Set<BruceChatSource>();
+      set.add(source);
+      owners.set(word, set);
+    }
+  }
 
-  const matched = books.filter((source) => pageNumbers(source.page).some((n) => citedPages.has(n)));
-  // Cited the books but not in a way that lands on a passage: show them all
+  // Whether a bracket refers to the library at all, on titles alone: a section
+  // is made of ordinary brewing words ("temperature", "fermentation") that an
+  // aside can use without citing anything.
+  const titleWords = new Set(books.flatMap((source) => referenceWords(source.title)));
+
+  const namedByBracket = new Set<BruceChatSource>();
+  let namesABook = false;
+  for (const bracket of brackets) {
+    const words = referenceWords(bracket);
+    const citesTitle = words.some((word) => titleWords.has(word));
+    if (citesTitle) namesABook = true;
+    // Only brackets that are citations get to name a passage. Plenty of asides
+    // ("a longer fermentation") share a word with a section heading without
+    // pointing at anything, and marking one of those cited would put a source
+    // under an answer that never used it.
+    if (!citesTitle && [...bracket.matchAll(CITED_PAGE)].length === 0) continue;
+    for (const word of words) {
+      const candidates = owners.get(word);
+      const [only] = candidates ?? [];
+      if (candidates?.size === 1 && only) namedByBracket.add(only);
+    }
+  }
+
+  const matched = books.filter(
+    (source) =>
+      pageNumbers(source.page).some((n) => citedPages.has(n)) || namedByBracket.has(source),
+  );
+  // Cited the library but not in a way that lands on a passage: show them all
   // rather than guess wrong about which one.
   const allCited = matched.length === 0 && (citedPages.size > 0 || namesABook);
 
@@ -714,7 +770,7 @@ export async function answerQuestion(
         // question, or that this is a question *about* the library, which
         // matches no single passage by nature. The model has the shelf listing
         // in its instructions, so let it tell the two apart.
-        'No individual passage matched this question. If it is a question about the library itself, answer from the library contents in your instructions. Otherwise answer from general brewing knowledge and say the books do not cover it.\n\n---\n\n';
+        'No individual passage matched this question. If it is a question about the library itself, answer from the library contents in your instructions. Otherwise answer from general brewing knowledge and say the library does not cover it.\n\n---\n\n';
 
   // Input grows across tool rounds: the model's own output items and the tool
   // results are appended, so the next call sees what it asked for.

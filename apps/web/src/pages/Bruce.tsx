@@ -20,7 +20,15 @@ import { setBrucePhase } from '../bruceActivity';
 import { DashboardShell } from '../components/DashboardShell';
 import { Markdown } from '../components/Markdown';
 import { Popover } from '../components/Popover';
-import { BookIcon, ChatIcon, GlobeIcon, KegIcon, MicIcon, ThinkingDots } from '../components/icons';
+import {
+  BookIcon,
+  ChatIcon,
+  ChevronRightIcon,
+  GlobeIcon,
+  KegIcon,
+  MicIcon,
+  ThinkingDots,
+} from '../components/icons';
 import { usePoll } from '../usePoll';
 import { relativeTime } from '../util';
 
@@ -1540,6 +1548,102 @@ function BookModal({ file, onClose }: { file: string; onClose: () => void }): JS
   );
 }
 
+/** One indexed book, as the knowledge status reports it. */
+type KnowledgeDocument = NonNullable<BruceKnowledgeState['knowledge']>['documents'][number];
+
+/**
+ * Books that belong behind the exBEERiments disclosure rather than on the
+ * shelf itself. There are a dozen-odd of these volumes and one of everything
+ * else, so listed flat they *are* the library — the books you actually pick up
+ * get pushed off the bottom of the card.
+ */
+function isExbeeriment(doc: KnowledgeDocument): boolean {
+  return /^brulosophy[_-]/i.test(doc.file);
+}
+
+/** One book on the shelf. Opens the reader. */
+function BookRow({
+  doc,
+  onOpen,
+}: {
+  doc: KnowledgeDocument;
+  onOpen: () => void;
+}): JSX.Element {
+  return (
+    // Reading what Bruce read used to mean an SSH session; a book on a shelf
+    // you can't open isn't much of a library.
+    <button
+      type="button"
+      onClick={onOpen}
+      title={`Read ${doc.title}`}
+      className="-mx-1.5 block w-full rounded-lg px-1.5 py-1 text-left transition hover:bg-zinc-800/60"
+    >
+      <div className="text-xs font-medium leading-snug text-zinc-200">{doc.title}</div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="truncate font-mono text-[10px] text-zinc-600">{doc.file}</span>
+        <span className="shrink-0 text-[10px] text-zinc-600">
+          {doc.passages.toLocaleString()} passages
+        </span>
+      </div>
+    </button>
+  );
+}
+
+/**
+ * The exBEERiments, collapsed into one line. Closed by default: the point of
+ * the group is that the rest of the shelf stays visible without scrolling.
+ */
+function ExbeerimentGroup({
+  docs,
+  onOpen,
+}: {
+  docs: KnowledgeDocument[];
+  onOpen: (file: string) => void;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const passages = docs.reduce((sum, doc) => sum + doc.passages, 0);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((was) => !was)}
+        title={open ? 'Collapse the exBEERiments' : `Show all ${docs.length} exBEERiment volumes`}
+        className="-mx-1.5 flex w-full items-baseline gap-1.5 rounded-lg px-1.5 py-1 text-left transition hover:bg-zinc-800/60"
+      >
+        <ChevronRightIcon
+          className={`h-3 w-3 shrink-0 self-center text-zinc-600 transition-transform ${
+            open ? 'rotate-90' : ''
+          }`}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-medium leading-snug text-zinc-200">
+            Brülosophy exBEERiments
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-[10px] text-zinc-600">
+              {docs.length} {docs.length === 1 ? 'volume' : 'volumes'}
+            </span>
+            <span className="shrink-0 text-[10px] text-zinc-600">
+              {passages.toLocaleString()} passages
+            </span>
+          </div>
+        </div>
+      </button>
+
+      {open && (
+        <ul className="mt-1 space-y-1 border-l border-zinc-800 pl-2.5">
+          {docs.map((doc) => (
+            <li key={doc.file}>
+              <BookRow doc={doc} onOpen={() => onOpen(doc.file)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
  * What Bruce has read, and the controls for changing it: add a book, rebuild
  * the index, rewrite his instructions.
@@ -1605,6 +1709,9 @@ function LibraryCard(): JSX.Element {
   };
 
   const knowledge = state?.knowledge;
+  const documents = knowledge?.documents ?? [];
+  const books = documents.filter((doc) => !isExbeeriment(doc));
+  const exbeeriments = documents.filter(isExbeeriment);
   const buttonClass =
     'rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition enabled:hover:border-zinc-600 enabled:hover:text-zinc-200 disabled:opacity-40';
 
@@ -1625,26 +1732,16 @@ function LibraryCard(): JSX.Element {
       {knowledge != null &&
         (knowledge.documents.length > 0 ? (
           <ul className="space-y-1">
-            {knowledge.documents.map((doc) => (
+            {books.map((doc) => (
               <li key={doc.file}>
-                {/* Reading what Bruce read used to mean an SSH session; a book
-                    on a shelf you can't open isn't much of a library. */}
-                <button
-                  type="button"
-                  onClick={() => setReading(doc.file)}
-                  title={`Read ${doc.title}`}
-                  className="-mx-1.5 block w-full rounded-lg px-1.5 py-1 text-left transition hover:bg-zinc-800/60"
-                >
-                  <div className="text-xs font-medium leading-snug text-zinc-200">{doc.title}</div>
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="truncate font-mono text-[10px] text-zinc-600">{doc.file}</span>
-                    <span className="shrink-0 text-[10px] text-zinc-600">
-                      {doc.passages.toLocaleString()} passages
-                    </span>
-                  </div>
-                </button>
+                <BookRow doc={doc} onOpen={() => setReading(doc.file)} />
               </li>
             ))}
+            {exbeeriments.length > 0 && (
+              <li>
+                <ExbeerimentGroup docs={exbeeriments} onOpen={setReading} />
+              </li>
+            )}
           </ul>
         ) : (
           <p className="text-xs leading-relaxed text-zinc-600">
