@@ -170,6 +170,26 @@ if systemctl is-enabled --quiet bruce.service 2>/dev/null; then
   fi
 fi
 
+# The sensor agents run straight out of this checkout (see deploy/agents/*/), so
+# a pulled change to an agent.py does nothing until its unit is restarted — the
+# old process keeps polling on the old code indefinitely. Restart whichever
+# agents this machine actually has installed; a satellite Pi runs this same
+# script for its own. Their unit files are NOT synced from the repo the way the
+# server's is: each install hand-edits paths and EnvironmentFile, so overwriting
+# them would break the satellite.
+#
+# Never let one fail the deploy: agents are optional, and a whitelist predating
+# them is refused exactly like bruce's above.
+for agent in inkbird power pressure tilt water; do
+  unit="$agent-agent.service"
+  if systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+    echo "==> restarting $unit"
+    if ! sudo -n systemctl restart "$unit" 2>/dev/null; then
+      echo "    (warning: $unit not restarted — reinstall the sudoers whitelist)"
+    fi
+  fi
+done
+
 echo "==> done. Now on commit:"
 git --no-pager log -1 --oneline
 

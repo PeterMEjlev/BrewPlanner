@@ -22,6 +22,11 @@ Cmnd_Alias BREWPLANNER_DEPLOY = \
     /usr/bin/systemctl restart checklist-server.service, \
     /usr/bin/systemctl restart checklist-kiosk.service, \
     /usr/bin/systemctl restart bruce.service, \
+    /usr/bin/systemctl restart inkbird-agent.service, \
+    /usr/bin/systemctl restart power-agent.service, \
+    /usr/bin/systemctl restart pressure-agent.service, \
+    /usr/bin/systemctl restart tilt-agent.service, \
+    /usr/bin/systemctl restart water-agent.service, \
     /usr/bin/systemctl daemon-reload, \
     /usr/bin/cp /home/brewplanner/checklist/deploy/checklist-server.service /etc/systemd/system/, \
     /usr/bin/cp /home/brewplanner/checklist/deploy/checklist-kiosk.service /etc/systemd/system/, \
