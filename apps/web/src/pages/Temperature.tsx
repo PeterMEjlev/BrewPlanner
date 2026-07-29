@@ -13,7 +13,8 @@ import {
 import { api } from '../api';
 import { useGraphColors } from '../graphColors';
 import { SetpointControl } from '../SetpointControl';
-import { RANGES, formatTick } from '../useDeviceData';
+import { timeAxis } from '../components/timeAxis';
+import { RANGES } from '../useDeviceData';
 import { usePoll } from '../usePoll';
 
 const POLL_MS = 10000;
@@ -156,7 +157,13 @@ export function TemperaturePage(): JSX.Element {
     return [...byT.values()].sort((a, b) => a.t - b.t);
   }, [sources, histories]);
 
-  const longRange = rangeMs > 24 * 60 * 60 * 1000;
+  // Round clock times across the loaded window rather than wherever the readings
+  // happen to fall (see timeAxis.ts).
+  const xAxis = timeAxis(
+    chartData.length > 1
+      ? { min: chartData[0]!.t, max: chartData[chartData.length - 1]!.t }
+      : null,
+  );
 
   function toggle(key: SeriesKey): void {
     setHidden((h) => ({ ...h, [key]: !h[key] }));
@@ -292,7 +299,8 @@ export function TemperaturePage(): JSX.Element {
                   type="number"
                   domain={['dataMin', 'dataMax']}
                   scale="time"
-                  tickFormatter={(t) => formatTick(t, longRange)}
+                  ticks={xAxis.ticks}
+                  tickFormatter={xAxis.format}
                   tick={{ fontSize: 14, fill: '#94a3b8' }}
                   stroke="#334155"
                   minTickGap={48}

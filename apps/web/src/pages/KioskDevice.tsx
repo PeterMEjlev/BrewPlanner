@@ -11,13 +11,8 @@ import {
 } from 'recharts';
 import { SetpointControl } from '../SetpointControl';
 import { metricColor, useGraphColors } from '../graphColors';
-import {
-  RANGES,
-  cumulativeMetricOf,
-  formatTick,
-  useDeviceData,
-  useDeviceTotal,
-} from '../useDeviceData';
+import { timeAxis } from '../components/timeAxis';
+import { RANGES, cumulativeMetricOf, useDeviceData, useDeviceTotal } from '../useDeviceData';
 import {
   StateBadge,
   formatValue,
@@ -38,9 +33,16 @@ export function KioskDevicePage(): JSX.Element {
   // fermenter's gravity link uses this so the Tilt's beer temp never shows here).
   const lockedMetric = params.get('metric') ?? undefined;
   const deviceId = Number(id);
-  const { device, metric, setMetric, rangeMs, setRangeMs, chartData, latest, longRange, refresh } =
+  const { device, metric, setMetric, rangeMs, setRangeMs, chartData, latest, refresh } =
     useDeviceData(deviceId, lockedMetric);
   const colors = useGraphColors();
+  // Round clock times across the loaded window rather than wherever the readings
+  // happen to fall (see timeAxis.ts).
+  const xAxis = timeAxis(
+    chartData.length > 1
+      ? { min: chartData[0]!.t, max: chartData[chartData.length - 1]!.t }
+      : null,
+  );
 
   // All-time consumption for energy/water meters (shown alongside the live value).
   const totalMetric = cumulativeMetricOf(device);
@@ -195,7 +197,8 @@ export function KioskDevicePage(): JSX.Element {
                   type="number"
                   domain={['dataMin', 'dataMax']}
                   scale="time"
-                  tickFormatter={(t) => formatTick(t, longRange)}
+                  ticks={xAxis.ticks}
+                  tickFormatter={xAxis.format}
                   tick={{ fontSize: 14, fill: '#94a3b8' }}
                   stroke="#334155"
                   minTickGap={48}

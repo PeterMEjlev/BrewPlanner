@@ -59,8 +59,6 @@ export interface DeviceDataState {
   chartData: { t: number; value: number }[];
   /** Latest reading for the selected metric (falls back to the first metric). */
   latest: LatestReading | undefined;
-  /** True for multi-day ranges, so axis ticks show dates instead of times. */
-  longRange: boolean;
   /** Force an immediate device-status refetch (e.g. after changing a setpoint). */
   refresh: () => void;
   error: string | null;
@@ -201,7 +199,6 @@ export function useDeviceData(
   );
 
   const latest = device?.latest.find((r) => r.metric === metric) ?? device?.latest[0];
-  const longRange = rangeMs > 24 * 60 * 60 * 1000;
 
   return {
     device,
@@ -211,7 +208,6 @@ export function useDeviceData(
     setRangeMs,
     chartData,
     latest,
-    longRange,
     refresh: loadDevice,
     error,
   };
@@ -464,12 +460,4 @@ export function useDeviceTotal(deviceId: number, metric: string | undefined): nu
   );
 
   return total;
-}
-
-/** Axis tick: time-of-day for short ranges, date for multi-day ranges. */
-export function formatTick(t: number, longRange: boolean): string {
-  const d = new Date(t);
-  return longRange
-    ? d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-    : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

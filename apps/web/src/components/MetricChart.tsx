@@ -20,16 +20,11 @@ import {
   stateTick,
 } from '../pages/Dashboard';
 import { useSettings } from '../settings';
-import {
-  RANGES,
-  cumulativeMetricOf,
-  formatTick,
-  useDeviceData,
-  useDeviceTotal,
-} from '../useDeviceData';
+import { RANGES, cumulativeMetricOf, useDeviceData, useDeviceTotal } from '../useDeviceData';
 import { withMinSpan } from './charts';
 import { type Span, useChartZoom } from './chartZoom';
 import { type ThinMode, thinForPlot } from './decimate';
+import { timeAxis } from './timeAxis';
 
 function isBreweryTempDevice(device: { name: string; type: string }): boolean {
   return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
@@ -58,9 +53,6 @@ const PLOT_INSET = {
 
 /** Don't let the time axis zoom in past a one-minute window. */
 const MIN_X_SPAN_MS = 60_000;
-
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const TEN_MINUTES_MS = 10 * 60 * 1000;
 
 /** Round tick steps to look for within each order of magnitude. */
 const NICE_STEPS = [1, 2, 2.5, 5, 10];
@@ -93,31 +85,6 @@ function formatAxisValue(v: number, span: number | null): string {
   if (span >= 0.2) return v.toFixed(2);
   if (span >= 0.02) return v.toFixed(3);
   return v.toFixed(4);
-}
-
-/**
- * How the time axis labels itself, chosen from the window actually on screen (so
- * it follows both the range button and any zoom): plain dates once a chart covers
- * several days, a date alongside the clock while it straddles midnight — a bare
- * "08:59 PM" is ambiguous when the same time appears on two days — clock times
- * within a single day, and seconds once zoomed right in.
- */
-function timeTickFormat(view: Span | null): (t: number) => string {
-  if (!view) return (t) => formatTick(t, false);
-  const span = view.max - view.min;
-  if (span > 3 * ONE_DAY_MS) return (t) => formatTick(t, true);
-  if (new Date(view.min).toDateString() !== new Date(view.max).toDateString()) {
-    return (t) =>
-      new Date(t).toLocaleString([], {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-  }
-  if (span > TEN_MINUTES_MS) return (t) => formatTick(t, false);
-  return (t) =>
-    new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 /**
@@ -259,7 +226,15 @@ export default function MetricChart({
     : yExtent
       ? yExtent.max - yExtent.min
       : null;
-  const formatXTick = useMemo(() => timeTickFormat(zoom.xDomain ?? xExtent), [zoom.xDomain, xExtent]);
+  // The window actually on screen — the zoom when there is one, else the whole
+  // loaded range. Handed to the axis as an explicit domain rather than left to
+  // dataMin/dataMax, so it stays the loaded window even when bucket-averaging
+  // moves the first plotted point (see thinForPlot) — and so every tick below
+  // lands inside the plot area.
+  const xView = zoom.xDomain ?? xExtent;
+  // Ticks on round clock times across that window, so they follow both the
+  // range button and any zoom (see timeAxis.ts).
+  const xAxis = useMemo(() => timeAxis(xView), [xView]);
 
   // The visible window's extremes, spelled out under the live value. The phone's
   // overview cards are too tight to carry a Min/Max line of their own, so opening
@@ -427,12 +402,11 @@ export default function MetricChart({
                 <XAxis
                   dataKey="t"
                   type="number"
-                  domain={
-                    zoom.xDomain ? [zoom.xDomain.min, zoom.xDomain.max] : ['dataMin', 'dataMax']
-                  }
+                  domain={xView ? [xView.min, xView.max] : ['dataMin', 'dataMax']}
                   allowDataOverflow
                   scale="time"
-                  tickFormatter={formatXTick}
+                  ticks={xAxis.ticks}
+                  tickFormatter={xAxis.format}
                   tick={{ fontSize: 12, fill: '#94a3b8' }}
                   stroke="#334155"
                   height={X_AXIS_HEIGHT}

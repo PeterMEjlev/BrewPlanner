@@ -169,6 +169,42 @@ def push(samples: list[dict], current_interval: float) -> float | None:
         return None
 
 
+def next_slot(interval: float) -> float:
+    """
+    Wall-clock time of the next logging slot: the next whole multiple of
+    `interval` past local midnight. Sleeping to that rather than "one interval
+    on from wherever this cycle finished" is what puts a 5-minute cadence on
+    09:30:00, 09:35:00 ... instead of on whatever second the agent happened to
+    start at — the hub's charts get readable, evenly-spaced samples, and two
+    agents on the same cadence line up with each other.
+
+    Midnight is the anchor, not the epoch, so the slots match the clock on the
+    wall in any time zone; an interval that doesn't divide the day evenly just
+    gets a short last slot before midnight.
+    """
+    now = time.time()
+    if interval <= 0:
+        return now
+    offset = time.localtime(now).tm_gmtoff or 0
+    local = now + offset
+    midnight = local - (local % 86400.0)
+    slots = math.floor((local - midnight) / interval) + 1
+    return midnight + slots * interval - offset
+
+
+def sleep_until(deadline: float) -> None:
+    """
+    Sleep to a wall-clock deadline, in steps of at most a second so a SIGTERM
+    still lands promptly. Re-read each step rather than counted down, so a clock
+    correction (NTP on a Pi with no RTC) can't leave us sleeping past the slot.
+    """
+    while _running:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return
+        time.sleep(min(1.0, remaining))
+
+
 def _stop(_signum, _frame) -> None:
     global _running
     _running = False
@@ -191,7 +227,6 @@ def main() -> int:
     interval = INTERVAL
 
     while _running:
-        cycle_start = time.monotonic()
         try:
             now = utc_now_iso()
             for metric, value in read_power().items():
@@ -213,13 +248,8 @@ def main() -> int:
                     log(f"hub set logging interval to {advised:g}s")
                     interval = advised
 
-        # Sleep the remainder of the interval, waking early on shutdown.
-        elapsed = time.monotonic() - cycle_start
-        remaining = max(0.0, interval - elapsed)
-        while _running and remaining > 0:
-            step = min(1.0, remaining)
-            time.sleep(step)
-            remaining -= step
+        # Sleep to the next round wall-clock slot, waking early on shutdown.
+        sleep_until(next_slot(interval))
 
     return 0
 

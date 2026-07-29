@@ -36,6 +36,9 @@ dive in.
 - **Satellite**: runs one agent. It needs the hub's URL, its device key, and
   (for sensors) whatever talks to the hardware. It pushes on an interval and the
   push doubles as a heartbeat, so the dashboard knows when a satellite goes quiet.
+  Pushes land on round wall-clock slots — a 5-minute interval reports at 09:30:00,
+  09:35:00, … whatever time the agent was started — so the charts get evenly
+  spaced samples and two agents on the same cadence line up with each other.
 - A satellite can be a **separate** Pi or the same hub Pi — but keep the agent's
   config (`/etc/<agent>.env`, chmod 600) out of git; only the device key proves
   identity to the hub.
