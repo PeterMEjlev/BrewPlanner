@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
+import { Select } from '../components/Select';
 import { useKegContentColors } from '../kegContentColors';
 import {
   KEG_CONTENT_OPTIONS,
@@ -539,7 +540,9 @@ function KegEditModal({
   // Close on Escape; lock body scroll while open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      // Not while something inside has claimed the key — the contents dropdown
+      // closes its own list first, as a native select's popup used to.
+      if (e.key === 'Escape' && !e.defaultPrevented) onClose();
     };
     window.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
@@ -780,19 +783,16 @@ function KegEditModal({
             <label className={labelClass} htmlFor="keg-contents">
               Contents
             </label>
-            <select
+            <Select
               id="keg-contents"
               className={inputClass}
               value={form.contents}
-              onChange={(e) => update('contents', e.target.value)}
-            >
-              {extraContent && <option value={extraContent}>{extraContent}</option>}
-              {KEG_CONTENT_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => update('contents', value)}
+              options={[
+                ...(extraContent ? [{ value: extraContent }] : []),
+                ...KEG_CONTENT_OPTIONS.map((opt) => ({ value: opt })),
+              ]}
+            />
           </div>
 
           {/* Date */}

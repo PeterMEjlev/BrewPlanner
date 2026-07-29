@@ -6,6 +6,7 @@ import inkbirdIcon from '../assets/inkbird.png';
 import tiltIcon from '../assets/tilt.png';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
+import { Select } from '../components/Select';
 import { listPollMs } from '../useDeviceData';
 import { usePoll } from '../usePoll';
 import { metricLabel, relativeTime } from './Dashboard';
@@ -422,29 +423,26 @@ function IntervalRow({
     <div className="flex items-baseline justify-between gap-2 border-b border-zinc-800/60 py-0.5">
       <dt className="text-xs font-medium uppercase tracking-wider text-zinc-500">Interval</dt>
       <dd className="text-right">
-        <select
-          value={seconds}
-          aria-label="Logging interval"
-          // Keep clicks off the card's link: stop bubbling (so React Router's
-          // handler never runs) and cancel the anchor's default navigation. The
-          // dropdown opens on mousedown, so preventing the click default is safe.
+        {/* Keep clicks off the card's link: stop bubbling (so React Router's
+            handler never runs) and cancel the anchor's default navigation. The
+            menu is portalled out of the anchor, but a click in it still travels
+            up the React tree, so the guard belongs on the wrapper. */}
+        <span
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
           }}
-          onChange={(e) => {
-            e.stopPropagation();
-            onChange(Number(e.target.value));
-          }}
-          className="cursor-pointer rounded-md border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-sm text-zinc-200 transition hover:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
-          {options.map((s) => (
-            <option key={s} value={s}>
-              {formatInterval(s)}
-            </option>
-          ))}
-        </select>
+          <Select
+            value={seconds}
+            aria-label="Logging interval"
+            onChange={onChange}
+            align="right"
+            className="rounded-md border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-sm text-zinc-200 transition hover:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            options={options.map((s) => ({ value: s, label: formatInterval(s) }))}
+          />
+        </span>
       </dd>
     </div>
   );

@@ -2191,7 +2191,42 @@ export type SetActiveRecipeInput = z.infer<typeof setActiveRecipeSchema>;
 
 const shortRecipeText = z.string().trim().max(100);
 const ingredientName = z.string().trim().min(1, 'Ingredient name is required').max(300);
-const amountText = z.string().trim().max(30);
+
+/**
+ * A number typed without its leading zero, given one back — ".8" becomes "0.8",
+ * "-,25" becomes "-0,25". Every figure on a brew sheet is written by hand into a
+ * text box, and dropping the zero is how people actually write a fraction; the
+ * arithmetic has always read it correctly, but the sheet then *shows* ".8",
+ * which reads as a typo rather than as eight tenths.
+ *
+ * Anchored to the whole value on purpose, so it can be pointed at any field
+ * without inspecting what the field is for: only a value that is nothing but a
+ * bare decimal is touched, and a note or a name is left exactly as written.
+ *
+ * The separator that was typed is the one that comes back. This codebase reads
+ * "," as a decimal point throughout (see the recipe parsers), and a brewer
+ * writing Danish decimals has not made a mistake to be corrected — the missing
+ * zero is the only thing being supplied.
+ */
+export function withLeadingZero(text: string): string {
+  return text.replace(/^([+-]?)([.,])(\d+)$/, '$10$2$3');
+}
+
+/**
+ * A hand-written figure: trimmed first, so " .8" is recognised as the bare
+ * decimal it is, then given its leading zero back.
+ *
+ * Applied on the way in *and* on the way out — {@link recipeEditSchema} is what
+ * a stored sheet is read back through — so a recipe written before this rule
+ * existed reads correctly everywhere it is shown, with no migration to run.
+ *
+ * `max` is per field rather than fixed: a strike volume is allowed to be longer
+ * than an alpha acid, and tightening one to match the other would make an
+ * already-saved recipe fail to load.
+ */
+const figureText = (max = 30) => z.string().trim().max(max).transform(withLeadingZero);
+
+const amountText = figureText();
 const optionalRecipeText = z.string().trim().max(2_000).nullable();
 
 const recipeFermentableEditSchema = z.object({
@@ -2250,11 +2285,11 @@ const recipeMashGuidelinesSchema = z.object({
     .array(
       z.object({
         name: z.string().trim().max(200),
-        temp: z.string().trim().max(30).nullable(),
+        temp: figureText().nullable(),
         time: amountText,
-        amount: z.string().trim().max(100).optional(),
+        amount: figureText(100).optional(),
         amountUnit: shortRecipeText.default(''),
-        startTemp: z.string().trim().max(30).nullable().default(null),
+        startTemp: figureText().nullable().default(null),
         type: shortRecipeText.default(''),
         description: z.string().trim().max(500).default(''),
       }),
@@ -2313,8 +2348,8 @@ const recipeEditFields = {
   ebc: amountText,
   ebcEstimated: z.boolean(),
   batchSizeL: z.number().positive().max(1_000_000).nullable(),
-  mashTemp: z.string().trim().max(30).nullable(),
-  fermentationTemp: z.string().trim().max(30).nullable(),
+  mashTemp: figureText().nullable(),
+  fermentationTemp: figureText().nullable(),
   fermentables: z.array(recipeFermentableEditSchema).max(500),
   hops: z.array(recipeHopEditSchema).max(500),
   yeast: z.array(recipeYeastEditSchema).max(100),

@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type SystemUpdateStatus } from '../api';
 import { useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
+import { Select } from '../components/Select';
 import { BATCH_TARGETS, PITCH_RATES } from '../recipeCatalog';
 import {
   resetRecipeDefaults,
@@ -125,17 +126,17 @@ export function SettingsDesktopPage(): JSX.Element {
                 is too wide to scroll comfortably on a narrow screen. */}
             <label className="block sm:hidden">
               <span className="sr-only">Settings category</span>
-              <select
+              <Select
                 value={activeCategory}
-                onChange={(e) => setActiveCategory(e.target.value as SettingsCategoryId)}
+                onChange={setActiveCategory}
+                aria-label="Settings category"
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 outline-none transition focus:border-[#f87a68]"
-              >
-                {SETTINGS_CATEGORIES.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.label}
-                  </option>
-                ))}
-              </select>
+                options={SETTINGS_CATEGORIES.map((category) => ({
+                  value: category.id,
+                  label: category.label,
+                  description: category.description,
+                }))}
+              />
             </label>
 
             <nav
@@ -572,18 +573,13 @@ function LoggingIntervalSection(): JSX.Element {
             ).sort((a, b) => a - b);
             return (
               <Row key={d.id} label={d.name} hint={DEVICE_KIND_LABEL[d.type] ?? d.type}>
-                <select
+                <Select
                   value={d.reportingIntervalSec}
                   aria-label={`Logging interval for ${d.name}`}
-                  onChange={(e) => update(d.id, Number(e.target.value))}
+                  onChange={(seconds) => update(d.id, seconds)}
                   className={`${inputClass} tabular-nums`}
-                >
-                  {options.map((s) => (
-                    <option key={s} value={s}>
-                      {intervalLabel(s)}
-                    </option>
-                  ))}
-                </select>
+                  options={options.map((s) => ({ value: s, label: intervalLabel(s) }))}
+                />
               </Row>
             );
           })}
@@ -765,15 +761,13 @@ function RecipeDefaultsSection(): JSX.Element {
     >
       <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
         <Row label="Batch target" hint="Whether the batch size means the fermenter or the kettle.">
-          <select
+          <Select
             className={`${inputClass} w-44`}
+            aria-label="Batch target"
             value={draft.batchTarget}
-            onChange={(e) => edit('batchTarget', e.target.value)}
-          >
-            {optionsWith(BATCH_TARGETS, draft.batchTarget).map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
+            onChange={(value) => edit('batchTarget', value)}
+            options={optionsWith(BATCH_TARGETS, draft.batchTarget).map((value) => ({ value }))}
+          />
         </Row>
         {RECIPE_DEFAULT_FIELDS.map((field) => (
           <Row key={field.key} label={field.label} hint={field.hint}>
@@ -796,15 +790,13 @@ function RecipeDefaultsSection(): JSX.Element {
           </Row>
         ))}
         <Row label="Pitch rate" hint="Carried onto the yeast section of a new sheet.">
-          <select
+          <Select
             className={`${inputClass} w-56`}
+            aria-label="Pitch rate"
             value={draft.pitchRate}
-            onChange={(e) => edit('pitchRate', e.target.value)}
-          >
-            {optionsWith(PITCH_RATES, draft.pitchRate).map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
+            onChange={(value) => edit('pitchRate', value)}
+            options={optionsWith(PITCH_RATES, draft.pitchRate).map((value) => ({ value }))}
+          />
         </Row>
       </div>
 
@@ -1504,19 +1496,15 @@ function AccountsSection(): JSX.Element {
                       Added {new Date(u.createdAt).toLocaleDateString()}
                     </div>
                   </div>
-                  <select
+                  <Select
                     aria-label={`Role for ${u.username}`}
                     value={u.role}
                     disabled={busy || isSelf}
-                    onChange={(e) => changeRole(u, e.target.value as UserRole)}
+                    onChange={(role) => changeRole(u, role)}
                     className={`${inputClass} py-1 disabled:opacity-60`}
-                  >
-                    {ROLE_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
+                    align="right"
+                    options={ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                  />
                   <button
                     type="button"
                     onClick={() => resetPassword(u)}
@@ -1622,17 +1610,13 @@ function CreateAccountForm({
         </label>
         <label className="block">
           <span className="mb-1 block text-xs text-zinc-500">Role</span>
-          <select
+          <Select
             className={`${inputClass} w-full`}
+            aria-label="Role"
             value={role}
-            onChange={(e) => setRole(e.target.value as UserRole)}
-          >
-            {ROLE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+            onChange={setRole}
+            options={ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+          />
         </label>
       </div>
       <div className="flex items-center gap-3">

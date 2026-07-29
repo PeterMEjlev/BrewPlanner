@@ -2,6 +2,7 @@ import type { IngredientKind, RecipeIngredientOption, RecipeYeastSpec } from '@c
 import { ebcColor } from '@checklist/shared';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
+import { Select } from './Select';
 
 export interface SearchableOption {
   value: string;
@@ -100,7 +101,12 @@ export function SearchableSelect({
 
   useEffect(() => {
     const close = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      // The sort picker's own list is portalled to the body, so it is outside
+      // this dropdown in the DOM while being part of it on screen.
+      if ((target as Element).closest?.('[data-select-menu]')) return;
+      setOpen(false);
     };
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
@@ -423,13 +429,13 @@ function SortPicker<Key extends string>({
   return (
     <label className="flex items-center gap-2 text-[11px] text-zinc-500">
       Sort by
-      <select
+      <Select
         value={value}
-        onChange={(event) => onChange(event.target.value as Key)}
+        onChange={onChange}
+        aria-label="Sort by"
         className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-[#f06a5c]"
-      >
-        {options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
-      </select>
+        options={options.map(([key, text]) => ({ value: key, label: text }))}
+      />
     </label>
   );
 }

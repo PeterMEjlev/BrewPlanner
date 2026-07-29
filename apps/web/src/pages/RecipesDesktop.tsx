@@ -19,6 +19,7 @@ import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { FermenterIcon } from '../components/icons';
+import { Select } from '../components/Select';
 import { useKegContentColors } from '../kegContentColors';
 import {
   invalidateRecipes,
@@ -890,21 +891,16 @@ export function RecipesDesktopPage(): JSX.Element {
                 />
                 {/* Sort key + direction. Price is the one that costs an extra
                     round trip, so it's fetched on selection, not on load. */}
-                <select
+                <Select
                   value={sort}
-                  onChange={(e) => {
-                    const key = e.target.value as SortKey;
-                    setOrder(saveOrder({ key, dir: SORT_DEFAULT_DIRECTION[key] }));
-                  }}
+                  onChange={(key) => setOrder(saveOrder({ key, dir: SORT_DEFAULT_DIRECTION[key] }))}
                   aria-label="Sort recipes by"
                   className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-[#f87a68]"
-                >
-                  {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
-                    <option key={key} value={key}>
-                      Sort: {SORT_LABELS[key]}
-                    </option>
-                  ))}
-                </select>
+                  options={(Object.keys(SORT_LABELS) as SortKey[]).map((key) => ({
+                    value: key,
+                    label: `Sort: ${SORT_LABELS[key]}`,
+                  }))}
+                />
                 <button
                   type="button"
                   onClick={() =>

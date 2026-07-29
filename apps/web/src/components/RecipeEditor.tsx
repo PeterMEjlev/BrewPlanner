@@ -11,6 +11,7 @@ import {
   isFermentableLine,
   missingStatInput,
   withAutoBoilVolumes,
+  withLeadingZero,
 } from '@checklist/shared';
 import type {
   CostTotal,
@@ -60,6 +61,7 @@ import { setSetting, useSettings } from '../settings';
 import { rangeForStyle } from '../styleRanges';
 import { useKegContentColors } from '../kegContentColors';
 import { IngredientSearchSelect, SearchableSelect } from './SearchableSelect';
+import { Select } from './Select';
 import { SheetSection } from './SheetSection';
 import { UnpricedIngredientsDialog } from './UnpricedIngredients';
 
@@ -276,6 +278,12 @@ interface SectionLanding {
 const fieldClass =
   'mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#f06a5c] focus:ring-1 focus:ring-[#f06a5c]/40';
 
+/**
+ * A stored recipe as the editor's draft. Figures arrive already tidied — a
+ * sheet is read back through `recipeEditSchema`, which supplies a missing
+ * leading zero on the way out as well as in — so nothing here has to repeat
+ * that rule; the live one is on {@link Field}, for figures being typed now.
+ */
 function editable(recipe: RecipeDetail): RecipeEditInput {
   return {
     name: recipe.name,
@@ -1590,7 +1598,11 @@ function Field({ label, value, onChange, suffix, className = '', required = fals
     <label className={`block text-xs font-medium text-zinc-400 ${className}`}>
       {label}
       <div className="relative">
-        <input className={`${fieldClass} ${suffixPadding(suffix)} disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-400`} value={value ?? ''} onChange={(event) => onChange(event.target.value)} required={required} type={type} step={step} placeholder={placeholder} disabled={disabled} />
+        {/* Tidied when the field is left rather than as it is typed: ".8" is a
+            complete number one keystroke before ".85" is, and re-writing the box
+            mid-word would move the caret out from under whoever is still
+            typing. Same rule the range field follows. */}
+        <input className={`${fieldClass} ${suffixPadding(suffix)} disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-400`} value={value ?? ''} onChange={(event) => onChange(event.target.value)} onBlur={(event) => { const tidied = withLeadingZero(event.target.value); if (tidied !== event.target.value) onChange(tidied); }} required={required} type={type} step={step} placeholder={placeholder} disabled={disabled} />
         {suffix && <span className="pointer-events-none absolute inset-y-0 right-3 top-1 flex items-center text-xs text-zinc-600">{suffix}</span>}
       </div>
     </label>
@@ -1796,14 +1808,14 @@ function SelectField({ label, value, options: choices, onChange, className = '',
   return (
     <label className={`block text-xs font-medium text-zinc-400 ${className}`}>
       {label}
-      <select
-        className={`${fieldClass} disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-400`}
+      <Select
+        className={`${fieldClass} disabled:bg-zinc-900 disabled:text-zinc-400`}
         value={value}
         disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {all.map((choice) => <option key={choice.value} value={choice.value}>{choice.label ?? choice.value}</option>)}
-      </select>
+        onChange={onChange}
+        aria-label={label}
+        options={all}
+      />
     </label>
   );
 }
