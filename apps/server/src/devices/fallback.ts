@@ -97,7 +97,7 @@ export function getDeviceStatus(id: number): DeviceStatus | null {
 
 export function getHistory(
   id: number,
-  opts: { metric?: string; since?: string; limit?: number },
+  opts: { metric?: string; since?: string; limit?: number; buckets?: number },
 ): Reading[] | null {
   const sources = getDeviceDataSources();
   const realStatus = real.getDeviceStatus(id);

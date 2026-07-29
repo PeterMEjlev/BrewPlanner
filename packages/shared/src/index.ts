@@ -1111,6 +1111,19 @@ export interface Reading {
   metric: string;
   value: number;
   recordedAt: string;
+  /**
+   * The extremes averaged into this point — set only on a bucketed response
+   * (see `buckets` on {@link historyQuerySchema}), where `value` is a mean and
+   * these are the real readings behind it. Absent on raw rows, where `value`
+   * *is* the reading.
+   *
+   * Smoothing a line shouldn't cost the operator the true spread: a fridge drawn
+   * as the steady 34.5 °C it averages is the honest picture of what it holds,
+   * but "swung between 33.9 and 35.1" is the part that says whether the
+   * compressor is behaving, and it has to come from somewhere.
+   */
+  min?: number;
+  max?: number;
 }
 
 /** The most recent value for one metric on a device. */
@@ -2100,6 +2113,21 @@ export const historyQuerySchema = z.object({
   metric: z.string().trim().min(1).max(64).optional(),
   since: z.string().datetime({ offset: true }).optional(),
   limit: z.coerce.number().int().positive().max(5000).default(1000),
+  /**
+   * Average the window into this many equal-width time buckets instead of
+   * returning raw rows — one point per bucket that has readings.
+   *
+   * `limit` alone can't summarize a window: it takes the *newest* N rows, so a
+   * "last 24h" request for 200 points silently answers with the last couple of
+   * hours at full resolution. Bucketing covers the whole window at a resolution
+   * the caller picks, and averaging within a bucket is also what makes a
+   * fridge's compressor cycling readable — a ±0.5 °C hysteresis swing collapses
+   * to the line the brewer actually cares about, while a real drift survives.
+   *
+   * Requires `metric` and `since` (there's nothing sensible to average across
+   * mixed metrics, or over an unbounded window); ignored without them.
+   */
+  buckets: z.coerce.number().int().positive().max(2000).optional(),
 });
 export type HistoryQuery = z.infer<typeof historyQuerySchema>;
 

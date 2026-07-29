@@ -305,14 +305,19 @@ export const api = {
   // data, so every client sees the same telemetry contract.
   listDevices: () => request<DeviceStatus[]>('/devices'),
   getDevice: (id: number) => request<DeviceStatus>(`/devices/${id}`),
+  // `buckets` averages the window into that many evenly-spaced points instead of
+  // returning raw rows — the right call for a preview that only has a few
+  // hundred pixels to spend. See historyQuerySchema for why `limit` can't
+  // stand in for it.
   getDeviceHistory: (
     id: number,
-    opts: { metric?: string; since?: string; limit?: number } = {},
+    opts: { metric?: string; since?: string; limit?: number; buckets?: number } = {},
   ) => {
     const params = new URLSearchParams();
     if (opts.metric) params.set('metric', opts.metric);
     if (opts.since) params.set('since', opts.since);
     if (opts.limit) params.set('limit', String(opts.limit));
+    if (opts.buckets) params.set('buckets', String(opts.buckets));
     const qs = params.toString();
     return request<Reading[]>(`/devices/${id}/history${qs ? `?${qs}` : ''}`);
   },

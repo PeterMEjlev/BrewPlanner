@@ -29,7 +29,7 @@ import {
 } from '../useDeviceData';
 import { withMinSpan } from './charts';
 import { type Span, useChartZoom } from './chartZoom';
-import { thinForPlot } from './decimate';
+import { type ThinMode, thinForPlot } from './decimate';
 
 function isBreweryTempDevice(device: { name: string; type: string }): boolean {
   return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
@@ -125,6 +125,21 @@ function timeTickFormat(view: Span | null): (t: number) => string {
  * thinned curve is indistinguishable, few enough that a pan re-draws cheaply.
  */
 const MAX_PLOT_POINTS = 1200;
+
+/**
+ * Cap for a temperature trace, which is averaged into buckets rather than
+ * thinned (see {@link thinForPlot}). Far coarser than the point budget above,
+ * for the same reason the previews are (see SERIES_BUCKETS in useDeviceData):
+ * what settles a cycling fridge is the bucket spanning a couple of its
+ * compressor cycles, and at one point per pixel a bucket holds two or three
+ * readings and smooths nothing. 120 points is ~12 minutes at the 24h range.
+ *
+ * Nothing is lost to it: recharts splines the line so it doesn't read as
+ * polygonal, no temperature move worth looking at happens in twelve minutes,
+ * and the buckets narrow as the chart zooms — pulled in far enough, every raw
+ * reading is back.
+ */
+const SMOOTH_PLOT_POINTS = 120;
 
 /**
  * One device's live value, optional setpoint control, metric/range selectors
@@ -262,10 +277,19 @@ export default function MetricChart({
 
   // Draw only what's on screen, thinned to about one point per pixel: a day of
   // 30s readings is ~2,900 points, and redrawing all of them each frame is what
-  // makes a drag drag.
+  // makes a drag drag. A temperature trace is averaged into buckets instead of
+  // peak-thinned — see `smooth` on ThinMode for why its extremes are the part
+  // worth losing.
+  const thinMode: ThinMode = stateMetric ? 'step' : tempMetric ? 'smooth' : 'peaks';
   const plotData = useMemo(
-    () => thinForPlot(chartData, zoom.xDomain, MAX_PLOT_POINTS, stateMetric),
-    [chartData, zoom.xDomain, stateMetric],
+    () =>
+      thinForPlot(
+        chartData,
+        zoom.xDomain,
+        thinMode === 'smooth' ? SMOOTH_PLOT_POINTS : MAX_PLOT_POINTS,
+        thinMode,
+      ),
+    [chartData, zoom.xDomain, thinMode],
   );
 
   useEffect(() => {

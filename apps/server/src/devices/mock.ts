@@ -215,7 +215,7 @@ export function mockStatus(
 export function mockHistory(
   profile: MockProfile,
   deviceId: number,
-  opts: { metric?: string; since?: string; limit?: number } = {},
+  opts: { metric?: string; since?: string; limit?: number; buckets?: number } = {},
 ): Reading[] {
   const metric = opts.metric ?? Object.keys(profile.base)[0]!;
   const baseFromProfile = profile.base[metric] ?? 0;
@@ -225,7 +225,10 @@ export function mockHistory(
   const spanMs = Math.max(end - start, 60 * 1000);
   const spanDays = spanMs / (24 * 60 * 60 * 1000);
 
-  const points = Math.min(opts.limit ?? 240, 240);
+  // Synthesized history is already spread evenly across the window, so a
+  // `buckets` request is just a point count — there's no raw sample behind it to
+  // average, and the curve is smooth to begin with.
+  const points = Math.min(opts.buckets ?? opts.limit ?? 240, 240);
   const out: Reading[] = [];
   for (let i = 0; i < points; i++) {
     const frac = i / (points - 1 || 1);

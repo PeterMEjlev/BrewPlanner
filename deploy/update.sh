@@ -92,6 +92,20 @@ if [ -n "$UPSTREAM" ]; then
     mv "$path" "$BACKUP_DIR/$path"
     echo "    moved untracked $path -> $BACKUP_DIR/$path"
   done < <(git diff -z --name-only --diff-filter=A --no-renames "HEAD..$UPSTREAM")
+
+  # Same problem, tracked files: `npm install` below rewrites package-lock.json
+  # in place, so the deploy checkout is dirty by the time the NEXT update runs,
+  # and git refuses to fast-forward over the local change. Nothing here is
+  # authored on the Pi, so local edits to tracked files are always disposable —
+  # stash a copy beside the DB for forensics, then restore the file from HEAD.
+  echo "==> checking for locally-modified tracked files"
+  while IFS= read -r -d '' path; do
+    [ -e "$path" ] || continue
+    mkdir -p "$BACKUP_DIR/$(dirname "$path")"
+    cp "$path" "$BACKUP_DIR/$path"
+    echo "    reverting local change to $path (copy in $BACKUP_DIR/$path)"
+  done < <(git diff -z --name-only HEAD)
+  git checkout -- .
 fi
 
 echo "==> git merge (fast-forward only)"

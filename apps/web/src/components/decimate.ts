@@ -103,17 +103,76 @@ function lttb(data: TimePoint[], threshold: number): TimePoint[] {
 }
 
 /**
+ * Average into `buckets` equal-width time buckets, one point per bucket that has
+ * readings. The opposite intent to {@link lttb}: where that hunts out the
+ * extremes, this averages them away.
+ *
+ * That's what a cycling metric needs. A fridge held by a hysteresis controller
+ * genuinely swings ±0.5 °C as its compressor kicks in and out, so peak-preserving
+ * thinning faithfully keeps every one of those cycles — and a few hundred of them
+ * across a plot draw a hairy band that reads as a temperature out of control,
+ * however small the actual swing. Averaging states the same data as the line the
+ * cycles are oscillating about.
+ *
+ * Buckets span the data handed in, so this narrows as a zoom does: pulled in far
+ * enough, each bucket holds a single reading and the raw trace is back.
+ */
+function meanBuckets(data: TimePoint[], buckets: number): TimePoint[] {
+  const n = data.length;
+  if (buckets < 1 || n <= buckets) return data;
+  const start = data[0]!.t;
+  const span = data[n - 1]!.t - start;
+  if (!(span > 0)) return data;
+
+  const out: TimePoint[] = [];
+  let sumT = 0;
+  let sumV = 0;
+  let count = 0;
+  let current = 0;
+  const flush = (): void => {
+    if (count > 0) out.push({ t: sumT / count, value: sumV / count });
+    sumT = 0;
+    sumV = 0;
+    count = 0;
+  };
+
+  for (const p of data) {
+    // The last point lands exactly on the top edge; keep it in the final bucket.
+    const index = Math.min(buckets - 1, Math.floor(((p.t - start) / span) * buckets));
+    if (index !== current) {
+      flush();
+      current = index;
+    }
+    sumT += p.t;
+    sumV += p.value;
+    count++;
+  }
+  flush();
+  return out;
+}
+
+/** How a series should be thinned for the plot — see {@link thinForPlot}. */
+export type ThinMode =
+  /** Collapse to transitions. Exact for a `stepAfter` line (e.g. HVAC mode). */
+  | 'step'
+  /** Keep peaks and troughs (LTTB) — for series whose extremes are the story. */
+  | 'peaks'
+  /** Average within buckets — for a metric that cycles about a useful mean. */
+  | 'smooth';
+
+/**
  * The series to hand a chart: clipped to the visible window (pass null when the
- * axis shows everything) and thinned to at most `maxPoints`. Step series are
- * collapsed to their transitions instead, which is exact.
+ * axis shows everything) and thinned to at most `maxPoints`, by whichever rule
+ * suits the metric.
  */
 export function thinForPlot(
   data: TimePoint[],
   window: Span | null,
   maxPoints: number,
-  step: boolean,
+  mode: ThinMode,
 ): TimePoint[] {
   const slice = window ? sliceWindow(data, window) : data;
-  if (step) return dedupeSteps(slice);
+  if (mode === 'step') return dedupeSteps(slice);
+  if (mode === 'smooth') return meanBuckets(slice, maxPoints);
   return lttb(slice, maxPoints);
 }

@@ -56,7 +56,14 @@ import { formatPressure, useSettings } from '../settings';
 import { ChartRangeProvider, useChartRange } from '../chartRange';
 import { fermentationDone } from '../ferment';
 import { SHARED, useShared } from '../sharedPoll';
-import { RANGES, useDeviceTotal, useFleet, useMetricSeries, useMetricSeriesT } from '../useDeviceData';
+import {
+  RANGES,
+  useDeviceTotal,
+  useFleet,
+  useMetricSeries,
+  useMetricSeriesFull,
+  useMetricSeriesT,
+} from '../useDeviceData';
 import { usePoll } from '../usePoll';
 import { relativeTime } from '../util';
 
@@ -658,7 +665,11 @@ function FermenterCommandCenter({
   const tempRangeMs = useChartRange((fridge ?? beer)?.deviceId ?? null, 'temp_c');
   const pressureSeries = useMetricSeries(pressure?.deviceId ?? null, 'pressure_bar', pressureRangeMs);
   const tempSeries = useMetricSeries(beer?.deviceId ?? null, 'temp_c', tempRangeMs);
-  const fridgeSeries = useMetricSeries(fridge?.deviceId ?? null, 'temp_c', tempRangeMs);
+  // The fridge line is the one whose extremes get spelled out below, so it takes
+  // the full series — the plotted values are bucket averages and understate how
+  // far the fridge actually travelled.
+  const fridgeFull = useMetricSeriesFull(fridge?.deviceId ?? null, 'temp_c', tempRangeMs);
+  const fridgeSeries = fridgeFull.values;
 
   // Fit a decay curve to the gravity history and project it forward, so the
   // gravity card can show a dashed forecast and an estimated finish (using the
@@ -714,8 +725,10 @@ function FermenterCommandCenter({
       : null;
   // Spelled-out extremes under the temp chart, for the fridge line only: that's
   // the one the Inkbird actually holds, so it's the one worth reading how far it
-  // drifted. Unwidened — these are real readings, not the axis the chart drew.
-  const fridgeRange = minMax(fridgeSeries);
+  // drifted. Unwidened, and taken from the readings behind the line rather than
+  // the line itself — the plotted points are bucket averages, so their own
+  // min/max would quietly report a tighter hold than the fridge managed.
+  const fridgeRange = fridgeFull.extremes;
 
   // --- Phone layout: a tabbed card so only one chart is tall at a time. --------
   if (compact) {

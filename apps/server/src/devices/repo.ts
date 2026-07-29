@@ -549,11 +549,93 @@ function storedDeltaSum(deviceId: number, metric: string): number {
   return seeded.sum;
 }
 
-/** History for a device, newest first, optionally filtered by metric/since. */
+/**
+ * One averaged point per equal-width time bucket across [`since`, now], newest
+ * first — the summarized form of {@link getHistory}, see `buckets` on
+ * `historyQuerySchema` for why a plain row limit can't do this job.
+ *
+ * Buckets are indexed off `since` rather than off the oldest matching row, so a
+ * window keeps the same bucket boundaries as it slides and a repeated poll
+ * doesn't reshuffle every point. Empty buckets are simply absent: a gap in the
+ * readings stays a gap in the series instead of being interpolated over.
+ *
+ * A bucket's `recordedAt` is the mean timestamp of its members (not the bucket's
+ * start), so a partly-filled leading or trailing bucket sits where its data
+ * actually is. `id` is the newest member's, which keeps ids unique and
+ * increasing with time — enough for the client's dedupe, though a bucketed
+ * response is a summary and not a row anyone can fetch back. Each point also
+ * carries the true `min`/`max` it averaged over, so a caller that draws the
+ * smoothed line can still report the real spread.
+ */
+function getBucketedHistory(
+  deviceId: number,
+  metric: string,
+  since: string,
+  buckets: number,
+): Reading[] {
+  const startMs = Date.parse(since);
+  if (!Number.isFinite(startMs)) return [];
+  // Sub-second buckets would be finer than the timestamps themselves; a floor of
+  // one second keeps the integer division below well-defined.
+  const bucketSec = Math.max(1, Math.ceil((Date.now() - startMs) / 1000 / buckets));
+  const startSec = Math.floor(startMs / 1000);
+  // strftime('%s') parses the ISO-8601 text every row is written with (see
+  // insertReadings) — the column is text, so there's no epoch to group on
+  // directly. The (device, metric, recorded_at) index still drives the scan;
+  // only the grouping key is computed.
+  //
+  // The outer CAST is what makes the bucket index a bucket index: SQLite's `/`
+  // is integer division only when *both* operands are integers, and the bound
+  // parameters arrive as REAL — without it every reading divides to its own
+  // fractional key and lands in a bucket of one. Truncation is floor here, since
+  // the WHERE clause keeps the difference non-negative.
+  const rows = db.all<{
+    value: number;
+    recordedAt: number;
+    id: number;
+    min: number;
+    max: number;
+  }>(sql`
+    SELECT
+      AVG(${readings.value}) AS value,
+      MIN(${readings.value}) AS min,
+      MAX(${readings.value}) AS max,
+      AVG(CAST(strftime('%s', ${readings.recordedAt}) AS INTEGER)) AS recordedAt,
+      MAX(${readings.id}) AS id
+    FROM ${readings}
+    WHERE ${readings.deviceId} = ${deviceId}
+      AND ${readings.metric} = ${metric}
+      AND ${readings.recordedAt} >= ${since}
+    GROUP BY CAST(
+      (CAST(strftime('%s', ${readings.recordedAt}) AS INTEGER) - ${startSec}) / ${bucketSec}
+      AS INTEGER
+    )
+    ORDER BY recordedAt DESC
+  `);
+  return rows.map((r) => ({
+    id: r.id,
+    deviceId,
+    metric,
+    value: r.value,
+    min: r.min,
+    max: r.max,
+    recordedAt: new Date(Math.round(r.recordedAt) * 1000).toISOString(),
+  }));
+}
+
+/**
+ * History for a device, newest first, optionally filtered by metric/since.
+ *
+ * With `buckets` (plus a metric and a `since`) the window is averaged into that
+ * many points instead — see {@link getBucketedHistory}.
+ */
 export function getHistory(
   deviceId: number,
-  opts: { metric?: string; since?: string; limit?: number },
+  opts: { metric?: string; since?: string; limit?: number; buckets?: number },
 ): Reading[] {
+  if (opts.buckets && opts.metric && opts.since) {
+    return getBucketedHistory(deviceId, opts.metric, opts.since, opts.buckets);
+  }
   const conds = [eq(readings.deviceId, deviceId)];
   if (opts.metric) conds.push(eq(readings.metric, opts.metric));
   if (opts.since) conds.push(gte(readings.recordedAt, opts.since));

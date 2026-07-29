@@ -221,6 +221,37 @@ export function useDeviceData(
 const SERIES_POLL_MS = 60_000;
 
 /**
+ * Points a preview sparkline asks the server to average its window down to.
+ *
+ * The number that matters here isn't the point count, it's the bucket width it
+ * implies — 100 buckets is ~14 minutes at the 24h range. A fridge held by a
+ * hysteresis controller cycles ±0.5 °C as its compressor kicks in and out, and
+ * averaging only cancels that when a bucket spans a couple of full cycles;
+ * buckets around the cycle length alias instead and leave a beat that looks just
+ * as unsettled as the raw trace. Measured over a simulated day of 30s readings
+ * with a 1.2 °C cycle: ~14-minute buckets leave 0.07 °C of it, ~7-minute buckets
+ * leave anywhere from 0.17 °C to the whole 1.2 °C depending on how the period
+ * happens to line up. A genuine drift is far slower than any of this and comes
+ * through untouched.
+ *
+ * 100 points across a preview a few hundred px wide is still ~3px apart, which
+ * is more resolution than a sparkline can show anyway. And it scales the right
+ * way on its own: at the 1h range the same count buys 36s buckets, about the
+ * logging cadence, so a short window is essentially the raw trace — zooming in
+ * to watch the controller work is exactly when you want to see it cycling.
+ */
+const SERIES_BUCKETS = 100;
+
+/**
+ * Buckets for {@link useMetricSeriesT}. Many more than {@link SERIES_BUCKETS}
+ * because it covers a fortnight rather than a day — 600 lands in the same
+ * half-hour neighbourhood per bucket — and because this series is fitted, not
+ * just drawn: the gravity decay curve reads the shape of the whole window, and
+ * averaging is only ever a help to a fit.
+ */
+const SERIES_T_BUCKETS = 600;
+
+/**
  * Module-level caches of the last successful series fetch, keyed by
  * device+metric+range and kept alive across hook unmounts. Like the keg and
  * dashboard caches, this lets the Overview's sparklines repaint instantly with
@@ -228,7 +259,7 @@ const SERIES_POLL_MS = 60_000;
  * refetching from scratch — the hooks still refresh in the background. Cleared
  * on a full browser reload.
  */
-const seriesCache = new Map<string, number[]>();
+const seriesCache = new Map<string, MetricSeries>();
 const seriesTCache = new Map<string, { t: number; value: number }[]>();
 const totalCache = new Map<string, number>();
 
@@ -236,26 +267,53 @@ function seriesKey(deviceId: number, metric: string, rangeMs: number): string {
   return `${deviceId}:${metric}:${rangeMs}`;
 }
 
+export interface MetricSeries {
+  /** The plotted values, oldest→newest. Bucket averages, not raw readings. */
+  values: number[];
+  /**
+   * The true extremes across the window — the lowest and highest readings the
+   * server averaged away, not the extremes of {@link values}. Null when the
+   * window holds too little to draw. Captions quoting a Min/Max want this;
+   * anything sizing an axis to the drawn line wants `values`.
+   */
+  extremes: { min: number; max: number } | null;
+}
+
+const EMPTY_SERIES: MetricSeries = { values: [], extremes: null };
+
+/** Widest span across a bucketed response, falling back to a raw row's value. */
+function extremesOf(history: Reading[]): { min: number; max: number } | null {
+  if (history.length < 2) return null;
+  return {
+    min: Math.min(...history.map((r) => r.min ?? r.value)),
+    max: Math.max(...history.map((r) => r.max ?? r.value)),
+  };
+}
+
 /**
- * A bare metric history as a list of values (oldest→newest), for the Overview's
- * inline sparklines. Lighter than {@link useDeviceData}: no metric/range state,
- * a small point cap, and a slow poll. Pass `null` to disable (returns []) and
- * keep the last series through a transient fetch error.
+ * A metric's history for the Overview's inline sparklines, as plotted values
+ * plus the window's true extremes. Lighter than {@link useDeviceData}: no
+ * metric/range state, a small point cap, and a slow poll. Pass `null` to disable
+ * and keep the last series through a transient fetch error.
+ *
+ * Most callers only draw the line and should use {@link useMetricSeries};
+ * reach for this one where the real spread is spelled out in words, since the
+ * line itself is smoothed (see {@link SERIES_BUCKETS}).
  */
-export function useMetricSeries(
+export function useMetricSeriesFull(
   deviceId: number | null,
   metric: string,
   rangeMs = 24 * 60 * 60 * 1000,
-): number[] {
-  const [series, setSeries] = useState<number[]>(() =>
-    deviceId == null ? [] : seriesCache.get(seriesKey(deviceId, metric, rangeMs)) ?? [],
+): MetricSeries {
+  const [series, setSeries] = useState<MetricSeries>(() =>
+    deviceId == null ? EMPTY_SERIES : seriesCache.get(seriesKey(deviceId, metric, rangeMs)) ?? EMPTY_SERIES,
   );
 
   // Re-seed from cache when the key changes mid-mount (e.g. range switch), so
   // the preview shows the last data for the new window without a blank frame.
   useEffect(() => {
     if (deviceId == null) {
-      setSeries([]);
+      setSeries(EMPTY_SERIES);
       return;
     }
     const cached = seriesCache.get(seriesKey(deviceId, metric, rangeMs));
@@ -267,11 +325,18 @@ export function useMetricSeries(
       if (deviceId == null) return;
       try {
         const since = new Date(Date.now() - rangeMs).toISOString();
-        const history = await api.getDeviceHistory(deviceId, { metric, since, limit: 200 });
+        const history = await api.getDeviceHistory(deviceId, {
+          metric,
+          since,
+          buckets: SERIES_BUCKETS,
+        });
         if (!isStale()) {
-          const values = [...history].reverse().map((r) => r.value);
-          seriesCache.set(seriesKey(deviceId, metric, rangeMs), values);
-          setSeries(values);
+          const next: MetricSeries = {
+            values: [...history].reverse().map((r) => r.value),
+            extremes: extremesOf(history),
+          };
+          seriesCache.set(seriesKey(deviceId, metric, rangeMs), next);
+          setSeries(next);
         }
       } catch {
         // Keep the last known series through a transient history failure.
@@ -282,6 +347,15 @@ export function useMetricSeries(
   );
 
   return series;
+}
+
+/** {@link useMetricSeriesFull} for the callers that only draw the line. */
+export function useMetricSeries(
+  deviceId: number | null,
+  metric: string,
+  rangeMs = 24 * 60 * 60 * 1000,
+): number[] {
+  return useMetricSeriesFull(deviceId, metric, rangeMs).values;
 }
 
 /**
@@ -313,7 +387,15 @@ export function useMetricSeriesT(
       if (deviceId == null) return;
       try {
         const since = new Date(Date.now() - rangeMs).toISOString();
-        const history = await api.getDeviceHistory(deviceId, { metric, since, limit: 2000 });
+        // Bucketed for the same reason as the plain series above, and at a
+        // higher resolution because this feeds the gravity decay fit as well as
+        // a preview. The old `limit` here truncated to the newest 2000 rows,
+        // which at a 30s cadence is well under the day the forecast fits over.
+        const history = await api.getDeviceHistory(deviceId, {
+          metric,
+          since,
+          buckets: SERIES_T_BUCKETS,
+        });
         if (!isStale()) {
           const points = [...history].reverse().map((r) => ({ t: Date.parse(r.recordedAt), value: r.value }));
           seriesTCache.set(seriesKey(deviceId, metric, rangeMs), points);
