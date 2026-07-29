@@ -16,17 +16,24 @@
 # Adjust paths if your repo isn't at /home/brewplanner/checklist, or if these
 # binaries live elsewhere (check with `command -v systemctl cp`). On Raspberry
 # Pi OS they are under /usr/bin.
+#
+# The sensor agents are listed one unit at a time because their names are per
+# install, not per agent: one Pi polling three Inkbirds runs three units
+# (-brewery, -fermenter, -kegs here). Sudoers matches the command literally, so
+# installing another agent means adding its unit here — update.sh finds and
+# restarts it either way, but without a line below the restart is refused and
+# the deploy just warns. List yours with:
+#
+#   grep -rl 'agent\.py' /etc/systemd/system/*.service
 
 Cmnd_Alias BREWPLANNER_DEPLOY = \
     /usr/bin/systemctl start --no-block brewplanner-update.service, \
     /usr/bin/systemctl restart checklist-server.service, \
     /usr/bin/systemctl restart checklist-kiosk.service, \
     /usr/bin/systemctl restart bruce.service, \
-    /usr/bin/systemctl restart inkbird-agent.service, \
-    /usr/bin/systemctl restart power-agent.service, \
-    /usr/bin/systemctl restart pressure-agent.service, \
-    /usr/bin/systemctl restart tilt-agent.service, \
-    /usr/bin/systemctl restart water-agent.service, \
+    /usr/bin/systemctl restart inkbird-agent-brewery.service, \
+    /usr/bin/systemctl restart inkbird-agent-fermenter.service, \
+    /usr/bin/systemctl restart inkbird-agent-kegs.service, \
     /usr/bin/systemctl daemon-reload, \
     /usr/bin/cp /home/brewplanner/checklist/deploy/checklist-server.service /etc/systemd/system/, \
     /usr/bin/cp /home/brewplanner/checklist/deploy/checklist-kiosk.service /etc/systemd/system/, \

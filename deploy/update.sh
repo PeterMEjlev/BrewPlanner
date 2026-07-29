@@ -172,21 +172,25 @@ fi
 
 # The sensor agents run straight out of this checkout (see deploy/agents/*/), so
 # a pulled change to an agent.py does nothing until its unit is restarted — the
-# old process keeps polling on the old code indefinitely. Restart whichever
-# agents this machine actually has installed; a satellite Pi runs this same
-# script for its own. Their unit files are NOT synced from the repo the way the
-# server's is: each install hand-edits paths and EnvironmentFile, so overwriting
-# them would break the satellite.
+# old process keeps polling on the old code indefinitely.
 #
-# Never let one fail the deploy: agents are optional, and a whitelist predating
-# them is refused exactly like bruce's above.
-for agent in inkbird power pressure tilt water; do
-  unit="$agent-agent.service"
-  if systemctl is-enabled --quiet "$unit" 2>/dev/null; then
-    echo "==> restarting $unit"
-    if ! sudo -n systemctl restart "$unit" 2>/dev/null; then
-      echo "    (warning: $unit not restarted — reinstall the sudoers whitelist)"
-    fi
+# Units are found by what they RUN, not by name: the shipped unit files are one
+# example each, and an operator with three Inkbirds installs three units under
+# names of their own choosing. Anything whose ExecStart points at one of our
+# agent.py files counts. (Their unit files are deliberately NOT synced from the
+# repo the way the server's is — each install hand-edits its paths and
+# EnvironmentFile — so we only ever restart them.)
+#
+# Only units already running are touched, so an agent stopped on purpose stays
+# stopped. And a failure never fails the deploy: agents are optional, and a
+# sudoers whitelist that predates a unit refuses it exactly like bruce's above.
+for unit_file in $(grep -rl '/deploy/agents/[a-z-]*/agent\.py' /etc/systemd/system/*.service 2>/dev/null || true); do
+  unit="$(basename "$unit_file")"
+  systemctl is-active --quiet "$unit" || continue
+  echo "==> restarting $unit"
+  if ! sudo -n systemctl restart "$unit" 2>/dev/null; then
+    echo "    (warning: $unit not restarted — add it to the sudoers whitelist:"
+    echo "     /usr/bin/systemctl restart $unit)"
   fi
 done
 
