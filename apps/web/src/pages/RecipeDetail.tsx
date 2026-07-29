@@ -17,6 +17,7 @@ import {
   aromaHopRate,
   ebcColor,
   estimateFermentationDays,
+  gristDistilledMashPh,
   isFermentableLine,
   predictBeerColor,
   sumCost,
@@ -1181,13 +1182,28 @@ function WaterSection({
 
   // Everything the calculator needs to open on this recipe's target. Bicarbonate
   // rides along but the calculator ignores it — alkalinity is derived there from
-  // mash pH, which the recipe's mash thickness feeds into.
+  // mash pH, which the recipe's mash thickness feeds into. The grain bill goes
+  // with it because thickness × weight is the strike volume, and that's the
+  // water any acid correction is dosed into.
   const params = new URLSearchParams();
   for (const ion of present) params.set(ion.param, String(profile[ion.key]));
   if (recipe.batchSizeL != null) params.set('volume', String(recipe.batchSizeL));
   if (recipe.mashGuidelines?.startingThicknessLPerKg != null) {
     params.set('grist', String(recipe.mashGuidelines.startingThicknessLPerKg));
   }
+  const grainKg = recipe.fermentables.reduce((sum, f) => sum + (f.grams ?? 0), 0) / 1_000;
+  if (grainKg > 0) params.set('grain', String(Math.round(grainKg * 100) / 100));
+  // The malt term, worked out from this grain bill. Without it the calculator
+  // falls back to a pale-all-malt guess, which is the one number a brewer
+  // genuinely can't supply — and the thing that most moves the acid dose.
+  const distilledPh = gristDistilledMashPh(
+    recipe.fermentables.map((f) => ({
+      name: f.name,
+      weightKg: (f.grams ?? 0) / 1_000,
+      ebc: f.ebc,
+    })),
+  );
+  if (distilledPh != null) params.set('distilledph', distilledPh.toFixed(2));
   params.set('recipe', recipe.name);
   params.set('recipeId', recipe.id);
 

@@ -1,4 +1,13 @@
 import type { HopStage, RecipeEditInput, RecipeHopEdit } from './index.js';
+import {
+  DEFAULT_GRIST_RATIO_L_PER_KG,
+  alkalinityCaCO3FromBicarbonate,
+  gristDistilledMashPh,
+  mashBufferCapacity,
+  predictedMashPh,
+  residualAlkalinityCaCO3,
+  type GristLine,
+} from './mashPh.js';
 
 export interface RecipeCalculationResult {
   originalGravity: number | null;
@@ -299,34 +308,44 @@ function recipeColor(recipe: RecipeEditInput): number | null {
 }
 
 /**
- * Mash-pH estimate from grist colour, residual alkalinity, and acidulated malt.
+ * The grain bill in the terms {@link gristDistilledMashPh} works in. Lines with
+ * no readable weight drop out; lines with no colour stay, since they still
+ * dilute the malt's share of the bill.
+ */
+export function recipeGristLines(recipe: RecipeEditInput): GristLine[] {
+  return recipe.fermentables
+    .map((line) => ({
+      name: line.name,
+      weightKg: (weightGrams(line.amount, line.unit) ?? 0) / 1000,
+      ebc: line.ebc,
+    }))
+    .filter((line) => line.weightKg > 0);
+}
+
+/**
+ * Mash-pH estimate: what the grist reaches in distilled water, moved by what the
+ * recipe's water profile does to it. Both halves live in {@link ./mashPh.js} so
+ * the water calculator predicts the same pH for the same beer.
+ *
  * Exact malt acidity and acid additions are not present in the recipe model, so
  * this value must stay visibly labelled as an estimate in consuming UIs.
  */
-function recipeMashPh(recipe: RecipeEditInput, percents: Array<number | null>): number | null {
-  const coloured = recipe.fermentables
-    .map((line, index) => ({ line, percent: percents[index] }))
-    .filter(({ line, percent }) => line.ebc != null && percent != null && percent > 0);
-  if (!coloured.length) return null;
-
-  const weightedLovibond = coloured.reduce((sum, { line, percent }) => {
-    const srm = (line.ebc ?? 0) / 1.97;
-    return sum + Math.max(0, (srm + 0.76) / 1.3546) * (percent ?? 0) / 100;
-  }, 0);
-  const acidulatedPercent = coloured.reduce((sum, { line, percent }) =>
-    /acidulated|sauer\s?malz|sour malt/i.test(line.name) ? sum + (percent ?? 0) : sum, 0);
+function recipeMashPh(recipe: RecipeEditInput): number | null {
+  const distilled = gristDistilledMashPh(recipeGristLines(recipe));
+  if (distilled == null) return null;
 
   const water = recipe.waterProfile;
-  const calcium = recipeNumber(water?.calcium) ?? 0;
-  const magnesium = recipeNumber(water?.magnesium) ?? 0;
-  const bicarbonate = recipeNumber(water?.bicarbonate) ?? 0;
-  const alkalinityAsCaco3 = bicarbonate * 50 / 61;
-  const residualAlkalinity = alkalinityAsCaco3 - calcium / 3.5 - magnesium / 7;
-  const estimated = 5.7
-    - 0.17 * Math.log10(Math.max(1, weightedLovibond))
-    + residualAlkalinity / 500
-    - acidulatedPercent * 0.1;
-  return Math.min(6.5, Math.max(3.5, estimated));
+  const ra = residualAlkalinityCaCO3(
+    alkalinityCaCO3FromBicarbonate(recipeNumber(water?.bicarbonate) ?? 0),
+    recipeNumber(water?.calcium) ?? 0,
+    recipeNumber(water?.magnesium) ?? 0,
+  );
+  // The mash sheet already states its thickness, and buffering follows from it:
+  // a thinner mash resists the same alkalinity less.
+  const buffer = mashBufferCapacity(
+    recipe.mashGuidelines?.startingThicknessLPerKg ?? DEFAULT_GRIST_RATIO_L_PER_KG,
+  );
+  return Math.min(6.5, Math.max(3.5, predictedMashPh(distilled, ra, buffer)));
 }
 
 /**
@@ -465,7 +484,7 @@ export function calculateRecipe(recipe: RecipeEditInput): RecipeCalculationResul
     abv,
     ibu,
     ebc: recipeColor(recipe),
-    mashPh: recipeMashPh(recipe, fermentablePercents),
+    mashPh: recipeMashPh(recipe),
     hopIbus,
     fermentablePercents,
   };

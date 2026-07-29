@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { DashboardShell } from '../components/DashboardShell';
 import {
   DEFAULT_DISTILLED_MASH_PH,
+  DEFAULT_GRAIN_KG,
   DEFAULT_GRIST_RATIO_L_PER_KG,
   DEFAULT_LIMITS,
   DEFAULT_SOURCE,
@@ -22,6 +23,7 @@ import {
   caco3ToDH,
   hardnessCaCO3,
   mashBufferCapacity,
+  mashWaterVolumeL,
   predictedMashPh,
   ratioDescriptor,
   requiredResidualAlkalinity,
@@ -51,9 +53,25 @@ const STORAGE_KEY = 'brewplanner.watercalc';
 type SourceMode = 'ro' | 'tap';
 
 /**
- * What the grist needs of the water, pH-wise. These three drive the bicarbonate
- * target, which is why the target grid below has no bicarbonate field: alkalinity
- * is what corrects mash pH, so it's an answer, not a style preference.
+ * What the grist needs of the water, pH-wise. The first three drive the
+ * bicarbonate target, which is why the target grid below has no bicarbonate
+ * field: alkalinity is what corrects mash pH, so it's an answer, not a style
+ * preference.
+ *
+ * Most brews never touch these — a pale all-malt grist is what the defaults
+ * describe, and the pH to aim for barely moves — so they're edited from a
+ * disclosure on the predicted-pH result rather than from an input card of their
+ * own. The one most brewers genuinely can't supply is `distilledPh`: it wants a
+ * measurement, and ±0.1 on it moves the prediction by about as much, so the
+ * figure downstream is a starting dose, not a verdict.
+ *
+ * Worth knowing when reading the bicarbonate target they produce: it is zero for
+ * any grist whose `distilledPh` sits above `targetPh`. Pale malt lands near 5.7
+ * against a 5.4 target, so the required residual alkalinity is about −225 ppm
+ * and no plausible calcium level (it would take over ~315 ppm) lifts it back
+ * above zero. Alkalinity is genuinely a dark-beer lever; everything else wants
+ * acid, which is why the acid dose, not the HCO₃ figure, is what the UI leads
+ * with.
  */
 interface MashState {
   /** The pH this grist reaches in distilled water — a property of the malt alone. */
@@ -62,6 +80,8 @@ interface MashState {
   targetPh: number;
   /** Strike water per kg of grain: sets how hard the mash resists a pH change. */
   gristRatioLPerKg: number;
+  /** Total grain bill. With the ratio above, this is what fixes the strike volume. */
+  grainKg: number;
 }
 
 interface CalcState {
@@ -83,6 +103,7 @@ const DEFAULT_MASH: MashState = {
   distilledPh: DEFAULT_DISTILLED_MASH_PH,
   targetPh: DEFAULT_TARGET_MASH_PH,
   gristRatioLPerKg: DEFAULT_GRIST_RATIO_L_PER_KG,
+  grainKg: DEFAULT_GRAIN_KG,
 };
 
 const DEFAULT_STATE: CalcState = {
@@ -148,8 +169,14 @@ function loadState(): CalcState {
  * keeps its saved value rather than silently becoming zero. A recipe's stored
  * bicarbonate is deliberately ignored — alkalinity now comes from the mash-pH
  * model, so accepting a style-picked figure would overwrite a derived answer
- * with a guess. The recipe's mash thickness *is* taken, since it sets how hard
- * the mash resists the pH change.
+ * with a guess. The recipe's mash thickness and grain bill *are* taken: the
+ * first sets how hard the mash resists the pH change, and the two together fix
+ * the strike volume an acid correction is metered into.
+ *
+ * `distilledph` is the valuable one. It's the malt term, worked out from the
+ * recipe's actual grain bill by the same shared model the recipe sheet uses, and
+ * it replaces the pale-all-malt assumption this page falls back to when nobody
+ * has told it what's in the mash tun.
  */
 function applyQueryParams(base: CalcState, params: URLSearchParams): CalcState {
   const target = { ...base.target };
@@ -167,9 +194,16 @@ function applyQueryParams(base: CalcState, params: URLSearchParams): CalcState {
   const volume = Number.parseFloat(params.get('volume') ?? '');
   const volumeL = Number.isFinite(volume) && volume > 0 ? volume : base.volumeL;
   const grist = Number.parseFloat(params.get('grist') ?? '');
-  const mash = Number.isFinite(grist) && grist > 0
-    ? { ...base.mash, gristRatioLPerKg: grist }
-    : base.mash;
+  const grain = Number.parseFloat(params.get('grain') ?? '');
+  const distilled = Number.parseFloat(params.get('distilledph') ?? '');
+  const mash = {
+    ...base.mash,
+    ...(Number.isFinite(grist) && grist > 0 ? { gristRatioLPerKg: grist } : {}),
+    ...(Number.isFinite(grain) && grain > 0 ? { grainKg: grain } : {}),
+    ...(Number.isFinite(distilled) && distilled >= 4 && distilled <= 7
+      ? { distilledPh: distilled }
+      : {}),
+  };
   const source = base.sourceMode === 'ro' ? EMPTY_PROFILE : base.source;
   const { hco3 } = mashChemistry(target, mash);
   return {
@@ -189,6 +223,10 @@ export function WaterCalculatorPage(): JSX.Element {
   // Read once on mount: the recipe hand-off seeds the page, then it behaves like
   // any other visit (edits persist to localStorage as usual).
   const [state, setState] = useState<CalcState>(() => applyQueryParams(loadState(), params));
+  // The grist inputs start folded away under the predicted-pH result: the
+  // defaults answer for a pale all-malt grist, and the pH they produce is on
+  // screen either way.
+  const [mashOpen, setMashOpen] = useState(false);
   const fromRecipe = params.get('recipe');
   const fromRecipeId = params.get('recipeId');
   useEffect(() => {
@@ -219,11 +257,14 @@ export function WaterCalculatorPage(): JSX.Element {
   );
 
   // Where the mash actually lands with the water as dosed, and what it would
-  // take to bring it down if the salts (or the tap water) overshoot.
+  // take to bring it down if the salts (or the tap water) overshoot. The acid
+  // goes into the strike water only — the sparge carries the same ions but
+  // never meets the grist, so dosing against the total would overshoot.
   const achievedRA = residualAlkalinity(result);
   const mashPh = predictedMashPh(mash.distilledPh, achievedRA, buffer);
+  const mashWaterL = mashWaterVolumeL(mash.grainKg, mash.gristRatioLPerKg, volumeL);
   const acidMEq = achievedRA > requiredRA
-    ? acidMilliequivalents(achievedRA, requiredRA, volumeL)
+    ? acidMilliequivalents(achievedRA, requiredRA, mashWaterL)
     : 0;
 
   const setSourceIon = (ion: Ion, v: number): void =>
@@ -367,66 +408,16 @@ export function WaterCalculatorPage(): JSX.Element {
               </div>
               <IonGrid profile={target} onChange={setTargetIon} idPrefix="tgt" ions={TARGET_IONS} limits={limits} />
               {/* Bicarbonate is conspicuously absent, so say why rather than
-                  leaving it looking like an oversight. */}
+                  leaving it looking like an oversight. Naming the derived figure
+                  here would be worse than saying nothing: for any grist that
+                  starts above its target pH — every pale one — it is structurally
+                  zero, and a permanent "0 ppm HCO₃⁻" reads as a broken readout
+                  rather than as the answer it is. */}
               <p className="mt-3 border-t border-zinc-800/60 pt-3 text-xs leading-snug text-zinc-500">
                 No bicarbonate here: alkalinity corrects mash pH rather than setting flavour, so it's
-                worked out below from what the grist needs — currently{' '}
-                <span className="font-medium text-zinc-300">{Math.round(targetHco3)} ppm HCO₃⁻</span>.
-                A range shown under an ion is an upper bound, not something to dose up to.
+                worked out from what the grist needs — see Predicted mash pH. A range shown under an
+                ion is an upper bound, not something to dose up to.
               </p>
-            </Card>
-
-            <Card
-              title="Mash pH"
-              hint="What the grist needs of the water. This is what sets the bicarbonate target — measure the distilled-water pH if you can; the default assumes a pale all-malt grist."
-            >
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <Field label="Distilled-water pH" hint="This grist, no minerals">
-                  <NumField
-                    value={mash.distilledPh}
-                    min={4}
-                    max={7}
-                    step={0.05}
-                    ariaLabel="Distilled-water mash pH"
-                    onChange={(v) => setMash({ distilledPh: v })}
-                  />
-                </Field>
-                <Field label="Target pH" hint="At room temperature">
-                  <NumField
-                    value={mash.targetPh}
-                    min={4}
-                    max={7}
-                    step={0.05}
-                    ariaLabel="Target mash pH"
-                    onChange={(v) => setMash({ targetPh: v })}
-                  />
-                </Field>
-                <Field label="Mash thickness" hint="Strike water per kg grain">
-                  <NumField
-                    value={mash.gristRatioLPerKg}
-                    min={1}
-                    max={10}
-                    step={0.1}
-                    ariaLabel="Mash thickness, litres per kilogram"
-                    onChange={(v) => setMash({ gristRatioLPerKg: v })}
-                  />
-                  <UnitSuffix>L/kg</UnitSuffix>
-                </Field>
-              </div>
-              <MetricsLine
-                items={[
-                  { label: 'Buffering', value: `${buffer.toFixed(1)} mEq/(pH·L)` },
-                  { label: 'Residual alkalinity needed', value: `${Math.round(requiredRA)} ppm CaCO₃` },
-                  { label: 'Bicarbonate target', value: `${Math.round(targetHco3)} ppm` },
-                ]}
-              />
-              {requiredRA < 0 && (
-                <p className="mt-3 text-xs leading-snug text-zinc-500">
-                  Negative: this grist is already acid enough that the water should carry no
-                  alkalinity at all, and calcium will push mash pH lower still. Salts can't correct
-                  that — see the acid figure in the results.
-                </p>
-              )}
             </Card>
 
             <Card title="Salt additions">
@@ -576,18 +567,33 @@ export function WaterCalculatorPage(): JSX.Element {
             </Card>
 
             {/* The point of all the alkalinity arithmetic, stated as the number
-                the brewer will actually meter on brew day. */}
+                the brewer will actually meter on brew day — and, behind Adjust,
+                the grist inputs that produced it. They live here rather than in
+                their own input card because their only visible output is this
+                pH and the dose beneath it: the bicarbonate target they also feed
+                is zero for any grist starting above its target pH, which is
+                every pale one, so leading with that figure said nothing. */}
             <Card title="Predicted mash pH" hint="From the grist's distilled-water pH and the residual alkalinity this water delivers.">
-              <div className="flex items-baseline gap-3">
-                <span className={`text-3xl font-semibold tabular-nums ${TONE_CLASS[phTone(mashPh, mash.targetPh)]}`}>
-                  {mashPh.toFixed(2)}
-                </span>
-                <span className="text-sm text-zinc-500">
-                  target {mash.targetPh.toFixed(2)}
-                  {Math.abs(mashPh - mash.targetPh) >= 0.01 && (
-                    <> · {mashPh > mash.targetPh ? '+' : ''}{(mashPh - mash.targetPh).toFixed(2)}</>
-                  )}
-                </span>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+                <div className="flex items-baseline gap-3">
+                  <span className={`text-3xl font-semibold tabular-nums ${TONE_CLASS[phTone(mashPh, mash.targetPh)]}`}>
+                    {mashPh.toFixed(2)}
+                  </span>
+                  <span className="text-sm text-zinc-500">
+                    target {mash.targetPh.toFixed(2)}
+                    {Math.abs(mashPh - mash.targetPh) >= 0.01 && (
+                      <> · {mashPh > mash.targetPh ? '+' : ''}{(mashPh - mash.targetPh).toFixed(2)}</>
+                    )}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMashOpen((open) => !open)}
+                  aria-expanded={mashOpen}
+                  className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:bg-zinc-800"
+                >
+                  {mashOpen ? 'Done' : 'Adjust grist'}
+                </button>
               </div>
               {acidMEq > 0.5 ? (
                 <p className="mt-3 text-sm leading-snug text-zinc-300">
@@ -595,14 +601,93 @@ export function WaterCalculatorPage(): JSX.Element {
                   <span className="font-semibold text-zinc-50">
                     {(acidMEq / LACTIC_88_MEQ_PER_ML).toFixed(1)} mL
                   </span>{' '}
-                  of 88 % lactic acid across {trimNum(volumeL)} L ({Math.round(acidMEq)} mEq). Salts
-                  can only raise alkalinity, so this is the one adjustment they can't make.
+                  of 88 % lactic acid into the {trimNum(mashWaterL)} L of strike water (
+                  {Math.round(acidMEq)} mEq) — not the full {trimNum(volumeL)} L, since only the
+                  mash meets the grist. Salts can only raise alkalinity, so this is the one
+                  adjustment they can't make.
                 </p>
               ) : (
                 <p className="mt-3 text-sm leading-snug text-zinc-400">
                   No acid needed — the salt additions land this within reach of the target.
                 </p>
               )}
+
+              {mashOpen && (
+                <div className="mt-4 border-t border-zinc-800/60 pt-4">
+                  <p className="text-xs leading-snug text-zinc-500">
+                    What the grist asks of the water.{' '}
+                    {fromRecipe && params.get('distilledph')
+                      ? `The distilled-water pH below is worked out from ${fromRecipe}'s grain bill — colour-weighted, with acidulated malt counted separately. Override it if you've measured yours.`
+                      : "Measure the distilled-water pH if you can — it's the malt's own figure, and 0.1 either way moves this prediction by about the same. With no grain bill to work from, the default assumes a pale all-malt grist; roast and crystal land lower."}
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <Field label="Distilled-water pH" hint="This grist, no minerals">
+                      <NumField
+                        value={mash.distilledPh}
+                        min={4}
+                        max={7}
+                        step={0.05}
+                        ariaLabel="Distilled-water mash pH"
+                        onChange={(v) => setMash({ distilledPh: v })}
+                      />
+                    </Field>
+                    <Field label="Target pH" hint="At room temperature">
+                      <NumField
+                        value={mash.targetPh}
+                        min={4}
+                        max={7}
+                        step={0.05}
+                        ariaLabel="Target mash pH"
+                        onChange={(v) => setMash({ targetPh: v })}
+                      />
+                    </Field>
+                    <Field label="Mash thickness" hint="Strike water per kg grain">
+                      <NumField
+                        value={mash.gristRatioLPerKg}
+                        min={1}
+                        max={10}
+                        step={0.1}
+                        ariaLabel="Mash thickness, litres per kilogram"
+                        onChange={(v) => setMash({ gristRatioLPerKg: v })}
+                      />
+                      <UnitSuffix>L/kg</UnitSuffix>
+                    </Field>
+                    {/* Not part of the pH arithmetic — it's here because with
+                        the thickness above it fixes the strike volume, which is
+                        what the acid dose gets metered into. */}
+                    <Field label="Grain bill" hint="Sets the strike volume">
+                      <NumField
+                        value={mash.grainKg}
+                        min={0}
+                        step={0.1}
+                        ariaLabel="Grain bill, kilograms"
+                        onChange={(v) => setMash({ grainKg: v })}
+                      />
+                      <UnitSuffix>kg</UnitSuffix>
+                    </Field>
+                  </div>
+                  <MetricsLine
+                    items={[
+                      { label: 'Buffering', value: `${buffer.toFixed(1)} mEq/(pH·L)` },
+                      { label: 'Residual alkalinity needed', value: `${Math.round(requiredRA)} ppm CaCO₃` },
+                      { label: 'Strike water', value: `${trimNum(mashWaterL)} L of ${trimNum(volumeL)} L` },
+                    ]}
+                  />
+                  {/* Only worth saying when it's true. A pale grist needs acid
+                      and no bicarbonate at all, which the dose above already
+                      covers; naming a target of zero there would be noise. */}
+                  {requiredRA > 0 && (
+                    <p className="mt-3 text-xs leading-snug text-zinc-500">
+                      This grist starts below its target, so the water should carry{' '}
+                      <span className="font-medium text-zinc-300">
+                        {Math.round(targetHco3)} ppm HCO₃⁻
+                      </span>{' '}
+                      — Auto-suggest doses that as Baking Soda, which brings sodium with it.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <p className="mt-2 text-xs leading-snug text-zinc-600">
                 An estimate from the Kolbach/Troester buffering model, sensitive to malt bill and
                 crush. Treat it as a starting dose and check with a meter at mash-in.
