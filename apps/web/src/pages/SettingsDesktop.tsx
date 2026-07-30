@@ -15,7 +15,7 @@ import {
   type UserRole,
 } from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { api, type SystemUpdateStatus } from '../api';
+import { api, type BrewSystemUpdateStatus, type SystemUpdateStatus } from '../api';
 import { useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
@@ -232,6 +232,7 @@ function renderSettingsCategory(category: SettingsCategoryId): React.ReactNode {
       return (
         <>
           <SoftwareUpdateSection />
+          <BrewSystemUpdateSection />
           <ResetSection />
         </>
       );
@@ -1748,6 +1749,112 @@ function SoftwareUpdateSection(): JSX.Element {
       </div>
     </Card>
   );
+}
+
+// --- Brew system update (deploy to the rig) --------------------------------
+
+/**
+ * Deploy the latest pushed brew-system-v3 commit to the brewing rig.
+ *
+ * Simpler than {@link SoftwareUpdateSection}: this server stays up throughout,
+ * so there's no restart blip to paper over. The interesting case is the refusal
+ * — the server won't restart a rig that's heating or pumping, and says which
+ * pot or pump is the problem.
+ */
+function BrewSystemUpdateSection(): JSX.Element {
+  const [status, setStatus] = useState<BrewSystemUpdateStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async (): Promise<void> => {
+    try {
+      setStatus(await api.getBrewSystemUpdateStatus());
+    } catch {
+      // Transient — keep whatever we last showed.
+    }
+  }, []);
+
+  usePoll(refresh, status?.state === 'running' ? 2500 : null, [refresh]);
+
+  const running = status?.state === 'running';
+
+  const start = async (): Promise<void> => {
+    if (
+      !window.confirm(
+        'Deploy the latest pushed commit to the brewing rig?\n\n' +
+          'It will pull from GitHub, rebuild the rig UI, and restart the brew ' +
+          'system service — which switches the heaters off. Only do this when ' +
+          'you are not brewing.',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await api.triggerBrewSystemUpdate());
+    } catch (e) {
+      setError(cleanError(e));
+      void refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card
+      title="Brew system update"
+      hint="Pull the latest pushed brew-system-v3 code onto the brewing rig, rebuild its UI, and restart it. Refused while the rig is heating or pumping, since the restart cuts the elements."
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className={btnPrimary}
+            onClick={() => void start()}
+            disabled={busy || running}
+          >
+            {busy ? 'Starting…' : running ? 'Updating rig…' : 'Update brew system'}
+          </button>
+          <BrewSystemUpdateBadge status={status} />
+        </div>
+
+        {status?.commit && status.commit !== 'unknown' && (
+          <p className="text-xs text-zinc-500">
+            Version on the rig: <span className="font-mono text-zinc-300">{status.commit}</span>
+            {status.commitSubject ? ` — ${status.commitSubject}` : ''}
+          </p>
+        )}
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        {status?.state === 'failed' && status.error && (
+          <p className="text-sm text-red-400">{status.error}</p>
+        )}
+
+        {status?.log ? (
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-400">
+            {status.log.trimEnd()}
+          </pre>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+/** One-line status pill for the current/last rig deploy. */
+function BrewSystemUpdateBadge({ status }: { status: BrewSystemUpdateStatus | null }): JSX.Element | null {
+  if (!status || status.state === 'idle') return null;
+  if (status.state === 'running') return <span className="text-sm text-blue-400">Updating the rig…</span>;
+  if (status.state === 'ok') {
+    return (
+      <span className="text-sm text-emerald-400">
+        Updated
+        {status.finishedAt ? ` ${dateTime(status.finishedAt)}` : ''}
+        {status.commit ? ` (${status.commit})` : ''}.
+      </span>
+    );
+  }
+  return <span className="text-sm text-red-400">Update failed.</span>;
 }
 
 // --- Reset -----------------------------------------------------------------

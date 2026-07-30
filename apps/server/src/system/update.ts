@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { databasePath } from '../db/index.js';
 
@@ -25,9 +26,16 @@ const UPDATE_UNIT = 'brewplanner-update.service';
 // Status + log live next to the database (DATA_DIR survives rebuilds). The
 // one-shot updater writes the same files; see deploy/update.sh.
 const DATA_DIR = dirname(databasePath);
-const REPO_DIR = resolve(DATA_DIR, '..');
 const STATUS_FILE = resolve(DATA_DIR, 'update-status.json');
 const LOG_FILE = resolve(DATA_DIR, 'last-update.log');
+
+// Resolve the repo from this module, NOT from the data dir: on the Pi the
+// database deliberately lives outside the checkout (checklist-server.service
+// sets DATABASE_PATH=/home/brewplanner/data/…), so `DATA_DIR/..` is the home
+// directory. Four levels up from {src,dist}/system/ is the repo root in both
+// dev and production.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_DIR = resolve(__dirname, '../../../..');
 
 // Cap the log we hand back to the UI; deploys are short and we only need the tail.
 const LOG_TAIL_BYTES = 16_000;

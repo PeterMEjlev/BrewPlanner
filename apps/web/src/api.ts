@@ -69,6 +69,19 @@ export interface SystemUpdateStatus {
   repoCommit: string;
 }
 
+/** Progress of a deploy to the brewing rig (the separate brew-system-v3 Pi). */
+export interface BrewSystemUpdateStatus {
+  state: 'idle' | 'running' | 'ok' | 'failed';
+  startedAt?: string;
+  finishedAt?: string;
+  /** Short hash the rig ended on. */
+  commit?: string;
+  commitSubject?: string;
+  error?: string;
+  /** Tail of the last run's combined output. */
+  log: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {};
   // Only send a JSON content-type when there's actually a body — Fastify
@@ -557,6 +570,14 @@ export const api = {
   // should tolerate transient request failures while polling.
   triggerUpdate: () => request<SystemUpdateStatus>('/system/update', { method: 'POST' }),
   getUpdateStatus: () => request<SystemUpdateStatus>('/system/update/status'),
+
+  // Brew system update (admin-only). Same pattern, but the target is the rig's
+  // Pi over SSH, so this server stays up throughout — no restart blip to
+  // tolerate. Refused with 409 while the rig is heating or pumping.
+  triggerBrewSystemUpdate: () =>
+    request<BrewSystemUpdateStatus>('/system/brew-system-update', { method: 'POST' }),
+  getBrewSystemUpdateStatus: () =>
+    request<BrewSystemUpdateStatus>('/system/brew-system-update/status'),
 
   // Brewing rig (brew-system-v3 Pi), proxied server-side over the LAN. Reads
   // answer `{ online: false }` when the rig is powered off (its normal state

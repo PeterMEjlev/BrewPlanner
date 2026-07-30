@@ -55,6 +55,16 @@ import {
   readUpdateStatus,
   triggerUpdate,
 } from '../system/update.js';
+import {
+  BrewSystemBusyError,
+  BrewSystemUnconfiguredError,
+  BrewSystemUnreachableError,
+  BrewSystemUpdateInProgressError,
+  BrewSystemUpdateScriptMissingError,
+  BrewSystemUpdateUnsupportedError,
+  readBrewSystemUpdateStatus,
+  triggerBrewSystemUpdate,
+} from '../system/brewSystemUpdate.js';
 
 /** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
 function parse<S extends z.ZodTypeAny>(
@@ -694,4 +704,41 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/system/update/status', adminOnly, async () => readUpdateStatus());
+
+  // --- System / brew system update --------------------------------------
+  // Same idea for the brewing rig: pull + rebuild + restart brew-system.service
+  // on the other Pi over SSH. Refuses while the rig is heating or pumping —
+  // the restart would cut the elements mid-brew. See
+  // system/brewSystemUpdate.ts and deploy/update-brew-system.sh.
+  app.post('/system/brew-system-update', adminOnly, async (req, reply) => {
+    try {
+      const status = await triggerBrewSystemUpdate();
+      return reply.status(202).send(status);
+    } catch (err) {
+      if (err instanceof BrewSystemUpdateInProgressError) {
+        return reply.status(409).send({ error: err.message });
+      }
+      if (err instanceof BrewSystemBusyError) {
+        return reply.status(409).send({ error: err.message });
+      }
+      if (err instanceof BrewSystemUnreachableError) {
+        return reply.status(502).send({ error: err.message });
+      }
+      if (err instanceof BrewSystemUnconfiguredError) {
+        return reply.status(503).send({ error: err.message });
+      }
+      if (err instanceof BrewSystemUpdateUnsupportedError) {
+        return reply.status(501).send({ error: err.message });
+      }
+      if (err instanceof BrewSystemUpdateScriptMissingError) {
+        return reply.status(500).send({ error: err.message });
+      }
+      req.log.error(err, 'Failed to start brew system update');
+      return reply
+        .status(500)
+        .send({ error: 'Could not start the rig update. Check the server logs.' });
+    }
+  });
+
+  app.get('/system/brew-system-update/status', adminOnly, async () => readBrewSystemUpdateStatus());
 }
