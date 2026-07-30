@@ -65,6 +65,7 @@ import {
   readBrewSystemUpdateStatus,
   triggerBrewSystemUpdate,
 } from '../system/brewSystemUpdate.js';
+import { readHosts } from '../system/hosts.js';
 
 /** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
 function parse<S extends z.ZodTypeAny>(
@@ -704,6 +705,12 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/system/update/status', adminOnly, async () => readUpdateStatus());
+
+  // Vitals for the machines themselves (this Pi and the rig's), for the Devices
+  // page. Session-gated rather than admin-only: it's the same "what's up right
+  // now" glance as the device list it sits above. Cached server-side, so polling
+  // it costs one SSH to the rig every 20s no matter how many tabs are open.
+  app.get('/system/hosts', { preHandler: requireAuth }, async () => readHosts());
 
   // --- System / brew system update --------------------------------------
   // Same idea for the brewing rig: pull + rebuild + restart brew-system.service

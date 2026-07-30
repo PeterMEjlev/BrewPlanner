@@ -9,12 +9,13 @@ import {
   type DeviceStatus,
   type GraphColors,
   type KegContentColors,
+  type HostStatus,
   type NotificationSettings,
   type RecipeDefaults,
   type User,
   type UserRole,
 } from '@checklist/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type BrewSystemUpdateStatus, type SystemUpdateStatus } from '../api';
 import { useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
@@ -25,6 +26,7 @@ import {
   saveRecipeDefaults,
   useRecipeDefaults,
 } from '../recipeDefaults';
+import { useHosts } from '../useDeviceData';
 import { usePoll } from '../usePoll';
 import { resetGraphColors, saveGraphColors, useGraphColors } from '../graphColors';
 import {
@@ -1636,17 +1638,109 @@ function CreateAccountForm({
 
 // --- Software update (remote deploy) ---------------------------------------
 
+/**
+ * How long the current run has been going, ticking every second, as "12s" or
+ * "3m 04s". Null when nothing is running — a deploy that takes two minutes on a
+ * Pi looks identical to a wedged one without this.
+ */
+function useElapsed(startedAt: string | undefined, running: boolean): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running, startedAt]);
+
+  if (!running || !startedAt) return null;
+  const seconds = Math.floor((now - Date.parse(startedAt)) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+}
+
+/** The little ring that says work is still happening while the log is quiet. */
+function Spinner(): JSX.Element {
+  return (
+    <span
+      className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-zinc-700 border-t-blue-400"
+      aria-hidden
+    />
+  );
+}
+
+/**
+ * The deploy's console output, live.
+ *
+ * Both update buttons run a shell script somewhere else and tail its output into
+ * here, so a deploy is watchable rather than a spinner you have to trust. It
+ * follows the tail as new output lands, unless you've scrolled up to read
+ * something — then it leaves you where you are until you scroll back down.
+ */
+function UpdateConsole({
+  log,
+  running,
+  label,
+}: {
+  log: string;
+  running: boolean;
+  /** What the header says while running, e.g. "Deploying to the brewing rig". */
+  label: string;
+}): JSX.Element | null {
+  const bodyRef = useRef<HTMLPreElement>(null);
+  const following = useRef(true);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (body && following.current) body.scrollTop = body.scrollHeight;
+  }, [log, running]);
+
+  if (!log && !running) return null;
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950">
+      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5 text-xs">
+        {running && <Spinner />}
+        <span className={running ? 'text-blue-400' : 'text-zinc-500'}>
+          {running ? label : 'Last run'}
+        </span>
+      </div>
+      <pre
+        ref={bodyRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          // "At the bottom" with a few px of slack — a fractional scroll height
+          // otherwise leaves it permanently one pixel short of following.
+          following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+        }}
+        className="max-h-64 overflow-auto whitespace-pre-wrap p-3 text-xs leading-relaxed text-zinc-400"
+      >
+        {log.trimEnd() || 'Waiting for the first output…'}
+      </pre>
+    </div>
+  );
+}
+
 /** One-line status pill for the current/last deploy. */
 function UpdateStatusBadge({
   status,
   restarting,
+  elapsed,
 }: {
   status: SystemUpdateStatus | null;
   restarting: boolean;
+  elapsed: string | null;
 }): JSX.Element | null {
   if (restarting) return <span className="text-sm text-amber-400">Server restarting…</span>;
   if (!status || status.state === 'idle') return null;
-  if (status.state === 'running') return <span className="text-sm text-blue-400">Update in progress…</span>;
+  if (status.state === 'running') {
+    return (
+      <span className="inline-flex items-center gap-2 text-sm text-blue-400">
+        <Spinner />
+        Update in progress…{elapsed ? ` (${elapsed})` : ''}
+      </span>
+    );
+  }
   if (status.state === 'ok') {
     return (
       <span className="text-sm text-emerald-400">
@@ -1686,6 +1780,7 @@ function SoftwareUpdateSection(): JSX.Element {
   usePoll(refresh, status?.state === 'running' ? 2500 : null, [refresh]);
 
   const running = status?.state === 'running';
+  const elapsed = useElapsed(status?.startedAt, running);
 
   const start = async (): Promise<void> => {
     if (
@@ -1726,7 +1821,7 @@ function SoftwareUpdateSection(): JSX.Element {
           >
             {busy ? 'Starting…' : running ? 'Updating…' : 'Update now'}
           </button>
-          <UpdateStatusBadge status={status} restarting={restarting} />
+          <UpdateStatusBadge status={status} restarting={restarting} elapsed={elapsed} />
         </div>
 
         {status?.repoCommit && status.repoCommit !== 'unknown' && (
@@ -1741,11 +1836,7 @@ function SoftwareUpdateSection(): JSX.Element {
           <p className="text-sm text-red-400">{status.error}</p>
         )}
 
-        {status?.log ? (
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-400">
-            {status.log.trimEnd()}
-          </pre>
-        ) : null}
+        <UpdateConsole log={status?.log ?? ''} running={running} label="Deploying to this Pi" />
       </div>
     </Card>
   );
@@ -1760,11 +1851,19 @@ function SoftwareUpdateSection(): JSX.Element {
  * so there's no restart blip to paper over. The interesting case is the refusal
  * — the server won't restart a rig that's heating or pumping, and says which
  * pot or pump is the problem.
+ *
+ * The progress reporting is deliberately identical to its sibling's, down to the
+ * console: this one runs the longer job of the two (an npm install and a Vite
+ * build on a Pi), so it's the one you're most likely to sit and watch.
  */
 function BrewSystemUpdateSection(): JSX.Element {
   const [status, setStatus] = useState<BrewSystemUpdateStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // What the rig is running right now, read live over SSH (the status file only
+  // knows what the last deploy left behind — and there may never have been one).
+  const hosts = useHosts();
+  const rig = hosts.data?.find((h) => h.id === 'brewsystem') ?? null;
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -1774,9 +1873,13 @@ function BrewSystemUpdateSection(): JSX.Element {
     }
   }, []);
 
-  usePoll(refresh, status?.state === 'running' ? 2500 : null, [refresh]);
+  // Poll faster than the dashboard's sibling: this log is the only thing moving
+  // on screen for a couple of minutes.
+  usePoll(refresh, status?.state === 'running' ? 1500 : null, [refresh]);
 
   const running = status?.state === 'running';
+  const elapsed = useElapsed(status?.startedAt, running);
+  const version = rigVersion(status, rig);
 
   const start = async (): Promise<void> => {
     if (
@@ -1816,13 +1919,13 @@ function BrewSystemUpdateSection(): JSX.Element {
           >
             {busy ? 'Starting…' : running ? 'Updating rig…' : 'Update brew system'}
           </button>
-          <BrewSystemUpdateBadge status={status} />
+          <BrewSystemUpdateBadge status={status} elapsed={elapsed} />
         </div>
 
-        {status?.commit && status.commit !== 'unknown' && (
+        {version && (
           <p className="text-xs text-zinc-500">
-            Version on the rig: <span className="font-mono text-zinc-300">{status.commit}</span>
-            {status.commitSubject ? ` — ${status.commitSubject}` : ''}
+            Version on the rig: <span className="font-mono text-zinc-300">{version.commit}</span>
+            {version.subject ? ` — ${version.subject}` : ''}
           </p>
         )}
 
@@ -1831,20 +1934,49 @@ function BrewSystemUpdateSection(): JSX.Element {
           <p className="text-sm text-red-400">{status.error}</p>
         )}
 
-        {status?.log ? (
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-400">
-            {status.log.trimEnd()}
-          </pre>
-        ) : null}
+        <UpdateConsole
+          log={status?.log ?? ''}
+          running={running}
+          label="Deploying to the brewing rig"
+        />
       </div>
     </Card>
   );
 }
 
+/**
+ * What the rig is running, preferring what it says about itself (read live over
+ * SSH) over what the last deploy recorded — which is missing entirely on a rig
+ * that has never been updated from here.
+ */
+function rigVersion(
+  status: BrewSystemUpdateStatus | null,
+  host: HostStatus | null,
+): { commit: string; subject: string | null } | null {
+  if (host?.commit) return { commit: host.commit, subject: host.commitSubject };
+  if (status?.commit && status.commit !== 'unknown') {
+    return { commit: status.commit, subject: status.commitSubject ?? null };
+  }
+  return null;
+}
+
 /** One-line status pill for the current/last rig deploy. */
-function BrewSystemUpdateBadge({ status }: { status: BrewSystemUpdateStatus | null }): JSX.Element | null {
+function BrewSystemUpdateBadge({
+  status,
+  elapsed,
+}: {
+  status: BrewSystemUpdateStatus | null;
+  elapsed: string | null;
+}): JSX.Element | null {
   if (!status || status.state === 'idle') return null;
-  if (status.state === 'running') return <span className="text-sm text-blue-400">Updating the rig…</span>;
+  if (status.state === 'running') {
+    return (
+      <span className="inline-flex items-center gap-2 text-sm text-blue-400">
+        <Spinner />
+        Update in progress…{elapsed ? ` (${elapsed})` : ''}
+      </span>
+    );
+  }
   if (status.state === 'ok') {
     return (
       <span className="text-sm text-emerald-400">

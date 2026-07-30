@@ -1,7 +1,4 @@
-- The two raspberry pi's (brewplanner (this app) and the one for the brewsystem) should show up under devices page as well, with their relevant info / data
-
-- instead of having a green dot besides "Brew System" in the sidebar, make it green or red text stating online or offline
-
+- the kiosk page need to be turned upside down 
 
 - ## Add support for
   - Electricity (Watt) usage

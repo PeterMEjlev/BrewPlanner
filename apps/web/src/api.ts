@@ -24,6 +24,7 @@ import type {
   FermenterState,
   FermenterStatus,
   GraphColors,
+  HostStatus,
   IngredientKind,
   IngredientPriceOptions,
   IngredientPriceOverride,
@@ -578,6 +579,11 @@ export const api = {
     request<BrewSystemUpdateStatus>('/system/brew-system-update', { method: 'POST' }),
   getBrewSystemUpdateStatus: () =>
     request<BrewSystemUpdateStatus>('/system/brew-system-update/status'),
+
+  // The two Raspberry Pis themselves (this one and the rig's), for the Devices
+  // page. Server-side cached, so polling is cheap; the rig is absent from the
+  // list when no rig is configured.
+  listHosts: () => request<HostStatus[]>('/system/hosts'),
 
   // Brewing rig (brew-system-v3 Pi), proxied server-side over the LAN. Reads
   // answer `{ online: false }` when the rig is powered off (its normal state

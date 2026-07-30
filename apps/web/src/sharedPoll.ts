@@ -219,4 +219,5 @@ export const SHARED = {
   alerts: 'alerts',
   kegs: 'kegs',
   activeRecipe: 'activeRecipe',
+  hosts: 'hosts',
 } as const;

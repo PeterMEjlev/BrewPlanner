@@ -2802,6 +2802,58 @@ export const brewTimerActionSchema = z.object({
 export type BrewTimerActionInput = z.infer<typeof brewTimerActionSchema>;
 
 // ---------------------------------------------------------------------------
+// Hosts (the two Raspberry Pis the brewery runs on)
+// ---------------------------------------------------------------------------
+// Every sensor on the Devices page reports in by itself; the Pis underneath them
+// report nothing, so the server reads their vitals on their behalf — from the
+// kernel for the machine it runs on, over SSH for the rig — and serves both from
+// GET /api/system/hosts. Every field past `online` is null when it couldn't be
+// read, since a host that's powered off still gets a card.
+
+export type HostId = 'brewplanner' | 'brewsystem';
+
+/** One machine's vitals. Sizes are bytes, temperatures °C, durations seconds. */
+export interface HostStatus {
+  id: HostId;
+  /** What this box is called here, e.g. "BrewPlanner Pi". */
+  name: string;
+  /** One line on what it does, for the card subtitle. */
+  role: string;
+  /** The host answered at all — pingable/SSH-able, not necessarily healthy. */
+  online: boolean;
+  /** Its own hostname, which needn't match {@link name} (the rig calls itself `raspberrypi`). */
+  hostname: string | null;
+  /** Board model from the device tree, e.g. "Raspberry Pi 4 Model B Rev 1.5". */
+  model: string | null;
+  /** Distro PRETTY_NAME, e.g. "Debian GNU/Linux 13 (trixie)". */
+  os: string | null;
+  kernel: string | null;
+  /** LAN address the brewery reaches it on. */
+  ip: string | null;
+  uptimeSec: number | null;
+  /** SoC temperature — the number that says whether a Pi is about to throttle. */
+  cpuTempC: number | null;
+  /** 1-minute load average, to be read against {@link cpuCount}. */
+  loadAvg1: number | null;
+  cpuCount: number | null;
+  memTotalBytes: number | null;
+  /** Total minus *available* (not free) — page cache isn't pressure. */
+  memUsedBytes: number | null;
+  /** Root filesystem, which on both Pis is the whole SD card. */
+  diskTotalBytes: number | null;
+  diskUsedBytes: number | null;
+  /** The systemd unit its app runs under, e.g. `checklist-server.service`. */
+  serviceName: string | null;
+  /** Whether that unit is currently active; null when we couldn't ask. */
+  serviceActive: boolean | null;
+  /** Short hash of the app checkout running there. */
+  commit: string | null;
+  commitSubject: string | null;
+  /** Why the vitals are missing, when they are — shown on the card. */
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Bruce, the voice assistant (apps/bruce). Bruce exposes a loopback status API
 // on his Pi; the server proxies it as /api/bruce/* behind session auth, and
 // the dashboard's Bruce page renders these shapes.

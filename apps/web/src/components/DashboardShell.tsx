@@ -194,9 +194,9 @@ function useAlertCount(): number {
 }
 
 /**
- * The brewing rig's reachability, for the Brew System nav dot. `configured` is
+ * The brewing rig's reachability, for the Brew System nav item. `configured` is
  * false when no rig URL is set (a common single-fermenter install) — then the
- * nav shows no dot at all, rather than a misleading "offline" red.
+ * nav says nothing at all, rather than a misleading red "Offline".
  */
 interface BrewSystemNavStatus {
   configured: boolean;
@@ -204,9 +204,9 @@ interface BrewSystemNavStatus {
 }
 
 /**
- * Poll the brewing rig so the Brew System nav item can show a health dot (green
- * reachable / red powered-off). Lives in the shell like {@link useFleetStatus}
- * so the dot is right on every page, and holds the last value through a blip.
+ * Poll the brewing rig so the Brew System nav item can say whether it's up.
+ * Lives in the shell like {@link useFleetStatus} so the answer is right on
+ * every page, and holds the last value through a blip.
  * The rig is off most of the year, so this is cheap and expected to read offline.
  */
 function useBrewSystemStatus(): BrewSystemNavStatus | null {
@@ -225,9 +225,18 @@ function useBrewSystemStatus(): BrewSystemNavStatus | null {
   return status;
 }
 
-/** Green when the rig is reachable, red when configured but powered off/unreachable. */
-function brewSystemDotColor({ online }: BrewSystemNavStatus): string {
-  return online ? 'bg-emerald-400' : 'bg-red-500';
+/**
+ * The rig's reachability spelled out next to the nav item: green "Online" when
+ * it answers, red "Offline" when it doesn't. A word rather than a coloured dot,
+ * because the dot needed a hover to tell you which state it meant — and this is
+ * the one nav item whose whole page is unusable when the answer is "offline".
+ */
+function BrewSystemBadge({ online }: BrewSystemNavStatus): JSX.Element {
+  return (
+    <span className={`text-xs font-semibold ${online ? 'text-emerald-400' : 'text-red-400'}`}>
+      {online ? 'Online' : 'Offline'}
+    </span>
+  );
 }
 
 /** Filled/total keg count, for the Kegs nav item. */
@@ -451,16 +460,10 @@ function Sidebar({
                 className={brucePhase.phase === 'web' ? 'text-sky-400' : 'text-zinc-400'}
               />
             );
-          // Show the rig's health dot only once a rig URL is configured — an
-          // install with no brewing rig shows nothing rather than a red "offline".
+          // Say so only once a rig URL is configured — an install with no brewing
+          // rig shows nothing rather than a permanent red "Offline".
           else if (item.key === 'brewSystem' && brewSystem?.configured)
-            accessory = (
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${brewSystemDotColor(brewSystem)}`}
-                title={brewSystem.online ? 'Brew system online' : 'Brew system offline'}
-                aria-hidden
-              />
-            );
+            accessory = <BrewSystemBadge {...brewSystem} />;
           return (
             <Link key={item.key} to={item.to} className="block">
               <NavRow

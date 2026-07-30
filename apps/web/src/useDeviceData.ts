@@ -1,4 +1,4 @@
-import type { DeviceStatus, LatestReading, Reading } from '@checklist/shared';
+import type { DeviceStatus, HostStatus, LatestReading, Reading } from '@checklist/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { SHARED, type SharedState, useShared } from './sharedPoll';
@@ -37,6 +37,21 @@ export function useFleet(): SharedState<DeviceStatus[]> & { refresh: () => Promi
     setPollMs(listPollMs(fleet.data));
   }, [fleet.data]);
   return fleet;
+}
+
+/**
+ * Cadence for the host vitals (the two Pis). Matches the server's own cache
+ * window: asking faster only re-serves the same snapshot, and the reading it
+ * carries — temperature, uptime, disk — moves far more slowly than a sensor's.
+ */
+const HOSTS_POLL_MS = 20_000;
+
+/**
+ * The Raspberry Pis the brewery runs on, for the Devices page. A shared channel
+ * like {@link useFleet}, so a second view of it costs no extra requests.
+ */
+export function useHosts(): SharedState<HostStatus[]> & { refresh: () => Promise<void> } {
+  return useShared(SHARED.hosts, api.listHosts, HOSTS_POLL_MS);
 }
 
 /** Selectable history windows, shared by the laptop and touch sensor views. */

@@ -1,4 +1,9 @@
-import { REPORTING_INTERVAL_OPTIONS, type DeviceStatus, type DeviceType } from '@checklist/shared';
+import {
+  REPORTING_INTERVAL_OPTIONS,
+  type DeviceStatus,
+  type DeviceType,
+  type HostStatus,
+} from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -6,8 +11,9 @@ import inkbirdIcon from '../assets/inkbird.png';
 import tiltIcon from '../assets/tilt.png';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
+import { ChipIcon } from '../components/icons';
 import { Select } from '../components/Select';
-import { useFleet } from '../useDeviceData';
+import { useFleet, useHosts } from '../useDeviceData';
 import { dateTime } from '../util';
 import { metricLabel, relativeTime } from './Dashboard';
 
@@ -112,6 +118,42 @@ function formatCount(n: number | null | undefined): string {
   return n == null ? '—' : n.toLocaleString();
 }
 
+// --- Host formatting --------------------------------------------------------
+
+/** Bytes as GB/MB with one decimal — SD cards and Pi RAM never need more. */
+function formatBytes(bytes: number | null): string {
+  if (bytes == null) return '—';
+  const gb = bytes / 1024 ** 3;
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  return `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
+/** An uptime as "6d 4h" / "4h 12m" / "12m" — two units is as precise as anyone reads. */
+function formatUptime(seconds: number | null): string {
+  if (seconds == null) return '—';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+/** A Pi throttles at 80 °C and starts capping the clock a little before that. */
+function tempTone(celsius: number): string {
+  if (celsius >= 75) return 'text-red-400';
+  if (celsius >= 65) return 'text-amber-400';
+  return 'text-zinc-200';
+}
+
+/** Load past one job per core means something is queueing behind the CPU. */
+function loadTone(load: number, cores: number | null): string {
+  const perCore = load / (cores && cores > 0 ? cores : 1);
+  if (perCore >= 1) return 'text-red-400';
+  if (perCore >= 0.7) return 'text-amber-400';
+  return 'text-zinc-200';
+}
+
 // --- Fleet grouping ---------------------------------------------------------
 // The grid is laid out as labelled rows rather than one alphabetical run: the
 // fermenter station (pressure, controller, Tilt) on top, then the brewery &
@@ -187,6 +229,10 @@ export function DevicesPage(): JSX.Element {
   // state because an interval edit is applied optimistically on top of it,
   // until the next poll confirms it.
   const fleet = useFleet();
+  // The two Pis underneath the fleet — the hub serving this page and the brewing
+  // rig. Their own channel: they're read a different way (locally and over SSH,
+  // not from the readings table) and change far more slowly than a sensor does.
+  const hosts = useHosts();
   useEffect(() => {
     if (fleet.data) setDevices(fleet.data);
     setError(fleet.error);
@@ -222,6 +268,19 @@ export function DevicesPage(): JSX.Element {
           </div>
         )}
 
+        {/* The machines first, then what's plugged into them: the Pis are what
+            everything below depends on, so a red one explains a quiet fleet. */}
+        {hosts.data && hosts.data.length > 0 && (
+          <section className="mb-6">
+            <SectionLabel>Systems</SectionLabel>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {hosts.data.map((host) => (
+                <HostCard key={host.id} host={host} />
+              ))}
+            </div>
+          </section>
+        )}
+
         {devices === null ? (
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
             Loading devices…
@@ -242,6 +301,7 @@ export function DevicesPage(): JSX.Element {
           // & power) so each group starts on its own row. The row gap between
           // groups matches the card gap within a group, so it reads as one grid.
           <div className="space-y-4">
+            {hosts.data && hosts.data.length > 0 && <SectionLabel>Sensors</SectionLabel>}
             {rows.map((group) => (
               <div
                 key={group[0]!.id}
@@ -261,6 +321,135 @@ export function DevicesPage(): JSX.Element {
         )}
       </main>
     </DashboardShell>
+  );
+}
+
+/** A quiet heading over a band of cards ("Systems", "Sensors"). */
+function SectionLabel({ children }: { children: React.ReactNode }): JSX.Element {
+  return (
+    <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">{children}</h2>
+  );
+}
+
+/**
+ * One Raspberry Pi. Deliberately not a link like {@link DeviceCard}: a host has
+ * no reading history to chart, so everything worth knowing about it is here.
+ *
+ * An unreachable host still gets a card — an empty slot where the rig should be
+ * is exactly the ambiguity ("is it off, or did I break something?") this page is
+ * meant to settle.
+ */
+function HostCard({ host }: { host: HostStatus }): JSX.Element {
+  return (
+    <div
+      className={`flex min-h-[10.5rem] flex-col rounded-xl border border-zinc-800 bg-zinc-900 p-4 ${
+        host.online ? '' : 'opacity-60'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <ChipIcon className="h-9 w-9 shrink-0 text-zinc-500" />
+          <div className="min-w-0">
+            <h3 className="truncate font-semibold text-zinc-100" title={host.name}>
+              {host.name}
+            </h3>
+            <p className="mt-0.5 truncate text-xs text-zinc-500" title={host.role}>
+              {host.role}
+            </p>
+          </div>
+        </div>
+        <StatusBadge online={host.online} />
+      </div>
+
+      {!host.online ? (
+        <p className="mt-4 flex-1 text-sm text-zinc-500">
+          {host.error ?? 'Powered off or off the network — nothing to report.'}
+        </p>
+      ) : (
+        <>
+          <dl className="mt-4 grid flex-1 grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+            {host.model && <InfoRow label="Board" value={host.model} wide />}
+            {host.os && <InfoRow label="OS" value={host.os} wide />}
+            <InfoRow label="Hostname" value={host.hostname ?? '—'} />
+            <InfoRow label="IP address" value={host.ip ?? '—'} mono />
+            <InfoRow label="Uptime" value={formatUptime(host.uptimeSec)} />
+            <InfoRow
+              label="CPU temp"
+              value={host.cpuTempC != null ? `${host.cpuTempC.toFixed(1)} °C` : '—'}
+              tone={host.cpuTempC != null ? tempTone(host.cpuTempC) : undefined}
+            />
+            <InfoRow
+              label="Load"
+              value={
+                host.loadAvg1 != null
+                  ? `${host.loadAvg1.toFixed(2)}${host.cpuCount ? ` / ${host.cpuCount} cores` : ''}`
+                  : '—'
+              }
+              tone={host.loadAvg1 != null ? loadTone(host.loadAvg1, host.cpuCount) : undefined}
+            />
+            <InfoRow
+              label="Service"
+              value={
+                host.serviceActive == null ? '—' : host.serviceActive ? 'Running' : 'Stopped'
+              }
+              title={host.serviceName ?? undefined}
+              tone={host.serviceActive === false ? 'text-red-400' : undefined}
+            />
+          </dl>
+
+          <div className="mt-3 space-y-2">
+            <Meter label="Memory" used={host.memUsedBytes} total={host.memTotalBytes} />
+            <Meter label="Disk" used={host.diskUsedBytes} total={host.diskTotalBytes} />
+          </div>
+
+          {host.error && <p className="mt-3 text-xs text-amber-400">{host.error}</p>}
+        </>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-zinc-800 pt-2.5 text-xs text-zinc-500">
+        {host.commit ? (
+          <>
+            <span className="font-mono text-zinc-400">{host.commit}</span>
+            {host.commitSubject && (
+              <span className="min-w-0 truncate" title={host.commitSubject}>
+                {host.commitSubject}
+              </span>
+            )}
+          </>
+        ) : (
+          <span>Version unknown</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A used/total bar — the fastest read on whether a Pi is running out of something. */
+function Meter({
+  label,
+  used,
+  total,
+}: {
+  label: string;
+  used: number | null;
+  total: number | null;
+}): JSX.Element | null {
+  if (used == null || total == null || total <= 0) return null;
+  const pct = Math.min(100, Math.max(0, (used / total) * 100));
+  const fill = pct >= 90 ? 'bg-red-500' : pct >= 75 ? 'bg-amber-500' : 'bg-emerald-500';
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="font-medium uppercase tracking-wider text-zinc-500">{label}</span>
+        <span className="tabular-nums text-zinc-400">
+          {formatBytes(used)} / {formatBytes(total)}
+          <span className="ml-1.5 text-zinc-600">{Math.round(pct)}%</span>
+        </span>
+      </div>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+        <div className={`h-full rounded-full ${fill}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -367,6 +556,7 @@ function InfoRow({
   mono = false,
   wide = false,
   title,
+  tone,
 }: {
   label: string;
   value: string;
@@ -377,6 +567,8 @@ function InfoRow({
    */
   wide?: boolean;
   title?: string;
+  /** Text colour for a value worth noticing (a hot CPU, a stopped service). */
+  tone?: string;
 }): JSX.Element {
   return (
     <div
@@ -386,7 +578,7 @@ function InfoRow({
     >
       <dt className="text-xs font-medium uppercase tracking-wider text-zinc-500">{label}</dt>
       <dd
-        className={`text-right text-sm text-zinc-200 ${wide ? '' : 'truncate'} ${
+        className={`text-right text-sm ${tone ?? 'text-zinc-200'} ${wide ? '' : 'truncate'} ${
           mono ? 'font-mono tabular-nums' : ''
         }`}
         title={title ?? value}
