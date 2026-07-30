@@ -47,8 +47,11 @@ if (launchParams.has('kiosk')) {
 // re-mount the Pi the right way round and you drop the flag from the unit file,
 // no rebuild. Rotating here rather than in the compositor is forced: cage 0.2.0
 // dropped its -r flag and exposes no output-management protocol.
+// NB: the class must not collide with a Tailwind utility name. `rotate-180` was
+// the obvious choice and is a trap — Tailwind generates `.rotate-180` from this
+// very string, so <html> rotated too and the two 180s cancelled to a no-op.
 if (launchParams.get('rotate') === '180') {
-  document.documentElement.classList.add('rotate-180');
+  document.documentElement.classList.add('upside-down');
 }
 
 // The chart pages pull in recharts (~400 kB). Load them on demand so the

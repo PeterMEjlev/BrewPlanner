@@ -1,4 +1,6 @@
-Brew System page: When the REG is turned on for one of the pots, the cards expand vertically to the point where the user needs to scroll down to see the bottom of the page. The available screen real estate is plenty, so can you make it so the entire GUI for the brew system is shrunk a bit, so this doesnt happen. 
+- Brew System page: When the REG is turned on for one of the pots, the cards expand vertically to the point where the user needs to scroll down to see the bottom of the page. The available screen real estate is plenty, so can you make it so the entire GUI for the brew system is shrunk a bit, so this doesnt happen. 
+
+- Bruce voice: I need to implement voice conversation with Bruce. i have plugged a usb mic and a speaker (3.5mm aux) into the brewplanner pi. help me get it up and running. The Pico voice key can be found on the brew system pi ("C:\Users\pejlev\Desktop\Misc\Git\BrewSystem-3.0") (where i previosly had this running).
 
 - ## Add support for
   - Electricity (Watt) usage

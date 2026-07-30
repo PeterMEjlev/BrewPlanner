@@ -113,12 +113,14 @@ html.kiosk *::after {
 }
 
 /* Turn the whole page upside down when Chromium is launched with ?rotate=180
-   (main.tsx tags <html class="rotate-180">) — the brewery Pi is physically
-   mounted the other way up. Touch still lands where you see it: the browser
+   (main.tsx tags <html class="upside-down">) — the brewery Pi is physically
+   mounted the other way up. The class is deliberately NOT named `rotate-180`:
+   Tailwind would generate that utility and rotate <html> as well, cancelling
+   this one out. Touch still lands where you see it: the browser
    hit-tests through the transform, so no input remapping is needed. Rotating
    <body> (which already fills the viewport exactly) also makes it the
    containing block for position:fixed overlays, so modals come along too. */
-html.rotate-180 body {
+html.upside-down body {
   transform: rotate(180deg);
 }
 
