@@ -273,7 +273,7 @@ the Inkbird controllers at a glance, and reads or changes the settings — alert
 preferences, new-recipe defaults, chart and keg colours, and the mock/real
 switch per sensor. He calls the server over loopback
 (trusted-local — no token) and speaks through OpenAI's GA Realtime API
-(`gpt-realtime-mini`); the wake word is detected offline (Porcupine). The
+(`gpt-realtime-mini`); the wake word is detected offline (openWakeWord). The
 `/bruce` dashboard page shows his live state and conversation transcript, and
 can set his volume or make him say something in the brewery (Bruce serves a
 loopback status API that the server proxies as `/api/bruce/*`). One-time Pi

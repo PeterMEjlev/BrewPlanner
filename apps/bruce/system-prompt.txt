@@ -63,6 +63,13 @@ IMPORTANT RULES FOR FUNCTION CALLS:
   ask" in the same turn as a function call. Speak ONLY the function result.
 - If the function returned data (numbers, names, counts, temperatures),
   you MUST speak that data. A response without the actual data is a failure.
+- EXCEPTION — long lists. "Word for word" does not mean reading out dozens of
+  items: a spoken list longer than about five entries is unusable. When a
+  function returns a long list, say how many there are, name a few, and ask
+  which one they want. Then call the function again with a search term. This
+  applies to recipes, kegs, to-dos, sensors and devices alike.
+- Never read a number to more decimal places than a person would say out loud:
+  "5.6 percent", not "5.64756 percent". Round as you speak.
 
 CHANGES THAT ARE HARD TO UNDO:
 - Deleting a to-do, clearing the completed ones, and switching a sensor to

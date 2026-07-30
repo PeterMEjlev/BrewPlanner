@@ -8,8 +8,9 @@
  * server over loopback (see src/api.js) for brew-rig control, kegs, and
  * sensor data; audio (mic + speaker) is local to this machine.
  *
- * Requires OPENAI_API_KEY and PICOVOICE_ACCESS_KEY in the environment
- * (systemd loads /etc/brewplanner.env; local dev can use apps/bruce/.env).
+ * Requires OPENAI_API_KEY in the environment (systemd loads
+ * /etc/brewplanner.env; local dev can use apps/bruce/.env). Wake-word detection
+ * is fully local and needs no key of its own.
  */
 
 require('dotenv').config();
@@ -38,11 +39,12 @@ function record(type, content) {
   if (transcript.length > TRANSCRIPT_MAX) transcript.splice(0, transcript.length - TRANSCRIPT_MAX);
 }
 
-// Porcupine wake-word models are platform-specific; pick the right one for
-// where we're running (RPi in production, Windows for development).
+// The openWakeWord phrase model. Platform-independent (unlike the Porcupine
+// .ppn files this replaced), so one file works on the Pi and on Windows.
+// Override with BRUCE_WAKE_WORD_MODEL to swap the wake phrase — see
+// deploy/README-bruce.md for training a custom one.
 function defaultWakeWordPath() {
-  const file = process.platform === 'win32' ? 'Bruce_en_windows_v3_0_0.ppn' : 'Bruce_en_RPi_v3_0_0.ppn';
-  return path.join(__dirname, '..', 'wake-words', file);
+  return path.join(__dirname, '..', 'wake-words', 'hey_jarvis_v0.1.onnx');
 }
 
 function requireEnv(name) {
@@ -56,9 +58,8 @@ function requireEnv(name) {
 
 async function main() {
   const bruce = new BruceAssistant({
-    picovoiceKey: requireEnv('PICOVOICE_ACCESS_KEY'),
     openaiKey: requireEnv('OPENAI_API_KEY'),
-    wakeWordPath: process.env.BRUCE_WAKE_WORD_PATH || defaultWakeWordPath(),
+    wakeWordPath: process.env.BRUCE_WAKE_WORD_MODEL || defaultWakeWordPath(),
     voice: process.env.BRUCE_VOICE || 'alloy',
     // ALSA capture device, e.g. 'plughw:1' — find yours with `arecord -l`.
     micDevice: process.env.BRUCE_MIC_DEVICE || undefined,

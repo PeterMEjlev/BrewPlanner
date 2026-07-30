@@ -15,6 +15,10 @@
  * sheet) only comes out when it is asked for.
  */
 
+// How many recipes an unfiltered "what recipes do I have?" hands the model.
+// The library is 30-odd deep; read aloud that is several minutes of monologue.
+const SPOKEN_LIST_MAX = 8;
+
 // ── Name matching ───────────────────────────────────────────────────────────
 //
 // Mirrors the server's matchRecipe (apps/server/src/bruce/recipes.ts): nobody
@@ -62,13 +66,28 @@ function value(raw) {
   return text ? text : null;
 }
 
+/**
+ * Round a stored number for speech. The library holds values like
+ * `5.64756` (imported from Brewer's Friend); spoken aloud that becomes
+ * "five point six four seven five six percent", which is nobody's idea of an
+ * answer.
+ */
+function spokenNumber(raw, decimals) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return String(Number(n.toFixed(decimals)));
+}
+
 /** "a West Coast IPA, 6.2% ABV, 55 IBU" — whichever of those the recipe states. */
 function headline(recipe) {
+  const abv = spokenNumber(recipe.abv, 1);
+  const ibu = spokenNumber(recipe.ibu, 0);
+  const ebc = spokenNumber(recipe.ebc, 0);
   const parts = [
     value(recipe.style),
-    value(recipe.abv) ? `${recipe.abv}% ABV` : null,
-    value(recipe.ibu) ? `${recipe.ibu} IBU` : null,
-    value(recipe.ebc) ? `${recipe.ebc} EBC` : null,
+    abv ? `${abv}% ABV` : null,
+    ibu ? `${ibu} IBU` : null,
+    ebc ? `${ebc} EBC` : null,
   ].filter(Boolean);
   return parts.join(', ');
 }
@@ -169,9 +188,21 @@ function register(bruce, apiCall) {
           ? `${recipes.length} recipe${recipes.length !== 1 ? 's' : ''} match "${query}".`
           : `You have ${recipes.length} recipe${recipes.length !== 1 ? 's' : ''}.`,
       ];
-      for (const recipe of recipes) {
+
+      // Spoken, not printed: reading 30-odd recipes aloud takes minutes and is
+      // useless. Hand the model a few and tell it to ask for a narrower query
+      // — it can always call again with one.
+      const shown = recipes.slice(0, SPOKEN_LIST_MAX);
+      for (const recipe of shown) {
         const detail = headline(recipe);
         lines.push(`${recipe.name}${detail ? ` — ${detail}` : ''}.`);
+      }
+      if (recipes.length > shown.length) {
+        lines.push(
+          `(Only the ${shown.length} most recent are listed; ${recipes.length - shown.length} older ones are not. ` +
+            'Do NOT read this list out in full — say how many there are, mention a couple, ' +
+            'and ask which style or name they are after.)',
+        );
       }
       return lines.join('\n');
     },

@@ -21,8 +21,9 @@ is not enabled.
   same USB device for both). Without them the service starts and immediately
   exits with an audio error — set everything else up first if the hardware
   isn't there yet.
-- An OpenAI API key and a Picovoice access key (from https://console.picovoice.ai —
-  the same one used when Bruce ran on the brew rig works).
+- An OpenAI API key. That is the only key Bruce needs — wake-word detection
+  runs locally with openWakeWord (see `apps/bruce/wake-words/README.md`) and
+  costs nothing.
 
 ## 1. System packages
 
@@ -35,12 +36,20 @@ sudo apt install -y sox libasound2-dev alsa-utils
 - `libasound2-dev` is the ALSA header package the `speaker` npm module compiles
   against. It is an **optionalDependency**, so a plain `npm install` before this
   package exists succeeds with a warning and Bruce simply can't speak; after
-  installing it, rebuild:
+  installing it, build it:
 
 ```bash
 cd ~/checklist
-npm rebuild speaker || npm install
+deploy/ensure-bruce-audio.sh
 ```
+
+That script exists because `npm rebuild speaker` is not enough on a 64-bit Pi:
+the module bundles mpg123, which ships build configs for `linux/arm`, `ia32`
+and `x64` but **not `arm64`**, so the compile dies with `config.h: No such file
+or directory`. It copies the x64 config to `arm64` (right for aarch64 — 64-bit
+type sizes, and the only thing built here is the ALSA output layer, which has
+no CPU-specific code) and then builds. It is idempotent, and `deploy/update.sh`
+runs it on every deploy so a wiped `node_modules` can't quietly leave Bruce mute.
 
 - `alsa-utils` provides `arecord`/`aplay` for testing below.
 
@@ -57,6 +66,37 @@ your card number) in `/etc/brewplanner.env`. Playback uses the ALSA default
 device; make the speaker the default with `raspi-config` or `/etc/asound.conf`
 if needed.
 
+> `BRUCE_MIC_DEVICE` only sets `AUDIODEV`, which `sox --default-device` ignores
+> unless a driver is also named — hence `Environment=AUDIODRIVER=alsa` in
+> `bruce.service`. Without it sox exits immediately with "no default audio
+> device configured" and Bruce logs "Microphone stream died" on a loop.
+
+### Check the noise floor before trusting the defaults
+
+Bruce's silence detection compares mic RMS against fixed thresholds
+(`SILENCE_ENERGY_THRESHOLD` 200, `MIN_SPEECH_ENERGY` 400 in `apps/bruce/config.js`,
+scale 0–32768). A hot USB mic in a room with a humming fridge can sit *above*
+both while nobody is speaking — then Bruce never sees silence, never commits on
+a pause, and every turn drags on to `MAX_UTTERANCE_MS`. Measure with the room
+quiet and again while speaking from where you'll stand:
+
+```bash
+arecord -D plughw:3 -f S16_LE -r 16000 -c 1 -d 5 /tmp/t.wav && sox /tmp/t.wav -n stat
+# "RMS amplitude" x 32768 = the number the thresholds are compared against
+```
+
+Then either turn the capture gain down (`alsamixer`, F6 to pick the card, F4 for
+capture) or raise both thresholds in `/etc/brewplanner.env`, keeping silence
+comfortably above the quiet-room floor and speech comfortably above that:
+
+```
+BRUCE_SILENCE_ENERGY_THRESHOLD=900
+BRUCE_MIN_SPEECH_ENERGY=1400
+```
+
+Once Bruce is running, every turn logs `[Bruce] Peak energy: <n> (min: <m>)` to
+the journal — the easiest way to refine these against real speech.
+
 ## 3. Keys
 
 Add to `/etc/brewplanner.env` (see `deploy/brewplanner.env.example` for the
@@ -64,10 +104,10 @@ full annotated block):
 
 ```
 OPENAI_API_KEY=sk-...
-PICOVOICE_ACCESS_KEY=...
 # optional:
 # BRUCE_VOICE=alloy
 # BRUCE_MIC_DEVICE=plughw:1
+# BRUCE_WAKE_WORD_THRESHOLD=0.5
 ```
 
 ## 4. Refresh the sudoers whitelist (dashboard-updater Pis only)
@@ -91,11 +131,54 @@ sudo systemctl enable --now bruce.service
 journalctl -u bruce.service -f     # expect: "[Bruce] Ready — listening for wake word"
 ```
 
-Say **"Bruce!"** near the mic — you should hear the plop, then ask e.g.
+Say the wake phrase near the mic — you should hear the plop, then ask e.g.
 *"how are the kegs?"* or *"what's fermenting?"*.
+
+> **The wake phrase is "hey Jarvis" until you train a "hey Bruce" model.**
+> openWakeWord ships pre-trained models for a handful of phrases only, and
+> "Bruce" isn't one of them — see the next section. Everything else about Bruce
+> is unchanged; only the two words that wake him are borrowed.
 
 From here on, every deploy (`deploy/update.sh` or the dashboard Update button)
 restarts Bruce automatically along with the other services.
+
+## 6. Tune the wake-word threshold
+
+A detection fires when the model scores above `BRUCE_WAKE_WORD_THRESHOLD`
+(default `0.5`). To see the actual numbers, set `BRUCE_WAKE_WORD_DEBUG=1` and
+restart — the journal then prints the highest score each second:
+
+```
+[Bruce] Wake-word peak score: 0.012 (threshold 0.5)
+```
+
+Watch it with the brewery noisy but nobody talking (that's your false-positive
+floor), then while saying the phrase from where you normally stand. Put the
+threshold between the two, then remove the debug var. Raise it if Bruce wakes
+up on his own; lower it if you have to shout.
+
+## Training a "hey Bruce" model
+
+Custom openWakeWord models are trained from synthetic speech — you never record
+yourself — and it's free and unattended. Use the project's
+[automatic training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb)
+on Google Colab: set the target phrase to **"hey Bruce"**, run all cells, and
+come back in roughly 90 minutes for a `.onnx` file.
+
+Then:
+
+```bash
+scp hey_bruce.onnx brewplanner@BrewPlanner:~/checklist/apps/bruce/wake-words/
+# in /etc/brewplanner.env:
+#   BRUCE_WAKE_WORD_MODEL=/home/brewplanner/checklist/apps/bruce/wake-words/hey_bruce.onnx
+sudo systemctl restart bruce.service
+```
+
+Commit the model so deploys keep it (that directory is tracked, and the deploy
+checkout reverts untracked-file collisions). Prefer **"hey Bruce"** to a bare
+"Bruce": openWakeWord needs a few syllables to work with, and one short word in
+a room with pumps running is a recipe for false triggers. Re-tune the threshold
+after swapping — a custom model's scores won't line up with `hey_jarvis`'s.
 
 ## Optional: enable barge-in (interrupting Bruce mid-speech)
 
@@ -143,11 +226,25 @@ hears his own voice. Once the basics work:
 ## Troubleshooting
 
 - **`Missing required environment variable ...` in the journal** — step 3.
-- **`Cannot find module 'speaker'`** — step 1's `npm rebuild speaker` (needs
-  `libasound2-dev` first).
-- **Wake word never triggers** — wrong mic device (step 2), or the mic level is
-  too low (`alsamixer`, F6 to pick the card, raise capture volume). Energy
-  logging can help: set `DEBUG_ENERGY: 'listening'` in `apps/bruce/config.js`.
+- **`Cannot find module 'speaker'`** — step 1's `deploy/ensure-bruce-audio.sh`
+  (needs `libasound2-dev` first).
+- **`no such file or directory ... .onnx`** — the wake-word models are missing
+  from `apps/bruce/wake-words/`, or `BRUCE_WAKE_WORD_MODEL` points at a file
+  that isn't there. All three (`melspectrogram`, `embedding_model`, and the
+  phrase model) must sit in the same directory.
+- **`Microphone stream died — restarting in …` on a loop** — sox can't open the
+  mic. Check `AUDIODRIVER=alsa` reached the process
+  (`systemctl show bruce.service -p Environment`), and reproduce by hand:
+  `AUDIODRIVER=alsa AUDIODEV=plughw:3 sox --default-device -r 16000 -c 1 -b 16 -e signed-integer -t raw - | wc -c`
+- **Wake word never triggers** — wrong mic device (step 2), the mic level is too
+  low (`alsamixer`, F6 to pick the card, raise capture volume), or the threshold
+  is too high (step 6). `BRUCE_WAKE_WORD_DEBUG=1` tells you which: a peak score
+  that never moves off ~0 means no usable audio is reaching the detector.
+- **Bruce wakes up on his own** — raise `BRUCE_WAKE_WORD_THRESHOLD` (step 6).
+  Expect this to need attention if you train a single-word "Bruce" model.
+- **Bruce listens for the full 10 s after every question** — the room's noise
+  floor is above the silence threshold, so the pause never registers. See
+  "Check the noise floor" in step 2.
 - **Bruce hears but answers "the brew system is offline"** — that's normal when
   the rig is powered down; it means everything on the BrewPlanner side works.
 - **Voice detection too eager / too sluggish** — tune the thresholds in

@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 const recorder = require('node-record-lpcm16');
 const Speaker = require('speaker');
 
-const MIC_SAMPLE_RATE = 16000;    // Porcupine wake word requires 16kHz
+const MIC_SAMPLE_RATE = 16000;    // openWakeWord and the Realtime API both want 16kHz
 const PLAYBACK_SAMPLE_RATE = 24000; // OpenAI Realtime API outputs 24kHz
 const CHANNELS = 1;
 const BIT_DEPTH = 16;
@@ -113,7 +113,7 @@ class AudioManager extends EventEmitter {
     this._recording = recorder.record({
       sampleRate: MIC_SAMPLE_RATE,
       channels: CHANNELS,
-      audioType: 'raw',         // Raw PCM — no WAV header, required for Porcupine
+      audioType: 'raw',         // Raw PCM — no WAV header, required by the wake-word detector
       encoding: 'signed-integer',
       endian: 'little',
       bitwidth: BIT_DEPTH,

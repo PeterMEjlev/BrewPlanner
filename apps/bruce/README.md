@@ -11,9 +11,10 @@ BrewPlanner server over loopback, which passes as trusted-local — no tokens.
 ## Layout
 
 - `src/engine/` — the voice engine, vendored from the old standalone Bruce-v2
-  repo: Porcupine wake word, mic capture (sox/ALSA), OpenAI Realtime WebSocket,
-  speaker playback, function-calling registry. Only two lines changed from the
-  original (asset/config paths).
+  repo: wake word, mic capture (sox/ALSA), OpenAI Realtime WebSocket, speaker
+  playback, function-calling registry. Only the paths and `WakeWordDetector`
+  differ from the original — that one was rewritten around openWakeWord when
+  the Picovoice key died.
 - `src/functions/` — what Bruce can *do*, all against the local server's API:
   - `brewSystem.js` — rig control via `/api/brew-system/*` (audited, offline-aware)
   - `kegs.js` — keg inventory via `/api/kegs`
@@ -35,13 +36,14 @@ BrewPlanner server over loopback, which passes as trusted-local — no tokens.
   that the BrewPlanner server proxies as `/api/bruce/*` for the dashboard page
 - `config.js` — voice-detection tunables (silence thresholds, timeouts)
 - `system-prompt.txt` — Bruce's spoken-persona instructions
-- `wake-words/` — Porcupine models (`RPi` for the Pi, `windows` for dev)
+- `wake-words/` — the openWakeWord ONNX models, one of which *is* the wake
+  phrase; see the README in there
 
 ## Running
 
-Needs `OPENAI_API_KEY` and `PICOVOICE_ACCESS_KEY` (on the Pi these live in
-`/etc/brewplanner.env`; locally use an `.env` file in this directory), a
-microphone and speaker, and `sox` on the PATH.
+Needs `OPENAI_API_KEY` (on the Pi it lives in `/etc/brewplanner.env`; locally
+use an `.env` file in this directory), a microphone and speaker, and `sox` on
+the PATH. The wake word is detected locally and needs no key.
 
 ```
 npm run dev --workspace @checklist/bruce   # local dev (Windows works — sox waveaudio)

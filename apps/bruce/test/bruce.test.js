@@ -35,9 +35,10 @@ function ok(name) {
 
 function makeBruce() {
   const bruce = new BruceAssistant({
-    picovoiceKey: 'fake',
     openaiKey: 'fake',
-    wakeWordPath: path.join(__dirname, '..', 'wake-words', 'Bruce_en_windows_v3_0_0.ppn'),
+    // Never loaded: these tests drive the state machine directly and never
+    // call start(), which is what opens the ONNX sessions.
+    wakeWordPath: path.join(__dirname, '..', 'wake-words', 'hey_jarvis_v0.1.onnx'),
   });
   bruce.on('error', () => {}); // tests inspect state, not stderr
   return bruce;

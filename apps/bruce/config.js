@@ -35,6 +35,23 @@ module.exports = {
   TRANSCRIPTION_MODEL: process.env.BRUCE_TRANSCRIPTION_MODEL || '',
 
 
+  // ── Wake word (openWakeWord) ─────────────────────────────────────────────
+
+  // Score (0..1) from the wake-phrase model that counts as a detection.
+  // Lower = triggers more easily but also on near-misses and noise; higher =
+  // you have to say it more clearly. Tune with WAKE_WORD_DEBUG below.
+  WAKE_WORD_THRESHOLD: num('WAKE_WORD_THRESHOLD', 0.5),
+
+  // After a detection, ignore further ones for this long, so a single wake
+  // phrase can't fire twice as the tail of the utterance passes through.
+  WAKE_WORD_REFRACTORY_MS: num('WAKE_WORD_REFRACTORY_MS', 2000),
+
+  // Log the highest wake-word score seen each second. The way to pick a
+  // threshold: watch the journal while the room is noisy, then while you say
+  // the phrase, and put the threshold between the two.
+  WAKE_WORD_DEBUG: bool('WAKE_WORD_DEBUG', false),
+
+
   // ── Voice Activity Detection ─────────────────────────────────────────────
 
   // RMS energy below this level is treated as silence (scale: 0–32768)

@@ -33,7 +33,7 @@ const SPEAK_RETRY_DELAY_MS = 5000;
  * BruceAssistant
  *
  * Standalone voice assistant class. Orchestrates:
- *  - Offline wake word detection (Porcupine)
+ *  - Offline wake word detection (openWakeWord via ONNX Runtime)
  *  - Audio capture (microphone via SoX)
  *  - OpenAI Realtime API (STT + LLM + TTS over WebSocket)
  *  - Audio playback (speaker)
@@ -46,9 +46,9 @@ const SPEAK_RETRY_DELAY_MS = 5000;
 class BruceAssistant extends EventEmitter {
   /**
    * @param {object} config
-   * @param {string} config.picovoiceKey - Picovoice access key
    * @param {string} config.openaiKey - OpenAI API key
-   * @param {string} config.wakeWordPath - Path to .ppn wake word file
+   * @param {string} config.wakeWordPath - Path to the wake-phrase .onnx model
+   * @param {number} [config.wakeWordThreshold] - Detection score 0.0–1.0
    * @param {string} [config.systemPrompt] - System instructions for Bruce
    * @param {string} [config.voice='alloy'] - TTS voice
    * @param {number} [config.sensitivity=0.5] - Wake word sensitivity (0.0–1.0)
@@ -62,9 +62,10 @@ class BruceAssistant extends EventEmitter {
     this._registry = new FunctionRegistry();
 
     this._wakeWord = new WakeWordDetector({
-      accessKey: config.picovoiceKey,
-      wakeWordPath: config.wakeWordPath,
-      sensitivity: config.sensitivity ?? 0.5,
+      modelPath: config.wakeWordPath,
+      threshold: config.wakeWordThreshold ?? cfg.WAKE_WORD_THRESHOLD,
+      refractoryMs: cfg.WAKE_WORD_REFRACTORY_MS,
+      debug: cfg.WAKE_WORD_DEBUG,
     });
 
     this._audio = new AudioManager();
@@ -125,7 +126,9 @@ class BruceAssistant extends EventEmitter {
     );
 
     this._audio.loadNotificationSound(path.join(__dirname, '..', '..', 'assets', 'plop.wav'));
-    this._wakeWord.start();
+    // Loads three ONNX models and primes the feature buffer — must finish
+    // before the mic starts feeding it audio.
+    await this._wakeWord.start();
     this._audio.startMic({ device: this._config.micDevice });
     this._setState('idle');
     this.emit('ready');

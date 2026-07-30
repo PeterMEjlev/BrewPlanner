@@ -13,8 +13,13 @@ User=brewplanner
 SupplementaryGroups=audio
 WorkingDirectory=/home/brewplanner/checklist
 Environment=BREWPLANNER_URL=http://127.0.0.1:3000
-# OPENAI_API_KEY, PICOVOICE_ACCESS_KEY (and optional BRUCE_* overrides) live in
-# this file, which is NOT in git. See deploy/brewplanner.env.example.
+# The mic is captured by `sox --default-device`, which refuses to start with
+# "no default audio device configured" unless a driver is named — BRUCE_MIC_DEVICE
+# only sets AUDIODEV, which sox ignores without this. Not needed on a desktop,
+# where sox picks up PulseAudio; the Pi has no sound server.
+Environment=AUDIODRIVER=alsa
+# OPENAI_API_KEY (and optional BRUCE_* overrides) lives in this file, which is
+# NOT in git. See deploy/brewplanner.env.example.
 # "-" means the unit still starts if the file is absent (it then exits with a
 # clear "missing env" message in the journal).
 EnvironmentFile=-/etc/brewplanner.env

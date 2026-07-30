@@ -121,6 +121,16 @@ fi
 echo "==> npm install"
 npm install
 
+# Bruce's speaker module is an optionalDependency whose native build fails
+# silently on 64-bit Pi OS (see the script for why). Rebuild it if it's missing
+# so a deploy can't quietly leave Bruce mute — and never fail the deploy over
+# it: Bruce is opt-in and the written chat works without any of this.
+echo "==> ensuring Bruce's audio output module"
+if ! bash "$SCRIPT_DIR/ensure-bruce-audio.sh"; then
+  echo "    (warning: speaker module not built — Bruce can hear but not speak;"
+  echo "     see deploy/README-bruce.md)"
+fi
+
 echo "==> npm run build (shared -> web -> server)"
 npm run build
 
