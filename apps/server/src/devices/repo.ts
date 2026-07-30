@@ -12,6 +12,7 @@ import { and, asc, desc, eq, gt, gte, inArray, isNull, like, ne, or, sql } from 
 import { db } from '../db/index.js';
 import { deviceCommands, devices, readings, settings } from '../db/schema.js';
 import { getSetting } from '../repo.js';
+import { notifyCommandQueued } from './notify.js';
 
 /**
  * How many of a device's own reporting cycles it may miss before it's shown
@@ -719,6 +720,12 @@ function pendingSetpointsForAll(): Map<number, number> {
  * Queue a new target setpoint for a device. Only the latest target matters, so
  * any existing pending setpoint command is dropped first ("last write wins") —
  * the device never has to reconcile a backlog of stale targets.
+ *
+ * Queuing also wakes any command poll the device has parked on the hub, so the
+ * agent writes the new target to the hardware within a round-trip instead of on
+ * its next read cycle (see notify.ts). The agent still picks the command up on
+ * that next cycle if it wasn't parked, so the wake-up is an accelerator, never a
+ * requirement.
  */
 export function queueSetpoint(deviceId: number, value: number): void {
   db.delete(deviceCommands)
@@ -733,6 +740,7 @@ export function queueSetpoint(deviceId: number, value: number): void {
   db.insert(deviceCommands)
     .values({ deviceId, command: SET_SETPOINT_COMMAND, value })
     .run();
+  notifyCommandQueued(deviceId);
 }
 
 /** The commands a device still needs to apply, oldest first. */

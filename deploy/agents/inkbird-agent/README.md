@@ -3,14 +3,19 @@
 A standalone service for a **satellite** Raspberry Pi (one on the same LAN as
 the Inkbird controller). It polls the ITC-308-WIFI fridge/heater controller and
 pushes its readings to the BrewPlanner **hub**, where they show up on the
-dashboard and the device's history charts. It also works the other way: each
-cycle it pulls any **setpoint change** the operator made from the dashboard and
-writes the new target to the controller.
+dashboard and the device's history charts. It also works the other way: it picks
+up any **setpoint change** the operator made from the dashboard and writes the
+new target to the controller.
+
+Reads run on a schedule; writes don't wait for it. Between reads the agent parks
+on a request the hub holds open until a command is queued, so tapping Apply on
+the dashboard reaches the controller in well under a second even when readings
+are only logged every five minutes.
 
 ```
                   reads  --POST /api/ingest-->
 [ITC-308-WIFI] <--LAN (tinytuya)--> agent.py                        [hub Pi] --> dashboard
-                  writes <--GET /api/commands-- (setpoint changes) --
+                  writes <--GET /api/commands?wait=N-- (held open) --
 ```
 
 It reports three metrics every cycle:
@@ -122,12 +127,24 @@ journalctl -u inkbird-agent.service -f
 ## Notes
 
 - **Changing the setpoint**: the dashboard's fermenter/brewery temperature pages
-  have a setpoint control. Applying it queues a command on the hub; this agent
-  picks it up on its next cycle (within `INTERVAL` seconds), writes it to the
-  controller (DPS 106, converting to the controller's °C/°F unit), and acks it.
-  The dashboard shows "Setting to N°…" until the controller's own setpoint
-  reading confirms the change. Set `BP_ALLOW_SETPOINT_WRITE=0` to disable writes
-  and keep the agent read-only.
+  have a setpoint control. Applying it queues a command on the hub, which hands
+  it straight to the agent; the agent writes it to the controller (DPS 106,
+  converting to the controller's °C/°F unit), acks it, then re-reads and pushes
+  so the dashboard's "Setting to N°…" clears within a second or so. Set
+  `BP_ALLOW_SETPOINT_WRITE=0` to disable writes and keep the agent read-only.
+- **How the write gets there so fast**: the agent spends the gap between reads
+  parked on `GET /api/commands?wait=N`, which the hub holds open until this
+  device has something queued. `BP_COMMAND_WAIT` (default 25s) is only how long
+  each park lasts before it re-parks — not the write latency, which is one
+  round-trip regardless. It also still checks for commands at the top of every
+  read cycle, so a change queued while the agent wasn't parked (hub restart,
+  network blip) is applied on the next read rather than lost. That check is also
+  the fallback: against a hub too old to understand `wait`, the agent notices the
+  immediate empty answer, logs it once, and reverts to per-cycle writes.
+- **Confirmation samples are off-grid**: reads land on round wall-clock times, but
+  the re-read after a write happens whenever you pressed Apply. That extra sample
+  is deliberate — it's what makes the new target show up immediately instead of
+  at the next slot.
 - **Reliability**: the ITC-308-WIFI is known to drop frequent pollers with an
   "Err 914" if a socket is held open. The agent opens a fresh, non-persistent
   connection each cycle, caps `tinytuya`'s connection retries so one unreachable

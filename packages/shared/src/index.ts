@@ -2183,6 +2183,31 @@ export const ackCommandsSchema = z.object({
 });
 export type AckCommandsInput = z.infer<typeof ackCommandsSchema>;
 
+/**
+ * Bounds for how long (seconds) the hub may hold a `GET /api/commands` request
+ * open when the device has nothing queued. The cap stays under the 60s idle
+ * timeout common to proxies and keep-alive handling, so a parked poll is never
+ * killed mid-flight by something in between.
+ */
+export const COMMAND_POLL_WAIT_SEC = { min: 0, max: 50 } as const;
+
+/**
+ * Query for `GET /api/commands`. `wait` turns the poll into a long-poll: the hub
+ * answers the moment a command is queued for this device rather than making the
+ * agent wait for its next read cycle (up to a full logging interval — five
+ * minutes on the brewery controllers). Omitting it means "answer now", which is
+ * both the old behaviour and what an agent that predates this sends.
+ */
+export const commandPollQuerySchema = z.object({
+  wait: z.coerce
+    .number()
+    .int()
+    .min(COMMAND_POLL_WAIT_SEC.min)
+    .max(COMMAND_POLL_WAIT_SEC.max)
+    .default(0),
+});
+export type CommandPollQuery = z.infer<typeof commandPollQuerySchema>;
+
 // --- Device data sources (mock vs. real) ------------------------------------
 
 /**

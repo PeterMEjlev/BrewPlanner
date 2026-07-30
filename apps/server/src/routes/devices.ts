@@ -1,5 +1,6 @@
 import {
   ackCommandsSchema,
+  commandPollQuerySchema,
   historyQuerySchema,
   idParamSchema,
   ingestSchema,
@@ -13,10 +14,18 @@ import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
 import { requireDevice } from '../devices/auth.js';
 import * as deviceFallback from '../devices/fallback.js';
+import { waitForCommand } from '../devices/notify.js';
 import * as devices from '../devices/repo.js';
 
-/** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
-function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T | null {
+/**
+ * Parse with a Zod schema, replying 400 on failure. Returns null when invalid.
+ *
+ * Typed on the schema's *output*, with its input left `unknown`: the query
+ * schemas here coerce and apply defaults (`limit`, `wait`), so their input and
+ * output types differ, and pinning both to one parameter would hand back a
+ * result whose defaulted fields still looked optional.
+ */
+function parse<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, data: unknown, reply: FastifyReply): T | null {
   const result = schema.safeParse(data);
   if (!result.success) {
     reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });
@@ -148,7 +157,29 @@ export async function commandRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', requireDevice);
 
   // GET /api/commands — this device's outstanding commands (oldest first).
-  app.get('/', async (req) => devices.pendingCommands(req.device!.id));
+  //
+  // With `?wait=<seconds>` the hub holds the request open when nothing is queued
+  // and answers the moment something is (see devices/notify.ts). That is what
+  // gets a setpoint change to the hardware in about a round-trip instead of on
+  // the agent's next read cycle, which at a 5-minute logging cadence could be
+  // five minutes away. Without the parameter this stays the plain immediate read
+  // an agent that predates long-polling expects.
+  app.get('/', async (req, reply) => {
+    const query = parse(commandPollQuerySchema, req.query, reply);
+    if (!query) return;
+    const deviceId = req.device!.id;
+
+    const pending = devices.pendingCommands(deviceId);
+    if (pending.length > 0 || query.wait === 0) return pending;
+
+    // Nothing to hand over yet, so park. Registration is synchronous from here,
+    // with no await in between, so a command queued during this handler can't
+    // slip through the gap between the read above and the wait below.
+    const hangup = new AbortController();
+    req.raw.on('close', () => hangup.abort());
+    const woken = await waitForCommand(deviceId, query.wait * 1000, hangup.signal);
+    return woken ? devices.pendingCommands(deviceId) : [];
+  });
 
   // POST /api/commands/ack — clear commands this device has applied.
   app.post('/ack', async (req, reply) => {

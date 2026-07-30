@@ -6,10 +6,19 @@ Polls the fermentation fridge/heater controller on the LAN and pushes its
 readings to the BrewPlanner hub's ingestion API (POST /api/ingest), where they
 show up on the dashboard and the device's history charts.
 
-It is also the controller's *write* path: each cycle it pulls any setpoint
-changes the operator queued from the dashboard (GET /api/commands), writes the
-new target to the controller, then acks them (POST /api/commands/ack). Disable
-this with BP_ALLOW_SETPOINT_WRITE=0 to keep the agent strictly read-only.
+It is also the controller's *write* path: it pulls any setpoint changes the
+operator queued from the dashboard (GET /api/commands), writes the new target to
+the controller, then acks them (POST /api/commands/ack). Disable this with
+BP_ALLOW_SETPOINT_WRITE=0 to keep the agent strictly read-only.
+
+Writes are decoupled from the read cadence. Reads stay on their wall-clock
+schedule, but the gap between them isn't spent idle: the agent parks on
+`GET /api/commands?wait=N`, which the hub holds open until a command is queued
+for this device. Tapping Apply on the dashboard therefore reaches the hardware in
+about a round-trip rather than waiting out the logging interval — five minutes on
+the brewery controllers. The per-cycle command check is kept as a safety net, so
+an older hub (or one that was restarting when the change was queued) still gets
+the change applied on the next read.
 
 The ITC-308-WIFI is a Tuya device under the hood, so we read it locally with
 `tinytuya` (no cloud round-trip). It exposes:
@@ -44,6 +53,10 @@ Configuration (all via environment, see inkbird-agent.service):
                      If "1" (the default), pull queued setpoint changes from the
                      hub and write them to the controller. Set "0" to stay
                      read-only (the dashboard control then has no effect).
+  BP_COMMAND_WAIT    Seconds the hub may hold a command poll open (default: 25,
+                     0 disables long-polling). This is not the write latency —
+                     a parked poll answers as soon as a command is queued — only
+                     how often an idle agent re-parks.
 
 Reliability note: the ITC-308-WIFI is known to drop frequent pollers with an
 "Err 914" after a while if a socket is held open. We therefore open a fresh,
@@ -71,6 +84,23 @@ DEVICE_KEY = os.environ.get("DEVICE_KEY", "")
 INTERVAL = float(os.environ.get("INTERVAL", "30"))
 SIMULATE = os.environ.get("BP_SIMULATE", "1") == "1"
 ALLOW_SETPOINT_WRITE = os.environ.get("BP_ALLOW_SETPOINT_WRITE", "1") == "1"
+
+# Seconds the hub may hold a command poll open. This does NOT bound how long a
+# setpoint takes to land — the hub answers a parked poll the instant a command is
+# queued — it only sets how often an idle agent re-parks. Kept under the 60s idle
+# timeout common to proxies and keep-alive handling, and within the hub's own cap
+# (COMMAND_POLL_WAIT_SEC). 0 disables long-polling: commands are then only picked
+# up on the read cycle, as before.
+COMMAND_WAIT = float(os.environ.get("BP_COMMAND_WAIT", "25"))
+# Ordinary HTTP call budget, and the margin allowed on top of a long-poll's hold.
+HTTP_TIMEOUT = 10.0
+# Pause before re-parking after a failed poll, so an unreachable hub is retried
+# steadily rather than in a tight loop.
+HUB_RETRY_SEC = 10.0
+# Never write to the controller more often than this. Event-driven writes can
+# arrive back to back (a few quick taps of Apply) and the ITC-308-WIFI does not
+# like being hammered — see the reliability note in the module docstring.
+MIN_WRITE_GAP_SEC = 3.0
 
 INKBIRD_DEVICE_ID = os.environ.get("INKBIRD_DEVICE_ID", "")
 INKBIRD_IP = os.environ.get("INKBIRD_IP", "")
@@ -109,6 +139,23 @@ DP_TEMP_F = "116"        # current temperature, x10 (used when unit is F)
 MAX_BUFFER = 2880
 
 _running = True
+# True while blocked in a long-poll, so shutdown knows it has to interrupt one.
+_in_long_poll = False
+# When the controller was last written to, for the MIN_WRITE_GAP_SEC floor.
+_last_write_at = 0.0
+# Cleared if the hub turns out not to support long-polling (an older hub answers
+# `?wait=N` immediately), after which the agent falls back to plain sleeping.
+_long_poll = COMMAND_WAIT > 0
+
+
+class _Shutdown(BaseException):
+    """
+    Raised out of a parked long-poll when a signal arrives.
+
+    Deliberately a BaseException: it unwinds through the `except Exception`
+    handlers that keep a flaky controller or network from killing the agent,
+    which must not swallow a shutdown. Only main() catches it.
+    """
 
 
 def utc_now_iso() -> str:
@@ -384,13 +431,20 @@ def apply_setpoint(target_c: float) -> None:
     so the change shows up on the hub. Raises on failure so the caller can leave
     the command un-acked for a retry next cycle.
     """
-    global _sim_setpoint
+    global _sim_setpoint, _last_write_at
     target_c = max(SETPOINT_MIN_C, min(SETPOINT_MAX_C, target_c))
 
     if SIMULATE:
         _sim_setpoint = round(target_c, 1)
         log(f"[sim] applied setpoint -> {_sim_setpoint} C")
         return
+
+    # Writes are event-driven, so two can land seconds apart if the operator taps
+    # Apply a few times. Space them out before touching the controller.
+    gap = MIN_WRITE_GAP_SEC - (time.time() - _last_write_at)
+    if gap > 0:
+        time.sleep(gap)
+    _last_write_at = time.time()
 
     dev = connect()
     status = dev.status()
@@ -405,25 +459,44 @@ def apply_setpoint(target_c: float) -> None:
     log(f"applied setpoint -> {target_c} C (DPS {DP_SETPOINT}={raw})")
 
 
-def fetch_commands() -> list[dict]:
-    """Pull this device's pending commands from the hub. Returns [] on any error."""
+def fetch_commands(wait_sec: float = 0.0) -> list[dict] | None:
+    """
+    Pull this device's pending commands from the hub.
+
+    With `wait_sec` above zero the hub is asked to hold the request open until a
+    command is queued for this device, answering early the moment one is — that
+    long-poll is what makes a dashboard setpoint change reach the controller
+    straight away instead of on the next read cycle.
+
+    Returns the (possibly empty) command list, or None when the hub couldn't be
+    reached: the caller has to tell "nothing queued" from "no hub" so it can back
+    off instead of reconnecting in a tight loop.
+    """
+    global _in_long_poll
+
+    url = f"{HUB_URL}/api/commands"
+    if wait_sec > 0:
+        url += f"?wait={int(wait_sec)}"
     req = urllib.request.Request(
-        f"{HUB_URL}/api/commands",
+        url,
         method="GET",
         headers={"Authorization": f"Bearer {DEVICE_KEY}"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        _in_long_poll = wait_sec > 0
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT + wait_sec) as resp:
             if not 200 <= resp.status < 300:
-                return []
+                return None
             data = json.loads(resp.read().decode("utf-8"))
             return data if isinstance(data, list) else []
     except urllib.error.HTTPError as e:
         log(f"command fetch rejected: HTTP {e.code} {e.reason}")
-        return []
+        return None
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
         log(f"command fetch failed (will retry): {e}")
-        return []
+        return None
+    finally:
+        _in_long_poll = False
 
 
 def ack_commands(ids: list[int]) -> None:
@@ -448,20 +521,20 @@ def ack_commands(ids: list[int]) -> None:
         log(f"command ack failed (will retry): {e}")
 
 
-def process_commands() -> int:
+def apply_commands(commands: list[dict]) -> int:
     """
-    Pull, apply, and ack any commands queued for this device. A command that
-    fails to apply is left un-acked so the hub re-offers it next cycle; an
-    unrecognised command is acked (drained) so it can't wedge the queue.
+    Apply a batch of commands and ack them. A command that fails to apply is left
+    un-acked so the hub re-offers it next time; an unrecognised command is acked
+    (drained) so it can't wedge the queue.
 
     Returns the number of setpoint changes actually applied, so the caller can
     re-read the controller immediately and push the confirmed value — otherwise
-    the dashboard's target keeps showing the old reading (taken at the top of
-    this cycle) until the next read, ~one interval later.
+    the dashboard's target keeps showing the reading taken before the write until
+    the next one, up to a whole interval later.
     """
     applied: list[int] = []
     applied_setpoints = 0
-    for cmd in fetch_commands():
+    for cmd in commands:
         cmd_id = cmd.get("id")
         if not isinstance(cmd_id, int):
             continue
@@ -471,13 +544,23 @@ def process_commands() -> int:
                 apply_setpoint(float(cmd["value"]))
                 applied.append(cmd_id)
                 applied_setpoints += 1
-            except Exception as e:  # leave un-acked → retried next cycle
+            except Exception as e:  # leave un-acked → retried next time
                 log(f"failed to apply command {cmd_id} ({kind}): {e}")
         else:
             log(f"draining unknown command {kind!r} (id {cmd_id})")
             applied.append(cmd_id)
     ack_commands(applied)
     return applied_setpoints
+
+
+def process_commands() -> int:
+    """
+    Apply whatever is queued for this device right now, without waiting. Used at
+    the top of each read cycle as the safety net behind the long-poll: it catches
+    anything queued while the agent wasn't parked (hub restart, network blip, an
+    older hub with no long-poll support).
+    """
+    return apply_commands(fetch_commands() or [])
 
 
 def collect_reading(buffer: deque[dict]) -> None:
@@ -548,10 +631,76 @@ def sleep_until(deadline: float) -> None:
         time.sleep(min(1.0, remaining))
 
 
+def wait_for_slot(deadline: float, buffer: deque[dict], interval: float) -> float:
+    """
+    Wait out the gap to the next read slot, applying setpoint changes the moment
+    the hub reports one instead of sitting idle until the next read.
+
+    The hub holds `GET /api/commands?wait=N` open until this device has something
+    queued, so the agent spends the gap parked on a connection that answers within
+    a round-trip of the operator tapping Apply. Reads stay on their wall-clock
+    grid either way — only the write path is decoupled from it.
+
+    An applied write is followed by a re-read and push so the dashboard confirms
+    the new target straight away. That sample lands off-grid, which is the
+    intended trade: the alternative is "Setting to N°C…" sitting on screen for
+    the rest of the interval.
+
+    Degrades to plain sleeping whenever long-polling isn't available — disabled by
+    config, writes turned off, or a hub too old to understand `wait`. Returns the
+    logging interval to use next, which a mid-wait push may have changed.
+    """
+    global _long_poll
+
+    while _running:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            break
+
+        # Nothing to park for, or too little of the gap left to be worth it.
+        if not (_long_poll and ALLOW_SETPOINT_WRITE) or remaining < 1.0:
+            time.sleep(min(1.0, remaining))
+            continue
+
+        wait = min(COMMAND_WAIT, remaining)
+        started = time.time()
+        commands = fetch_commands(wait)
+
+        if commands is None:  # hub unreachable — back off rather than spin on it
+            sleep_until(min(deadline, time.time() + HUB_RETRY_SEC))
+            continue
+
+        if not commands:
+            # A hub that predates long-polling ignores `wait` and answers at once;
+            # parking against one would busy-loop it. Notice the too-fast empty
+            # answer and drop back to sleeping for the rest of this process's life
+            # (a restart re-probes, so an upgraded hub is picked up on deploy).
+            if time.time() - started < wait / 2:
+                log("hub does not support command long-poll — falling back to per-cycle checks")
+                _long_poll = False
+            continue
+
+        if apply_commands(commands) > 0:
+            time.sleep(1.0)  # let the controller settle after the write
+            collect_reading(buffer)
+            flushed = flush_buffer(buffer, interval)
+            # A cadence change from the dashboard moves the grid under us.
+            if flushed != interval:
+                interval = flushed
+                deadline = next_slot(interval)
+
+    return interval
+
+
 def _stop(_signum, _frame) -> None:
     global _running
     _running = False
     log("shutting down")
+    # A parked long-poll is blocked in a socket read, and Python retries a
+    # signal-interrupted syscall (PEP 475) — so without this the agent would sit
+    # there until the hold expired, holding up every deploy's restart.
+    if _in_long_poll:
+        raise _Shutdown
 
 
 def main() -> int:
@@ -564,8 +713,8 @@ def main() -> int:
 
     log(
         f"starting: hub={HUB_URL} interval={INTERVAL}s simulate={SIMULATE} "
-        f"writes={ALLOW_SETPOINT_WRITE} target={INKBIRD_IP or '(unset)'} "
-        f"name={VENDOR_NAME or '(unknown)'}"
+        f"writes={ALLOW_SETPOINT_WRITE} command_wait={COMMAND_WAIT:g}s "
+        f"target={INKBIRD_IP or '(unset)'} name={VENDOR_NAME or '(unknown)'}"
     )
 
     buffer: deque[dict] = deque(maxlen=MAX_BUFFER)
@@ -573,26 +722,33 @@ def main() -> int:
     # from the env default until the first successful push tells us otherwise.
     interval = INTERVAL
 
-    while _running:
-        collect_reading(buffer)
-        interval = flush_buffer(buffer, interval)
+    try:
+        while _running:
+            collect_reading(buffer)
+            interval = flush_buffer(buffer, interval)
 
-        # Apply any setpoint changes the operator queued from the dashboard. When
-        # one is applied, re-read and push straight away so the controller's new
-        # setpoint reaches the hub this cycle — otherwise the dashboard target
-        # keeps showing the pre-change reading until the next read (~one interval
-        # later). A flaky controller/network here must never kill the agent.
-        if ALLOW_SETPOINT_WRITE:
-            try:
-                if process_commands() > 0:
-                    time.sleep(1.0)  # let the controller settle after the write
-                    collect_reading(buffer)
-                    interval = flush_buffer(buffer, interval)
-            except Exception as e:
-                log(f"command processing failed (will retry): {e}")
+            # Catch anything queued while the agent wasn't parked on the hub —
+            # a hub restart, a network blip, a hub with no long-poll support. On
+            # a healthy pair this normally finds nothing, because the change was
+            # already applied the moment it was queued (see wait_for_slot). When
+            # one is applied, re-read and push straight away so the controller's
+            # new setpoint reaches the hub now rather than an interval later. A
+            # flaky controller/network here must never kill the agent.
+            if ALLOW_SETPOINT_WRITE:
+                try:
+                    if process_commands() > 0:
+                        time.sleep(1.0)  # let the controller settle after the write
+                        collect_reading(buffer)
+                        interval = flush_buffer(buffer, interval)
+                except Exception as e:
+                    log(f"command processing failed (will retry): {e}")
 
-        # Sleep to the next round wall-clock slot, waking early on shutdown.
-        sleep_until(next_slot(interval))
+            # Wait out the gap to the next round wall-clock slot, applying any
+            # setpoint change the moment the hub reports one, and waking early on
+            # shutdown.
+            interval = wait_for_slot(next_slot(interval), buffer, interval)
+    except _Shutdown:
+        pass  # signalled out of a parked long-poll; _stop already logged it
 
     return 0
 
