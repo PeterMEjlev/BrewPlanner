@@ -112,6 +112,16 @@ html.kiosk *::after {
   cursor: none !important;
 }
 
+/* Turn the whole page upside down when Chromium is launched with ?rotate=180
+   (main.tsx tags <html class="rotate-180">) — the brewery Pi is physically
+   mounted the other way up. Touch still lands where you see it: the browser
+   hit-tests through the transform, so no input remapping is needed. Rotating
+   <body> (which already fills the viewport exactly) also makes it the
+   containing block for position:fixed overlays, so modals come along too. */
+html.rotate-180 body {
+  transform: rotate(180deg);
+}
+
 /* Fallback for genuine touch-only browsers (e.g. a phone visiting /display):
    hide the pointer when the input device reports no hover and a coarse pointer. */
 @media (hover: none) and (pointer: coarse) {

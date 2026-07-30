@@ -1,4 +1,4 @@
-- the kiosk page need to be turned upside down 
+Brew System page: When the REG is turned on for one of the pots, the cards expand vertically to the point where the user needs to scroll down to see the bottom of the page. The available screen real estate is plenty, so can you make it so the entire GUI for the brew system is shrunk a bit, so this doesnt happen. 
 
 - ## Add support for
   - Electricity (Watt) usage

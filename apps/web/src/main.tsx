@@ -36,8 +36,19 @@ import './index.css';
 // the first in-app navigation, and on the Pi the pointer media query is
 // unreliable (cage/wlroots reports a fine pointer), so a one-time class is the
 // dependable signal that "we are the kiosk".
-if (new URLSearchParams(window.location.search).has('kiosk')) {
+const launchParams = new URLSearchParams(window.location.search);
+if (launchParams.has('kiosk')) {
   document.documentElement.classList.add('kiosk');
+}
+// The brewery Pi is mounted upside down, so its Chromium launches with
+// ?rotate=180 and the whole page spins to match (see index.css). Same latching
+// trick as above, and kept a separate flag from ?kiosk so it stays a statement
+// about how *this* unit is bolted up rather than about kiosks in general —
+// re-mount the Pi the right way round and you drop the flag from the unit file,
+// no rebuild. Rotating here rather than in the compositor is forced: cage 0.2.0
+// dropped its -r flag and exposes no output-management protocol.
+if (launchParams.get('rotate') === '180') {
+  document.documentElement.classList.add('rotate-180');
 }
 
 // The chart pages pull in recharts (~400 kB). Load them on demand so the

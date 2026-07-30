@@ -42,6 +42,10 @@ ExecStartPre=/bin/sh -c 'until curl -sf http://localhost:3000/api/active >/dev/n
 # straight to the checklist instead. The ?kiosk=1 flag tells the web app it is
 # the physical kiosk so it hides the mouse pointer (see apps/web/src/main.tsx);
 # keep it on whichever route you boot to.
+# rotate=180 flips the UI because the Pi is bolted up upside down. It has to
+# happen in the page: cage 0.2.0 dropped the -r rotate flag it had in 0.1.x and
+# offers no output-management protocol, so the compositor can't turn the output.
+# Remount the Pi the right way up and this flag is the only thing to remove.
 ExecStart=/usr/bin/cage -- /usr/bin/chromium \
   --kiosk \
   --noerrdialogs \
@@ -50,7 +54,7 @@ ExecStart=/usr/bin/cage -- /usr/bin/chromium \
   --disable-features=TranslateUI \
   --check-for-update-interval=31536000 \
   --overscroll-history-navigation=0 \
-  --app=http://localhost:3000/kiosk?kiosk=1
+  --app=http://localhost:3000/kiosk?kiosk=1&rotate=180
 Restart=on-failure
 RestartSec=3
 
