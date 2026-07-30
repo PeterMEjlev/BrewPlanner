@@ -17,8 +17,19 @@ BrewPlanner server over loopback, which passes as trusted-local — no tokens.
 - `src/functions/` — what Bruce can *do*, all against the local server's API:
   - `brewSystem.js` — rig control via `/api/brew-system/*` (audited, offline-aware)
   - `kegs.js` — keg inventory via `/api/kegs`
-  - `stats.js` — fermenter status, sensor readings, alerts
+  - `stats.js` — fermenter status, sensor *readings*, setpoints, alerts
+  - `devices.js` — the sensor fleet's *health*: online/offline, last seen,
+    logging interval, network details, and the Inkbird controllers at a glance
+  - `recipes.js` — the recipe library (read-only) and which beer is in the
+    fermenter, including its clean/dirty state
+  - `todos.js` — the brewery to-do list via `/api/todos`
+  - `settings.js` — alert preferences, new-recipe defaults, chart and keg
+    colours, and the mock/real switch per sensor
   - `tools.js` — reminders + brewing calculators (no network)
+
+  The text chat has its own equivalents in `apps/server/src/bruce/tools.ts`,
+  which read the database directly because that one runs inside the server.
+  Both front doors cover the same ground; neither can write a brew sheet.
 - `src/main.js` — entry point: wires functions, env, and journald-friendly logs
 - `src/statusServer.js` — loopback HTTP API (state, transcript, speak, volume)
   that the BrewPlanner server proxies as `/api/bruce/*` for the dashboard page

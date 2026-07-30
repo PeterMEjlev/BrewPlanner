@@ -33,7 +33,9 @@ import { openaiKey, OpenAIError, openaiGet, openaiPost, openaiStream } from '../
 import { getSetting, setSetting } from '../repo.js';
 import type { TokenUsage } from './cost.js';
 import { estimateCostUsd } from './cost.js';
-import { RECIPE_TOOL, recipeShelf, runRecipeTool } from './recipes.js';
+import { recipeShelf } from './recipes.js';
+import type { BruceActor } from './tools.js';
+import { bruceToolDefinitions, bruceToolPhase, runBruceTool } from './tools.js';
 
 /**
  * Chat model, in order of precedence: whatever was picked on the Bruce page,
@@ -389,6 +391,52 @@ its headline numbers only.
 - These are the brewer's own recipes, not a source. Cite the library for the
   principle, and the recipe for what it currently does.`;
 
+/**
+ * Appended always, because unlike the two blocks above these tools are always
+ * attached: they read this server's own database, so there is no key to be
+ * missing and no upstream to be down.
+ *
+ * Its real job is the last two paragraphs. The read tools look after
+ * themselves — a model that can see the fermenter will look at it — but a model
+ * that can also *change* things will helpfully tidy up, and "delete the CO2
+ * to-do" is not recoverable from a chat window. So: act on what was asked, name
+ * what changed, and never guess between two candidates.
+ */
+const BREWERY_PROMPT = `--- This brewery, right now
+
+You can see and change BrewPlanner itself — this brewery's hub — through the
+tools attached to you:
+
+- \`get_brewery_status\` — what is in the fermenter and how it is fermenting, the
+  Inkbird controllers' temperatures and targets, which devices are online, the
+  latest reading from every sensor, and active alerts.
+- \`get_kegs\` — the keg board: what is in each keg, its ABV and when it was filled.
+- \`get_todos\` / \`manage_todo\` — the brewery to-do list.
+- \`get_settings\` and the \`update_\` / \`set_\` tools — alert preferences, what a
+  blank recipe starts from, the chart and keg colours, and which sensors show
+  mock demo data.
+- \`set_fermenter\` — which recipe is in the fermenter, and whether the empty one
+  has been washed.
+- \`configure_device\` — a device's logging interval, and an Inkbird's target
+  temperature.
+
+Look before you answer. A question about *this* brewery — "how's the
+fermentation going?", "what's on tap?", "is anything offline?" — is answered by
+calling the tool, not from the recipe list or the books. You cannot see any of
+it otherwise, and a plausible guess about a real fermenter is worse than saying
+you'll look.
+
+Changing things is different from reading them:
+
+- Only change what the brewer actually asked you to change. Noticing that
+  something else could be tidied up is a thing to mention, not to do.
+- Every tool that changes something says what it changed, by name. Repeat that
+  back — "ticked off *Order more CO2*" — so a wrong match is visible.
+- When a tool reports that several items matched and it changed nothing, do not
+  pick one. Ask which was meant.
+- Recipes are read-only to you. You can say which one is in the fermenter, but
+  writing or deleting a brew sheet is done in the recipe editor.`;
+
 /** The shelf listing, or a note that there is nothing on it. */
 function libraryBlock(): string {
   const library = libraryOutline();
@@ -419,6 +467,7 @@ export function chatPrompt(recipes: string | null): string {
   const blocks = [personaPrompt()];
   if (webSearchEnabled()) blocks.push(WEB_SEARCH_PROMPT);
   if (recipes) blocks.push(`${RECIPES_PROMPT}\n\n${recipes}`);
+  blocks.push(BREWERY_PROMPT);
   blocks.push(libraryBlock());
   return blocks.join('\n\n');
 }
@@ -568,14 +617,19 @@ function onlyChanges(report: PhaseReporter): PhaseReporter {
 
 /**
  * How many times the model may call a tool and be asked again before the answer
- * is forced. Each round is another billed request; two recipes is a fair
- * question ("compare my two IPAs"), five is a loop.
+ * is forced. Each round is another billed request.
+ *
+ * Raised from four when the brewery tools arrived. Several calls in one round
+ * are free of extra rounds — the model can ask for the fermenter, the kegs and
+ * the to-do list at once — so this only bounds genuinely *sequential* work:
+ * look at the fermenter, then read the recipe it named, then act. Three or four
+ * such steps is a real question; seven is a loop.
  */
-const MAX_TOOL_ROUNDS = 4;
+const MAX_TOOL_ROUNDS = 6;
 
 /** Bruce's own tools. `web_search` is OpenAI's and is added separately. */
 function functionTools(): unknown[] {
-  return [RECIPE_TOOL];
+  return bruceToolDefinitions();
 }
 
 /**
@@ -756,12 +810,16 @@ function markCited(sources: BruceChatSource[], answer: string): BruceChatSource[
  *
  * @param question What the brewer typed
  * @param history Prior turns, oldest first (the new question is not included)
- * @param onPhase Called as each step begins, for the page's progress line
+ * @param report Called as each step begins, for the page's progress line
+ * @param actor Who asked, recorded against anything the tools change on their
+ *   behalf. Defaults to the trusted-local kiosk, which is what a request with no
+ *   session is (see the chat route's requireAdmin guard).
  */
 export async function answerQuestion(
   question: string,
   history: BruceChatMessage[],
   report: PhaseReporter = () => {},
+  actor: BruceActor = { userId: null, username: 'Local kiosk' },
 ): Promise<ChatAnswer> {
   const onPhase = onlyChanges(report);
   onPhase({ phase: 'library' });
@@ -875,7 +933,7 @@ export async function answerQuestion(
       input.push({
         type: 'function_call_output',
         call_id: call.call_id,
-        output: await runTool(call, onPhase),
+        output: await runTool(call, onPhase, actor),
       });
     }
 
@@ -914,24 +972,23 @@ export async function answerQuestion(
 /**
  * Run one tool call and return what the model should read back.
  *
- * Errors become text rather than exceptions — see runRecipeTool. An unknown
- * tool name is treated the same way: the model invented it, and being told so
- * is more useful than a 500 on the brewer's screen.
+ * Errors become text rather than exceptions — see runBruceTool. An unknown tool
+ * name is treated the same way: the model invented it, and being told so is more
+ * useful than a 500 on the brewer's screen. Unreadable arguments are the same
+ * class of problem, and get the same treatment.
  */
-async function runTool(call: OutputItem, onPhase: PhaseReporter): Promise<string> {
-  if (call.name !== RECIPE_TOOL.name) {
-    return `There is no tool called ${call.name ?? 'that'}.`;
-  }
+async function runTool(call: OutputItem, onPhase: PhaseReporter, actor: BruceActor): Promise<string> {
+  const name = call.name ?? '';
 
-  let wanted = '';
+  let args: Record<string, unknown>;
   try {
-    wanted = (JSON.parse(call.arguments ?? '{}') as { name?: string }).name?.trim() ?? '';
+    const parsed: unknown = JSON.parse(call.arguments ?? '{}');
+    args = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
   } catch {
-    return 'The recipe name could not be read. Call get_recipe again with a plain name.';
+    return `The arguments to ${name || 'that tool'} could not be read. Call it again with plain values.`;
   }
-  if (!wanted) return 'No recipe name was given. Call get_recipe again with one.';
 
-  onPhase({ phase: 'recipes', detail: wanted });
-  const { text } = await runRecipeTool(wanted);
-  return text;
+  const phase = bruceToolPhase(name, args);
+  if (phase) onPhase(phase);
+  return runBruceTool(name, args, actor);
 }

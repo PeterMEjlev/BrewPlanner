@@ -24,6 +24,7 @@ import {
   BookIcon,
   ChatIcon,
   ChevronRightIcon,
+  GaugeIcon,
   GlobeIcon,
   KegIcon,
   MicIcon,
@@ -67,6 +68,9 @@ const PHASE_LOOK: Record<
   // per search, and the answer stops being purely the brewery's own books.
   web: { label: 'Searching the web', Icon: GlobeIcon, tint: 'text-sky-400' },
   recipes: { label: 'Reading your recipe', Icon: KegIcon, tint: 'text-amber-400' },
+  // He has put the books down and gone to look at the brewery itself — the
+  // `detail` says which part (sensors, kegs, the to-do list, settings).
+  brewery: { label: 'Checking the brewery', Icon: GaugeIcon, tint: 'text-emerald-400' },
   writing: { label: 'Writing the answer', Icon: ChatIcon, tint: 'text-zinc-400' },
 };
 

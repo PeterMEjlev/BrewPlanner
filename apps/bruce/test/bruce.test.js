@@ -472,6 +472,234 @@ function makeStub(spoken = []) {
     ok('calculators produce the expected numbers');
   }
 
+  // ── Functions: recipes and the fermenter selection ───────────────────────
+
+  {
+    const recipes = require('../src/functions/recipes.js');
+    const stub = makeStub();
+    const library = [
+      { id: 'r1', name: 'Hazy Boi NEIPA v3', style: 'NEIPA', abv: '6.2', ibu: '45', ebc: '12', url: 'u' },
+      { id: 'r2', name: 'Dark Matter Stout', style: 'Stout', abv: '7.1', ibu: '38', ebc: '80', url: '' },
+    ];
+    const sheet = {
+      id: 'r1', name: 'Hazy Boi NEIPA v3', style: 'NEIPA', og: '1.060', fg: '1.012',
+      abv: '6.2', ibu: '45', ebc: '12', batchSizeL: 55, mashTemp: '67°C', fermentationTemp: '19°C',
+      fermentables: [{ amount: '10', unit: 'kg', name: 'Pilsner Malt', percent: '80' }],
+      hops: [{ amount: '150', unit: 'g', name: 'Citra', use: 'Dry Hop', time: '3', timeUnit: 'days' }],
+      yeast: [{ amount: '1', amountUnit: 'pack', name: 'Voss Kveik', lab: 'Lallemand', attenuation: '78' }],
+      otherIngredients: [], mashGuidelines: null, waterProfile: null,
+    };
+    let active = { recipe: null };
+    const puts = [];
+    const apiCall = async (method, endpoint, body) => {
+      if (method === 'GET' && endpoint === '/api/recipes') return library;
+      if (method === 'GET' && endpoint.startsWith('/api/recipes/')) return sheet;
+      if (method === 'GET' && endpoint === '/api/recipe') return active;
+      if (method === 'GET' && endpoint === '/api/fermenter') return { state: 'dirty' };
+      puts.push({ method, endpoint, body });
+      if (endpoint === '/api/recipe' && method === 'PUT') active = { recipe: library[0] };
+      if (endpoint === '/api/recipe' && method === 'DELETE') active = { recipe: null };
+      return {};
+    };
+    recipes.register(stub, apiCall);
+
+    // Shorthand finds the real recipe — nobody says "Hazy Boi NEIPA v3" out loud:
+    assert.strictEqual(recipes.matchRecipe(library, 'the NEIPA').id, 'r1');
+    assert.strictEqual(recipes.matchRecipe(library, 'lambic'), null);
+
+    const empty = await stub.handlers.get('get_active_recipe')({});
+    assert.match(empty, /Nothing is in the fermenter\./);
+    assert.match(empty, /still needs cleaning/);
+
+    const set = await stub.handlers.get('set_active_recipe')({ name: 'neipa' });
+    assert.match(set, /Hazy Boi NEIPA v3 is now the beer in the fermenter/);
+    assert.strictEqual(puts[0].body.id, 'r1');
+    assert.strictEqual(puts[0].body.abv, '6.2');
+
+    const missing = await stub.handlers.get('set_active_recipe')({ name: 'gueuze' });
+    assert.match(missing, /No recipe matches "gueuze", so I have not changed anything/);
+    assert.strictEqual(puts.length, 1, 'a miss never writes');
+
+    // A summary names the beer and the shape of the sheet, not every line:
+    const summary = await stub.handlers.get('get_recipe_details')({ name: 'hazy' });
+    assert.match(summary, /55 litre batch/);
+    assert.match(summary, /Hopped with Citra\./);
+    assert.ok(!summary.includes('150 g Citra'), 'summary keeps the hop schedule back');
+
+    const hops = await stub.handlers.get('get_recipe_details')({ name: 'hazy', section: 'hops' });
+    assert.match(hops, /150 g Citra — Dry Hop at 3 days/);
+
+    // Emptying the fermenter is not the same as washing it:
+    const cleared = await stub.handlers.get('clear_active_recipe')({});
+    assert.match(cleared, /no longer in it/);
+    assert.strictEqual(puts[1].method, 'DELETE');
+    ok('recipes match loosely, read by section, and drive the fermenter selection');
+  }
+
+  // ── Functions: the to-do list ────────────────────────────────────────────
+
+  {
+    const todos = require('../src/functions/todos.js');
+    const stub = makeStub();
+    let list = [
+      { id: 1, text: 'Order more CO2', done: false },
+      { id: 2, text: 'Order more caps', done: false },
+      { id: 3, text: 'Descale the HLT', done: true },
+    ];
+    const calls = [];
+    const apiCall = async (method, endpoint, body) => {
+      if (method === 'GET') return list;
+      calls.push({ method, endpoint, body });
+      return { text: body && body.text };
+    };
+    todos.register(stub, apiCall);
+
+    const read = await stub.handlers.get('get_todos')({});
+    assert.match(read, /2 items outstanding, and 1 already done\./);
+    assert.ok(!read.includes('Descale the HLT'), 'done items are counted, not read out');
+
+    // "order more" hits both CO2 and caps — that has to be a question, not a guess:
+    const ambiguous = await stub.handlers.get('complete_todo')({ text: 'order more' });
+    assert.match(ambiguous, /Several to-dos match/);
+    assert.strictEqual(calls.length, 0, 'an ambiguous match never writes');
+
+    const ticked = await stub.handlers.get('complete_todo')({ text: 'CO2' });
+    assert.match(ticked, /Ticked off "Order more CO2"\./);
+    assert.deepStrictEqual(calls[0], { method: 'PATCH', endpoint: '/api/todos/1', body: { done: true } });
+
+    // complete_todo only sees outstanding items, reopen_todo only completed ones:
+    const alreadyDone = await stub.handlers.get('complete_todo')({ text: 'descale' });
+    assert.match(alreadyDone, /Nothing on the to-do list matches "descale"/);
+
+    const reopened = await stub.handlers.get('reopen_todo')({ text: 'descale' });
+    assert.deepStrictEqual(calls[1], { method: 'PATCH', endpoint: '/api/todos/3', body: { done: false } });
+    assert.match(reopened, /Put "Descale the HLT" back on the list/);
+
+    const removed = await stub.handlers.get('delete_todo')({ text: 'caps' });
+    assert.match(removed, /Removed "Order more caps"/);
+    assert.strictEqual(calls[2].method, 'DELETE');
+
+    list = list.filter((t) => !t.done);
+    const nothingToClear = await stub.handlers.get('clear_completed_todos')({});
+    assert.match(nothingToClear, /no completed items to clear/);
+    ok('to-do list matches on text and refuses to guess between candidates');
+  }
+
+  // ── Functions: device fleet and the Inkbirds ─────────────────────────────
+
+  {
+    const devices = require('../src/functions/devices.js');
+    const stub = makeStub();
+    const fleet = [
+      {
+        id: 1, name: 'Fermenter controller', type: 'brew_controller', online: true,
+        lastSeenAt: new Date(Date.now() - 90_000).toISOString(), lastIp: '192.168.0.51',
+        vendorName: 'Birdy Boi', mac: 'aa:bb:cc:dd:ee:ff', reportingIntervalSec: 300, readingCount: 4210,
+        pendingSetpointC: 18,
+        latest: [
+          { metric: 'temp_c', value: 18.94 },
+          { metric: 'setpoint_c', value: 19 },
+          { metric: 'hvac_state', value: -1 },
+        ],
+      },
+      {
+        id: 2, name: 'Power meter', type: 'power_meter', online: false,
+        lastSeenAt: new Date(Date.now() - 7_200_000).toISOString(), lastIp: null,
+        vendorName: null, mac: null, reportingIntervalSec: 30, readingCount: 12,
+        latest: [],
+      },
+    ];
+    const patches = [];
+    const apiCall = async (method, endpoint, body) => {
+      if (method === 'GET') return fleet;
+      patches.push({ endpoint, body });
+      return {};
+    };
+    devices.register(stub, apiCall);
+
+    const fleetSummary = await stub.handlers.get('get_device_status')({});
+    assert.match(fleetSummary, /1 of 2 devices are online\. Offline: Power meter\./);
+    assert.match(fleetSummary, /last reported 2 minutes ago/);
+    assert.ok(!fleetSummary.includes('192.168.0.51'), 'summary keeps the network details back');
+
+    const full = await stub.handlers.get('get_device_status')({ detail: 'full' });
+    assert.match(full, /logging every 5 minutes, at 192\.168\.0\.51/);
+    assert.match(full, /known as "Birdy Boi" in its own app/);
+
+    const inkbirds = await stub.handlers.get('get_inkbird_status')({});
+    assert.match(inkbirds, /Fermenter controller — 18\.9°C, target 19\.0°C, currently cooling/);
+    assert.match(inkbirds, /change to 18°C still waiting/);
+    assert.ok(!inkbirds.includes('Power meter'), 'only brew controllers are Inkbirds');
+
+    const tooFast = await stub.handlers.get('set_device_interval')({ device: 'power', seconds: 2 });
+    assert.match(tooFast, /between 5 seconds and 1 hour/);
+    assert.strictEqual(patches.length, 0, 'out-of-range never patched');
+
+    const changed = await stub.handlers.get('set_device_interval')({ device: 'power', seconds: 60 });
+    assert.match(changed, /Power meter will now log every 1 minute/);
+    assert.deepStrictEqual(patches[0], { endpoint: '/api/devices/2', body: { reportingIntervalSec: 60 } });
+    ok('device fleet reports health, Inkbirds report control state, interval validates');
+  }
+
+  // ── Functions: settings ──────────────────────────────────────────────────
+
+  {
+    const settings = require('../src/functions/settings.js');
+    const stub = makeStub();
+    const state = {
+      '/api/notifications/settings': { kegAlertEnabled: true, kegAlertDays: 30, fermentDoneEnabled: true },
+      '/api/graph-colors': {
+        pressure: '#22d3ee', gravity: '#a78bfa', power: '#eab308', water: '#3b82f6',
+        beerTemp: '#fb923c', fridgeTemp: '#d97706', setpoint: '#f59e0b',
+      },
+      '/api/device-sources': {
+        fermenter_pressure: 'real', fermenter_controller: 'real', kegs_controller: 'real',
+        brewery_temp: 'real', power: 'mock', water: 'mock', fermenter_gravity: 'mock',
+      },
+    };
+    const writes = [];
+    const apiCall = async (method, endpoint, body) => {
+      if (method === 'GET') return state[endpoint];
+      writes.push({ endpoint, body });
+      return body;
+    };
+    settings.register(stub, apiCall);
+
+    const alerts = await stub.handlers.get('get_settings')({ section: 'notifications' });
+    assert.match(alerts, /keg age alert is on, at 30 days/);
+
+    // One field changes; the rest are carried over rather than reset:
+    await stub.handlers.get('set_notification_settings')({ keg_alert_days: 21 });
+    assert.deepStrictEqual(writes[0].body, {
+      kegAlertEnabled: true, kegAlertDays: 21, fermentDoneEnabled: true,
+    });
+
+    const outOfRange = await stub.handlers.get('set_notification_settings')({ keg_alert_days: 900 });
+    assert.match(outOfRange, /between 1 and 365 days/);
+    assert.strictEqual(writes.length, 1, 'out-of-range never wrote');
+
+    // Colours arrive by name, and only the named line moves:
+    assert.strictEqual(settings.resolveColor('amber'), '#f59e0b');
+    assert.strictEqual(settings.resolveColor('#AABBCC'), '#aabbcc');
+    assert.strictEqual(settings.resolveColor('puce'), null);
+    const recolour = await stub.handlers.get('set_graph_color')({ line: 'electricity', color: 'red' });
+    assert.match(recolour, /The power line is now #ef4444/);
+    assert.strictEqual(writes[1].body.power, '#ef4444');
+    assert.strictEqual(writes[1].body.water, '#3b82f6', 'other lines are carried over');
+
+    // Switching a sensor to mock has to say what that means out loud:
+    const mocked = await stub.handlers.get('set_device_source')({ sensor: 'fermenter fridge', source: 'mock' });
+    assert.match(mocked, /mock demo data/);
+    assert.match(mocked, /invented numbers/);
+    assert.strictEqual(writes[2].body.fermenter_controller, 'mock');
+    assert.strictEqual(writes[2].body.kegs_controller, 'real', 'other sensors are carried over');
+
+    const noop = await stub.handlers.get('set_device_source')({ sensor: 'power meter', source: 'mock' });
+    assert.match(noop, /already set to mock demo data/);
+    assert.strictEqual(writes.length, 3, 'a no-op change never wrote');
+    ok('settings merge unchanged fields, take named colours, and explain mock data');
+  }
+
   fs.rmSync(stateDir, { recursive: true, force: true });
   console.log(`\n${passed} test groups passed.`);
   process.exit(0);

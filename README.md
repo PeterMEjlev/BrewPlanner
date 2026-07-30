@@ -208,9 +208,27 @@ book and page it read. When the books don't cover something it says so instead
 of inventing a figure. Drop a `PROMPT.md` into `knowledge/` to replace Bruce's
 written persona (e.g. with the instructions from an existing custom GPT).
 
+He can also see and change the hub itself (`apps/server/src/bruce/tools.ts`):
+what is in the fermenter and how it is fermenting, the Inkbird controllers,
+which devices are online, the keg board, the to-do list, the alerts, and the
+settings. Ask "how's the fermentation going?" and he looks rather than guesses.
+The writing half covers the to-do list, the fermenter selection and clean/dirty
+state, alert preferences, what a blank recipe starts from, the chart and keg
+colours, the mock/real switch per sensor, and a device's logging interval or
+setpoint. Recipes are deliberately read-only to him — a brew sheet is written in
+the recipe editor.
+
+These tools read the database directly (chat runs *inside* the server), so the
+request-level audit hook can't see them — this route also answers as a hijacked
+stream, so `onResponse` never fires. Each change therefore records its own
+History entry, against the account that asked, prefixed `Bruce:`.
+
 Needs `OPENAI_API_KEY` on the server — the same key the voice assistant uses.
 Without it the page says so rather than failing when you type. Asking is
 admin-only (each question costs API credit); reading a thread needs a session.
+That guard is what keeps the tools safe: a read-only `guest` can open a thread
+but cannot ask, so they cannot reach a change through him that they couldn't
+make themselves.
 
 Conversations are separate threads (`bruce_conversations` + `bruce_messages`),
 switched from the menu in the chat header: start a new one per brew day or
@@ -248,7 +266,12 @@ assistant that runs on this Pi as its own systemd service (`bruce.service`).
 Say "Bruce!" near the microphone to control the rig (through the same audited
 `/api/brew-system/*` proxy), check or update the keg inventory, hear fermenter
 status, sensor readings and alerts, change controller setpoints, set brew-day
-reminders, and run brewing calculators. He calls the server over loopback
+reminders, and run brewing calculators. He also reads the recipe library and
+records which beer is in the fermenter, keeps the brewery to-do list, reports
+the sensor fleet's health (online/offline, last seen, logging interval, IP) and
+the Inkbird controllers at a glance, and reads or changes the settings — alert
+preferences, new-recipe defaults, chart and keg colours, and the mock/real
+switch per sensor. He calls the server over loopback
 (trusted-local — no token) and speaks through OpenAI's GA Realtime API
 (`gpt-realtime-mini`); the wake word is detected offline (Porcupine). The
 `/bruce` dashboard page shows his live state and conversation transcript, and

@@ -23,6 +23,10 @@ const { startStatusServer } = require('./statusServer');
 const brewSystemFunctions = require('./functions/brewSystem');
 const kegFunctions = require('./functions/kegs');
 const statsFunctions = require('./functions/stats');
+const deviceFunctions = require('./functions/devices');
+const recipeFunctions = require('./functions/recipes');
+const todoFunctions = require('./functions/todos');
+const settingsFunctions = require('./functions/settings');
 const toolFunctions = require('./functions/tools');
 
 // Rolling transcript of recent turns, served by the status API for the
@@ -70,6 +74,10 @@ async function main() {
   brewSystemFunctions.register(bruce, apiCall);
   kegFunctions.register(bruce, apiCall);
   statsFunctions.register(bruce, apiCall);
+  deviceFunctions.register(bruce, apiCall);
+  recipeFunctions.register(bruce, apiCall);
+  todoFunctions.register(bruce, apiCall);
+  settingsFunctions.register(bruce, apiCall);
   toolFunctions.register(bruce);
 
   // ── Logging ─────────────────────────────────────────────────────────────

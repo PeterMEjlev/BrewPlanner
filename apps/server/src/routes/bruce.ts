@@ -22,7 +22,7 @@ import {
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { registerAuditHook } from '../audit/hook.js';
-import { requireAdmin, requireAuth } from '../auth/index.js';
+import { getSessionUser, requireAdmin, requireAuth } from '../auth/index.js';
 import {
   answerQuestion,
   bruceInstructions,
@@ -301,9 +301,23 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
     // by which time the much longer answer call has covered it.
     const title = isUntitled(conversationId) ? summariseTitle(body.message) : null;
 
+    // Bruce's tools can change the hub (to-dos, settings, the fermenter), and
+    // the audit hook can't see them: this route answers as a hijacked stream, so
+    // `onResponse` never fires for it. The tools record their own entries
+    // instead, against whoever asked — a change made through the chat is that
+    // account's change, not the assistant's. `requireAdmin` has already run, so
+    // no session here means the trusted-local kiosk.
+    const sessionUser = getSessionUser(req);
+    const actor = sessionUser
+      ? { userId: sessionUser.id, username: sessionUser.username }
+      : { userId: null, username: 'Local kiosk' };
+
     try {
-      const answer = await answerQuestion(body.message, history, (phase) =>
-        send({ type: 'phase', ...phase }),
+      const answer = await answerQuestion(
+        body.message,
+        history,
+        (phase) => send({ type: 'phase', ...phase }),
+        actor,
       );
       const stored = addMessage(
         conversationId,

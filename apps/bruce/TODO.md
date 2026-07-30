@@ -44,10 +44,6 @@ pressure 1.14 bar, temperature 18.4°C cooling toward 18, gravity 1.019."
 
 ## New features (the server APIs already exist — Bruce just needs functions)
 
-### 16. (P3) Brewery to-do list by voice
-`GET/POST /api/todos` exist. `add_todo` + `get_todos`: "add 'order more
-CO2' to the list", "what's on the to-do list?".
-
 ### 18. (P3) Fermentation progress: attenuation / ABV / days-to-FG
 The web app already fits gravity curves (apps/web/src/gravityForecast.ts).
 A `get_fermentation_progress` function reading `/api/devices/:id/history`
@@ -106,3 +102,10 @@ tool calls — worth trying once the mic/speaker are attached, since it needs
 listening tests). The real next step is on the Pi: follow
 deploy/README-bruce.md, then tune and enable barge-in
 (`BRUCE_BARGE_IN_ENABLED=1`).
+
+One thing to watch once the hardware is in: the tool list has roughly doubled
+(recipes, to-dos, the device fleet, settings), and every definition is sent on
+every Realtime session. If the model starts reaching for the wrong function, the
+fix is sharper descriptions rather than fewer tools — the pairs most likely to
+be confused are `get_sensor_readings` (values) against `get_device_status`
+(health), and `add_todo` (a job) against `set_reminder` (a time).

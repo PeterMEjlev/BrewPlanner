@@ -1,14 +1,6 @@
 
 
-- Create the necesarry changes for Bruce to access more of the info/data from konfus. Currently he can view the kegs, he should also be able to see status of:
-  - Inkbirds
-  - Recipes
-  - Todo List
-  - Current active recipe (in fermenter)
-  - Devices (which are online / offline, details for each device, interval, etc)
-  - Settings
 
-  He should also be able to interact (add, remove, etc) with things: settings, recipes, todo list, settings
 
 
 

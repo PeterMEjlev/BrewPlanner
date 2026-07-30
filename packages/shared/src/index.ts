@@ -2978,12 +2978,17 @@ export interface BruceChatReply {
 /**
  * What Bruce is doing *right now*, streamed to the page while it waits.
  *
- * These are observed, not guessed: `library` and `recipes` are work the server
- * does itself, and `web` arrives because OpenAI told us the model started a
- * search. So "searching the web" on screen means he really is on the web, which
- * is the whole point of naming them separately.
+ * These are observed, not guessed: `library`, `recipes` and `brewery` are work
+ * the server does itself, and `web` arrives because OpenAI told us the model
+ * started a search. So "searching the web" on screen means he really is on the
+ * web, which is the whole point of naming them separately.
+ *
+ * `brewery` covers every tool that reads or changes the hub itself — sensors,
+ * kegs, the to-do list, settings — and says which in its `detail`. One name
+ * rather than six because they are the same kind of work from the reader's
+ * side: he has stopped reading books and gone to look at the brewery.
  */
-export type BrucePhaseName = 'library' | 'thinking' | 'web' | 'recipes' | 'writing';
+export type BrucePhaseName = 'library' | 'thinking' | 'web' | 'recipes' | 'brewery' | 'writing';
 
 /** One progress event on the chat stream. */
 export interface BrucePhase {
