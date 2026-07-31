@@ -1,0 +1,1 @@
+ALTER TABLE `brew_days` ADD `pre_boil_volume_l` real;

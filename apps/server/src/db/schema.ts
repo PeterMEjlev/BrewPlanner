@@ -170,11 +170,17 @@ export const brewDays = sqliteTable(
     packagedAt: text('packaged_at'),
     /** Measured gravities, kept as text like the recipe's own figures. */
     preBoilGravity: text('pre_boil_gravity').notNull().default(''),
+    /** The kettle volume that pre-boil gravity was read in — mash efficiency needs both. */
+    preBoilVolumeL: real('pre_boil_volume_l'),
     measuredOg: text('measured_og').notNull().default(''),
     measuredFg: text('measured_fg').notNull().default(''),
     volumeL: real('volume_l'),
     mashTempC: real('mash_temp_c'),
     boilTimeMin: real('boil_time_min'),
+    /**
+     * A typed efficiency, which overrules the one calculated from the measured
+     * OG and volume. Null — the normal case — means "use the calculation".
+     */
     efficiencyPct: real('efficiency_pct'),
     waterL: real('water_l'),
     energyKwh: real('energy_kwh'),

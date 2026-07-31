@@ -10,7 +10,7 @@ import type {
   RecipeDetail,
   UpdateBrewDayInput,
 } from '@checklist/shared';
-import { BREW_DAY_STATUSES, isFermentableLine } from '@checklist/shared';
+import { BREW_DAY_STATUSES, extractPotential, isFermentableLine } from '@checklist/shared';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { brewDayRigSamples, brewDays } from '../db/schema.js';
@@ -43,6 +43,10 @@ function totalGrams(lines: { grams: number | null }[]): number | null {
  */
 export function recipeSnapshot(recipe: RecipeDetail): BrewDayRecipeSnapshot {
   const grainGrams = totalGrams(recipe.fermentables.filter(isFermentableLine));
+  // The denominator the day's efficiency is measured against. Frozen with the
+  // rest: it belongs to the bill that was mashed, not to whatever the recipe
+  // says a year later.
+  const potential = extractPotential(recipe.fermentables);
   return {
     name: recipe.name,
     style: recipe.style,
@@ -61,6 +65,12 @@ export function recipeSnapshot(recipe: RecipeDetail): BrewDayRecipeSnapshot {
       .map((line) => line.name.trim())
       .filter(Boolean)
       .join(', '),
+    // Zero means "nothing here the mash has to work for", which is not a
+    // denominator — store it as unknown so efficiency stays silent rather than
+    // dividing by it.
+    mashedPointGallons: potential.mashedPointGallons > 0 ? potential.mashedPointGallons : null,
+    unmashedPointGallons: potential.unmashedPointGallons,
+    preBoilUnmashedPointGallons: potential.preBoilUnmashedPointGallons,
   };
 }
 
@@ -88,6 +98,9 @@ function rowSnapshot(row: BrewDayRow): BrewDayRecipeSnapshot {
       grainKg: null,
       hopGrams: null,
       yeast: '',
+      mashedPointGallons: null,
+      unmashedPointGallons: null,
+      preBoilUnmashedPointGallons: null,
     };
   }
 }
@@ -138,6 +151,7 @@ function rowToBrewDay(row: BrewDayRow, brewNumber: number): BrewDay {
     packagedAt: row.packagedAt,
     measured: {
       preBoilGravity: row.preBoilGravity,
+      preBoilVolumeL: row.preBoilVolumeL,
       og: row.measuredOg,
       fg: row.measuredFg,
       volumeL: row.volumeL,
@@ -260,6 +274,7 @@ export function updateBrewDay(id: number, input: UpdateBrewDayInput): BrewDay | 
   const m = input.measured;
   if (m) {
     if (m.preBoilGravity !== undefined) fields.preBoilGravity = m.preBoilGravity;
+    if (m.preBoilVolumeL !== undefined) fields.preBoilVolumeL = m.preBoilVolumeL;
     if (m.og !== undefined) fields.measuredOg = m.og;
     if (m.fg !== undefined) fields.measuredFg = m.fg;
     if (m.volumeL !== undefined) fields.volumeL = m.volumeL;

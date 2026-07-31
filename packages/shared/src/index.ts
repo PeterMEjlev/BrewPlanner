@@ -373,6 +373,20 @@ export interface BrewDayRecipeSnapshot {
   hopGrams: number | null;
   /** The strain(s) the recipe pitches, comma-joined; empty when it names none. */
   yeast: string;
+  /**
+   * The grain bill's extract at perfect extraction, in point-gallons (see
+   * {@link extractPotential}) — what the day's measured efficiency is a
+   * percentage of. Snapshotted with the rest because it's a property of the
+   * bill that was actually mashed, not of whatever the recipe says today.
+   *
+   * Null on an entry logged before this was recorded, or a bill of ingredients
+   * the fermentable table doesn't recognise; efficiency then stays whatever the
+   * brewer typed, rather than being calculated from a wrong denominator.
+   */
+  mashedPointGallons: number | null;
+  unmashedPointGallons: number | null;
+  /** The unmashed share already in the kettle pre-boil, for mash efficiency. */
+  preBoilUnmashedPointGallons: number | null;
 }
 
 /**
@@ -385,6 +399,8 @@ export interface BrewDayRecipeSnapshot {
  */
 export interface BrewDayMeasurements {
   preBoilGravity: string;
+  /** Litres in the kettle when that pre-boil gravity was taken. */
+  preBoilVolumeL: number | null;
   og: string;
   fg: string;
   /** Litres that actually made it into the fermenter. */
@@ -392,7 +408,12 @@ export interface BrewDayMeasurements {
   /** The mash temperature as held, °C. */
   mashTempC: number | null;
   boilTimeMin: number | null;
-  /** Brewhouse efficiency as worked out afterwards, %. */
+  /**
+   * Brewhouse efficiency, %. Normally left empty — it's calculated from the
+   * measured OG and volume against the snapshotted grain bill (see
+   * {@link measuredEfficiency}) — and set only to overrule that, when the
+   * brewer knows a volume was eyeballed and the arithmetic off.
+   */
   efficiencyPct: number | null;
   /** Brewing liquor drawn for the batch, litres. */
   waterL: number | null;
@@ -402,6 +423,7 @@ export interface BrewDayMeasurements {
 
 export const EMPTY_BREW_DAY_MEASUREMENTS: BrewDayMeasurements = {
   preBoilGravity: '',
+  preBoilVolumeL: null,
   og: '',
   fg: '',
   volumeL: null,
@@ -540,12 +562,15 @@ const optionalTimestamp = z.string().datetime({ offset: true }).nullable();
 export const brewDayMeasurementsSchema = z
   .object({
     preBoilGravity: measuredGravity,
+    preBoilVolumeL: measuredNumber(10_000),
     og: measuredGravity,
     fg: measuredGravity,
     volumeL: measuredNumber(10_000),
     mashTempC: measuredNumber(120),
     boilTimeMin: measuredNumber(1_440),
-    efficiencyPct: measuredNumber(100),
+    // Room above 100: this is only ever set to overrule the calculated figure,
+    // and a brewer correcting one that came out at 104% must be able to say so.
+    efficiencyPct: measuredNumber(200),
     waterL: measuredNumber(10_000),
     energyKwh: measuredNumber(10_000),
   })

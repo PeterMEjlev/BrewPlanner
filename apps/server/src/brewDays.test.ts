@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { DEFAULT_RECIPE_SETTINGS } from '@checklist/shared';
+import { DEFAULT_RECIPE_SETTINGS, measuredEfficiency } from '@checklist/shared';
 import type { RecipeEditInput } from '@checklist/shared';
 
 /**
@@ -132,6 +132,47 @@ test('a brew day keeps the recipe as it read on the day', async () => {
   const orphaned = brewDays.getBrewDay(brewDay.id)!;
   assert.equal(orphaned.recipeId, null);
   assert.equal(orphaned.recipe.name, 'Citra Pale');
+});
+
+test('the snapshot carries what efficiency is measured against', async () => {
+  const { brewDays, recipes } = await boot();
+
+  const sheet = recipe('Efficiency Pale');
+  // A kettle sugar and a honey stirred in afterwards: the first is in the wort
+  // at the pre-boil reading, the second is not.
+  sheet.fermentables.push(
+    { name: 'Table Sugar', amount: '500', unit: 'g', percent: '', ebc: 0, ppg: null, fermentable: null, lateAddition: false },
+    { name: 'Honey', amount: '1', unit: 'kg', percent: '', ebc: 2, ppg: null, fermentable: null, lateAddition: true },
+  );
+  const saved = recipes.createRecipe(sheet);
+  const brewDay = brewDays.startBrewDay(saved.id, recipes.getRecipe(saved.id)!);
+  const snapshot = brewDay.recipe;
+
+  // 4.5 kg of 37 PPG malt ≈ 367 point-gallons at perfect extraction.
+  assert.ok(snapshot.mashedPointGallons != null && snapshot.mashedPointGallons > 300);
+  assert.ok(snapshot.unmashedPointGallons! > snapshot.preBoilUnmashedPointGallons!);
+  assert.ok(snapshot.preBoilUnmashedPointGallons! > 0);
+
+  // The figure the detail page shows is derived from the entry alone — no
+  // second look at the recipe, which is the point of snapshotting it.
+  const measured = brewDays.updateBrewDay(brewDay.id, {
+    measured: { og: '1.055', volumeL: 20 },
+  })!;
+  const calculated = measuredEfficiency({
+    gravity: measured.measured.og,
+    litres: measured.measured.volumeL,
+    mashedPointGallons: snapshot.mashedPointGallons,
+    unmashedPointGallons: snapshot.unmashedPointGallons,
+  });
+  assert.ok(calculated != null && calculated > 0 && calculated < 100);
+
+  // Nothing is stored for it: the field stays null until someone overrules the
+  // calculation, and clearing that override hands the figure back.
+  assert.equal(measured.measured.efficiencyPct, null);
+  brewDays.updateBrewDay(brewDay.id, { measured: { efficiencyPct: 68 } });
+  assert.equal(brewDays.getBrewDay(brewDay.id)?.measured.efficiencyPct, 68);
+  brewDays.updateBrewDay(brewDay.id, { measured: { efficiencyPct: null } });
+  assert.equal(brewDays.getBrewDay(brewDay.id)?.measured.efficiencyPct, null);
 });
 
 test('brews of one recipe are numbered by date, and back-dating renumbers them', async () => {

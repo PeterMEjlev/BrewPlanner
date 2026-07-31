@@ -206,6 +206,101 @@ function gravityFromPointGallons(pointGallons: number, litres: number | null): n
   return 1 + pointGallons / (litres / LITRES_PER_GALLON) / 1000;
 }
 
+/**
+ * A grain bill's extract at *perfect* extraction, in point-gallons, split by
+ * whether the mash has to work for it: the mash's share is what brewhouse
+ * efficiency is a percentage of, while sugars and malt extracts dissolve whole
+ * and land in the wort whatever the brewhouse manages.
+ *
+ * This is {@link calculateRecipe}'s contribution sum with the efficiency factor
+ * left out — the denominator, kept apart so a brew day can measure against it.
+ */
+export interface ExtractPotential {
+  /** Point-gallons the mash would deliver if it extracted everything. */
+  mashedPointGallons: number;
+  /** Point-gallons that arrive in full regardless of the mash. */
+  unmashedPointGallons: number;
+  /**
+   * The share of those that is already in the kettle at the pre-boil reading —
+   * everything but the late additions, matching how {@link calculateRecipe}
+   * figures its own pre-boil gravity. Kept apart so a *mash* efficiency
+   * measured pre-boil doesn't credit the mash with a bag of sugar.
+   */
+  preBoilUnmashedPointGallons: number;
+}
+
+export function extractPotential(
+  fermentables: {
+    name: string;
+    amount: string;
+    unit: string;
+    ppg: number | null;
+    fermentable: boolean | null;
+    lateAddition: boolean;
+  }[],
+): ExtractPotential {
+  let mashedPointGallons = 0;
+  let unmashedPointGallons = 0;
+  let preBoilUnmashedPointGallons = 0;
+  for (const line of fermentables) {
+    const weight = weightPounds(line.amount, line.unit);
+    const extract = lineExtract(line);
+    // A line with no weight, or a malt the table doesn't recognise, contributes
+    // nothing — the same silence calculateRecipe keeps about it.
+    if (weight == null || extract == null) continue;
+    const pointGallons = weight * extract.ppg;
+    if (extract.mashed) {
+      mashedPointGallons += pointGallons;
+    } else {
+      unmashedPointGallons += pointGallons;
+      if (!line.lateAddition) preBoilUnmashedPointGallons += pointGallons;
+    }
+  }
+  return { mashedPointGallons, unmashedPointGallons, preBoilUnmashedPointGallons };
+}
+
+/**
+ * What the brewhouse actually managed, from a gravity the brewer measured and
+ * the volume it was measured in — {@link calculateRecipe} run backwards.
+ *
+ * Forward, a recipe predicts its gravity by scaling the mash's potential by an
+ * assumed efficiency. Given a real gravity and volume, the same relation says
+ * what the efficiency was:
+ *
+ * ```
+ *   delivered  = (gravity − 1) × 1000 × gallons
+ *   efficiency = (delivered − sugars) / mash potential × 100
+ * ```
+ *
+ * Which efficiency you get depends on where you measured. OG and the volume
+ * into the fermenter give brewhouse efficiency — everything the day lost, mash
+ * through kettle. Pre-boil gravity and pre-boil volume give mash efficiency,
+ * which is the half that says whether a disappointing OG was the mash's fault
+ * or the kettle's.
+ *
+ * Null unless every input is real, and deliberately *not* capped at 100: a
+ * figure over 100% means a volume or a gravity is wrong, and hiding that behind
+ * a tidy "100%" would be the opposite of useful.
+ */
+export function measuredEfficiency(input: {
+  gravity: string | number | null;
+  litres: number | null;
+  mashedPointGallons: number | null;
+  unmashedPointGallons: number | null;
+}): number | null {
+  const gravity = recipeNumber(input.gravity);
+  const { litres, mashedPointGallons, unmashedPointGallons } = input;
+  if (gravity == null || gravity <= 1) return null;
+  if (litres == null || litres <= 0) return null;
+  // No mash potential means nothing to be a percentage of — a bill of pure
+  // sugar has no brewhouse efficiency, however well the day went.
+  if (mashedPointGallons == null || mashedPointGallons <= 0) return null;
+  const delivered = (gravity - 1) * 1000 * (litres / LITRES_PER_GALLON);
+  const fromMash = delivered - (unmashedPointGallons ?? 0);
+  if (!(fromMash > 0)) return null;
+  return (fromMash / mashedPointGallons) * 100;
+}
+
 function attenuation(recipe: RecipeEditInput): number | null {
   const values = recipe.yeast
     .map((line) => recipeNumber(line.attenuation))
