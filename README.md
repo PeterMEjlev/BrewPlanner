@@ -263,7 +263,7 @@ separate product and does not cover it.
 
 Bruce (`apps/bruce`, migrated from brew-system-v3) is a wake-word voice
 assistant that runs on this Pi as its own systemd service (`bruce.service`).
-Say "Bruce!" near the microphone to control the rig (through the same audited
+Say "hey Bruce" near the microphone to control the rig (through the same audited
 `/api/brew-system/*` proxy), check or update the keg inventory, hear fermenter
 status, sensor readings and alerts, change controller setpoints, set brew-day
 reminders, and run brewing calculators. He also reads the recipe library and
@@ -273,7 +273,8 @@ the Inkbird controllers at a glance, and reads or changes the settings — alert
 preferences, new-recipe defaults, chart and keg colours, and the mock/real
 switch per sensor. He calls the server over loopback
 (trusted-local — no token) and speaks through OpenAI's GA Realtime API
-(`gpt-realtime-mini`); the wake word is detected offline (openWakeWord). The
+(`gpt-realtime-mini`); the wake word is detected offline (openWakeWord, with a
+custom-trained "hey Bruce" model). The
 `/bruce` dashboard page shows his live state and conversation transcript, and
 can set his volume or make him say something in the brewery (Bruce serves a
 loopback status API that the server proxies as `/api/bruce/*`). One-time Pi

@@ -139,10 +139,9 @@ journalctl -u bruce.service -f     # expect: "[Bruce] Ready — listening for wa
 Say the wake phrase near the mic — you should hear the plop, then ask e.g.
 *"how are the kegs?"* or *"what's fermenting?"*.
 
-> **The wake phrase is "hey Jarvis" until you train a "hey Bruce" model.**
-> openWakeWord ships pre-trained models for a handful of phrases only, and
-> "Bruce" isn't one of them — see the next section. Everything else about Bruce
-> is unchanged; only the two words that wake him are borrowed.
+> **The wake phrase is "hey Bruce".** `apps/bruce/wake-words/hey_bruce.onnx`
+> is a custom-trained model and is the default — no env var needed. Say the
+> whole phrase; bare "Bruce" won't wake him, by design.
 
 From here on, every deploy (`deploy/update.sh` or the dashboard Update button)
 restarts Bruce automatically along with the other services.
@@ -162,28 +161,48 @@ floor), then while saying the phrase from where you normally stand. Put the
 threshold between the two, then remove the debug var. Raise it if Bruce wakes
 up on his own; lower it if you have to shout.
 
-## Training a "hey Bruce" model
+**Raising it is safe; lowering it is not.** On the bench, `hey_bruce.onnx`
+fires on nothing in a 136-clip negative set at 0.5, but `hey brew` peaks at
+0.480 — just under the line. Below 0.5 that is the first phrase that will start
+waking him. See `apps/bruce/wake-words/README.md` for the full measurements.
 
-Custom openWakeWord models are trained from synthetic speech — you never record
-yourself — and it's free and unattended. Use the project's
-[automatic training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb)
-on Google Colab: set the target phrase to **"hey Bruce"**, run all cells, and
-come back in roughly 90 minutes for a `.onnx` file.
+## Retraining the wake-word model
 
-Then:
+`hey_bruce.onnx` is already trained and committed; this section is only for
+changing the phrase or improving the model.
 
-```bash
-scp hey_bruce.onnx brewplanner@BrewPlanner:~/checklist/apps/bruce/wake-words/
-# in /etc/brewplanner.env:
-#   BRUCE_WAKE_WORD_MODEL=/home/brewplanner/checklist/apps/bruce/wake-words/hey_bruce.onnx
-sudo systemctl restart bruce.service
-```
+It was **not** trained on the Colab notebook openWakeWord recommends. That
+notebook is out of date in ways that stop it working: it fetches AudioSet as
+`data/bal_train09.tar` (now 38 parquet shards) and streams the FMA dataset
+(impossible — a zip needs a seekable file for its central directory). Training
+ran locally instead on an RTX 3090 under WSL Ubuntu 24.04, ~3 h end to end.
 
-Commit the model so deploys keep it (that directory is tracked, and the deploy
-checkout reverts untracked-file collisions). Prefer **"hey Bruce"** to a bare
-"Bruce": openWakeWord needs a few syllables to work with, and one short word in
-a room with pumps running is a recipe for false triggers. Re-tune the threshold
-after swapping — a custom model's scores won't line up with `hey_jarvis`'s.
+The scripts are **outside this repo**, on the training machine at
+`F:\wsl\scripts\`:
+
+| Script | Does |
+|---|---|
+| `10-setup.sh` | WSL env: Python 3.11 venv, torch 2.5.1+cu124, openWakeWord, piper-sample-generator |
+| `20-download-features.sh` | 17 GB ACAV100M negative features + validation set |
+| `30-backgrounds.py` | MIT RIRs, AudioSet (parquet), FMA music |
+| `90-build-v2-config.py` | Generates the config, expanding the curated negatives |
+| `40-train.sh` / `50-run-real.sh` | Runs the three training stages, detached |
+
+Four version pins in `10-setup.sh` are load-bearing, each found by hitting it:
+`setuptools<81` (webrtcvad imports the removed `pkg_resources`), `scipy<1.15`
+(acoustics imports the removed `scipy.special.sph_harm`), `numpy<2`, and
+`datasets<3` (v4 decodes audio via torchcodec). TensorFlow is deliberately
+absent — `train.py` only imports it inside `convert_onnx_to_tflite()`, and we
+export ONNX only. That function runs regardless of the flag (upstream declares
+`--convert_to_tflite` as `action="store_true", default="False"` — the *string*,
+which is truthy), so the run always ends in an `onnx_tf` traceback *after* the
+ONNX is written. `40-train.sh` tolerates that and checks for the file instead.
+
+If you retrain, read the "Why the negatives are weighted the way they are"
+section in `apps/bruce/wake-words/README.md` first — `custom_negative_phrases`
+does nothing at default settings, and that is the single biggest determinant of
+whether the model is usable. Re-tune the threshold afterwards; scores from one
+model don't transfer to another.
 
 ## Optional: enable barge-in (interrupting Bruce mid-speech)
 

@@ -1,10 +1,7 @@
 
 
-- Bruce voice: Train "Hey Bruce" wakeword model instead of "Hey Jarvis"
-  (Only the brewery speaker still needs a wake word — the Talk button on the
-  Bruce page works on phones and laptops without one.)
 
-- Recipe back up: does it work?
+
 
 
 

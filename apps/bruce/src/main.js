@@ -39,7 +39,7 @@ function record(type, content) {
 // Override with BRUCE_WAKE_WORD_MODEL to swap the wake phrase — see
 // deploy/README-bruce.md for training a custom one.
 function defaultWakeWordPath() {
-  return path.join(__dirname, '..', 'wake-words', 'hey_jarvis_v0.1.onnx');
+  return path.join(__dirname, '..', 'wake-words', 'hey_bruce.onnx');
 }
 
 function requireEnv(name) {

@@ -38,7 +38,7 @@ function makeBruce() {
     openaiKey: 'fake',
     // Never loaded: these tests drive the state machine directly and never
     // call start(), which is what opens the ONNX sessions.
-    wakeWordPath: path.join(__dirname, '..', 'wake-words', 'hey_jarvis_v0.1.onnx'),
+    wakeWordPath: path.join(__dirname, '..', 'wake-words', 'hey_bruce.onnx'),
   });
   bruce.on('error', () => {}); // tests inspect state, not stderr
   return bruce;
