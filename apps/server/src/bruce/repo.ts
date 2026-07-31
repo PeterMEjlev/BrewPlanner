@@ -1,4 +1,9 @@
-import type { BruceChatMessage, BruceChatSource, BruceConversation } from '@checklist/shared';
+import type {
+  BruceChatMessage,
+  BruceChatSource,
+  BruceConversation,
+  BruceToolCall,
+} from '@checklist/shared';
 import { asc, desc, eq, lt, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { bruceConversations, bruceMessages } from '../db/schema.js';
@@ -32,11 +37,22 @@ function toPublicMessage(row: typeof bruceMessages.$inferSelect): BruceChatMessa
       // A malformed citation list costs the chips, not the message.
     }
   }
+  let toolCalls: BruceToolCall[] | undefined;
+  if (row.toolCalls) {
+    try {
+      const parsed = JSON.parse(row.toolCalls) as BruceToolCall[];
+      if (Array.isArray(parsed) && parsed.length > 0) toolCalls = parsed;
+    } catch {
+      // Same bargain as the citations: a bad record loses its own entries, not
+      // the answer it belongs to.
+    }
+  }
   return {
     id: row.id,
     role: row.role === 'assistant' ? 'assistant' : 'user',
     content: row.content,
     ...(sources ? { sources } : {}),
+    ...(toolCalls ? { toolCalls } : {}),
     createdAt: row.createdAt,
   };
 }
@@ -162,6 +178,7 @@ export function addMessage(
   content: string,
   sources?: BruceChatSource[],
   costUsd?: number | null,
+  toolCalls?: BruceToolCall[],
 ): BruceChatMessage {
   const row = db
     .insert(bruceMessages)
@@ -171,6 +188,7 @@ export function addMessage(
       content,
       sources: sources && sources.length > 0 ? JSON.stringify(sources) : null,
       costUsd: costUsd ?? null,
+      toolCalls: toolCalls && toolCalls.length > 0 ? JSON.stringify(toolCalls) : null,
     })
     .returning()
     .get();

@@ -3215,12 +3215,46 @@ export interface BruceChatSource {
 }
 
 /** One stored turn of the text conversation. */
+/**
+ * One tool Bruce reached for while answering, kept beside the answer it fed.
+ *
+ * Recorded rather than merely reported, because "he looked at the fermenter
+ * before saying that" is part of the answer's provenance in the same way a book
+ * citation is — and the transient progress line that used to say so vanished
+ * the moment the answer arrived, taking with it the only evidence of *which*
+ * of the brewery's numbers he actually read.
+ */
+export interface BruceToolCall {
+  /** The function the model called, e.g. `get_kegs`. */
+  name: string;
+  /** Which progress line it belongs to, for the icon and colour. */
+  phase?: BrucePhaseName;
+  /** The qualifier that phase carried, e.g. "keg board". */
+  detail?: string;
+  /** What the model asked for, as it sent it. */
+  args?: Record<string, unknown>;
+  /**
+   * What the tool answered, truncated to {@link MAX_TOOL_RESULT_CHARS}.
+   *
+   * Truncated on purpose: a keg board or a device table runs to kilobytes, and
+   * the answer above it is the point — this is here so a one-line confirmation
+   * ("Added 'order more CO2'") can be checked at a glance, not to keep a second
+   * copy of the data in the thread.
+   */
+  result?: string;
+}
+
+/** How much of a tool's answer is kept beside it. See {@link BruceToolCall}. */
+export const MAX_TOOL_RESULT_CHARS = 400;
+
 export interface BruceChatMessage {
   id: number;
   role: 'user' | 'assistant';
   content: string;
   /** Passages the answer was grounded in. Assistant turns only, may be empty. */
   sources?: BruceChatSource[];
+  /** Tools called while writing it, in the order they ran. Assistant turns only. */
+  toolCalls?: BruceToolCall[];
   /** ISO timestamp. */
   createdAt: string;
 }
@@ -3335,6 +3369,10 @@ export interface BrucePhase {
  */
 export type BruceChatEvent =
   | ({ type: 'phase' } & BrucePhase)
+  // Sent as each tool finishes, so the calls appear in the conversation as they
+  // happen rather than all at once with the answer. The same records come back
+  // on the stored message, so a reload shows exactly what the live view did.
+  | ({ type: 'tool' } & BruceToolCall)
   | { type: 'done'; reply: BruceChatReply }
   | { type: 'error'; message: string };
 
@@ -3431,6 +3469,23 @@ export const bruceVoiceTurnSchema = z.object({
   conversationId: z.coerce.number().int().positive().optional(),
   question: z.string().trim().min(1).max(4000),
   answer: z.string().trim().min(1).max(8000),
+  /**
+   * Tools the model called during the exchange, so a spoken turn records them
+   * the same way a typed one does. Sent by the browser because that is where
+   * the call was made — the server only ran what it was asked to.
+   */
+  toolCalls: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(64),
+        phase: z.string().trim().max(32).optional(),
+        detail: z.string().trim().max(200).optional(),
+        args: z.record(z.unknown()).optional(),
+        result: z.string().max(MAX_TOOL_RESULT_CHARS).optional(),
+      }),
+    )
+    .max(32)
+    .optional(),
 });
 export type BruceVoiceTurnInput = z.infer<typeof bruceVoiceTurnSchema>;
 

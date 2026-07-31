@@ -1,4 +1,4 @@
-- Bruce should show in the dialogue box when it calls a tool / function, as a seperate entry.
+
 
 - Bruce voice: Train "Hey Bruce" wakeword model instead of "Hey Jarvis"
   (Only the brewery speaker still needs a wake word — the Talk button on the

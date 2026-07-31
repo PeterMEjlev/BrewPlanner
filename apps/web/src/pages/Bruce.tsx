@@ -13,6 +13,7 @@ import type {
   BrucePhaseName,
   BruceServiceStatus,
   BruceState,
+  BruceToolCall,
   BruceTranscriptEntry,
 } from '@checklist/shared';
 import { MAX_KNOWLEDGE_FILE_CHARS } from '@checklist/shared';
@@ -312,6 +313,67 @@ function PhaseBubble({ phase }: { phase: BrucePhase | null }): JSX.Element {
   );
 }
 
+/**
+ * One tool Bruce called, as its own entry in the conversation.
+ *
+ * Its own line rather than a footnote on the answer, because it is a thing that
+ * *happened* — he went and looked at the fermenter, or ticked a job off — and it
+ * happened before the answer was written. It used to be visible only as a
+ * progress line that vanished the moment the answer landed, so a reload left no
+ * trace of which of the brewery's numbers he had actually read, or that he had
+ * changed anything at all.
+ *
+ * Closed it is one quiet line. Opened it shows what he asked for and what came
+ * back, which is where a wrong match becomes obvious — "ticked off *Order more
+ * CO2*" reads fine until you see it matched the wrong job.
+ */
+function ToolCallEntry({ call }: { call: BruceToolCall }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const look = PHASE_LOOK[call.phase ?? 'brewery'];
+  const args = call.args && Object.keys(call.args).length > 0 ? call.args : null;
+  const detail = args || call.result;
+
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[92%] rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen((was) => !was)}
+          disabled={!detail}
+          className="flex w-full items-center gap-2 text-left disabled:cursor-default"
+          title={detail ? 'Show what he asked for and what came back' : undefined}
+        >
+          <look.Icon className={`h-3.5 w-3.5 shrink-0 ${look.tint}`} />
+          <span className="text-xs text-zinc-400">
+            {look.label}
+            {call.detail && <span className="text-zinc-500"> — {call.detail}</span>}
+          </span>
+          <code className="truncate font-mono text-[10px] text-zinc-600">{call.name}</code>
+          {detail && <span className="ml-auto shrink-0 text-[10px] text-zinc-600">{open ? '▾' : '▸'}</span>}
+        </button>
+
+        {open && detail && (
+          <div className="mt-1.5 space-y-1.5 border-t border-zinc-800 pt-1.5">
+            {args && (
+              <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-zinc-500">
+                {JSON.stringify(args, null, 2)}
+              </pre>
+            )}
+            {call.result && (
+              // Plain text, not rendered markdown: this is what the *model* was
+              // handed, and dressing it up as prose would misrepresent it as
+              // part of the answer.
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-zinc-400">
+                {call.result}
+              </pre>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ChatBubble({ message }: { message: BruceChatMessage }): JSX.Element {
   const isUser = message.role === 'user';
   return (
@@ -330,6 +392,19 @@ function ChatBubble({ message }: { message: BruceChatMessage }): JSX.Element {
         <Sources message={message} />
       </div>
     </div>
+  );
+}
+
+/**
+ * An answer and the tools it was written from, in the order they happened: the
+ * calls first, then the reply they fed.
+ */
+function AssistantTurn({ message }: { message: BruceChatMessage }): JSX.Element {
+  return (
+    <>
+      {message.toolCalls?.map((call, i) => <ToolCallEntry key={`${message.id}-${i}`} call={call} />)}
+      <ChatBubble message={message} />
+    </>
   );
 }
 
@@ -711,6 +786,8 @@ function VoiceBar({
   const [state, setState] = useState<VoiceCallState>('ended');
   const [phase, setPhase] = useState<BrucePhase | null>(null);
   const [lines, setLines] = useState<VoiceLine[]>([]);
+  /** Tools called in the exchange in flight; cleared when it is written down. */
+  const [tools, setTools] = useState<BruceToolCall[]>([]);
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -739,12 +816,14 @@ function VoiceBar({
         },
         onPhase: setPhase,
         onLine: (line) => setLines((prev) => [...prev.slice(-5), line]),
-        onTurn: (question, answer) => {
+        onToolCall: (made) => setTools((prev) => [...prev, made]),
+        onTurn: (question, answer, made) => {
           void api
-            .saveBruceVoiceTurn(question, answer, threadRef.current)
+            .saveBruceVoiceTurn(question, answer, threadRef.current, made)
             .then((reply) => {
               // It is in the thread above now, so the bar stops repeating it.
               setLines([]);
+              setTools([]);
               onTurn(reply);
             })
             .catch(() => {
@@ -853,7 +932,7 @@ function VoiceBar({
 
       {/* The exchange in flight. It clears as soon as the pair is written into
           the thread above, so nothing is on screen twice. */}
-      {lines.length > 0 && (
+      {(lines.length > 0 || tools.length > 0) && (
         <div className="mt-2 space-y-0.5 border-t border-emerald-900/40 pt-2">
           {lines.map((line, i) => (
             <p key={`${line.at}-${i}`} className="text-xs leading-relaxed">
@@ -861,6 +940,17 @@ function VoiceBar({
                 {line.role === 'user' ? 'You' : 'Bruce'}
               </span>{' '}
               <span className="text-zinc-300">{line.text}</span>
+            </p>
+          ))}
+          {/* Named here as well as in the thread: something changing in the
+              brewery mid-call should be visible while it is still a call. */}
+          {tools.map((made, i) => (
+            <p key={`tool-${i}`} className="text-[11px] text-zinc-500">
+              <span className={PHASE_LOOK[made.phase ?? 'brewery'].tint}>
+                {PHASE_LOOK[made.phase ?? 'brewery'].label}
+              </span>
+              {made.detail && <span className="text-zinc-600"> — {made.detail}</span>}{' '}
+              <code className="font-mono text-[10px] text-zinc-600">{made.name}</code>
             </p>
           ))}
         </div>
@@ -878,6 +968,8 @@ function Chat(): JSX.Element {
   const [pending, setPending] = useState<string | null>(null);
   /** What he is doing about it, streamed from the server as each step starts. */
   const [phase, setPhase] = useState<BrucePhase | null>(null);
+  /** Tools called so far in the answer being written, shown as they finish. */
+  const [liveTools, setLiveTools] = useState<BruceToolCall[]>([]);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useAutoGrow(draft);
@@ -922,6 +1014,7 @@ function Chat(): JSX.Element {
     if (!question || !canAsk || !state) return;
     setDraft('');
     setPending(question);
+    setLiveTools([]);
     // Start on the library: it is what the server does first, and saying so
     // straight away beats an empty bubble for the second before the stream
     // opens. Every phase after this one is reported, not assumed.
@@ -938,6 +1031,7 @@ function Chat(): JSX.Element {
           // Bruce is working (and on what).
           setBrucePhase(next);
         },
+        (call) => setLiveTools((prev) => [...prev, call]),
       );
       setState((prev) =>
         prev
@@ -958,6 +1052,9 @@ function Chat(): JSX.Element {
       setPending(null);
       setPhase(null);
       setBrucePhase(null);
+      // The stored answer carries the same calls, so the live copies would
+      // otherwise be on screen twice.
+      setLiveTools([]);
     }
   };
 
@@ -1085,7 +1182,13 @@ function Chat(): JSX.Element {
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto pr-1" style={{ maxHeight: '62vh' }}>
         {state == null && !error && <p className="text-sm text-zinc-500">Loading…</p>}
 
-        {state?.messages.map((message) => <ChatBubble key={message.id} message={message} />)}
+        {state?.messages.map((message) =>
+          message.role === 'assistant' ? (
+            <AssistantTurn key={message.id} message={message} />
+          ) : (
+            <ChatBubble key={message.id} message={message} />
+          ),
+        )}
 
         {pending != null && (
           <>
@@ -1094,6 +1197,9 @@ function Chat(): JSX.Element {
                 <p className="whitespace-pre-wrap">{pending}</p>
               </div>
             </div>
+            {/* The calls land here as they finish, so the conversation builds up
+                in front of you rather than appearing all at once at the end. */}
+            {liveTools.map((call, i) => <ToolCallEntry key={`live-${i}`} call={call} />)}
             <div className="flex justify-start">
               <PhaseBubble phase={phase} />
             </div>

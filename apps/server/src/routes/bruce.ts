@@ -5,6 +5,7 @@ import type {
   BruceChatState,
   BruceInstructions,
   BruceKnowledgeState,
+  BrucePhaseName,
   BruceServiceStatus,
   BruceStatus,
   BruceVoiceSession,
@@ -97,6 +98,13 @@ const BRUCE_TIMEOUT_MS = 2000;
  * Raised here only — the rest of the API has no reason to accept megabytes.
  */
 const UPLOAD_BODY_LIMIT = 12 * 1024 * 1024;
+
+/** The progress lines a stored tool call may name; anything else loses its icon. */
+const PHASE_NAMES = ['library', 'thinking', 'web', 'recipes', 'brewery', 'writing'] as const;
+
+function isPhaseName(value: string | undefined): value is BrucePhaseName {
+  return value != null && (PHASE_NAMES as readonly string[]).includes(value);
+}
 
 /** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
 function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T | null {
@@ -323,6 +331,10 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
         history,
         (phase) => send({ type: 'phase', ...phase }),
         actor,
+        // Each tool as it finishes, so the page can show the call as its own
+        // entry while the answer is still being written. The same records are
+        // stored below, so a reload shows what the live view showed.
+        (call) => send({ type: 'tool', ...call }),
       );
       const stored = addMessage(
         conversationId,
@@ -330,6 +342,7 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
         answer.text,
         answer.sources,
         answer.costUsd,
+        answer.toolCalls,
       );
       // Name the thread after what it turned out to be about. Only takes
       // effect on an untitled thread, so a rename is never clobbered.
@@ -422,7 +435,19 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(404).send({ error: 'That conversation no longer exists.' });
     }
     const question = addMessage(conversationId, 'user', body.question);
-    const answer = addMessage(conversationId, 'assistant', body.answer);
+    // The browser reports which tools its session called; they are stored on the
+    // answer exactly as a typed turn's are, so the thread reads the same however
+    // the question was asked. `phase` is narrowed here rather than in the schema
+    // — an unknown one from a future client should cost the icon, not the entry.
+    const answer = addMessage(conversationId, 'assistant', body.answer, undefined, null, body.toolCalls?.map(
+      (call) => ({
+        name: call.name,
+        ...(isPhaseName(call.phase) ? { phase: call.phase } : {}),
+        ...(call.detail ? { detail: call.detail } : {}),
+        ...(call.args ? { args: call.args } : {}),
+        ...(call.result ? { result: call.result } : {}),
+      }),
+    ));
     titleFromFirstMessage(conversationId, body.question, await summariseTitle(body.question));
     trimHistory(conversationId);
     const conversation = listConversations().find((c) => c.id === conversationId);

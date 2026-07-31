@@ -178,6 +178,53 @@ describe('POST /api/bruce/voice/turn', () => {
     assert.equal(messages[0]?.content, 'What is in the fermenter?');
   });
 
+  it('records the tools a spoken turn used, and drops an unknown phase without losing the entry', async () => {
+    const conversation = bruceRepo.createConversation();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/bruce/voice/turn',
+      payload: {
+        conversationId: conversation.id,
+        question: 'Tick off the CO2 job',
+        answer: 'Done — ticked off order more CO2.',
+        toolCalls: [
+          {
+            name: 'manage_todo',
+            phase: 'brewery',
+            detail: 'to-do list',
+            args: { action: 'complete', text: 'order more CO2' },
+            result: 'Completed "Order more CO2".',
+          },
+          // A phase this server has never heard of — from a newer client, say.
+          // The call is still worth recording; only its icon is unknown.
+          { name: 'invented_later', phase: 'astrology' },
+        ],
+      },
+    });
+    assert.equal(res.statusCode, 200);
+
+    const [, answer] = bruceRepo.listMessages(conversation.id);
+    assert.equal(answer?.toolCalls?.length, 2);
+    assert.equal(answer?.toolCalls?.[0]?.name, 'manage_todo');
+    assert.equal(answer?.toolCalls?.[0]?.phase, 'brewery');
+    assert.deepEqual(answer?.toolCalls?.[0]?.args, { action: 'complete', text: 'order more CO2' });
+    assert.equal(answer?.toolCalls?.[1]?.name, 'invented_later');
+    assert.equal(answer?.toolCalls?.[1]?.phase, undefined);
+  });
+
+  it('keeps the answer when its tool record is unreadable', () => {
+    const conversation = bruceRepo.createConversation();
+    const answer = bruceRepo.addMessage(conversation.id, 'assistant', 'Twenty degrees.', undefined, null, [
+      { name: 'get_brewery_status' },
+    ]);
+    // Corrupt the record the way a half-written row or an older format would.
+    sqlite.prepare('UPDATE bruce_messages SET tool_calls = ? WHERE id = ?').run('{not json', answer.id);
+
+    const [stored] = bruceRepo.listMessages(conversation.id);
+    assert.equal(stored?.content, 'Twenty degrees.');
+    assert.equal(stored?.toolCalls, undefined, 'the entries are lost, the answer is not');
+  });
+
   it('404s a thread that has since been deleted', async () => {
     const res = await app.inject({
       method: 'POST',

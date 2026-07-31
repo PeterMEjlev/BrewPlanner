@@ -1,4 +1,5 @@
-import type { BrucePhase } from '@checklist/shared';
+import type { BrucePhase, BruceToolCall } from '@checklist/shared';
+import { MAX_TOOL_RESULT_CHARS } from '@checklist/shared';
 import { api } from './api';
 
 /**
@@ -45,8 +46,10 @@ export interface VoiceCallbacks {
   onPhase: (phase: BrucePhase | null) => void;
   /** A finished line of speech, either side. */
   onLine: (line: VoiceLine) => void;
-  /** A question and its answer, both complete — for saving into the thread. */
-  onTurn: (question: string, answer: string) => void;
+  /** A tool the model just called, as it finishes. */
+  onToolCall: (call: BruceToolCall) => void;
+  /** A question, its answer and the tools used — for saving into the thread. */
+  onTurn: (question: string, answer: string, toolCalls: BruceToolCall[]) => void;
   onError: (message: string) => void;
 }
 
@@ -211,13 +214,15 @@ export async function startVoiceCall(callbacks: VoiceCallbacks): Promise<VoiceCa
   // has stopped going round the tool loop, not at the first thing it says.
   let pendingQuestion: string | null = null;
   let pendingAnswer: string | null = null;
+  let pendingTools: BruceToolCall[] = [];
   let answering = false;
 
   const pairUp = (): void => {
     if (!answering && pendingQuestion && pendingAnswer) {
-      callbacks.onTurn(pendingQuestion, pendingAnswer);
+      callbacks.onTurn(pendingQuestion, pendingAnswer, pendingTools);
       pendingQuestion = null;
       pendingAnswer = null;
+      pendingTools = [];
     }
   };
 
@@ -242,9 +247,11 @@ export async function startVoiceCall(callbacks: VoiceCallbacks): Promise<VoiceCa
       }
 
       let output: string;
+      let phase: BrucePhase | null = null;
       try {
         const result = await api.runBruceVoiceTool(call.name ?? '', args);
-        callbacks.onPhase(result.phase ?? null);
+        phase = result.phase ?? null;
+        callbacks.onPhase(phase);
         output = result.output;
       } catch (err) {
         // The model is told what went wrong so it can say so out loud, rather
@@ -253,6 +260,19 @@ export async function startVoiceCall(callbacks: VoiceCallbacks): Promise<VoiceCa
           err instanceof Error ? err.message.replace(/^\d+:\s*/, '') : 'the hub did not answer'
         }.`;
       }
+
+      // Recorded whether it worked or not, and kept for the turn — a spoken
+      // question should leave the same trail in the thread as a typed one.
+      const record: BruceToolCall = {
+        name: call.name ?? 'unknown',
+        ...(phase ? { phase: phase.phase } : {}),
+        ...(phase?.detail ? { detail: phase.detail } : {}),
+        ...(Object.keys(args).length > 0 ? { args } : {}),
+        result: output.length > MAX_TOOL_RESULT_CHARS ? `${output.slice(0, MAX_TOOL_RESULT_CHARS)}…` : output,
+      };
+      pendingTools.push(record);
+      callbacks.onToolCall(record);
+
       if (ended) return;
       send({
         type: 'conversation.item.create',

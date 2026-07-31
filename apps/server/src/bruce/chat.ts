@@ -24,7 +24,9 @@ import type {
   BruceChatSource,
   BruceInstructions,
   BrucePhase,
+  BruceToolCall,
 } from '@checklist/shared';
+import { MAX_TOOL_RESULT_CHARS } from '@checklist/shared';
 import { pageLabel } from '../knowledge/chunk.js';
 import { embedQuery } from '../knowledge/embed.js';
 import { knowledgeDir, libraryOutline, search } from '../knowledge/store.js';
@@ -626,10 +628,15 @@ export interface ChatAnswer {
   sources: BruceChatSource[];
   /** Roughly what this answer cost in USD; null when it couldn't be priced. */
   costUsd: number | null;
+  /** Every tool the model called on the way, in the order they ran. */
+  toolCalls: BruceToolCall[];
 }
 
 /** Told what Bruce is doing, as he starts doing it. See BrucePhase. */
 export type PhaseReporter = (phase: BrucePhase) => void;
+
+/** Told which tool just ran, and what it said, as each one finishes. */
+export type ToolReporter = (call: BruceToolCall) => void;
 
 /**
  * Report only the *changes*, not every event that implies a phase.
@@ -854,8 +861,15 @@ export async function answerQuestion(
   history: BruceChatMessage[],
   report: PhaseReporter = () => {},
   actor: BruceActor = { userId: null, username: 'Local kiosk' },
+  reportTool: ToolReporter = () => {},
 ): Promise<ChatAnswer> {
   const onPhase = onlyChanges(report);
+  /** Kept as well as reported: the stream shows them live, the record persists. */
+  const toolCalls: BruceToolCall[] = [];
+  const onTool: ToolReporter = (call) => {
+    toolCalls.push(call);
+    reportTool(call);
+  };
   onPhase({ phase: 'library' });
   const hits = search(await embedQuery(question), RETRIEVE_K, MIN_SCORE);
 
@@ -967,7 +981,7 @@ export async function answerQuestion(
       input.push({
         type: 'function_call_output',
         call_id: call.call_id,
-        output: await runTool(call, onPhase, actor),
+        output: await runTool(call, onPhase, onTool, actor),
       });
     }
 
@@ -1000,6 +1014,7 @@ export async function answerQuestion(
     // the ones it was written from and the ones it merely had to hand.
     sources: markCited([...sources, ...uniqueWeb], text),
     costUsd: estimateCostUsd(model, usage),
+    toolCalls,
   };
 }
 
@@ -1010,8 +1025,17 @@ export async function answerQuestion(
  * name is treated the same way: the model invented it, and being told so is more
  * useful than a 500 on the brewer's screen. Unreadable arguments are the same
  * class of problem, and get the same treatment.
+ *
+ * `onTool` is told what happened either way, including for a call that could not
+ * be read: an entry saying the model asked for something malformed is exactly
+ * the kind of thing the record exists to make visible.
  */
-async function runTool(call: OutputItem, onPhase: PhaseReporter, actor: BruceActor): Promise<string> {
+async function runTool(
+  call: OutputItem,
+  onPhase: PhaseReporter,
+  onTool: ToolReporter,
+  actor: BruceActor,
+): Promise<string> {
   const name = call.name ?? '';
 
   let args: Record<string, unknown>;
@@ -1019,10 +1043,32 @@ async function runTool(call: OutputItem, onPhase: PhaseReporter, actor: BruceAct
     const parsed: unknown = JSON.parse(call.arguments ?? '{}');
     args = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
   } catch {
-    return `The arguments to ${name || 'that tool'} could not be read. Call it again with plain values.`;
+    const refusal = `The arguments to ${name || 'that tool'} could not be read. Call it again with plain values.`;
+    onTool({ name: name || 'unknown', result: refusal });
+    return refusal;
   }
 
   const phase = bruceToolPhase(name, args);
   if (phase) onPhase(phase);
-  return runBruceTool(name, args, actor);
+  const result = await runBruceTool(name, args, actor);
+  onTool({
+    name,
+    ...(phase ? { phase: phase.phase } : {}),
+    ...(phase?.detail ? { detail: phase.detail } : {}),
+    ...(Object.keys(args).length > 0 ? { args } : {}),
+    result: truncateResult(result),
+  });
+  return result;
+}
+
+/**
+ * The part of a tool's answer kept beside the entry. A device table or a keg
+ * board runs to kilobytes and the answer above it is the point — this is here
+ * so a one-line confirmation can be checked at a glance.
+ */
+function truncateResult(result: string): string {
+  const trimmed = result.trim();
+  return trimmed.length <= MAX_TOOL_RESULT_CHARS
+    ? trimmed
+    : `${trimmed.slice(0, MAX_TOOL_RESULT_CHARS)}…`;
 }

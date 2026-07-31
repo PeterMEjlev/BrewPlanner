@@ -19,6 +19,7 @@ import type {
   BruceKnowledgeState,
   BrucePhase,
   BruceServiceStatus,
+  BruceToolCall,
   BruceVoiceSession,
   BruceVoiceToolResult,
   ChecklistSummary,
@@ -140,6 +141,7 @@ async function askBruce(
   message: string,
   conversationId: number,
   onPhase?: (phase: BrucePhase) => void,
+  onToolCall?: (call: BruceToolCall) => void,
 ): Promise<BruceChatReply> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
   const token = getToken();
@@ -182,7 +184,11 @@ async function askBruce(
       return;
     }
     if (event.type === 'phase') onPhase?.(event);
-    else if (event.type === 'done') reply = event.reply;
+    // `type` is not part of the record itself, only of the frame that carried it.
+    else if (event.type === 'tool') {
+      const { type: _frame, ...call } = event;
+      onToolCall?.(call);
+    } else if (event.type === 'done') reply = event.reply;
     else if (event.type === 'error') failure = event.message;
   };
 
@@ -654,10 +660,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ name, args }),
     }),
-  saveBruceVoiceTurn: (question: string, answer: string, conversationId?: number) =>
+  saveBruceVoiceTurn: (
+    question: string,
+    answer: string,
+    conversationId?: number,
+    toolCalls?: BruceToolCall[],
+  ) =>
     request<BruceChatReply>('/bruce/voice/turn', {
       method: 'POST',
-      body: JSON.stringify({ question, answer, ...(conversationId ? { conversationId } : {}) }),
+      body: JSON.stringify({
+        question,
+        answer,
+        ...(conversationId ? { conversationId } : {}),
+        ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+      }),
     }),
 
   // Bruce's text chat. Answered by the server itself from the indexed brewing
@@ -667,8 +683,12 @@ export const api = {
     request<BruceChatState>(
       conversationId ? `/bruce/chat?conversation=${conversationId}` : '/bruce/chat',
     ),
-  askBruce: (message: string, conversationId: number, onPhase?: (phase: BrucePhase) => void) =>
-    askBruce(message, conversationId, onPhase),
+  askBruce: (
+    message: string,
+    conversationId: number,
+    onPhase?: (phase: BrucePhase) => void,
+    onToolCall?: (call: BruceToolCall) => void,
+  ) => askBruce(message, conversationId, onPhase, onToolCall),
   clearBruceChat: (conversationId: number) =>
     request<void>(`/bruce/chat?conversation=${conversationId}`, { method: 'DELETE' }),
   setBruceChatModel: (model: string) =>

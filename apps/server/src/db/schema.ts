@@ -437,6 +437,13 @@ export const bruceMessages = sqliteTable(
     /** JSON array of { title, section?, page? } — assistant turns only. */
     sources: text('sources'),
     /**
+     * JSON array of the tools called while writing this answer (see
+     * BruceToolCall) — assistant turns only, null on turns stored before this
+     * was recorded, which then show no tool entries rather than claiming none
+     * were used.
+     */
+    toolCalls: text('tool_calls'),
+    /**
      * What this answer cost in US dollars, estimated from the token counts
      * OpenAI reported and the price table in bruce/cost.ts. Assistant turns
      * only, and null for turns answered before this was recorded or priced
