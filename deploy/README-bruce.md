@@ -242,6 +242,20 @@ chat. Settings, all optional, in `/etc/brewplanner.env`:
 
 ## Notes on behaviour
 
+- **One tool set, three Bruces.** The speaker fetches what it can do from the
+  server at startup (`GET /api/bruce/voice/tools`) and relays each call back to
+  it, so the brewery speaker, the written chat and the Talk button all share the
+  tools in `apps/server/src/bruce/tools.ts` — and all record their changes in
+  the same audit log. Only three things are local to this service: the rig's
+  controls, reminders, and Bruce's speaking volume. If the server is still
+  booting when Bruce starts, he retries in the background (~10 minutes) and
+  logs `Registered N tools from BrewPlanner` when it lands; he can drive the rig
+  and set reminders in the meantime.
+- **The rig is his alone.** Bruce here can switch the BK and HLT elements,
+  regulation, the pumps and the timer. The dashboard chat and the phone get a
+  read-only view of the same rig — deliberately, since whoever is talking to
+  this speaker is standing next to the kettle.
+
 - **The dashboard has a live Bruce page.** `/bruce` shows his state
   (idle/listening/thinking/speaking), the OpenAI session, a rolling
   conversation transcript, a volume slider, and a box to make him say

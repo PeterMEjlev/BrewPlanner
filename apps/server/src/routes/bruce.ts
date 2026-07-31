@@ -53,7 +53,7 @@ import {
   titleFromFirstMessage,
   trimHistory,
 } from '../bruce/repo.js';
-import { mintVoiceSession, runVoiceTool, voiceToolPhase } from '../bruce/voice.js';
+import { mintVoiceSession, runVoiceTool, voiceToolDefinitions, voiceToolPhase } from '../bruce/voice.js';
 import { BuildError } from '../knowledge/build.js';
 import { chunkMarkdown } from '../knowledge/chunk.js';
 import { indexJob, startIndexJob } from '../knowledge/job.js';
@@ -371,6 +371,17 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
         .status(502)
         .send({ error: 'OpenAI would not open a voice session. Check the server log.' });
     }
+  });
+
+  // GET /api/bruce/voice/tools — the tool definitions themselves.
+  //
+  // The browser never needs this: its session is opened with the tools already
+  // baked into the credential above. It exists for the brewery speaker
+  // (apps/bruce), which builds its own Realtime session on the Pi and used to
+  // carry a second, hand-maintained copy of every tool. It fetches this list at
+  // startup instead, so a tool added here reaches all three Bruces at once.
+  app.get('/voice/tools', { preHandler: requireAuth }, async () => {
+    return { tools: voiceToolDefinitions() };
   });
 
   // POST /api/bruce/voice/tool — run one function call the model made in the

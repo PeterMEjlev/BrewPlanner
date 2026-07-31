@@ -252,23 +252,6 @@ function makeStub(spoken = []) {
     ok('timer watch announces countdown completion');
   }
 
-  // ── Functions: keg summary grammar ───────────────────────────────────────
-
-  {
-    const kegs = require('../src/functions/kegs.js');
-    const stub = makeStub();
-    const data = [
-      { number: '1', contents: 'NEIPA', volume: '19L', abv: '5.9', date: '', note: '' },
-      { number: '2', contents: '???', volume: '', abv: '', date: '', note: '' },
-    ];
-    kegs.register(stub, async () => data);
-    const out = await stub.handlers.get('get_keg_status')({});
-    assert.match(out, /You have 1 keg with beer out of 2 total\./);
-    assert.match(out, /1 keg of NEIPA/);
-    assert.match(out, /1 keg is empty or unassigned\./);
-    ok('keg summary pluralizes singular counts');
-  }
-
   // ── RealtimeClient: GA session configuration ─────────────────────────────
 
   {
@@ -319,84 +302,6 @@ function makeStub(spoken = []) {
     assert.match(reply, /Volume set to 60 percent\./);
     assert.strictEqual(bruce.volume, 0.6);
     ok('volume clamps, boosts, and has a voice function');
-  }
-
-  // ── Functions: keg updates ────────────────────────────────────────────────
-
-  {
-    const kegs = require('../src/functions/kegs.js');
-    const stub = makeStub();
-    const inventory = [
-      { number: '5', contents: 'IPA', volume: '19L', abv: '6.5%', date: '01/06/2026', note: 'dry hopped' },
-    ];
-    const puts = [];
-    const apiCall = async (method, endpoint, body) => {
-      if (method === 'GET') return inventory;
-      puts.push({ endpoint, body });
-      return {};
-    };
-    kegs.register(stub, apiCall);
-    const update = stub.handlers.get('update_keg');
-
-    // Emptying clears the stale beer metadata:
-    await update({ number: '5', contents: 'Dirty' });
-    assert.deepStrictEqual(puts[0].body, { contents: 'Dirty', date: '', note: '', abv: '' });
-
-    // Filling stamps today's date and keeps only what was said:
-    await update({ number: '5', contents: 'NEIPA', abv: '6.2%' });
-    assert.strictEqual(puts[1].body.contents, 'NEIPA');
-    assert.strictEqual(puts[1].body.abv, '6.2%');
-    assert.match(puts[1].body.date, /^\d{2}\/\d{2}\/\d{4}$/, 'fill date defaults to today');
-
-    // Editing one field carries the others over unchanged:
-    await update({ number: '5', note: 'gushing a bit' });
-    assert.deepStrictEqual(puts[2].body, {
-      contents: 'IPA',
-      date: '01/06/2026',
-      note: 'gushing a bit',
-      abv: '6.5%',
-    });
-
-    const missing = await update({ number: '99', contents: 'Stout' });
-    assert.match(missing, /no keg number 99/);
-    ok('update_keg merges, clears on empty, stamps fill date');
-  }
-
-  // ── Functions: controller setpoint ───────────────────────────────────────
-
-  {
-    const stats = require('../src/functions/stats.js');
-    const stub = makeStub();
-    const posts = [];
-    const devices = [
-      {
-        id: 1, name: 'Fermenter', type: 'brew_controller', online: true,
-        latest: [{ metric: 'temp_c', value: 18.4 }],
-      },
-      { id: 2, name: 'Kegs', type: 'brew_controller', online: true, latest: [] },
-      { id: 3, name: 'Fermenter', type: 'hydrometer', online: true, latest: [] },
-    ];
-    const apiCall = async (method, endpoint, body) => {
-      if (method === 'GET') return devices;
-      posts.push({ endpoint, body });
-      return { pendingSetpointC: body.value };
-    };
-    stats.register(stub, apiCall);
-    const set = stub.handlers.get('set_controller_setpoint');
-
-    const reply = await set({ temperature: 19 });
-    assert.strictEqual(posts[0].endpoint, '/api/devices/1/setpoint', 'defaults to the fermenter controller');
-    assert.deepStrictEqual(posts[0].body, { value: 19 });
-    assert.match(reply, /Fermenter setpoint queued to 19°C/);
-    assert.match(reply, /currently 18\.4°C/);
-
-    await set({ temperature: 3, device: 'kegs' });
-    assert.strictEqual(posts[1].endpoint, '/api/devices/2/setpoint');
-
-    const oob = await set({ temperature: 80 });
-    assert.match(oob, /between minus 10 and 50/);
-    assert.strictEqual(posts.length, 2, 'out-of-range never posted');
-    ok('set_controller_setpoint targets the right device and validates range');
   }
 
   // ── Status server: real HTTP round trip ─────────────────────────────────
@@ -450,255 +355,85 @@ function makeStub(spoken = []) {
     ok('status server serves state and forwards speak/volume');
   }
 
-  // ── Functions: calculators ───────────────────────────────────────────────
+
+  // ── Functions: the hub tool proxy ────────────────────────────────────────
+  //
+  // Bruce's BrewPlanner tools are no longer written here: the definitions come
+  // from the server and each one is registered as a proxy back to it (see
+  // src/functions/hub.js). What is worth pinning is that the proxying is
+  // faithful — the model sees what the hub advertises, the call reaches the hub
+  // unchanged, and the answer comes back as the model reads it.
 
   {
-    const tools = require('../src/functions/tools.js');
+    const hub = require('../src/functions/hub.js');
     const stub = makeStub();
-    tools.register(stub);
-    const dilution = await stub.handlers.get('dilution_calculator')({
-      volume: 20, current_gravity: 1.05, desired_gravity: 1.04,
-    });
-    assert.match(dilution, /add 5\.0 litres of water/);
-    assert.match(dilution, /25\.0 litres/);
-
-    const hydro = await stub.handlers.get('hydrometer_correction')({ reading: 1.05, sample_temp: 30 });
-    assert.match(hydro, /corrected gravity is 1\.052/);
-
-    const carb = await stub.handlers.get('carbonation_calculator')({ co2_volumes: 2.4, keg_temp: 4 });
-    assert.match(carb, /0\.74 bar \(10\.8 PSI\)/);
-
-    const style = await stub.handlers.get('carbonation_calculator')({ beer_style: 'hazy ipa' });
-    assert.match(style, /American Ales and Lager is typically carbonated at 2\.2 – 2\.7/);
-    ok('calculators produce the expected numbers');
-  }
-
-  // ── Functions: recipes and the fermenter selection ───────────────────────
-
-  {
-    const recipes = require('../src/functions/recipes.js');
-    const stub = makeStub();
-    const library = [
-      { id: 'r1', name: 'Hazy Boi NEIPA v3', style: 'NEIPA', abv: '6.2', ibu: '45', ebc: '12', url: 'u' },
-      { id: 'r2', name: 'Dark Matter Stout', style: 'Stout', abv: '7.1', ibu: '38', ebc: '80', url: '' },
-    ];
-    const sheet = {
-      id: 'r1', name: 'Hazy Boi NEIPA v3', style: 'NEIPA', og: '1.060', fg: '1.012',
-      abv: '6.2', ibu: '45', ebc: '12', batchSizeL: 55, mashTemp: '67°C', fermentationTemp: '19°C',
-      fermentables: [{ amount: '10', unit: 'kg', name: 'Pilsner Malt', percent: '80' }],
-      hops: [{ amount: '150', unit: 'g', name: 'Citra', use: 'Dry Hop', time: '3', timeUnit: 'days' }],
-      yeast: [{ amount: '1', amountUnit: 'pack', name: 'Voss Kveik', lab: 'Lallemand', attenuation: '78' }],
-      otherIngredients: [], mashGuidelines: null, waterProfile: null,
-    };
-    let active = { recipe: null };
-    const puts = [];
-    const apiCall = async (method, endpoint, body) => {
-      if (method === 'GET' && endpoint === '/api/recipes') return library;
-      if (method === 'GET' && endpoint.startsWith('/api/recipes/')) return sheet;
-      if (method === 'GET' && endpoint === '/api/recipe') return active;
-      if (method === 'GET' && endpoint === '/api/fermenter') return { state: 'dirty' };
-      puts.push({ method, endpoint, body });
-      if (endpoint === '/api/recipe' && method === 'PUT') active = { recipe: library[0] };
-      if (endpoint === '/api/recipe' && method === 'DELETE') active = { recipe: null };
-      return {};
-    };
-    recipes.register(stub, apiCall);
-
-    // Shorthand finds the real recipe — nobody says "Hazy Boi NEIPA v3" out loud:
-    assert.strictEqual(recipes.matchRecipe(library, 'the NEIPA').id, 'r1');
-    assert.strictEqual(recipes.matchRecipe(library, 'lambic'), null);
-
-    const empty = await stub.handlers.get('get_active_recipe')({});
-    assert.match(empty, /Nothing is in the fermenter\./);
-    assert.match(empty, /still needs cleaning/);
-
-    const set = await stub.handlers.get('set_active_recipe')({ name: 'neipa' });
-    assert.match(set, /Hazy Boi NEIPA v3 is now the beer in the fermenter/);
-    assert.strictEqual(puts[0].body.id, 'r1');
-    assert.strictEqual(puts[0].body.abv, '6.2');
-
-    const missing = await stub.handlers.get('set_active_recipe')({ name: 'gueuze' });
-    assert.match(missing, /No recipe matches "gueuze", so I have not changed anything/);
-    assert.strictEqual(puts.length, 1, 'a miss never writes');
-
-    // A summary names the beer and the shape of the sheet, not every line:
-    const summary = await stub.handlers.get('get_recipe_details')({ name: 'hazy' });
-    assert.match(summary, /55 litre batch/);
-    assert.match(summary, /Hopped with Citra\./);
-    assert.ok(!summary.includes('150 g Citra'), 'summary keeps the hop schedule back');
-
-    const hops = await stub.handlers.get('get_recipe_details')({ name: 'hazy', section: 'hops' });
-    assert.match(hops, /150 g Citra — Dry Hop at 3 days/);
-
-    // Emptying the fermenter is not the same as washing it:
-    const cleared = await stub.handlers.get('clear_active_recipe')({});
-    assert.match(cleared, /no longer in it/);
-    assert.strictEqual(puts[1].method, 'DELETE');
-    ok('recipes match loosely, read by section, and drive the fermenter selection');
-  }
-
-  // ── Functions: the to-do list ────────────────────────────────────────────
-
-  {
-    const todos = require('../src/functions/todos.js');
-    const stub = makeStub();
-    let list = [
-      { id: 1, text: 'Order more CO2', done: false },
-      { id: 2, text: 'Order more caps', done: false },
-      { id: 3, text: 'Descale the HLT', done: true },
-    ];
     const calls = [];
     const apiCall = async (method, endpoint, body) => {
-      if (method === 'GET') return list;
       calls.push({ method, endpoint, body });
-      return { text: body && body.text };
+      if (method === 'GET') {
+        return {
+          tools: [
+            {
+              type: 'function',
+              name: 'get_kegs',
+              description: 'Read the keg board.',
+              parameters: { type: 'object', properties: {}, required: [] },
+            },
+            {
+              type: 'function',
+              name: 'manage_todo',
+              description: 'Change the to-do list.',
+              parameters: { type: 'object', properties: { action: { type: 'string' } }, required: ['action'] },
+            },
+            // Read-only on the server; this process has the full rig set, so it
+            // must not register a second, weaker tool for the same question.
+            { type: 'function', name: 'get_rig_status', description: 'Read the rig.', parameters: {} },
+          ],
+        };
+      }
+      return { output: 'Two kegs hold beer.' };
     };
-    todos.register(stub, apiCall);
 
-    const read = await stub.handlers.get('get_todos')({});
-    assert.match(read, /2 items outstanding, and 1 already done\./);
-    assert.ok(!read.includes('Descale the HLT'), 'done items are counted, not read out');
+    const registered = await hub.registerOnce(stub, apiCall);
+    assert.strictEqual(registered, 2, 'get_rig_status is left to brewSystem.js');
+    assert.ok(stub.handlers.has('get_kegs'));
+    assert.ok(stub.handlers.has('manage_todo'));
+    assert.ok(!stub.handlers.has('get_rig_status'));
+    assert.strictEqual(calls[0].endpoint, '/api/bruce/voice/tools');
 
-    // "order more" hits both CO2 and caps — that has to be a question, not a guess:
-    const ambiguous = await stub.handlers.get('complete_todo')({ text: 'order more' });
-    assert.match(ambiguous, /Several to-dos match/);
-    assert.strictEqual(calls.length, 0, 'an ambiguous match never writes');
-
-    const ticked = await stub.handlers.get('complete_todo')({ text: 'CO2' });
-    assert.match(ticked, /Ticked off "Order more CO2"\./);
-    assert.deepStrictEqual(calls[0], { method: 'PATCH', endpoint: '/api/todos/1', body: { done: true } });
-
-    // complete_todo only sees outstanding items, reopen_todo only completed ones:
-    const alreadyDone = await stub.handlers.get('complete_todo')({ text: 'descale' });
-    assert.match(alreadyDone, /Nothing on the to-do list matches "descale"/);
-
-    const reopened = await stub.handlers.get('reopen_todo')({ text: 'descale' });
-    assert.deepStrictEqual(calls[1], { method: 'PATCH', endpoint: '/api/todos/3', body: { done: false } });
-    assert.match(reopened, /Put "Descale the HLT" back on the list/);
-
-    const removed = await stub.handlers.get('delete_todo')({ text: 'caps' });
-    assert.match(removed, /Removed "Order more caps"/);
-    assert.strictEqual(calls[2].method, 'DELETE');
-
-    list = list.filter((t) => !t.done);
-    const nothingToClear = await stub.handlers.get('clear_completed_todos')({});
-    assert.match(nothingToClear, /no completed items to clear/);
-    ok('to-do list matches on text and refuses to guess between candidates');
+    const answer = await stub.handlers.get('manage_todo')({ action: 'add', text: 'Order caps' });
+    assert.strictEqual(answer, 'Two kegs hold beer.');
+    const posted = calls[calls.length - 1];
+    assert.strictEqual(posted.method, 'POST');
+    assert.strictEqual(posted.endpoint, '/api/bruce/voice/tool');
+    assert.strictEqual(posted.body.name, 'manage_todo');
+    assert.deepStrictEqual(posted.body.args, { action: 'add', text: 'Order caps' });
+    ok('hub tools are fetched, proxied, and the rig is left local');
   }
 
-  // ── Functions: device fleet and the Inkbirds ─────────────────────────────
-
+  // A server that is still booting must not take Bruce down with it — the wake
+  // word has to work on a Pi where both services started a second ago.
   {
-    const devices = require('../src/functions/devices.js');
+    const hub = require('../src/functions/hub.js');
     const stub = makeStub();
-    const fleet = [
-      {
-        id: 1, name: 'Fermenter controller', type: 'brew_controller', online: true,
-        lastSeenAt: new Date(Date.now() - 90_000).toISOString(), lastIp: '192.168.0.51',
-        vendorName: 'Birdy Boi', mac: 'aa:bb:cc:dd:ee:ff', reportingIntervalSec: 300, readingCount: 4210,
-        pendingSetpointC: 18,
-        latest: [
-          { metric: 'temp_c', value: 18.94 },
-          { metric: 'setpoint_c', value: 19 },
-          { metric: 'hvac_state', value: -1 },
-        ],
-      },
-      {
-        id: 2, name: 'Power meter', type: 'power_meter', online: false,
-        lastSeenAt: new Date(Date.now() - 7_200_000).toISOString(), lastIp: null,
-        vendorName: null, mac: null, reportingIntervalSec: 30, readingCount: 12,
-        latest: [],
-      },
-    ];
-    const patches = [];
-    const apiCall = async (method, endpoint, body) => {
-      if (method === 'GET') return fleet;
-      patches.push({ endpoint, body });
-      return {};
-    };
-    devices.register(stub, apiCall);
+    let threw = false;
+    try {
+      await hub.registerOnce(stub, async () => {
+        throw new Error('The BrewPlanner server is not responding.');
+      });
+    } catch {
+      threw = true;
+    }
+    assert.strictEqual(threw, true, 'the caller decides whether to retry');
+    assert.strictEqual(stub.handlers.size, 0, 'nothing half-registered');
 
-    const fleetSummary = await stub.handlers.get('get_device_status')({});
-    assert.match(fleetSummary, /1 of 2 devices are online\. Offline: Power meter\./);
-    assert.match(fleetSummary, /last reported 2 minutes ago/);
-    assert.ok(!fleetSummary.includes('192.168.0.51'), 'summary keeps the network details back');
-
-    const full = await stub.handlers.get('get_device_status')({ detail: 'full' });
-    assert.match(full, /logging every 5 minutes, at 192\.168\.0\.51/);
-    assert.match(full, /known as "Birdy Boi" in its own app/);
-
-    const inkbirds = await stub.handlers.get('get_inkbird_status')({});
-    assert.match(inkbirds, /Fermenter controller — 18\.9°C, target 19\.0°C, currently cooling/);
-    assert.match(inkbirds, /change to 18°C still waiting/);
-    assert.ok(!inkbirds.includes('Power meter'), 'only brew controllers are Inkbirds');
-
-    const tooFast = await stub.handlers.get('set_device_interval')({ device: 'power', seconds: 2 });
-    assert.match(tooFast, /between 5 seconds and 1 hour/);
-    assert.strictEqual(patches.length, 0, 'out-of-range never patched');
-
-    const changed = await stub.handlers.get('set_device_interval')({ device: 'power', seconds: 60 });
-    assert.match(changed, /Power meter will now log every 1 minute/);
-    assert.deepStrictEqual(patches[0], { endpoint: '/api/devices/2', body: { reportingIntervalSec: 60 } });
-    ok('device fleet reports health, Inkbirds report control state, interval validates');
-  }
-
-  // ── Functions: settings ──────────────────────────────────────────────────
-
-  {
-    const settings = require('../src/functions/settings.js');
-    const stub = makeStub();
-    const state = {
-      '/api/notifications/settings': { kegAlertEnabled: true, kegAlertDays: 30, fermentDoneEnabled: true },
-      '/api/graph-colors': {
-        pressure: '#22d3ee', gravity: '#a78bfa', power: '#eab308', water: '#3b82f6',
-        beerTemp: '#fb923c', fridgeTemp: '#d97706', setpoint: '#f59e0b',
-      },
-      '/api/device-sources': {
-        fermenter_pressure: 'real', fermenter_controller: 'real', kegs_controller: 'real',
-        brewery_temp: 'real', power: 'mock', water: 'mock', fermenter_gravity: 'mock',
-      },
-    };
-    const writes = [];
-    const apiCall = async (method, endpoint, body) => {
-      if (method === 'GET') return state[endpoint];
-      writes.push({ endpoint, body });
-      return body;
-    };
-    settings.register(stub, apiCall);
-
-    const alerts = await stub.handlers.get('get_settings')({ section: 'notifications' });
-    assert.match(alerts, /keg age alert is on, at 30 days/);
-
-    // One field changes; the rest are carried over rather than reset:
-    await stub.handlers.get('set_notification_settings')({ keg_alert_days: 21 });
-    assert.deepStrictEqual(writes[0].body, {
-      kegAlertEnabled: true, kegAlertDays: 21, fermentDoneEnabled: true,
+    // register() swallows it instead, so main.js keeps starting.
+    hub.register(stub, async () => {
+      throw new Error('The BrewPlanner server is not responding.');
     });
-
-    const outOfRange = await stub.handlers.get('set_notification_settings')({ keg_alert_days: 900 });
-    assert.match(outOfRange, /between 1 and 365 days/);
-    assert.strictEqual(writes.length, 1, 'out-of-range never wrote');
-
-    // Colours arrive by name, and only the named line moves:
-    assert.strictEqual(settings.resolveColor('amber'), '#f59e0b');
-    assert.strictEqual(settings.resolveColor('#AABBCC'), '#aabbcc');
-    assert.strictEqual(settings.resolveColor('puce'), null);
-    const recolour = await stub.handlers.get('set_graph_color')({ line: 'electricity', color: 'red' });
-    assert.match(recolour, /The power line is now #ef4444/);
-    assert.strictEqual(writes[1].body.power, '#ef4444');
-    assert.strictEqual(writes[1].body.water, '#3b82f6', 'other lines are carried over');
-
-    // Switching a sensor to mock has to say what that means out loud:
-    const mocked = await stub.handlers.get('set_device_source')({ sensor: 'fermenter fridge', source: 'mock' });
-    assert.match(mocked, /mock demo data/);
-    assert.match(mocked, /invented numbers/);
-    assert.strictEqual(writes[2].body.fermenter_controller, 'mock');
-    assert.strictEqual(writes[2].body.kegs_controller, 'real', 'other sensors are carried over');
-
-    const noop = await stub.handlers.get('set_device_source')({ sensor: 'power meter', source: 'mock' });
-    assert.match(noop, /already set to mock demo data/);
-    assert.strictEqual(writes.length, 3, 'a no-op change never wrote');
-    ok('settings merge unchanged fields, take named colours, and explain mock data');
+    await sleep(20);
+    assert.strictEqual(stub.handlers.size, 0);
+    ok('a hub that is not up yet does not stop Bruce starting');
   }
 
   fs.rmSync(stateDir, { recursive: true, force: true });

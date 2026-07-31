@@ -30,11 +30,15 @@ type Tools = typeof import('./bruce/tools.js');
 type Repo = typeof import('./repo.js');
 type RecipeRepo = typeof import('./recipeRepo.js');
 type Audit = typeof import('./audit/repo.js');
+type Devices = typeof import('./devices/repo.js');
+type BrewDays = typeof import('./brewDays/repo.js');
 
 let tools: Tools;
 let repo: Repo;
 let recipeRepo: RecipeRepo;
 let audit: Audit;
+let devices: Devices;
+let brewDays: BrewDays;
 let sqlite: import('better-sqlite3').Database;
 
 /**
@@ -84,6 +88,8 @@ before(async () => {
   repo = await import('./repo.js');
   recipeRepo = await import('./recipeRepo.js');
   audit = await import('./audit/repo.js');
+  devices = await import('./devices/repo.js');
+  brewDays = await import('./brewDays/repo.js');
 
   const { upsertUser } = await import('./auth/users.js');
   ASKER = { userId: upsertUser('peter', 'a-long-enough-test-password').id, username: 'peter' };
@@ -347,5 +353,190 @@ describe('Bruce chat tools', () => {
 
     const todos = await tools.runBruceTool('get_todos', {}, ASKER);
     assert.match(todos, /to-do list is empty|Outstanding/);
+  });
+
+  // --- Sensor history -------------------------------------------------------
+  //
+  // The tool that answers "has it been stable?", which the latest-reading tool
+  // structurally cannot. A device of type `other` is used deliberately: every
+  // other type has a mock profile behind it, and the fallback layer would serve
+  // invented demo numbers instead of the rows this test inserts.
+
+  it('summarises a sensor over a window rather than reporting its last reading', async () => {
+    const { device } = devices.createDevice('Test cellar probe', 'other');
+    const at = (minutesAgo: number): string =>
+      new Date(Date.now() - minutesAgo * 60_000).toISOString();
+    devices.insertReadings(device.id, [
+      { metric: 'temp_c', value: 18, recordedAt: at(180) },
+      { metric: 'temp_c', value: 22, recordedAt: at(120) },
+      { metric: 'temp_c', value: 20, recordedAt: at(60) },
+    ]);
+
+    const history = await tools.runBruceTool(
+      'get_sensor_history',
+      { sensor: 'cellar probe', hours: 6 },
+      ASKER,
+    );
+    assert.match(history, /Test cellar probe/);
+    assert.match(history, /20\.0 °C average/);
+    assert.match(history, /18\.0 °C to 22\.0 °C/);
+    // Oldest first: read backwards this says the cellar was warming, not cooling.
+    assert.match(history, /started 18\.0 °C, ended 20\.0 °C/);
+    assert.match(history, /3 readings/);
+  });
+
+  it('says a window is empty rather than inventing a trend, and names the sensors it has', async () => {
+    const quiet = await tools.runBruceTool(
+      'get_sensor_history',
+      { sensor: 'cellar probe', hours: 1 },
+      ASKER,
+    );
+    assert.match(quiet, /logged nothing/);
+
+    const missing = await tools.runBruceTool('get_sensor_history', { sensor: 'the mash tun' }, ASKER);
+    assert.match(missing, /No sensor here matches "the mash tun"/);
+    assert.match(missing, /Test cellar probe/);
+  });
+
+  // --- Brew days ------------------------------------------------------------
+
+  it('reads the brew-day log and works the efficiency back from the gravities', async () => {
+    const empty = await tools.runBruceTool('get_brew_days', {}, ASKER);
+    assert.match(empty, /Nothing has been logged/);
+
+    const recipe = recipeRepo.createRecipe(sheet('Efficiency Ale'));
+    const entry = brewDays.startBrewDay(recipe.id, recipe);
+    brewDays.updateBrewDay(entry.id, {
+      status: 'fermenting',
+      measured: {
+        ...recipe.measured,
+        og: '1.058',
+        fg: '1.011',
+        volumeL: 20,
+        preBoilGravity: '',
+        preBoilVolumeL: null,
+        mashTempC: 67,
+        boilTimeMin: 60,
+        efficiencyPct: null,
+        waterL: null,
+        energyKwh: null,
+      },
+    });
+
+    const list = await tools.runBruceTool('get_brew_days', {}, ASKER);
+    assert.match(list, /Efficiency Ale/);
+    assert.match(list, /1\.058/);
+    // ABV is derived from the gravities, not read off the recipe's target.
+    assert.match(list, /6\.2 %/);
+
+    const detail = await tools.runBruceTool('get_brew_days', { recipe: 'Efficiency', detail: true }, ASKER);
+    assert.match(detail, /brew #1/);
+    assert.match(detail, /Mashed at 67 °C/);
+    assert.match(detail, /apparent attenuation/);
+
+    const unknown = await tools.runBruceTool('get_brew_days', { recipe: 'Vienna Lager' }, ASKER);
+    assert.match(unknown, /No brew day matches "Vienna Lager"/);
+    assert.match(unknown, /Efficiency Ale/);
+
+    const noSuchId = await tools.runBruceTool('get_brew_days', { id: 9999 }, ASKER);
+    assert.match(noSuchId, /no brew day with id 9999/);
+  });
+
+  // --- Calculators ----------------------------------------------------------
+  //
+  // The figures matter more than the prose: these exist precisely so the model
+  // stops doing polynomial fits in its head, and a wrong answer here would be
+  // spoken with total confidence.
+
+  it('calculates dilution, hydrometer correction and carbonation pressure', async () => {
+    // 20 L at 1.060 diluted to 1.050 → 24 L, i.e. 4 L of water.
+    const water = await tools.runBruceTool(
+      'brewing_calculator',
+      { kind: 'dilution', volume_l: 20, current_gravity: 1.06, desired_gravity: 1.05 },
+      ASKER,
+    );
+    assert.match(water, /Add \*\*4\.0 L\*\* of water/);
+    assert.match(water, /becomes 24\.0 L/);
+
+    // Warm sample, calibrated at 20 °C: the true gravity is above what was read.
+    const corrected = await tools.runBruceTool(
+      'brewing_calculator',
+      { kind: 'hydrometer', reading: 1050, sample_temp_c: 30 },
+      ASKER,
+    );
+    assert.match(corrected, /Corrected gravity \*\*1\.05[23]\*\*/);
+
+    // 2.4 volumes at 4 °C (39 °F) is ~11 PSI on a force-carbonation chart —
+    // the figure this is here to stop the model guessing at.
+    const pressure = await tools.runBruceTool(
+      'brewing_calculator',
+      { kind: 'carbonation', co2_volumes: 2.4, keg_temp_c: 4 },
+      ASKER,
+    );
+    assert.match(pressure, /Set the regulator to \*\*0\.74 bar\*\* \(10\.8 PSI\)/);
+
+    // A style alone is answered with the range and a question, never a guess.
+    const style = await tools.runBruceTool(
+      'brewing_calculator',
+      { kind: 'carbonation', style: 'German wheat beer' },
+      ASKER,
+    );
+    assert.match(style, /3\.3–4\.5 volumes/);
+    assert.doesNotMatch(style, /Set the regulator/);
+  });
+
+  it('refuses impossible calculations instead of returning a number', async () => {
+    const backwards = await tools.runBruceTool(
+      'brewing_calculator',
+      { kind: 'dilution', volume_l: 20, current_gravity: 1.04, desired_gravity: 1.06 },
+      ASKER,
+    );
+    assert.match(backwards, /only lowers gravity/);
+
+    const missing = await tools.runBruceTool('brewing_calculator', { kind: 'carbonation' }, ASKER);
+    assert.match(missing, /needs the volumes of CO2 and the keg temperature/);
+  });
+
+  // --- The rig, read-only ---------------------------------------------------
+
+  it('reports the rig as unconfigured rather than pretending to read it', async () => {
+    const previous = process.env.BREW_SYSTEM_URL;
+    delete process.env.BREW_SYSTEM_URL;
+    try {
+      const rig = await tools.runBruceTool('get_rig_status', {}, ASKER);
+      assert.match(rig, /not configured on this hub/);
+    } finally {
+      if (previous != null) process.env.BREW_SYSTEM_URL = previous;
+    }
+  });
+
+  // --- Kegs, written --------------------------------------------------------
+  //
+  // The keg board is a Google spreadsheet, so only the paths that never touch it
+  // are pinned here. That is deliberate rather than a gap: the guards below are
+  // what stops a misheard sentence reaching a real brewery's board, and the
+  // write itself is refused outright without KEG_SHEET_WRITE_URL — which this
+  // test removes so that it cannot possibly write to the live sheet.
+
+  it('will not touch the keg board on a half-formed instruction', async () => {
+    const previous = process.env.KEG_SHEET_WRITE_URL;
+    delete process.env.KEG_SHEET_WRITE_URL;
+    try {
+      const nameless = await tools.runBruceTool('manage_keg', { action: 'empty' }, ASKER);
+      assert.match(nameless, /Which keg\?/);
+
+      const aimless = await tools.runBruceTool('manage_keg', { number: '3' }, ASKER);
+      assert.match(aimless, /fill, empty, clean or edit/);
+
+      const nonsense = await tools.runBruceTool('manage_keg', { number: '3', action: 'burn' }, ASKER);
+      assert.match(nonsense, /not one of fill, empty, clean or edit/);
+
+      // Filling without saying what with is a question, not a write — and it is
+      // answered before the sheet is read, so this makes no network call.
+      const contentless = await tools.runBruceTool('manage_keg', { number: '3', action: 'fill' }, ASKER);
+      assert.match(contentless, /what went in it/);
+    } finally {
+      if (previous != null) process.env.KEG_SHEET_WRITE_URL = previous;
+    }
   });
 });

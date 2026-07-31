@@ -35,10 +35,14 @@ set the threshold relative to it instead of hardcoding 200 for every room.
 
 ### 12. (P3) Merge same-named devices in spoken sensor summaries
 Three fermenter sensors produce "Fermenter — pressure… Fermenter —
-temperature… Fermenter — gravity…" (verified in live output of
-`get_fermenter_status`). Group `latest` readings by device name in
-src/functions/stats.js so it reads as one sentence per thing: "Fermenter —
-pressure 1.14 bar, temperature 18.4°C cooling toward 18, gravity 1.019."
+temperature… Fermenter — gravity…" (verified in live output of the old
+`get_fermenter_status`). They should read as one sentence per thing:
+"Fermenter — pressure 1.14 bar, temperature 18.4°C cooling toward 18, gravity
+1.019."
+
+Now lives on the server: the spoken tools come from
+apps/server/src/bruce/tools.ts (`fermenterSection`), so fixing it there fixes
+the written chat and the phone's voice mode at the same time.
 
 ---
 
@@ -103,9 +107,14 @@ listening tests). The real next step is on the Pi: follow
 deploy/README-bruce.md, then tune and enable barge-in
 (`BRUCE_BARGE_IN_ENABLED=1`).
 
-One thing to watch once the hardware is in: the tool list has roughly doubled
-(recipes, to-dos, the device fleet, settings), and every definition is sent on
-every Realtime session. If the model starts reaching for the wrong function, the
-fix is sharper descriptions rather than fewer tools — the pairs most likely to
-be confused are `get_sensor_readings` (values) against `get_device_status`
-(health), and `add_todo` (a job) against `set_reminder` (a time).
+One thing to watch once the hardware is in: every tool definition is sent on
+every Realtime session, and the list is now the hub's whole set (fetched by
+src/functions/hub.js) plus the rig and reminders. If the model starts reaching
+for the wrong function, the fix is sharper descriptions rather than fewer tools
+— the pairs most likely to be confused are `get_brewery_status` (what it reads
+now) against `get_sensor_history` (what it has been doing), and `manage_todo`
+(a job with no time on it) against `set_reminder` (a particular moment).
+
+Note that the descriptions to sharpen now live in
+apps/server/src/bruce/tools.ts, not here — the only tools written in this
+workspace are the rig's, reminders and the speaking volume.

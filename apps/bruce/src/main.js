@@ -22,12 +22,7 @@ const cfg = require('../config');
 const { apiCall } = require('./api');
 const { startStatusServer } = require('./statusServer');
 const brewSystemFunctions = require('./functions/brewSystem');
-const kegFunctions = require('./functions/kegs');
-const statsFunctions = require('./functions/stats');
-const deviceFunctions = require('./functions/devices');
-const recipeFunctions = require('./functions/recipes');
-const todoFunctions = require('./functions/todos');
-const settingsFunctions = require('./functions/settings');
+const hubFunctions = require('./functions/hub');
 const toolFunctions = require('./functions/tools');
 
 // Rolling transcript of recent turns, served by the status API for the
@@ -72,14 +67,15 @@ async function main() {
   const volumePct = Number(process.env.BRUCE_VOLUME_PERCENT);
   if (Number.isFinite(volumePct)) bruce.setVolume(volumePct / 100);
 
+  // What lives on this machine: the rig's controls (this is the one Bruce with
+  // full control of the heaters), reminders, and his own speaking volume.
   brewSystemFunctions.register(bruce, apiCall);
-  kegFunctions.register(bruce, apiCall);
-  statsFunctions.register(bruce, apiCall);
-  deviceFunctions.register(bruce, apiCall);
-  recipeFunctions.register(bruce, apiCall);
-  todoFunctions.register(bruce, apiCall);
-  settingsFunctions.register(bruce, apiCall);
   toolFunctions.register(bruce);
+  // Everything about BrewPlanner itself — the fermenter, the kegs, the books'
+  // brewery, the brew-day log, the calculators — comes from the hub's own tool
+  // set rather than a second copy here. Registers in the background, so a
+  // server that hasn't finished booting doesn't hold up the wake word.
+  hubFunctions.register(bruce, apiCall);
 
   // ── Logging ─────────────────────────────────────────────────────────────
   //

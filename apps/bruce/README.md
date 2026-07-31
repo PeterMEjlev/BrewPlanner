@@ -15,22 +15,27 @@ BrewPlanner server over loopback, which passes as trusted-local — no tokens.
   playback, function-calling registry. Only the paths and `WakeWordDetector`
   differ from the original — that one was rewritten around openWakeWord when
   the Picovoice key died.
-- `src/functions/` — what Bruce can *do*, all against the local server's API:
-  - `brewSystem.js` — rig control via `/api/brew-system/*` (audited, offline-aware)
-  - `kegs.js` — keg inventory via `/api/kegs`
-  - `stats.js` — fermenter status, sensor *readings*, setpoints, alerts
-  - `devices.js` — the sensor fleet's *health*: online/offline, last seen,
-    logging interval, network details, and the Inkbird controllers at a glance
-  - `recipes.js` — the recipe library (read-only) and which beer is in the
-    fermenter, including its clean/dirty state
-  - `todos.js` — the brewery to-do list via `/api/todos`
-  - `settings.js` — alert preferences, new-recipe defaults, chart and keg
-    colours, and the mock/real switch per sensor
-  - `tools.js` — reminders + brewing calculators (no network)
+- `src/functions/` — what Bruce can *do*:
+  - `hub.js` — **everything about BrewPlanner**, fetched from the server rather
+    than written here. It reads the tool definitions from
+    `GET /api/bruce/voice/tools` at startup and registers each one as a proxy
+    to `POST /api/bruce/voice/tool`, where it runs against the hub's own
+    database and is audited like any other change.
+  - `brewSystem.js` — rig control via `/api/brew-system/*` (audited,
+    offline-aware). Local because this Bruce is the *only* one that may switch
+    the heaters on: the dashboard and the phone can read the rig but not drive
+    it, on the grounds that whoever is talking to this speaker is standing next
+    to the kettle.
+  - `tools.js` — reminders (they fire through this machine's speaker) and
+    Bruce's own speaking volume. No network.
 
-  The text chat has its own equivalents in `apps/server/src/bruce/tools.ts`,
-  which read the database directly because that one runs inside the server.
-  Both front doors cover the same ground; neither can write a brew sheet.
+  There used to be six more files here — kegs, stats, devices, recipes, todos,
+  settings — each a second implementation of a tool the server already had.
+  Two copies of "what is in the fermenter" drift, and they did: the server grew
+  the brew-day log, sensor history and the brewing calculators while this
+  process kept answering from the older set. One tool set now serves all three
+  Bruces (this speaker, the written chat, and the phone), so a tool added to
+  `apps/server/src/bruce/tools.ts` appears in all of them at once.
 - `src/main.js` — entry point: wires functions, env, and journald-friendly logs
 - `src/statusServer.js` — loopback HTTP API (state, transcript, speak, volume)
   that the BrewPlanner server proxies as `/api/bruce/*` for the dashboard page

@@ -24,19 +24,30 @@ import {
   DEFAULT_GRAPH_COLORS,
   REPORTING_INTERVAL_SEC,
   SENSOR_CATALOG,
+  abvFromGravities,
+  apparentAttenuation,
+  measuredEfficiency,
+  type BrewDay,
+  type BrewDayDetail,
+  type BrewDayTempStats,
+  type BrewPotControl,
+  type BrewSystemState,
   type BrucePhase,
   type DeviceStatus,
   type GraphColors,
   type Keg,
   type KegContentColors,
+  type Reading,
   type RecipeDefaults,
   type Todo,
 } from '@checklist/shared';
 import { recordAudit } from '../audit/repo.js';
 import { listAlerts } from '../alerts/repo.js';
+import { getBrewDay, listBrewDays } from '../brewDays/repo.js';
+import { readBrewSystemState, rigBase } from '../brewSystemClient.js';
 import * as deviceFallback from '../devices/fallback.js';
 import { setReportingInterval } from '../devices/repo.js';
-import { fetchKegs } from '../kegs.js';
+import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
 import * as repo from '../repo.js';
 import * as recipeRepo from '../recipeRepo.js';
 import { RECIPE_TOOL, matchRecipe, runRecipeTool } from './recipes.js';
@@ -252,6 +263,269 @@ async function kegSection(): Promise<string> {
   ].join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// History — the same sensors, over time rather than right now
+// ---------------------------------------------------------------------------
+//
+// `get_brewery_status` answers "what is it doing?"; everything here answers
+// "what has it been doing?", which is the question a brewer actually asks about
+// a fermentation. A single 20.4 °C says nothing about whether the fridge held
+// it there overnight or spent the night chasing a door left open.
+
+/** Longest window the history tool will read, in hours. A month of a 30 s sensor. */
+const MAX_HISTORY_HOURS = 24 * 31;
+
+/** Cumulative meters, where the useful figure is the total rather than the trend. */
+const CUMULATIVE = new Set(['energy_kwh', 'water_l']);
+
+/** Match a device by name, the way a person would say it. Same shape as matchTodos. */
+function matchDevices(spoken: string): DeviceStatus[] {
+  const devices = deviceFallback.listDeviceStatus();
+  const target = spoken.toLowerCase().trim();
+  const exact = devices.filter((d) => d.name.toLowerCase() === target);
+  if (exact.length > 0) return exact;
+  const partial = devices.filter(
+    (d) => d.name.toLowerCase().includes(target) || target.includes(d.name.toLowerCase()),
+  );
+  if (partial.length > 0) return partial;
+  // Last resort: the words in common. "the fermenter fridge" should find
+  // "Fermenter controller" without the brewer knowing its registered name.
+  const words = new Set(target.split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
+  return devices.filter((d) =>
+    d.name
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .some((word) => words.has(word)),
+  );
+}
+
+/**
+ * min / mean / max over a series, with how many points it rests on.
+ *
+ * Folded rather than spread into `Math.min(...)`: a month of a 30-second sensor
+ * is tens of thousands of readings, and spreading an array that long into a
+ * call blows the argument limit — a crash that would only ever appear on the
+ * longest window somebody asked for.
+ */
+function summarise(values: number[]): { min: number; avg: number; max: number; count: number } | null {
+  if (values.length === 0) return null;
+  let min = Infinity;
+  let max = -Infinity;
+  let sum = 0;
+  for (const value of values) {
+    if (value < min) min = value;
+    if (value > max) max = value;
+    sum += value;
+  }
+  return { min, avg: sum / values.length, max, count: values.length };
+}
+
+/**
+ * One metric's behaviour over the window, in a line.
+ *
+ * Ordered oldest → newest before the "started/ended" pair is taken, because
+ * `getHistory` returns newest first and a fermentation read backwards tells the
+ * opposite story.
+ */
+function metricTrend(name: string, readings: Reading[]): string | null {
+  const ordered = [...readings].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+  const stats = summarise(ordered.map((r) => r.value));
+  if (!stats) return null;
+  const first = ordered[0]?.value;
+  const last = ordered[ordered.length - 1]?.value;
+
+  if (CUMULATIVE.has(name) && first != null && last != null) {
+    // A meter that counts up: the interesting number is what it consumed over
+    // the window, not its min and max.
+    return `${name.replace(/_/g, ' ')} — used ${metric(name, Math.max(0, last - first))} over the window (now reading ${metric(name, last)})`;
+  }
+
+  const spread = stats.max - stats.min;
+  const parts = [
+    `${metric(name, stats.avg)} average`,
+    `${metric(name, stats.min)} to ${metric(name, stats.max)}`,
+    first != null && last != null ? `started ${metric(name, first)}, ended ${metric(name, last)}` : null,
+    `swing of ${spread.toFixed(2).replace(/\.?0+$/, '')}`,
+    `${stats.count} readings`,
+  ].filter((part): part is string => part != null);
+  return `${name.replace(/_/g, ' ')} — ${parts.join(', ')}`;
+}
+
+function historySection(device: DeviceStatus, hours: number, wanted?: string): string {
+  const since = new Date(Date.now() - hours * 3600_000).toISOString();
+  const history = deviceFallback.getHistory(device.id, {
+    ...(wanted ? { metric: wanted } : {}),
+    since,
+    limit: 5000,
+  });
+
+  if (!history || history.length === 0) {
+    return `**${device.name}** logged nothing${wanted ? ` for ${wanted}` : ''} in the last ${hours} h.${
+      device.online ? '' : ` It has been offline since ${ago(device.lastSeenAt)}.`
+    }`;
+  }
+
+  // Group by metric: one device reports several (a controller logs its
+  // temperature, its target and whether it is cooling).
+  const byMetric = new Map<string, Reading[]>();
+  for (const reading of history) {
+    const list = byMetric.get(reading.metric) ?? [];
+    list.push(reading);
+    byMetric.set(reading.metric, list);
+  }
+
+  const lines: string[] = [];
+  for (const [name, readings] of byMetric) {
+    // hvac_state is a tri-state flag; averaging it produces a number that means
+    // nothing. How long it spent cooling is the honest summary.
+    if (name === 'hvac_state') {
+      const cooling = readings.filter((r) => r.value < 0).length;
+      const heating = readings.filter((r) => r.value > 0).length;
+      const share = (n: number): string => `${Math.round((n / readings.length) * 100)} %`;
+      lines.push(`hvac — cooling ${share(cooling)} of the time, heating ${share(heating)}, otherwise idle`);
+      continue;
+    }
+    const line = metricTrend(name, readings);
+    if (line) lines.push(line);
+  }
+
+  // The all-time totals live beside the window, because "how much power have I
+  // ever used" and "how much did this brew day use" are both asked.
+  for (const name of CUMULATIVE) {
+    if (!byMetric.has(name)) continue;
+    const total = deviceFallback.getMetricTotal(device.id, name);
+    if (total != null && total > 0) {
+      lines.push(`${name.replace(/_/g, ' ')} — ${metric(name, total)} all time`);
+    }
+  }
+
+  return `**${device.name}**, last ${hours} h\n${bullets(lines)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Brew days
+// ---------------------------------------------------------------------------
+
+/** A gravity as the sheet holds it, or a dash. */
+function gravityText(value: string): string {
+  return value.trim() || '—';
+}
+
+/** Both efficiency figures for a logged brew day; see BrewDayDetail for the why. */
+function efficiencies(day: BrewDayDetail | BrewDay): { brewhouse: number | null; mash: number | null } {
+  return {
+    brewhouse:
+      day.measured.efficiencyPct ??
+      measuredEfficiency({
+        gravity: day.measured.og,
+        litres: day.measured.volumeL,
+        mashedPointGallons: day.recipe.mashedPointGallons,
+        unmashedPointGallons: day.recipe.unmashedPointGallons,
+      }),
+    mash: measuredEfficiency({
+      gravity: day.measured.preBoilGravity,
+      litres: day.measured.preBoilVolumeL,
+      mashedPointGallons: day.recipe.mashedPointGallons,
+      unmashedPointGallons: day.recipe.preBoilUnmashedPointGallons,
+    }),
+  };
+}
+
+/** `20 %` or a dash — a percentage nobody could calculate is not a zero. */
+function pct(value: number | null): string {
+  return value == null ? '—' : `${value.toFixed(0)} %`;
+}
+
+/** The day itself: "12 Jul 2026". Brew days are days, not timestamps. */
+function day(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function brewDayRows(days: BrewDay[]): string {
+  const rows = days.map((entry) => {
+    const { brewhouse } = efficiencies(entry);
+    const abv = abvFromGravities(entry.measured.og, entry.measured.fg);
+    return `| ${entry.id} | ${day(entry.brewedAt)} | ${entry.recipe.name} | #${entry.brewNumber} | ${entry.status} | ${gravityText(entry.measured.og)} | ${gravityText(entry.measured.fg)} | ${abv == null ? '—' : `${abv.toFixed(1)} %`} | ${pct(brewhouse)} | ${entry.rating == null ? '—' : `${entry.rating}/5`} |`;
+  });
+  return [
+    '| id | Brewed | Recipe | Brew | Status | OG | FG | ABV | Brewhouse | Rating |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...rows,
+  ].join('\n');
+}
+
+/** Min/mean/max as one phrase, or nothing when the series was empty. */
+function statsText(stats: BrewDayTempStats | null, unit = '°C'): string {
+  if (!stats) return 'not logged';
+  return `${stats.avg.toFixed(1)} ${unit} average, ${stats.min.toFixed(1)}–${stats.max.toFixed(1)} ${unit} (${stats.count} samples)`;
+}
+
+function brewDayDetail(entry: BrewDayDetail): string {
+  const { brewhouse, mash } = efficiencies(entry);
+  const abv = abvFromGravities(entry.measured.og, entry.measured.fg);
+  const attenuation = apparentAttenuation(entry.measured.og, entry.measured.fg);
+  const m = entry.measured;
+
+  const sections = [
+    `## ${entry.recipe.name} — brew #${entry.brewNumber}, ${day(entry.brewedAt)}`,
+    bullets(
+      [
+        `Status: **${entry.status}**${entry.durationMinutes ? `, took ${(entry.durationMinutes / 60).toFixed(1)} h` : ''}`,
+        `Style: ${entry.recipe.style || 'unstated'}${entry.recipe.batchSizeL ? `, recipe written for ${entry.recipe.batchSizeL} L` : ''}`,
+        entry.pitchedAt ? `Pitched ${day(entry.pitchedAt)}` : null,
+        entry.packagedAt ? `Packaged ${day(entry.packagedAt)}` : null,
+        entry.rating != null ? `Rated ${entry.rating}/5` : null,
+        entry.recipe.costDkk != null ? `Ingredients cost ${Math.round(entry.recipe.costDkk)} kr that day` : null,
+      ].filter((line): line is string => line != null),
+    ),
+    `### Measured\n${bullets(
+      [
+        `OG ${gravityText(m.og)} against a target of ${gravityText(entry.recipe.og)}`,
+        `FG ${gravityText(m.fg)} against a target of ${gravityText(entry.recipe.fg)}`,
+        abv != null ? `ABV ${abv.toFixed(1)} %${attenuation != null ? `, ${attenuation.toFixed(0)} % apparent attenuation` : ''}` : null,
+        m.preBoilGravity ? `Pre-boil ${gravityText(m.preBoilGravity)}${m.preBoilVolumeL ? ` at ${m.preBoilVolumeL} L` : ''}` : null,
+        m.volumeL != null ? `${m.volumeL} L into the fermenter` : null,
+        m.mashTempC != null ? `Mashed at ${m.mashTempC} °C` : null,
+        `Brewhouse efficiency ${pct(brewhouse)}${m.efficiencyPct != null ? ' (entered by hand)' : ''}, mash efficiency ${pct(mash)}`,
+        m.waterL != null ? `${m.waterL} L of brewing liquor` : null,
+        m.energyKwh != null ? `${m.energyKwh} kWh of electricity` : null,
+      ].filter((line): line is string => line != null),
+    )}`,
+  ];
+
+  const rig = entry.rigStats;
+  if (rig.bk || rig.mlt || rig.hlt) {
+    sections.push(
+      `### The rig on the day\n${bullets([
+        `Boil kettle: ${statsText(rig.bk)}`,
+        `Mash tun: ${statsText(rig.mlt)}`,
+        `Hot liquor tank: ${statsText(rig.hlt)}`,
+      ])}`,
+    );
+  }
+
+  const f = entry.fermentation;
+  if (f.temp || f.gravity || f.days != null) {
+    sections.push(
+      `### Fermentation${f.deviceName ? ` (from ${f.deviceName})` : ''}\n${bullets(
+        [
+          f.days != null ? `${f.days} days${entry.packagedAt ? ' to packaging' : ' so far'}` : null,
+          f.temp ? `Temperature: ${statsText(f.temp)}` : null,
+          f.gravity
+            ? `Gravity: ${f.gravity.start.toFixed(3)} → ${f.gravity.end.toFixed(3)} (${f.gravity.count} readings)`
+            : null,
+        ].filter((line): line is string => line != null),
+      )}`,
+    );
+  }
+
+  if (entry.notes.trim()) sections.push(`### Brew-day notes\n${entry.notes.trim()}`);
+  if (entry.tastingNotes.trim()) sections.push(`### Tasting notes\n${entry.tastingNotes.trim()}`);
+  return sections.join('\n\n');
+}
+
 function todoText(todos: Todo[]): string {
   if (todos.length === 0) return 'The to-do list is empty.';
   const open = todos.filter((t) => !t.done);
@@ -376,6 +650,134 @@ function settingsSection(section: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Calculators
+// ---------------------------------------------------------------------------
+//
+// Three sums a brewer does mid-brew, done in code rather than in the model's
+// head. That is the entire point of them being tools: a language model asked to
+// solve a cubic for regulator pressure will produce a confident number that is
+// wrong by a few PSI, and nothing about the answer will look wrong.
+//
+// Ported from the brewery speaker's own calculators (apps/bruce), which is
+// where they were first written.
+
+/** Gravity as SG, accepting either `1.050` or `1050` — brewers write both. */
+function gravity(value: number): number {
+  return value > 1.2 ? value / 1000 : value;
+}
+
+function dilution(volumeL: number, current: number, desired: number): string {
+  const og = gravity(current);
+  const dg = gravity(desired);
+  if (volumeL <= 0) return 'The volume has to be more than zero litres.';
+  if (og <= 1) return 'The current gravity has to be above 1.000.';
+  if (dg <= 1) return 'The target gravity has to be above 1.000.';
+  if (dg >= og) return 'Diluting only lowers gravity — the target has to be below the current gravity.';
+
+  const total = (volumeL * (og - 1)) / (dg - 1);
+  const water = total - volumeL;
+  return `Add **${water.toFixed(1)} L** of water: ${volumeL} L at ${og.toFixed(3)} becomes ${total.toFixed(1)} L at ${dg.toFixed(3)}.`;
+}
+
+/** The standard cubic correction, in °F internally as the coefficients require. */
+function hydrometerCorrection(reading: number, sampleC: number, calibrationC: number): string {
+  const sg = gravity(reading);
+  if (sg <= 0) return 'The hydrometer reading has to be above zero.';
+  const toF = (c: number): number => (c * 9) / 5 + 32;
+  const adjust = (f: number): number =>
+    (1.313454 - 0.132674 * f + 0.002057793 * f * f - 0.000002627634 * f * f * f) * 0.001;
+  const corrected = sg + adjust(toF(sampleC)) - adjust(toF(calibrationC));
+  return `Corrected gravity **${corrected.toFixed(3)}** — read ${sg.toFixed(3)} at ${sampleC} °C on a hydrometer calibrated for ${calibrationC} °C.`;
+}
+
+/** Typical carbonation levels, volumes of CO2, by family of style. */
+const CARBONATION_STYLES: [string, string][] = [
+  ['British ales', '1.5–2.0'],
+  ['Porter and stout', '1.7–2.3'],
+  ['Belgian ales', '1.9–2.4'],
+  ['American ales and lager', '2.2–2.7'],
+  ['European lagers', '2.2–2.7'],
+  ['Lambic', '2.4–2.8'],
+  ['German wheat beer', '3.3–4.5'],
+  ['Fruit lambic', '3.0–4.5'],
+];
+
+function carbonation(volumes: number, kegC: number): string {
+  if (volumes <= 0) return 'Volumes of CO2 has to be above zero.';
+  const f = (kegC * 9) / 5 + 32;
+  const psi =
+    -16.6999 -
+    0.0101059 * f +
+    0.00116512 * f * f +
+    0.173354 * f * volumes +
+    4.24267 * volumes -
+    0.0684226 * volumes * volumes;
+  if (psi <= 0) {
+    return `At ${kegC} °C the beer already holds about ${volumes} volumes on its own — no pressure needed, and it is warm enough that you should chill it before carbonating.`;
+  }
+  return `Set the regulator to **${(psi * 0.0689476).toFixed(2)} bar** (${psi.toFixed(1)} PSI) for ${volumes} volumes at ${kegC} °C.`;
+}
+
+// ---------------------------------------------------------------------------
+// The brewing rig, read-only
+// ---------------------------------------------------------------------------
+//
+// Deliberately read-only here, where the speaker in the brewery can drive it.
+// The difference is where you are standing: turning an element on in front of
+// you is a decision, and turning one on from a phone somewhere else — on a
+// sentence that may have been misheard — is an empty kettle with the heat on.
+
+/** A pot's line: what it reads, what it is aiming at, and whether it is on. */
+function potLine(name: string, temp: number | null, control: BrewPotControl | undefined): string {
+  const parts = [
+    temp == null ? 'no reading' : `${temp.toFixed(1)} °C`,
+    control ? `target ${control.sv.toFixed(1)} °C` : null,
+    control ? (control.heaterOn ? `**on** at ${control.efficiency} % duty` : 'off') : null,
+    control?.regulationEnabled ? 'regulating to the target' : null,
+  ].filter(Boolean);
+  return `${name} — ${parts.join(', ')}`;
+}
+
+async function rigSection(): Promise<string> {
+  let state: BrewSystemState | null;
+  try {
+    state = await readBrewSystemState();
+  } catch {
+    state = null;
+  }
+  if (!rigBase()) {
+    return 'The brewing rig is not configured on this hub (no BREW_SYSTEM_URL), so there is nothing to read.';
+  }
+  if (!state) {
+    return 'The brewing rig did not answer — it is almost certainly powered off, which is normal between brew days.';
+  }
+
+  const { temperatures: t, controlState, timer } = state;
+  const pumps = Object.entries(controlState.pumps).map(
+    ([name, pump]) => `Pump ${name} — ${pump.on ? `**on** at ${pump.speed} %` : 'off'}`,
+  );
+  // The rig's timer is a stopwatch when `target` is 0 and a countdown otherwise,
+  // so the same `seconds` field means opposite things and has to be said
+  // differently — "12 minutes elapsed" and "12 minutes left" are not the same
+  // sentence to someone standing over a boil.
+  const clock = (seconds: number): string => `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+  const timerLine =
+    timer.target > 0
+      ? `Timer counting down, ${clock(Math.max(0, timer.seconds))} left${timer.running ? '' : ' (paused)'}`
+      : timer.running || timer.seconds > 0
+        ? `Stopwatch at ${clock(timer.seconds)}${timer.running ? '' : ' (stopped)'}`
+        : 'Timer not running';
+
+  return `## The brewing rig\n${bullets([
+    potLine('Boil kettle (BK)', t.bk, controlState.pots.BK),
+    potLine('Mash tun (MLT)', t.mlt, undefined),
+    potLine('Hot liquor tank (HLT)', t.hlt, controlState.pots.HLT),
+    ...pumps,
+    timerLine,
+  ])}\n\nYou can read the rig but not drive it. Ask at the brewery speaker to turn something on, or use the Brew System page.`;
+}
+
+// ---------------------------------------------------------------------------
 // Audit
 // ---------------------------------------------------------------------------
 
@@ -471,6 +873,190 @@ const TOOLS: Record<string, ToolSpec> = {
     },
   },
 
+  get_sensor_history: {
+    definition: tool(
+      'get_sensor_history',
+      'Read how a sensor has behaved OVER TIME rather than right now: min, mean, max, where it started and ended, and how much a meter consumed over the window. Use it for anything with a period in the question — "has the fermenter held its temperature overnight?", "how much power did the brew day use?", "how much has the keg fridge been cycling?", "was the brewery cold last night?". get_brewery_status only ever shows the latest single reading, which cannot answer any of those.',
+      {
+        sensor: {
+          type: 'string',
+          description:
+            'Which sensor, as a person would say it — "fermenter", "keg fridge", "power meter", "brewery". Omit to summarise every sensor over the window.',
+        },
+        hours: {
+          type: 'number',
+          description: `How far back to look, in hours. Default 12, maximum ${MAX_HISTORY_HOURS} (a month).`,
+        },
+        metric: {
+          type: 'string',
+          description:
+            'One metric only, when the question is about one: temp_c, setpoint_c, hvac_state, pressure_bar, gravity_sg, power_w, energy_kwh, flow_lpm, water_l. Omit for all of them.',
+        },
+      },
+    ),
+    phase: (args) => ({
+      phase: 'brewery',
+      detail: text(args, 'sensor') ? `${text(args, 'sensor') as string} history` : 'sensor history',
+    }),
+    run: (args) => {
+      const hours = Math.min(Math.max(num(args, 'hours') ?? 12, 1), MAX_HISTORY_HOURS);
+      const wanted = text(args, 'metric');
+      const spoken = text(args, 'sensor');
+
+      if (!spoken) {
+        const devices = deviceFallback.listDeviceStatus();
+        if (devices.length === 0) return 'No devices are registered.';
+        return devices.map((device) => historySection(device, hours, wanted)).join('\n\n');
+      }
+
+      const matches = matchDevices(spoken);
+      if (matches.length === 0) {
+        const names = deviceFallback.listDeviceStatus().map((d) => d.name);
+        return `No sensor here matches "${spoken}". The registered ones are: ${names.join(', ') || 'none'}.`;
+      }
+      // Several matches are answered rather than guessed between — the reads are
+      // free, and "the fermenter" legitimately means two devices (the controller
+      // and the Tilt in the same tank).
+      return matches.map((device) => historySection(device, hours, wanted)).join('\n\n');
+    },
+  },
+
+  get_brew_days: {
+    definition: tool(
+      'get_brew_days',
+      'Read the brew-day log: what was brewed and when, the measured gravities, the brewhouse and mash efficiency worked back from them, how the rig ran on the day, how the fermentation went, and the rating and notes. Use it for anything about a past batch or a trend across batches — "how did the last saison go?", "is my efficiency improving?", "when did I last brew?", "what did I mash at last time?".',
+      {
+        recipe: {
+          type: 'string',
+          description: 'Only brews of this recipe, matched loosely by name. Omit for the most recent brews of anything.',
+        },
+        id: {
+          type: 'number',
+          description: 'A specific brew day, by the id shown in the list. Returns the full detail for it.',
+        },
+        detail: {
+          type: 'boolean',
+          description:
+            'True to return the full write-up rather than a row. Use with `recipe` when it names one brew; with several matches you get the list back and should ask which.',
+        },
+        limit: { type: 'number', description: 'How many rows to list, newest first. Default 10, maximum 50.' },
+      },
+    ),
+    phase: () => ({ phase: 'brewery', detail: 'the brew-day log' }),
+    run: (args) => {
+      const wantedId = num(args, 'id');
+      if (wantedId != null) {
+        const entry = getBrewDay(Math.round(wantedId));
+        return entry ? brewDayDetail(entry) : `There is no brew day with id ${Math.round(wantedId)}.`;
+      }
+
+      const all = listBrewDays();
+      if (all.length === 0) return 'Nothing has been logged in the brew-day log yet.';
+
+      const wantedRecipe = text(args, 'recipe');
+      const matches = wantedRecipe
+        ? all.filter((entry) => entry.recipe.name.toLowerCase().includes(wantedRecipe.toLowerCase()))
+        : all;
+      if (matches.length === 0) {
+        return `No brew day matches "${wantedRecipe}". Brewed so far: ${[...new Set(all.map((e) => e.recipe.name))].join(', ')}.`;
+      }
+
+      // One match plus a request for detail is unambiguous; several is not, and
+      // guessing which brew somebody meant would put the wrong numbers in front
+      // of them with no way to tell.
+      if (args.detail === true) {
+        if (matches.length === 1 && matches[0]) {
+          const full = getBrewDay(matches[0].id);
+          if (full) return brewDayDetail(full);
+        }
+        return `${matches.length} brew days match. Ask which one, by id:\n\n${brewDayRows(matches.slice(0, 20))}`;
+      }
+
+      const limit = Math.min(Math.max(Math.round(num(args, 'limit') ?? 10), 1), 50);
+      const shown = matches.slice(0, limit);
+      const header = wantedRecipe
+        ? `${matches.length} brew${matches.length === 1 ? '' : 's'} of ${wantedRecipe}`
+        : `${all.length} brew day${all.length === 1 ? '' : 's'} logged, newest first`;
+      return `## Brew days\n${header}${matches.length > shown.length ? ` (showing ${shown.length})` : ''}\n\n${brewDayRows(shown)}\n\nAsk for one by id with \`detail\` for its rig temperatures, fermentation and notes.`;
+    },
+  },
+
+  get_rig_status: {
+    definition: tool(
+      'get_rig_status',
+      'Read the brewing rig: the boil kettle, mash tun and hot liquor tank temperatures, whether the elements are on and what they are aiming at, the pumps, and the brew timer. Read-only — you cannot switch anything on the rig from here. The rig is a separate machine that is normally powered off between brew days, and reports as offline then.',
+      {},
+    ),
+    phase: () => ({ phase: 'brewery', detail: 'the brewing rig' }),
+    run: () => rigSection(),
+  },
+
+  brewing_calculator: {
+    definition: tool(
+      'brewing_calculator',
+      'Work out one of three brewing figures exactly. Always call this rather than doing the arithmetic yourself — these are formulas, and a number you calculate in your head will be plausible and wrong. "dilution": water to add to hit a target gravity (needs volume_l, current_gravity, desired_gravity). "hydrometer": correct a reading for sample temperature (needs reading, sample_temp_c; calibration_temp_c defaults to 20). "carbonation": regulator pressure to force-carbonate (needs co2_volumes and keg_temp_c). If the brewer names a style instead of a CO2 volume, call it with `style` alone to get the usual range, ask them to pick, then call again with the number.',
+      {
+        kind: enumOf(['dilution', 'hydrometer', 'carbonation'], 'Which calculation to run.'),
+        volume_l: { type: 'number', description: 'dilution: current wort volume, litres.' },
+        current_gravity: { type: 'number', description: 'dilution: gravity now, e.g. 1.062 or 1062.' },
+        desired_gravity: { type: 'number', description: 'dilution: gravity wanted, below the current one.' },
+        reading: { type: 'number', description: 'hydrometer: the gravity as read.' },
+        sample_temp_c: { type: 'number', description: 'hydrometer: the sample temperature, °C.' },
+        calibration_temp_c: { type: 'number', description: "hydrometer: what the instrument is calibrated for, °C. Default 20." },
+        co2_volumes: { type: 'number', description: 'carbonation: volumes of CO2 wanted, e.g. 2.4.' },
+        keg_temp_c: { type: 'number', description: 'carbonation: the keg temperature, °C.' },
+        style: {
+          type: 'string',
+          description: 'carbonation: a beer style, when no CO2 volume was given. Returns the usual range to choose from.',
+        },
+      },
+      ['kind'],
+    ),
+    phase: () => ({ phase: 'thinking', detail: 'working it out' }),
+    run: (args) => {
+      switch (text(args, 'kind')) {
+        case 'dilution': {
+          const volume = num(args, 'volume_l');
+          const current = num(args, 'current_gravity');
+          const desired = num(args, 'desired_gravity');
+          if (volume == null || current == null || desired == null) {
+            return 'Diluting needs the current volume in litres, the gravity now and the gravity you want.';
+          }
+          return dilution(volume, current, desired);
+        }
+        case 'hydrometer': {
+          const reading = num(args, 'reading');
+          const sample = num(args, 'sample_temp_c');
+          if (reading == null || sample == null) {
+            return 'Correcting a reading needs the gravity as read and the temperature of the sample.';
+          }
+          return hydrometerCorrection(reading, sample, num(args, 'calibration_temp_c') ?? 20);
+        }
+        case 'carbonation': {
+          const volumes = num(args, 'co2_volumes');
+          const kegTemp = num(args, 'keg_temp_c');
+          const style = text(args, 'style');
+          if (volumes == null && style) {
+            const wanted = style.toLowerCase();
+            const hit = CARBONATION_STYLES.find(
+              ([name]) => name.toLowerCase().includes(wanted) || wanted.includes(name.toLowerCase().split(' ')[0] ?? ''),
+            );
+            const table = CARBONATION_STYLES.map(([name, range]) => `${name}: ${range}`).join('; ');
+            return hit
+              ? `${hit[0]} are usually carbonated at **${hit[1]} volumes** of CO2. Ask which they want, then call this again with co2_volumes and keg_temp_c.`
+              : `No style here matches "${style}". The usual ranges, in volumes of CO2: ${table}. Ask which they want, then call this again with the number.`;
+          }
+          if (volumes == null || kegTemp == null) {
+            return 'Carbonation pressure needs the volumes of CO2 and the keg temperature — or a style on its own, to get the usual range.';
+          }
+          return carbonation(volumes, kegTemp);
+        }
+        default:
+          return 'That calculation is not one of dilution, hydrometer or carbonation.';
+      }
+    },
+  },
+
   get_kegs: {
     definition: tool(
       'get_kegs',
@@ -507,6 +1093,110 @@ const TOOLS: Record<string, ToolSpec> = {
   },
 
   // --- The hub, written -----------------------------------------------------
+
+  manage_keg: {
+    definition: tool(
+      'manage_keg',
+      'Change one keg on the board: fill it with a beer, mark it emptied, mark it cleaned, or edit its ABV, note or fill date. Contents conventions the board uses: a beer name when full; "Dirty" = just emptied, needs cleaning; "Clean" = cleaned and ready; "Starsan" = holding sanitiser; "???" = unknown. Only call this when the brewer has said which keg and what changed — never to tidy the board up.',
+      {
+        number: { type: 'string', description: 'Which keg, as written on the board, e.g. "5".' },
+        action: enumOf(
+          ['fill', 'empty', 'clean', 'edit'],
+          '"fill" needs `contents`, and stamps today unless a date is given. "empty" sets it Dirty and clears the beer\'s details. "clean" sets it Clean. "edit" changes only the fields you pass.',
+        ),
+        contents: { type: 'string', description: 'What is in it — the beer name when filling.' },
+        abv: { type: 'string', description: 'ABV as text, e.g. "6.2%".' },
+        note: { type: 'string', description: 'A short note on the keg.' },
+        date: { type: 'string', description: 'Fill date, DD/MM/YYYY. Defaults to today when filling.' },
+      },
+      ['number', 'action'],
+    ),
+    phase: (args) => ({ phase: 'brewery', detail: `keg ${text(args, 'number') ?? 'board'}` }),
+    run: async (args, actor) => {
+      // Everything answerable without the sheet is answered first: the board
+      // lives in a Google spreadsheet, and there is no sense making a network
+      // round trip to discover that the model never said which keg it meant.
+      const number = text(args, 'number');
+      const action = text(args, 'action');
+      const contents = text(args, 'contents');
+      if (!number) return 'Which keg? Call manage_keg again with its number.';
+      if (!action) return 'Say what to do with it: fill, empty, clean or edit.';
+      if (!['fill', 'empty', 'clean', 'edit'].includes(action)) {
+        return `"${action}" is not one of fill, empty, clean or edit.`;
+      }
+      if (action === 'fill' && !contents) {
+        return 'Filling a keg needs to know what went in it. Ask which beer.';
+      }
+
+      let kegs: Keg[];
+      try {
+        kegs = await fetchKegs();
+      } catch {
+        return 'The keg sheet could not be read just now, so nothing was changed.';
+      }
+      const keg = kegs.find((k) => k.number.trim() === number.trim());
+      if (!keg) {
+        return `There is no keg ${number} on the board. It holds: ${kegs.map((k) => k.number).join(', ')}.`;
+      }
+
+      // The sheet writer takes the whole row, so anything not being changed is
+      // carried over from what is there — a voice edit of the ABV must not
+      // silently blank the note beside it.
+      const today = new Date();
+      const todayText = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+
+      let fields: { contents: string; date: string; note: string; abv: string };
+      switch (action) {
+        case 'fill':
+          fields = {
+            contents: contents as string,
+            date: text(args, 'date') ?? todayText,
+            note: text(args, 'note') ?? '',
+            abv: text(args, 'abv') ?? '',
+          };
+          break;
+        // Emptying and cleaning both clear the beer's details: a Dirty keg
+        // carrying the last beer's ABV and fill date reads, at a glance on the
+        // board, as though it were still full of it.
+        case 'empty':
+          fields = { contents: 'Dirty', date: '', note: text(args, 'note') ?? '', abv: '' };
+          break;
+        case 'clean':
+          fields = { contents: 'Clean', date: '', note: text(args, 'note') ?? '', abv: '' };
+          break;
+        default:
+          // 'edit': only what was named changes; the rest of the row is carried
+          // over, since the sheet writer takes every column at once.
+          fields = {
+            contents: contents ?? keg.contents,
+            date: text(args, 'date') ?? keg.date,
+            note: text(args, 'note') ?? keg.note,
+            abv: text(args, 'abv') ?? keg.abv,
+          };
+          break;
+      }
+
+      try {
+        await updateKeg(keg.number, fields);
+      } catch (err) {
+        if (err instanceof KegWriteNotConfiguredError) {
+          return 'The keg board is read-only on this hub — no write key is configured for the sheet, so nothing was changed.';
+        }
+        return `Keg ${keg.number} could not be updated: ${err instanceof Error ? err.message : 'the sheet did not answer'}.`;
+      }
+
+      const summary =
+        action === 'fill'
+          ? `filled keg ${keg.number} with ${fields.contents}${fields.abv ? ` at ${fields.abv}` : ''} (${fields.date})`
+          : action === 'empty'
+            ? `marked keg ${keg.number} emptied — it was ${keg.contents || 'unrecorded'}`
+            : action === 'clean'
+              ? `marked keg ${keg.number} cleaned`
+              : `updated keg ${keg.number}`;
+      audited(actor, 'Keg', summary);
+      return `Done — ${summary}.`;
+    },
+  },
 
   manage_todo: {
     definition: tool(
