@@ -36,11 +36,18 @@ export const RECIPE_TOOL = {
         type: 'string',
         description: "The recipe's name as it appears in the recipe list in your instructions.",
       },
+      detail: {
+        type: 'string',
+        enum: ['brief', 'full'],
+        description:
+          'Leave this out unless the brewer asked. Spoken answers get the headline numbers; written ones get the whole sheet. Pass "full" when they explicitly want the grain bill, hop schedule or water out loud.',
+      },
     },
+    // `detail` is deliberately not required: `strict` is off below for exactly
+    // this reason, so the common call stays `{ name }`.
     required: ['name'],
     additionalProperties: false,
   },
-  strict: true,
 } as const;
 
 /** Lower-case, punctuation-free, single-spaced — for comparing names by hand. */
@@ -264,7 +271,38 @@ export async function recipeShelf(): Promise<string | null> {
  * name it matched is stated so a wrong match is visible in the answer rather
  * than silently attributed to the recipe the brewer asked about.
  */
-export async function runRecipeTool(wanted: string): Promise<{ text: string; matched: string | null }> {
+/**
+ * A recipe's headline numbers, for an answer that is going to be spoken.
+ *
+ * The full brew sheet is a grain bill, a hop schedule, yeast, mash steps and
+ * water targets — several minutes of talking, and nobody asks "what's the
+ * saison?" wanting all of it. The whole sheet is one `detail: "full"` away.
+ */
+function summariseRecipe(recipe: RecipeDetail): string {
+  const facts = [
+    recipe.style || null,
+    recipe.batchSizeL != null ? `${recipe.batchSizeL} L` : null,
+    value(recipe.og) ? `OG ${recipe.og}` : null,
+    value(recipe.abv) ? `${recipe.abv} % ABV` : null,
+    value(recipe.ibu) ? `${recipe.ibu} IBU` : null,
+    recipe.mashTemp ? `mash ${recipe.mashTemp}` : null,
+  ].filter((part): part is string => part != null);
+
+  const grain = recipe.fermentables.length;
+  const hops = recipe.hops.length;
+  const yeast = recipe.yeast.map((y) => y.name).filter(Boolean).join(', ');
+
+  return [
+    `**${recipe.name}** — ${facts.join(', ')}.`,
+    `${grain} fermentable${grain === 1 ? '' : 's'}, ${hops} hop addition${hops === 1 ? '' : 's'}${yeast ? `, ${yeast}` : ''}.`,
+    'Ask for the full sheet if you want the grain bill, hop schedule or water.',
+  ].join(' ');
+}
+
+export async function runRecipeTool(
+  wanted: string,
+  brief = false,
+): Promise<{ text: string; matched: string | null }> {
   const recipes = recipeRepo.listRecipes();
 
   const match = matchRecipe(recipes, wanted);
@@ -280,6 +318,8 @@ export async function runRecipeTool(wanted: string): Promise<{ text: string; mat
   if (!detail) {
     return { text: `"${match.name}" is in the list but its brew sheet could not be found.`, matched: null };
   }
+
+  if (brief) return { text: summariseRecipe(detail), matched: detail.name };
 
   const link = detail.url ? `\n\nRecipe page: ${detail.url}` : '';
   return {

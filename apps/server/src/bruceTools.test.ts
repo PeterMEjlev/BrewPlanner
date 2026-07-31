@@ -355,6 +355,104 @@ describe('Bruce chat tools', () => {
     assert.match(todos, /to-do list is empty|Outstanding/);
   });
 
+  // --- Speaking short -------------------------------------------------------
+  //
+  // A spoken answer cannot be skimmed, so the tools hand a voice session the
+  // summary and the written chat the whole thing. This is enforced in the tool
+  // rather than only in the persona for one reason: a model given an eight-row
+  // keg table reads out an eight-row keg table, however firmly it was told to
+  // be brief. The escape hatch is `detail`, which the brewer can ask for.
+
+  it('summarises the to-do list out loud and lists it in writing', async () => {
+    for (const text of ['Order more CO2', 'Clean the mash tun', 'Descale the HLT', 'Replace a gasket']) {
+      repo.createTodo(text);
+    }
+
+    const spoken = await tools.runBruceTool('get_todos', {}, ASKER, true);
+    const written = await tools.runBruceTool('get_todos', {}, ASKER);
+    assert.match(spoken, /^4 outstanding: Order more CO2, Clean the mash tun, Descale the HLT and 1 more\.$/);
+    assert.ok(spoken.length < written.length, 'the spoken form is the shorter one');
+    assert.match(written, /Replace a gasket/, 'writing names every job');
+    assert.doesNotMatch(spoken, /Replace a gasket/, 'speech stops counting at three');
+
+    // What the brewer says when they want it all, whichever way they asked.
+    const askedForAll = await tools.runBruceTool('get_todos', { detail: 'full' }, ASKER, true);
+    assert.match(askedForAll, /Replace a gasket/);
+
+    // And the reverse: a written answer can be asked to summarise.
+    const askedShort = await tools.runBruceTool('get_todos', { detail: 'brief' }, ASKER);
+    assert.match(askedShort, /4 outstanding/);
+  });
+
+  it('answers "what is in our kegs" with counts out loud', async () => {
+    // The board is a Google sheet, so this drives the summariser directly —
+    // what matters is the shape of the sentence, not where the rows came from.
+    const summary = tools.kegSummaryForTest([
+      { number: '1', contents: 'IPA', volume: '19L', abv: '6.2%', date: '', note: '' },
+      { number: '2', contents: 'IPA', volume: '19L', abv: '6.2%', date: '', note: '' },
+      { number: '3', contents: 'Stout', volume: '19L', abv: '5.1%', date: '', note: '' },
+      { number: '4', contents: 'IPA', volume: '19L', abv: '6.2%', date: '', note: '' },
+      { number: '5', contents: 'Pilsner', volume: '19L', abv: '4.8%', date: '', note: '' },
+      { number: '6', contents: 'Dirty', volume: '19L', abv: '', date: '', note: '' },
+    ]);
+    // Most-of first: with three IPA and one pilsner, the IPA is the answer.
+    assert.match(summary, /On tap: 3 × IPA, 1 × Pilsner, 1 × Stout\./);
+    assert.match(summary, /Empty or unassigned: 1 dirty\./);
+    assert.match(summary, /6 kegs in total/);
+    // None of the per-keg detail a screen would show.
+    assert.doesNotMatch(summary, /6\.2%/);
+  });
+
+  it('gives a recipe by its headline numbers out loud and its brew sheet in writing', async () => {
+    // A real grain bill and hop schedule, because that is what makes the
+    // difference the tool exists for: an empty sheet is short either way.
+    recipeRepo.createRecipe({
+      ...sheet('Spoken Saison'),
+      fermentables: [
+        { name: 'Pilsner malt', amount: '4.5', unit: 'kg', percent: '85', ebc: 4, ppg: 37, fermentable: null, lateAddition: false },
+        { name: 'Wheat malt', amount: '0.8', unit: 'kg', percent: '15', ebc: 4, ppg: 38, fermentable: null, lateAddition: false },
+      ],
+      hops: [
+        { name: 'Saaz', amount: '30', unit: 'g', use: 'Boil', stage: 'Boil', time: '60', timeUnit: 'min', aa: '3.5', ibu: '', form: 'Pellet', utilization: '', temp: '' },
+        { name: 'Styrian Golding', amount: '25', unit: 'g', use: 'Boil', stage: 'Boil', time: '10', timeUnit: 'min', aa: '5.0', ibu: '', form: 'Pellet', utilization: '', temp: '' },
+      ],
+      yeast: [
+        {
+          name: 'Belle Saison',
+          lab: 'Lallemand',
+          attenuation: '85',
+          amount: '1',
+          amountUnit: 'pkg',
+          type: 'Ale',
+          form: 'Dry',
+          flocculation: 'Low',
+          minTempC: 15,
+          maxTempC: 35,
+          alcoholTolerance: '',
+          starter: false,
+        },
+      ],
+    });
+
+    const spoken = await tools.runBruceTool('get_recipe', { name: 'Spoken Saison' }, ASKER, true);
+    const written = await tools.runBruceTool('get_recipe', { name: 'Spoken Saison' }, ASKER);
+    assert.match(spoken, /\*\*Spoken Saison\*\* — American IPA/);
+    assert.match(spoken, /2 fermentables, 2 hop additions, Belle Saison/);
+    // Out loud he says what is in it, not how much of each.
+    assert.doesNotMatch(spoken, /Pilsner malt|Saaz/);
+    assert.match(written, /Pilsner malt/, 'writing gets the grain bill');
+    assert.match(written, /Saaz/, 'writing gets the hop schedule');
+    assert.ok(spoken.length < written.length / 2, 'the spoken form is far shorter');
+
+    const askedForAll = await tools.runBruceTool(
+      'get_recipe',
+      { name: 'Spoken Saison', detail: 'full' },
+      ASKER,
+      true,
+    );
+    assert.ok(askedForAll.length > spoken.length, 'asking out loud for the sheet gets the sheet');
+  });
+
   // --- Sensor history -------------------------------------------------------
   //
   // The tool that answers "has it been stable?", which the latest-reading tool
@@ -429,7 +527,11 @@ describe('Bruce chat tools', () => {
     // ABV is derived from the gravities, not read off the recipe's target.
     assert.match(list, /6\.2 %/);
 
-    const detail = await tools.runBruceTool('get_brew_days', { recipe: 'Efficiency', detail: true }, ASKER);
+    const detail = await tools.runBruceTool(
+      'get_brew_days',
+      { recipe: 'Efficiency', full_writeup: true },
+      ASKER,
+    );
     assert.match(detail, /brew #1/);
     assert.match(detail, /Mashed at 67 °C/);
     assert.match(detail, /apparent attenuation/);

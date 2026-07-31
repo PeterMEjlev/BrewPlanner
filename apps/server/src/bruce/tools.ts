@@ -66,8 +66,16 @@ interface ToolSpec {
   definition: Record<string, unknown>;
   /** The progress line shown on the Bruce page while this runs. */
   phase: (args: ToolArgs) => BrucePhase;
-  /** Answer the model reads back. Failures are text, never exceptions. */
-  run: (args: ToolArgs, actor: BruceActor) => Promise<string> | string;
+  /**
+   * Answer the model reads back. Failures are text, never exceptions.
+   *
+   * `brief` is true when the answer is going to be spoken (see
+   * {@link runBruceTool}). A tool with a long output must honour it: a model
+   * handed an eight-row keg table will read out an eight-row keg table, whatever
+   * its instructions say about being concise. The shortest way to make a spoken
+   * answer short is not to hand it the long version.
+   */
+  run: (args: ToolArgs, actor: BruceActor, brief: boolean) => Promise<string> | string;
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +163,46 @@ function bullets(lines: string[]): string {
 // Reads
 // ---------------------------------------------------------------------------
 
+/**
+ * The whole brewery in two or three sentences: what is fermenting and at what
+ * temperature, whether anything is wrong, and nothing else.
+ *
+ * The full overview runs to three headed sections and a table of every sensor —
+ * fine on a screen, a minute of talking out loud.
+ */
+function brewerySummary(): string {
+  const recipe = repo.getActiveRecipe();
+  const state = repo.getFermenterState();
+  const controllers = deviceFallback.listDeviceStatus().filter((d) => d.type === 'brew_controller');
+  const offline = deviceFallback.listDeviceStatus().filter((d) => !d.online);
+  const active = listAlerts(50).filter((a) => a.resolvedAt == null);
+
+  const fermenter = controllers.find((d) => /ferment/i.test(d.name));
+  const temp = fermenter?.latest.find((r) => r.metric === 'temp_c');
+  const setpoint = fermenter?.latest.find((r) => r.metric === 'setpoint_c');
+
+  const lines = [
+    recipe
+      ? `Fermenting: ${recipe.name}${temp ? ` at ${temp.value.toFixed(1)} °C${setpoint ? `, target ${setpoint.value.toFixed(1)}` : ''}` : ''}.`
+      : `The fermenter is empty${state ? ` and marked ${state}` : ''}.`,
+    controllers.length > 0
+      ? `Controllers: ${spokenList(
+          controllers.map((d) => {
+            const t = d.latest.find((r) => r.metric === 'temp_c');
+            return d.online && t ? `${d.name} ${t.value.toFixed(1)} °C` : `${d.name} offline`;
+          }),
+          4,
+        )}.`
+      : null,
+    offline.length > 0 ? `${offline.length} device${offline.length === 1 ? '' : 's'} offline.` : null,
+    active.length > 0
+      ? `${active.length} active alert${active.length === 1 ? '' : 's'}: ${spokenList(active.map((a) => a.title))}.`
+      : 'No active alerts.',
+  ].filter((line): line is string => line != null);
+
+  return `## The brewery\n${lines.join(' ')}`;
+}
+
 function fermenterSection(): string {
   const recipe = repo.getActiveRecipe();
   const state = repo.getFermenterState();
@@ -239,7 +287,42 @@ function alertSection(): string {
 /** Contents values that are a keg state rather than a beer. */
 const NON_BEER = ['???', 'Clean', 'Dirty', 'Starsan'];
 
-async function kegSection(): Promise<string> {
+/**
+ * The keg board in one sentence: how many of each beer, then the empties.
+ *
+ * What somebody standing at the taps actually asked when they said "what's in
+ * our kegs?" — three IPA and two stout, not eight rows of ABV and fill dates.
+ * The full table is a `detail: "full"` away, and is what the written chat gets.
+ */
+function kegSummary(kegs: Keg[]): string {
+  const beer = kegs.filter((k) => !NON_BEER.includes(k.contents.trim()));
+  const byContents = new Map<string, number>();
+  for (const keg of beer) {
+    const name = keg.contents.trim();
+    byContents.set(name, (byContents.get(name) ?? 0) + 1);
+  }
+
+  // Most-of first: with one keg left of something and four of another, the four
+  // is the answer to "what's on".
+  const beers = [...byContents.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name, count]) => `${count} × ${name}`);
+
+  const states = NON_BEER.map((state) => {
+    const count = kegs.filter((k) => k.contents.trim() === state).length;
+    return count > 0 ? `${count} ${state.toLowerCase()}` : null;
+  }).filter((part): part is string => part != null);
+
+  const lines = [
+    beers.length > 0 ? `On tap: ${beers.join(', ')}.` : 'No keg holds beer.',
+    states.length > 0 ? `Empty or unassigned: ${states.join(', ')}.` : null,
+    `${kegs.length} kegs in total.`,
+  ].filter((line): line is string => line != null);
+
+  return `## Kegs\n${lines.join(' ')}\n\nAsk for the full board if you want each keg's ABV, fill date and note.`;
+}
+
+async function kegSection(brief: boolean): Promise<string> {
   let kegs: Keg[];
   try {
     kegs = await fetchKegs(repo.getKegContentColors());
@@ -249,6 +332,7 @@ async function kegSection(): Promise<string> {
     return '## Kegs\nThe keg sheet could not be read just now.';
   }
   if (kegs.length === 0) return '## Kegs\nThe keg sheet is empty.';
+  if (brief) return kegSummary(kegs);
 
   const beer = kegs.filter((k) => !NON_BEER.includes(k.contents.trim()));
   const rows = kegs.map(
@@ -351,7 +435,27 @@ function metricTrend(name: string, readings: Reading[]): string | null {
   return `${name.replace(/_/g, ' ')} — ${parts.join(', ')}`;
 }
 
-function historySection(device: DeviceStatus, hours: number, wanted?: string): string {
+/**
+ * A metric's window in the fewest words that still answer "did it hold?" — the
+ * average and the range it moved through, and nothing about sample counts.
+ */
+function briefTrend(name: string, readings: Reading[]): string | null {
+  if (name === 'hvac_state') {
+    const cooling = readings.filter((r) => r.value < 0).length;
+    return `cooling ${Math.round((cooling / readings.length) * 100)} % of the time`;
+  }
+  const ordered = [...readings].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+  const stats = summarise(ordered.map((r) => r.value));
+  if (!stats) return null;
+  if (CUMULATIVE.has(name)) {
+    const first = ordered[0]?.value ?? 0;
+    const last = ordered[ordered.length - 1]?.value ?? 0;
+    return `used ${metric(name, Math.max(0, last - first))}`;
+  }
+  return `${metric(name, stats.avg)} average, ${metric(name, stats.min)} to ${metric(name, stats.max)}`;
+}
+
+function historySection(device: DeviceStatus, hours: number, wanted?: string, brief = false): string {
   const since = new Date(Date.now() - hours * 3600_000).toISOString();
   const history = deviceFallback.getHistory(device.id, {
     ...(wanted ? { metric: wanted } : {}),
@@ -372,6 +476,16 @@ function historySection(device: DeviceStatus, hours: number, wanted?: string): s
     const list = byMetric.get(reading.metric) ?? [];
     list.push(reading);
     byMetric.set(reading.metric, list);
+  }
+
+  if (brief) {
+    // Setpoint and the target it is chasing are noise in a spoken summary of
+    // whether a temperature held; the temperature itself is the question.
+    const parts = [...byMetric]
+      .filter(([name]) => name !== 'setpoint_c')
+      .map(([name, readings]) => briefTrend(name, readings))
+      .filter((part): part is string => part != null);
+    return `**${device.name}**, last ${hours} h: ${parts.join('; ')}.`;
   }
 
   const lines: string[] = [];
@@ -441,6 +555,17 @@ function day(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** The brew-day log as a sentence: the last few brews, newest first. */
+function brewDaySummary(days: BrewDay[]): string {
+  const recent = days.slice(0, SPOKEN_LIST_MAX).map((entry) => {
+    const { brewhouse } = efficiencies(entry);
+    return `${entry.recipe.name} on ${day(entry.brewedAt)}${brewhouse != null ? ` at ${pct(brewhouse)}` : ''}`;
+  });
+  return `${days.length} brew day${days.length === 1 ? '' : 's'} logged. Most recent: ${recent.join('; ')}.${
+    days.length > recent.length ? ' Ask for one by name for its numbers.' : ''
+  }`;
 }
 
 function brewDayRows(days: BrewDay[]): string {
@@ -526,10 +651,29 @@ function brewDayDetail(entry: BrewDayDetail): string {
   return sections.join('\n\n');
 }
 
-function todoText(todos: Todo[]): string {
+/** How many items a spoken list names before it starts counting instead. */
+const SPOKEN_LIST_MAX = 3;
+
+/** "a, b and 2 more" — a list a person can follow without a screen. */
+function spokenList(items: string[], max = SPOKEN_LIST_MAX): string {
+  if (items.length <= max) {
+    if (items.length <= 1) return items[0] ?? '';
+    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  }
+  return `${items.slice(0, max).join(', ')} and ${items.length - max} more`;
+}
+
+function todoText(todos: Todo[], brief = false): string {
   if (todos.length === 0) return 'The to-do list is empty.';
   const open = todos.filter((t) => !t.done);
   const done = todos.filter((t) => t.done);
+
+  if (brief) {
+    if (open.length === 0) return `Nothing outstanding. ${done.length} finished.`;
+    return `${open.length} outstanding: ${spokenList(open.map((t) => t.text))}.${
+      done.length > 0 ? ` ${done.length} finished.` : ''
+    }`;
+  }
   const parts = [
     open.length === 0 ? '**Nothing outstanding.**' : `**Outstanding (${open.length})**\n${bullets(open.map((t) => t.text))}`,
   ];
@@ -833,16 +977,29 @@ const enumOf = (values: string[], description: string): Record<string, unknown> 
   description,
 });
 
+/**
+ * The `detail` argument, offered by every tool whose full answer is long.
+ *
+ * The default is the caller's — short when the answer will be spoken, complete
+ * when it will be read — so the common case needs no argument at all. This is
+ * only the escape hatch for "read me the whole list", which is a thing people
+ * do ask out loud.
+ */
+const DETAIL_ARG = enumOf(
+  ['brief', 'full'],
+  'Leave this out unless the brewer asked for a particular amount of detail. Spoken answers are summarised by default and written ones are complete. Pass "full" only when they explicitly want everything ("read me the whole list", "the full rundown"), or "brief" to summarise in writing.',
+);
+
 const TOOLS: Record<string, ToolSpec> = {
   // --- Recipes (read only; the editor owns writing a brew sheet) ------------
 
   [RECIPE_TOOL.name]: {
     definition: RECIPE_TOOL as unknown as Record<string, unknown>,
     phase: (args) => ({ phase: 'recipes', ...(text(args, 'name') ? { detail: text(args, 'name') as string } : {}) }),
-    run: async (args) => {
+    run: async (args, _actor, brief) => {
       const wanted = text(args, 'name');
       if (!wanted) return 'No recipe name was given. Call get_recipe again with one.';
-      return (await runRecipeTool(wanted)).text;
+      return (await runRecipeTool(wanted, brief)).text;
     },
   },
 
@@ -857,11 +1014,16 @@ const TOOLS: Record<string, ToolSpec> = {
           ['overview', 'fermenter', 'inkbirds', 'devices', 'sensors', 'alerts'],
           '"overview" (default) covers the fermenter, the Inkbirds and any alerts; the others go into one area.',
         ),
+        detail: DETAIL_ARG,
       },
     ),
     phase: () => ({ phase: 'brewery', detail: 'sensors and fermenter' }),
-    run: (args) => {
+    run: (args, _actor, brief) => {
       const section = text(args, 'section') ?? 'overview';
+      // Only the overview summarises: asking for one area is already a narrow
+      // question, and answering "the Inkbirds" with a summary of the brewery
+      // would be answering a different one.
+      if (brief && section === 'overview') return brewerySummary();
       switch (section) {
         case 'fermenter': return fermenterSection();
         case 'inkbirds': return inkbirdSection();
@@ -892,21 +1054,23 @@ const TOOLS: Record<string, ToolSpec> = {
           description:
             'One metric only, when the question is about one: temp_c, setpoint_c, hvac_state, pressure_bar, gravity_sg, power_w, energy_kwh, flow_lpm, water_l. Omit for all of them.',
         },
+        detail: DETAIL_ARG,
       },
     ),
     phase: (args) => ({
       phase: 'brewery',
       detail: text(args, 'sensor') ? `${text(args, 'sensor') as string} history` : 'sensor history',
     }),
-    run: (args) => {
+    run: (args, _actor, brief) => {
       const hours = Math.min(Math.max(num(args, 'hours') ?? 12, 1), MAX_HISTORY_HOURS);
       const wanted = text(args, 'metric');
       const spoken = text(args, 'sensor');
+      const join = brief ? '\n' : '\n\n';
 
       if (!spoken) {
         const devices = deviceFallback.listDeviceStatus();
         if (devices.length === 0) return 'No devices are registered.';
-        return devices.map((device) => historySection(device, hours, wanted)).join('\n\n');
+        return devices.map((device) => historySection(device, hours, wanted, brief)).join(join);
       }
 
       const matches = matchDevices(spoken);
@@ -917,7 +1081,7 @@ const TOOLS: Record<string, ToolSpec> = {
       // Several matches are answered rather than guessed between — the reads are
       // free, and "the fermenter" legitimately means two devices (the controller
       // and the Tilt in the same tank).
-      return matches.map((device) => historySection(device, hours, wanted)).join('\n\n');
+      return matches.map((device) => historySection(device, hours, wanted, brief)).join(join);
     },
   },
 
@@ -934,16 +1098,17 @@ const TOOLS: Record<string, ToolSpec> = {
           type: 'number',
           description: 'A specific brew day, by the id shown in the list. Returns the full detail for it.',
         },
-        detail: {
+        full_writeup: {
           type: 'boolean',
           description:
-            'True to return the full write-up rather than a row. Use with `recipe` when it names one brew; with several matches you get the list back and should ask which.',
+            'True to return one brew day in full — its measurements, rig temperatures, fermentation and notes — rather than a row. Use with `recipe` when it names one brew; with several matches you get the list back and should ask which.',
         },
         limit: { type: 'number', description: 'How many rows to list, newest first. Default 10, maximum 50.' },
+        detail: DETAIL_ARG,
       },
     ),
     phase: () => ({ phase: 'brewery', detail: 'the brew-day log' }),
-    run: (args) => {
+    run: (args, _actor, brief) => {
       const wantedId = num(args, 'id');
       if (wantedId != null) {
         const entry = getBrewDay(Math.round(wantedId));
@@ -961,10 +1126,10 @@ const TOOLS: Record<string, ToolSpec> = {
         return `No brew day matches "${wantedRecipe}". Brewed so far: ${[...new Set(all.map((e) => e.recipe.name))].join(', ')}.`;
       }
 
-      // One match plus a request for detail is unambiguous; several is not, and
-      // guessing which brew somebody meant would put the wrong numbers in front
-      // of them with no way to tell.
-      if (args.detail === true) {
+      // One match plus a request for the write-up is unambiguous; several is
+      // not, and guessing which brew somebody meant would put the wrong numbers
+      // in front of them with no way to tell.
+      if (args.full_writeup === true) {
         if (matches.length === 1 && matches[0]) {
           const full = getBrewDay(matches[0].id);
           if (full) return brewDayDetail(full);
@@ -972,12 +1137,14 @@ const TOOLS: Record<string, ToolSpec> = {
         return `${matches.length} brew days match. Ask which one, by id:\n\n${brewDayRows(matches.slice(0, 20))}`;
       }
 
+      if (brief) return brewDaySummary(matches);
+
       const limit = Math.min(Math.max(Math.round(num(args, 'limit') ?? 10), 1), 50);
       const shown = matches.slice(0, limit);
       const header = wantedRecipe
         ? `${matches.length} brew${matches.length === 1 ? '' : 's'} of ${wantedRecipe}`
         : `${all.length} brew day${all.length === 1 ? '' : 's'} logged, newest first`;
-      return `## Brew days\n${header}${matches.length > shown.length ? ` (showing ${shown.length})` : ''}\n\n${brewDayRows(shown)}\n\nAsk for one by id with \`detail\` for its rig temperatures, fermentation and notes.`;
+      return `## Brew days\n${header}${matches.length > shown.length ? ` (showing ${shown.length})` : ''}\n\n${brewDayRows(shown)}\n\nAsk for one by id with \`full_writeup\` for its rig temperatures, fermentation and notes.`;
     },
   },
 
@@ -1061,20 +1228,20 @@ const TOOLS: Record<string, ToolSpec> = {
     definition: tool(
       'get_kegs',
       "Read the keg board: what is in each keg, its volume, ABV, when it was filled and any note. Contents that are not a beer are keg states — Dirty (emptied, needs cleaning), Clean (ready to fill), Starsan, or ??? (unknown). Use for anything about what is on tap or how old a beer is.",
-      {},
+      { detail: DETAIL_ARG },
     ),
     phase: () => ({ phase: 'brewery', detail: 'keg board' }),
-    run: () => kegSection(),
+    run: (_args, _actor, brief) => kegSection(brief),
   },
 
   get_todos: {
     definition: tool(
       'get_todos',
       'Read the brewery to-do list — the running list of jobs, which is not the brew-day checklist.',
-      {},
+      { detail: DETAIL_ARG },
     ),
     phase: () => ({ phase: 'brewery', detail: 'to-do list' }),
-    run: () => todoText(repo.listTodos()),
+    run: (_args, _actor, brief) => todoText(repo.listTodos(), brief),
   },
 
   get_settings: {
@@ -1596,15 +1763,47 @@ export function bruceToolPhase(name: string, args: ToolArgs): BrucePhase | null 
  * answer down, where a tool that says what went wrong lets the model correct
  * itself and carry on. That includes an unknown name — the model invented it,
  * and being told so is more useful than a 500 on the brewer's screen.
+ *
+ * @param brief Whether the answer is going to be spoken. The written chat is
+ *   read on a screen and gets everything; voice gets the summary, because a
+ *   table read aloud is unusable. The model can still override it per call with
+ *   `detail: "full"` when the brewer asks for the whole thing.
  */
-export async function runBruceTool(name: string, args: ToolArgs, actor: BruceActor): Promise<string> {
+export async function runBruceTool(
+  name: string,
+  args: ToolArgs,
+  actor: BruceActor,
+  brief = false,
+): Promise<string> {
   const spec = TOOLS[name];
   if (!spec) return `There is no tool called ${name}.`;
   try {
-    return await spec.run(args, actor);
+    return await spec.run(args, actor, wantsBrief(args, brief));
   } catch (err) {
     return `That could not be read from BrewPlanner: ${err instanceof Error ? err.message : 'unknown error'}.`;
   }
 }
 
+/**
+ * Whether this call should answer short.
+ *
+ * The caller decides by default — spoken answers are brief, written ones are
+ * not — and the model overrules it per call with `detail`, which is how "give me
+ * the full rundown" out loud reaches the long version. Any other value falls
+ * back to the default rather than being treated as a request for either.
+ */
+function wantsBrief(args: ToolArgs, fallback: boolean): boolean {
+  const detail = text(args, 'detail');
+  if (detail === 'full') return false;
+  if (detail === 'brief') return true;
+  return fallback;
+}
+
 export { matchTodos };
+
+/**
+ * The spoken keg summary, exported for its test. The tool itself has to read
+ * the Google sheet first, which a test cannot do offline — this is the part
+ * worth pinning: that "what's in our kegs?" comes back as counts.
+ */
+export { kegSummary as kegSummaryForTest };
