@@ -375,7 +375,7 @@ You can search the web, and should when it genuinely helps:
  * persona that claims to read recipes it cannot reach apologises instead of
  * answering.
  */
-const RECIPES_PROMPT = `--- This brewery's recipes
+export const RECIPES_PROMPT = `--- This brewery's recipes
 
 The list below is every recipe on this brewery's Brewer's Friend account, with
 its headline numbers only.
@@ -402,7 +402,7 @@ its headline numbers only.
  * to-do" is not recoverable from a chat window. So: act on what was asked, name
  * what changed, and never guess between two candidates.
  */
-const BREWERY_PROMPT = `--- This brewery, right now
+export const BREWERY_PROMPT = `--- This brewery, right now
 
 You can see and change BrewPlanner itself — this brewery's hub — through the
 tools attached to you:
@@ -437,8 +437,12 @@ Changing things is different from reading them:
 - Recipes are read-only to you. You can say which one is in the fermenter, but
   writing or deleting a brew sheet is done in the recipe editor.`;
 
-/** The shelf listing, or a note that there is nothing on it. */
-function libraryBlock(): string {
+/**
+ * The shelf listing, or a note that there is nothing on it. Exported because
+ * the spoken Bruce (voice.ts) needs the same shelf: he has a different persona,
+ * not a different library.
+ */
+export function libraryBlock(): string {
   const library = libraryOutline();
   if (library.length === 0) {
     return '--- The brewery library\n\nThe library is empty — nothing has been indexed yet. Say so if asked, and answer from general brewing knowledge.';

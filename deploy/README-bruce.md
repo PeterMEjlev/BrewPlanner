@@ -9,11 +9,16 @@ Everything below is a **one-time** setup, done on the Pi over SSH
 before — `bruce.service` is opt-in and `deploy/update.sh` skips it while it
 is not enabled.
 
-> **This page is only about talking to Bruce out loud.** The written chat on
-> the `/bruce` page is answered by the BrewPlanner server itself and needs no
-> microphone, no speaker, and no `bruce.service` — only `OPENAI_API_KEY` in
-> `/etc/brewplanner.env` (step 3 below) and one `npm run knowledge` to index
-> the books. See `knowledge/README.md`.
+> **This page is only about the hands-free Bruce in the brewery** — the one you
+> call across the room without touching anything. Two other ways of reaching
+> him need none of it, only `OPENAI_API_KEY` in `/etc/brewplanner.env` (step 3
+> below) and one `npm run knowledge` to index the books (see
+> `knowledge/README.md`):
+>
+> - the **written chat** on the `/bruce` page, answered by the BrewPlanner
+>   server itself;
+> - the **Talk button** on that same page, which is your phone or laptop
+>   holding a voice conversation of its own. See "Talking from a phone" below.
 
 ## 0. Prerequisites
 
@@ -195,6 +200,45 @@ hears his own voice. Once the basics work:
    see when *silent* and below the excess when *you* talk over him
    (default 400).
 3. Set `BRUCE_BARGE_IN_ENABLED=1`, remove the debug var, restart.
+
+## Talking from a phone or a laptop
+
+Nothing on this page is needed for that one. The **Talk** button above the
+composer on `/bruce` opens a voice conversation held by the browser itself: it
+takes the device's own microphone and speaker, and connects straight to
+OpenAI's Realtime API. Press it, talk, press **End** to hang up — no wake word,
+because there is a button.
+
+What the server does is mint a short-lived credential per call
+(`POST /api/bruce/voice/session`), so `OPENAI_API_KEY` never leaves the Pi, and
+answer the tool calls that come out of the conversation
+(`POST /api/bruce/voice/tool`). He gets the same tools as the written chat —
+the fermenter, the kegs, the to-do list, the settings — plus `search_library`
+for the books, and every change is audited against whoever is logged in. Each
+finished exchange is written into the open chat thread, so a question asked out
+loud can be scrolled back to and followed up in writing.
+
+**It needs HTTPS.** Browsers only hand over a microphone in a secure context,
+which means:
+
+| How you reach the hub | Talk button |
+| --- | --- |
+| `https://` through the Cloudflare tunnel | works |
+| The Pi's own kiosk (`localhost:3000`) | works |
+| The Android app (serves from `https://localhost`) | works |
+| `http://192.168.3.3` or `http://brewplanner.local` on the LAN | not offered — the page says to use the https address |
+
+The audio is billed as OpenAI Realtime audio, by the minute, and is charged
+directly to the account by the browser's own session — it does not appear in
+the per-chat cost estimates on the Bruce page, which only price the written
+chat. Settings, all optional, in `/etc/brewplanner.env`:
+
+- `BRUCE_VOICE_MODEL` — the speech model for browsers alone (default
+  `gpt-realtime-mini`, as on the Pi; `gpt-realtime` listens better in a noisy
+  brewery and costs more).
+- `BRUCE_VOICE` — which voice he answers in (default `alloy`).
+- `BRUCE_VOICE_VAD` — set to `server_vad` if the default `semantic_vad` cuts in
+  while you are still thinking mid-sentence.
 
 ## Notes on behaviour
 

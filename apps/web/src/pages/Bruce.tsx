@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   BruceBook,
   BruceChatMessage,
+  BruceChatReply,
   BruceChatSource,
   BruceChatState,
   BruceConversation,
@@ -17,6 +18,8 @@ import type {
 import { MAX_KNOWLEDGE_FILE_CHARS } from '@checklist/shared';
 import { api } from '../api';
 import { setBrucePhase } from '../bruceActivity';
+import type { VoiceCall, VoiceCallState, VoiceLine } from '../bruceVoice';
+import { startVoiceCall, voiceSupported } from '../bruceVoice';
 import { DashboardShell } from '../components/DashboardShell';
 import { Markdown } from '../components/Markdown';
 import { Popover } from '../components/Popover';
@@ -28,20 +31,26 @@ import {
   GlobeIcon,
   KegIcon,
   MicIcon,
+  MicOffIcon,
   ThinkingDots,
 } from '../components/icons';
 import { usePoll } from '../usePoll';
 import { clockTime, dateTime, relativeTime } from '../util';
 
 /**
- * The Bruce page: a written conversation with the brewery's assistant, plus
- * the state of his voice service alongside it.
+ * The Bruce page: a conversation with the brewery's assistant — typed or
+ * spoken — plus the state of the brewery speaker alongside it.
  *
- * The two halves are answered by different things. The chat comes from the
- * server, which retrieves passages from the brewing books in knowledge/ and
- * answers from them — it works with no microphone attached. The rail proxies
- * apps/bruce, the wake-word service, which needs real audio hardware and is
- * often simply not running.
+ * Three things answer here, and they fail independently, which is why they look
+ * separate on screen:
+ *
+ * - The chat comes from the server, which retrieves passages from the brewing
+ *   books in knowledge/ and answers from them. No microphone involved.
+ * - The Talk button (VoiceBar, below) is this browser holding a Realtime
+ *   session of its own — a phone, a laptop, the kiosk. It needs a microphone
+ *   and therefore HTTPS, but nothing on the Pi beyond the API key.
+ * - The right-hand rail proxies apps/bruce, the wake-word service, which needs
+ *   real audio hardware in the brewery and is often simply not running.
  */
 
 /** How often the voice-service rail refreshes. The chat is event-driven. */
@@ -664,6 +673,204 @@ function ChatsPanel({
   );
 }
 
+// --- Talking to Bruce from this browser -------------------------------------
+
+/** The look of a live call: what to call the state, and how the dot behaves. */
+const CALL_LOOK: Record<VoiceCallState, { label: string; dot: string; pulse: boolean }> = {
+  connecting: { label: 'Connecting…', dot: 'bg-amber-400', pulse: true },
+  // The resting state of an open call. Named for what you can do, not for what
+  // he is doing, because the answer to that is "waiting for you".
+  listening: { label: 'Listening — just talk', dot: 'bg-emerald-400', pulse: true },
+  thinking: { label: 'Thinking…', dot: 'bg-amber-400', pulse: true },
+  speaking: { label: 'Speaking…', dot: 'bg-sky-400', pulse: true },
+  ended: { label: 'Call ended', dot: 'bg-zinc-500', pulse: false },
+};
+
+/**
+ * The Talk button and, once pressed, the call.
+ *
+ * This is Bruce's third front door and the only one that works from a sofa: the
+ * brewery speaker needs the Pi's microphone and the wake word, and the composer
+ * below needs both hands. Here the phone holds the conversation itself (see
+ * bruceVoice.ts) — press once and talk, press again to hang up. There is no
+ * wake word because there is a button, which is the same reason ChatGPT's voice
+ * mode hasn't got one either.
+ *
+ * Each finished exchange is saved into the open thread as it completes, so what
+ * was said out loud is in the same conversation as what was typed, and a call
+ * cut short by a locked phone keeps everything up to that point.
+ */
+function VoiceBar({
+  conversationId,
+  onTurn,
+}: {
+  conversationId: number | undefined;
+  onTurn: (reply: BruceChatReply) => void;
+}): JSX.Element {
+  const [call, setCall] = useState<VoiceCall | null>(null);
+  const [state, setState] = useState<VoiceCallState>('ended');
+  const [phase, setPhase] = useState<BrucePhase | null>(null);
+  const [lines, setLines] = useState<VoiceLine[]>([]);
+  const [muted, setMuted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  // The thread to file turns under, read at save time rather than captured when
+  // the call started: switching chats mid-call should move where they land.
+  const threadRef = useRef(conversationId);
+  threadRef.current = conversationId;
+
+  // A live call is a billed microphone. Leaving the page must hang it up —
+  // otherwise navigating away leaves Bruce listening to an empty room.
+  const callRef = useRef<VoiceCall | null>(null);
+  callRef.current = call;
+  useEffect(() => () => callRef.current?.end(), []);
+
+  const start = async (): Promise<void> => {
+    if (starting || call) return;
+    setStarting(true);
+    setError(null);
+    setLines([]);
+    try {
+      const live = await startVoiceCall({
+        onState: (next) => {
+          setState(next);
+          if (next === 'ended') setCall(null);
+        },
+        onPhase: setPhase,
+        onLine: (line) => setLines((prev) => [...prev.slice(-5), line]),
+        onTurn: (question, answer) => {
+          void api
+            .saveBruceVoiceTurn(question, answer, threadRef.current)
+            .then((reply) => {
+              // It is in the thread above now, so the bar stops repeating it.
+              setLines([]);
+              onTurn(reply);
+            })
+            .catch(() => {
+              // Losing the written copy is not worth ending a working call
+              // over; the lines stay on screen instead of vanishing silently.
+              setError('That exchange could not be saved to the chat.');
+            });
+        },
+        onError: setError,
+      });
+      setCall(live);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start the call.');
+      setState('ended');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const hangUp = (): void => {
+    call?.end();
+    setCall(null);
+    setPhase(null);
+  };
+
+  const toggleMute = (): void => {
+    if (!call) return;
+    const next = !muted;
+    call.setMuted(next);
+    setMuted(next);
+  };
+
+  // No microphone to be had: the browser only allows one over HTTPS or on
+  // localhost. Said plainly, with the way round it, rather than as a dead
+  // button — this is what a phone on the LAN's plain-HTTP address hits.
+  if (!voiceSupported()) {
+    return (
+      <div className="mb-3 flex items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+        <MicIcon className="mt-0.5 h-4 w-4 shrink-0 text-zinc-600" />
+        <p className="text-[11px] leading-relaxed text-zinc-500">
+          Talking needs a microphone, which browsers only allow over HTTPS. Open the hub at its{' '}
+          <span className="text-zinc-400">https address</span> on this device and the Talk button
+          appears — the written chat below works either way.
+        </p>
+      </div>
+    );
+  }
+
+  if (!call) {
+    return (
+      <div className="mb-3">
+        <button
+          type="button"
+          onClick={() => void start()}
+          disabled={starting}
+          className={`flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium ${ACCENT_BUTTON}`}
+        >
+          <MicIcon className="h-4 w-4" />
+          {starting ? 'Connecting…' : 'Talk to Bruce'}
+        </button>
+        {error && <p className="mt-1.5 text-xs text-red-400">{error}</p>}
+      </div>
+    );
+  }
+
+  const look = CALL_LOOK[state];
+  return (
+    <div className="mb-3 rounded-lg border border-emerald-900/60 bg-emerald-950/20 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="relative flex h-2.5 w-2.5 shrink-0">
+          {look.pulse && (
+            <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${look.dot}`} />
+          )}
+          <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${look.dot}`} />
+        </span>
+        <span className="text-sm text-zinc-200">{look.label}</span>
+        {phase && (
+          <span className="text-xs text-zinc-500">
+            — {PHASE_LOOK[phase.phase].label.toLowerCase()}
+            {phase.detail && ` (${phase.detail})`}
+          </span>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleMute}
+            aria-pressed={muted}
+            title={muted ? 'Let Bruce hear you again' : 'Mute your microphone'}
+            className={`rounded-lg border px-2 py-1 text-xs transition ${
+              muted
+                ? 'border-amber-800 bg-amber-950/40 text-amber-300'
+                : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+            }`}
+          >
+            {muted ? <MicOffIcon className="h-3.5 w-3.5" /> : <MicIcon className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={hangUp}
+            className="rounded-lg bg-red-900/70 px-3 py-1 text-xs font-medium text-red-100 transition hover:bg-red-800"
+          >
+            End
+          </button>
+        </div>
+      </div>
+
+      {/* The exchange in flight. It clears as soon as the pair is written into
+          the thread above, so nothing is on screen twice. */}
+      {lines.length > 0 && (
+        <div className="mt-2 space-y-0.5 border-t border-emerald-900/40 pt-2">
+          {lines.map((line, i) => (
+            <p key={`${line.at}-${i}`} className="text-xs leading-relaxed">
+              <span className={line.role === 'user' ? 'text-emerald-400' : 'text-zinc-500'}>
+                {line.role === 'user' ? 'You' : 'Bruce'}
+              </span>{' '}
+              <span className="text-zinc-300">{line.text}</span>
+            </p>
+          ))}
+        </div>
+      )}
+
+      {error && <p className="mt-1.5 text-xs text-red-400">{error}</p>}
+    </div>
+  );
+}
+
 function Chat(): JSX.Element {
   const [state, setState] = useState<BruceChatState | null>(null);
   const [draft, setDraft] = useState('');
@@ -903,6 +1110,27 @@ function Chat(): JSX.Element {
           void send(draft);
         }}
       >
+        {/* Above the composer rather than beside it: talking and typing are two
+            ways of asking the same Bruce, and the answers land in one thread. */}
+        {state?.configured && (
+          <VoiceBar
+            conversationId={state.conversation.id}
+            onTurn={({ question, answer, conversation }) =>
+              setState((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      messages: [...prev.messages, question, answer],
+                      conversation,
+                      conversations: prev.conversations.map((c) =>
+                        c.id === conversation.id ? conversation : c,
+                      ),
+                    }
+                  : prev,
+              )
+            }
+          />
+        )}
         <div className="flex gap-2">
           {/* No `rows` and `resize-none`: useAutoGrow owns the height, so the
               box is always as tall as what has been typed into it. */}
@@ -1099,13 +1327,14 @@ function VoiceRail({ status }: { status: BruceServiceStatus | null }): JSX.Eleme
       <section className="h-fit rounded-xl border border-zinc-800 bg-zinc-900 p-5">
         <div className="mb-2 flex items-center gap-2">
           <MicIcon className="h-4 w-4 text-zinc-600" />
-          <h2 className="text-sm font-semibold text-zinc-400">Voice — offline</h2>
+          <h2 className="text-sm font-semibold text-zinc-400">Brewery speaker — offline</h2>
         </div>
         <p className="text-xs leading-relaxed text-zinc-600">
-          Talking to Bruce out loud needs the microphone and speaker on the Pi. The chat works
-          without them. When the hardware is in, enable it with{' '}
+          The hands-free Bruce in the brewery — say &ldquo;Bruce!&rdquo; across the room — needs the
+          microphone and speaker on the Pi. When the hardware is in, enable it with{' '}
           <code className="text-zinc-500">sudo systemctl enable --now bruce.service</code> — see
-          deploy/README-bruce.md.
+          deploy/README-bruce.md. This is only about that speaker: the chat, and the Talk button on
+          it, work from any phone or laptop without it.
         </p>
       </section>
     );

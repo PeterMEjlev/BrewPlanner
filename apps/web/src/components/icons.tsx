@@ -98,6 +98,18 @@ export function MicIcon(props: IconProps): JSX.Element {
   );
 }
 
+/** Microphone with a line through it — muted, in a browser voice call. */
+export function MicOffIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M9 9V6a3 3 0 0 1 6 0v3m0 3a3 3 0 0 1-4.5 2.6" />
+      <path d="M5 11a7 7 0 0 0 10.5 6.05M19 11a6.9 6.9 0 0 1-.8 3.2" />
+      <path d="M12 18v3" />
+      <path d="M4 3l16 18" />
+    </Svg>
+  );
+}
+
 /**
  * Line-art conical fermenter, matching the Pi kiosk's hero icon
  * (KioskHome's FermenterIcon). Own 64-unit viewBox, so it keeps the kiosk's

@@ -336,6 +336,16 @@ const RULES: Rule[] = [
   // the `onResponse` hook this rule lives in never sees it — the rule is here so
   // that reads as a decision rather than an oversight.
   { method: 'POST', re: /^\/api\/bruce\/chat$/, build: () => null },
+  // Talking to Bruce from a browser. All three are silent here, and each for
+  // its own reason:
+  //
+  // - `voice/session` mints a credential and changes nothing in the brewery.
+  // - `voice/tool` is one function call out of a live conversation, and the
+  //   tools record their own entries (see bruce/tools.ts) — "Bruce: set the
+  //   fermenter to 20°C" said once, rather than that plus a POST beside it.
+  //   Without this rule every *read* he made would land in the history too.
+  // - `voice/turn` only writes the chat thread, which the Bruce page shows.
+  { method: 'POST', re: /^\/api\/bruce\/voice\/(session|tool|turn)$/, build: () => null },
 
   // --- Accounts (never log the password itself) -----------------------------
   { method: 'POST', re: /^\/api\/accounts$/, build: ({ body }) => ({ entity: 'Account', action: `Created account${str(body, 'username') ? ` "${str(body, 'username')}"` : ''}${str(body, 'role') ? ` (${str(body, 'role')})` : ''}` }) },

@@ -3372,6 +3372,69 @@ export const bruceWebSearchSchema = z.object({ enabled: z.boolean() });
 export type BruceWebSearchInput = z.infer<typeof bruceWebSearchSchema>;
 
 // ---------------------------------------------------------------------------
+// Bruce by voice, in a browser. A third front door, after the brewery speaker
+// (apps/bruce, wake word, Pi hardware) and the written chat above.
+//
+// The phone or laptop holds the conversation itself: it opens a WebRTC session
+// straight to OpenAI's Realtime API, so the audio never crosses the Pi, which
+// has neither the bandwidth nor the CPU to relay it. The server's part is the
+// three things a browser must not be trusted with — minting a short-lived
+// credential (the real key stays on the Pi), running the tools against the
+// hub's database, and writing the finished turns into the chat thread.
+
+/**
+ * What a browser needs to open a Realtime session, from POST
+ * /api/bruce/voice/session.
+ *
+ * `clientSecret` is an ephemeral key: it is scoped to one session, expires
+ * within a minute or two, and is the only credential that ever reaches the
+ * browser. The session's instructions, tools and voice are baked into it
+ * server-side, so a tampered client cannot widen what Bruce is allowed to do.
+ */
+export interface BruceVoiceSession {
+  clientSecret: string;
+  /** Unix seconds. The secret only has to survive the SDP exchange. */
+  expiresAt: number;
+  model: string;
+  voice: string;
+}
+
+/**
+ * Body for POST /api/bruce/voice/tool — one function call, relayed from the
+ * browser's data channel to the same tools the written chat uses.
+ *
+ * The arguments are whatever the model produced, so they are passed through as
+ * an opaque object and narrowed by the tool itself (see bruce/tools.ts).
+ */
+export const bruceVoiceToolSchema = z.object({
+  name: z.string().trim().min(1).max(64),
+  args: z.record(z.unknown()).default({}),
+});
+export type BruceVoiceToolInput = z.infer<typeof bruceVoiceToolSchema>;
+
+/** What the model reads back from a tool. Failures are text, never an error. */
+export interface BruceVoiceToolResult {
+  output: string;
+  /** What to show on the page while this ran, when the tool has a phase. */
+  phase?: BrucePhase;
+}
+
+/**
+ * Body for POST /api/bruce/voice/turn — one finished spoken exchange, saved
+ * into a chat thread.
+ *
+ * Sent by the browser after each reply rather than at the end of the call: a
+ * call that ends by the phone locking or the tab closing would otherwise lose
+ * everything that was said.
+ */
+export const bruceVoiceTurnSchema = z.object({
+  conversationId: z.coerce.number().int().positive().optional(),
+  question: z.string().trim().min(1).max(4000),
+  answer: z.string().trim().min(1).max(8000),
+});
+export type BruceVoiceTurnInput = z.infer<typeof bruceVoiceTurnSchema>;
+
+// ---------------------------------------------------------------------------
 // Tending the library from the dashboard: adding a book, rebuilding the index,
 // and rewriting Bruce's instructions. All of it used to need an SSH session and
 // `npm run knowledge` on the Pi.

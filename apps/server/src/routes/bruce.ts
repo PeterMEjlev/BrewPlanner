@@ -7,6 +7,8 @@ import type {
   BruceKnowledgeState,
   BruceServiceStatus,
   BruceStatus,
+  BruceVoiceSession,
+  BruceVoiceToolResult,
 } from '@checklist/shared';
 import {
   bruceChatModelSchema,
@@ -16,6 +18,8 @@ import {
   bruceKnowledgeFileSchema,
   bruceReindexSchema,
   bruceSpeakSchema,
+  bruceVoiceToolSchema,
+  bruceVoiceTurnSchema,
   bruceVolumeSchema,
   bruceWebSearchSchema,
 } from '@checklist/shared';
@@ -49,6 +53,7 @@ import {
   titleFromFirstMessage,
   trimHistory,
 } from '../bruce/repo.js';
+import { mintVoiceSession, runVoiceTool, voiceToolPhase } from '../bruce/voice.js';
 import { BuildError } from '../knowledge/build.js';
 import { chunkMarkdown } from '../knowledge/chunk.js';
 import { indexJob, startIndexJob } from '../knowledge/job.js';
@@ -340,6 +345,78 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
     } finally {
       reply.raw.end();
     }
+  });
+
+  // --- Voice, in a browser -------------------------------------------------
+  // The phone-and-laptop way in, beside the brewery speaker and the written
+  // chat. The audio itself never comes through here: the browser holds a WebRTC
+  // session straight to OpenAI (see bruce/voice.ts for why), and these three
+  // endpoints are the parts a browser must not be trusted with — the
+  // credential, the tools, and writing the conversation down.
+
+  // POST /api/bruce/voice/session — mint a short-lived credential for one call.
+  // Admin-only, like the written chat: a Realtime session is billed by the
+  // minute and can change the brewery.
+  app.post('/voice/session', { preHandler: requireAdmin }, async (req, reply): Promise<BruceVoiceSession | void> => {
+    if (!isOpenAIConfigured()) {
+      return reply
+        .status(503)
+        .send({ error: 'OPENAI_API_KEY is not set on the server — Bruce cannot talk.' });
+    }
+    try {
+      return await mintVoiceSession();
+    } catch (err) {
+      req.log.error({ err }, 'Could not mint a Bruce voice session');
+      return reply
+        .status(502)
+        .send({ error: 'OpenAI would not open a voice session. Check the server log.' });
+    }
+  });
+
+  // POST /api/bruce/voice/tool — run one function call the model made in the
+  // browser. The same tools the written chat uses, run here against the hub's
+  // database and audited against whoever is logged in: a fermenter changed by
+  // voice is that account's change, not the assistant's. Nothing about a
+  // browser session gets its own privileges — `requireAdmin` has already run,
+  // and no session here means the trusted-local kiosk, as everywhere else.
+  app.post('/voice/tool', { preHandler: requireAdmin }, async (req, reply): Promise<BruceVoiceToolResult | void> => {
+    const body = parse(bruceVoiceToolSchema, req.body, reply);
+    if (!body) return;
+    const sessionUser = getSessionUser(req);
+    const actor = sessionUser
+      ? { userId: sessionUser.id, username: sessionUser.username }
+      : { userId: null, username: 'Local kiosk' };
+    const args = body.args ?? {};
+    const phase = voiceToolPhase(body.name, args);
+    return {
+      output: await runVoiceTool(body.name, args, actor),
+      ...(phase ? { phase } : {}),
+    };
+  });
+
+  // POST /api/bruce/voice/turn — write one finished spoken exchange into a
+  // chat thread, so a question asked out loud can be scrolled back to and
+  // followed up in writing.
+  //
+  // Saved per turn rather than at the end of the call: a call ends as often by
+  // a phone locking or a tab closing as by the button, and a whole conversation
+  // that only existed in a closed tab is a conversation lost. There is no cost
+  // to record — the audio was billed directly to the OpenAI account by the
+  // browser's own session, and never passed through this server to be counted.
+  app.post('/voice/turn', { preHandler: requireAdmin }, async (req, reply) => {
+    const body = parse(bruceVoiceTurnSchema, req.body, reply);
+    if (!body) return;
+    const conversationId = body.conversationId ?? defaultConversation().id;
+    if (!conversationExists(conversationId)) {
+      return reply.status(404).send({ error: 'That conversation no longer exists.' });
+    }
+    const question = addMessage(conversationId, 'user', body.question);
+    const answer = addMessage(conversationId, 'assistant', body.answer);
+    titleFromFirstMessage(conversationId, body.question, await summariseTitle(body.question));
+    trimHistory(conversationId);
+    const conversation = listConversations().find((c) => c.id === conversationId);
+    if (!conversation) return reply.status(404).send({ error: 'That conversation no longer exists.' });
+    return { question, answer, conversation } satisfies BruceChatReply;
   });
 
   // DELETE /api/bruce/chat?conversation=<id> — empty a thread without deleting

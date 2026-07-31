@@ -38,4 +38,14 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      Talking to Bruce on the Bruce page. The web view serves the app from
+      https://localhost, which is a secure context, so getUserMedia is allowed
+      there — but the WebView can only hand over a microphone the app has
+      declared. Without these the Talk button appears and then fails when
+      pressed. Android still asks the user the first time.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 </manifest>

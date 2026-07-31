@@ -19,6 +19,8 @@ import type {
   BruceKnowledgeState,
   BrucePhase,
   BruceServiceStatus,
+  BruceVoiceSession,
+  BruceVoiceToolResult,
   ChecklistSummary,
   ChecklistWithSteps,
   DeviceDataSources,
@@ -639,6 +641,23 @@ export const api = {
     request<{ volumePercent: number }>('/bruce/volume', {
       method: 'POST',
       body: JSON.stringify({ percent }),
+    }),
+
+  // Talking to Bruce from this browser. The audio does not come through the
+  // server: `startBruceVoice` returns a credential the page uses to open its
+  // own session with OpenAI, and the other two are what that session cannot do
+  // for itself — reach the brewery's tools, and write the exchange down. All
+  // three are admin-only, like asking in writing.
+  startBruceVoice: () => request<BruceVoiceSession>('/bruce/voice/session', { method: 'POST' }),
+  runBruceVoiceTool: (name: string, args: Record<string, unknown>) =>
+    request<BruceVoiceToolResult>('/bruce/voice/tool', {
+      method: 'POST',
+      body: JSON.stringify({ name, args }),
+    }),
+  saveBruceVoiceTurn: (question: string, answer: string, conversationId?: number) =>
+    request<BruceChatReply>('/bruce/voice/turn', {
+      method: 'POST',
+      body: JSON.stringify({ question, answer, ...(conversationId ? { conversationId } : {}) }),
     }),
 
   // Bruce's text chat. Answered by the server itself from the indexed brewing

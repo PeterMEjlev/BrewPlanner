@@ -1,6 +1,8 @@
-- Bruce voice mode: Make it work on phones/laptops too. instead of a wakeword, it should be a button to initate conversaiton (like in chatGPT voice mode)
+- review if bruce needs more functions / tools, do make him more useful.
 
 - Bruce voice: Train "Hey Bruce" wakeword model instead of "Hey Jarvis"
+  (Only the brewery speaker still needs a wake word — the Talk button on the
+  Bruce page works on phones and laptops without one.)
 
 - Recipe back up: does it work?
 
@@ -30,6 +32,10 @@
   The Bruce page itself is built: it is a written chat (server-side, works today
   without any of the above) with the voice service's live state, volume, speak
   box and spoken transcript in the right-hand rail once the hardware is in.
+  Talking to him is no longer blocked on any of this either — the Talk button on
+  that page holds a voice conversation in the browser (phone, laptop, kiosk),
+  over HTTPS. The hardware above is only for the hands-free speaker in the
+  brewery.
 
 - ## Apparent attenuation & ABV live tracker — compute OG→current % attenuation and estimated ABV from Tilt readings; show projected final ABV.
 
