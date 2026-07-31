@@ -10,6 +10,7 @@ import { ServerSetup } from './pages/ServerSetup';
 import { KioskFrame } from './components/KioskFrame';
 import { AdminPage } from './pages/Admin';
 import { AlertsPage } from './pages/Alerts';
+import { BrewDaysPage } from './pages/BrewDays';
 import { BrewSystemPage } from './pages/BrewSystem';
 import { BrucePage } from './pages/Bruce';
 import { DashboardPage } from './pages/Dashboard';
@@ -64,6 +65,11 @@ const KioskDevicePage = lazy(() =>
 );
 const TemperaturePage = lazy(() =>
   import('./pages/Temperature').then((m) => ({ default: m.TemperaturePage })),
+);
+// One brew day's detail plots the rig's pot temperatures, so it pulls in
+// recharts too — the log list itself stays in the main bundle.
+const BrewDayDetailPage = lazy(() =>
+  import('./pages/BrewDayDetail').then((m) => ({ default: m.BrewDayDetailPage })),
 );
 
 const router = createBrowserRouter([
@@ -193,6 +199,27 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <RecipeDetailPage />
+      </RequireAuth>
+    ),
+  },
+  // The brewery's logbook: every batch brewed, then one batch in full. Readable
+  // by anyone signed in (a guest sees the log without the controls); writing to
+  // it is admin-only server-side.
+  {
+    path: '/brew-days',
+    element: (
+      <RequireAuth>
+        <BrewDaysPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/brew-days/:id',
+    element: (
+      <RequireAuth>
+        <Suspense fallback={<div className="p-6 text-sm text-zinc-400">Loading brew day…</div>}>
+          <BrewDayDetailPage />
+        </Suspense>
       </RequireAuth>
     ),
   },

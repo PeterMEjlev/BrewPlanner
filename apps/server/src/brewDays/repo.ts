@@ -1,0 +1,356 @@
+import type {
+  BrewDay,
+  BrewDayDetail,
+  BrewDayRecipeSnapshot,
+  BrewDayRigSample,
+  BrewDayRigStats,
+  BrewDayStatus,
+  BrewDayTempStats,
+  RecipeBrewCount,
+  RecipeDetail,
+  UpdateBrewDayInput,
+} from '@checklist/shared';
+import { BREW_DAY_STATUSES, isFermentableLine } from '@checklist/shared';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { db } from '../db/index.js';
+import { brewDayRigSamples, brewDays } from '../db/schema.js';
+import { fermentationSummary } from './telemetry.js';
+
+/**
+ * The brewery's logbook. One row per batch, written the moment the brewer says
+ * they're brewing a recipe and edited from then until it's packaged.
+ *
+ * Everything here is synchronous (better-sqlite3), like the rest of the repos.
+ */
+
+type BrewDayRow = typeof brewDays.$inferSelect;
+
+const now = (): string => new Date().toISOString();
+
+/** Sum a recipe's weighed lines, rounded, or null when nothing carries a weight. */
+function totalGrams(lines: { grams: number | null }[]): number | null {
+  const weighed = lines.filter((line) => line.grams != null);
+  if (weighed.length === 0) return null;
+  return Math.round(weighed.reduce((sum, line) => sum + (line.grams ?? 0), 0) * 10) / 10;
+}
+
+/**
+ * The recipe as it reads right now, frozen for the log. Deliberately the
+ * hydrated detail rather than the stored sheet: the cost and the gram weights
+ * are what the brewer is about to spend and weigh out, and both are worked out
+ * from today's catalogue — a week later the same recipe would snapshot differently,
+ * which is exactly why the figure has to be captured on the day.
+ */
+export function recipeSnapshot(recipe: RecipeDetail): BrewDayRecipeSnapshot {
+  const grainGrams = totalGrams(recipe.fermentables.filter(isFermentableLine));
+  return {
+    name: recipe.name,
+    style: recipe.style,
+    og: recipe.og,
+    fg: recipe.fg,
+    abv: recipe.abv,
+    ibu: recipe.ibu,
+    ebc: recipe.ebc,
+    batchSizeL: recipe.batchSizeL,
+    mashTemp: recipe.mashTemp,
+    fermentationTemp: recipe.fermentationTemp,
+    costDkk: recipe.cost.priced > 0 ? recipe.cost.usedDkk : null,
+    grainKg: grainGrams == null ? null : Math.round(grainGrams / 100) / 10,
+    hopGrams: totalGrams(recipe.hops),
+    yeast: recipe.yeast
+      .map((line) => line.name.trim())
+      .filter(Boolean)
+      .join(', '),
+  };
+}
+
+/**
+ * Rebuild the snapshot a row was stored with. A row whose JSON no longer parses
+ * still lists — with the little the columns themselves know — rather than taking
+ * the whole logbook down with it.
+ */
+function rowSnapshot(row: BrewDayRow): BrewDayRecipeSnapshot {
+  try {
+    return JSON.parse(row.recipeSnapshot) as BrewDayRecipeSnapshot;
+  } catch {
+    return {
+      name: 'Unknown recipe',
+      style: '',
+      og: '',
+      fg: '',
+      abv: '',
+      ibu: '',
+      ebc: '',
+      batchSizeL: null,
+      mashTemp: null,
+      fermentationTemp: null,
+      costDkk: null,
+      grainKg: null,
+      hopGrams: null,
+      yeast: '',
+    };
+  }
+}
+
+function rowStatus(value: string): BrewDayStatus {
+  return (BREW_DAY_STATUSES as string[]).includes(value) ? (value as BrewDayStatus) : 'brewing';
+}
+
+/**
+ * Which brew of its recipe a row was: 1 for the first, 2 for the second. Counted
+ * by brew date among the rows sharing a recipe id, so back-dating a forgotten
+ * batch renumbers the ones after it rather than appending out of order.
+ *
+ * Rows whose recipe has since been deleted are all `recipeId === null`, and
+ * counting those together would number unrelated batches as one series — so they
+ * are simply numbered 1 apiece.
+ */
+function brewNumbers(): Map<number, number> {
+  const rows = db
+    .select({ id: brewDays.id, recipeId: brewDays.recipeId, brewedAt: brewDays.brewedAt })
+    .from(brewDays)
+    .orderBy(asc(brewDays.brewedAt), asc(brewDays.id))
+    .all();
+  const seen = new Map<string, number>();
+  const numbers = new Map<number, number>();
+  for (const row of rows) {
+    if (row.recipeId == null) {
+      numbers.set(row.id, 1);
+      continue;
+    }
+    const next = (seen.get(row.recipeId) ?? 0) + 1;
+    seen.set(row.recipeId, next);
+    numbers.set(row.id, next);
+  }
+  return numbers;
+}
+
+function rowToBrewDay(row: BrewDayRow, brewNumber: number): BrewDay {
+  return {
+    id: row.id,
+    recipeId: row.recipeId,
+    recipe: rowSnapshot(row),
+    status: rowStatus(row.status),
+    brewedAt: row.brewedAt,
+    durationMinutes: row.durationMinutes,
+    brewNumber,
+    pitchedAt: row.pitchedAt,
+    packagedAt: row.packagedAt,
+    measured: {
+      preBoilGravity: row.preBoilGravity,
+      og: row.measuredOg,
+      fg: row.measuredFg,
+      volumeL: row.volumeL,
+      mashTempC: row.mashTempC,
+      boilTimeMin: row.boilTimeMin,
+      efficiencyPct: row.efficiencyPct,
+      waterL: row.waterL,
+      energyKwh: row.energyKwh,
+    },
+    rating: row.rating,
+    notes: row.notes,
+    tastingNotes: row.tastingNotes,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/** The whole log, newest brew day first. */
+export function listBrewDays(): BrewDay[] {
+  const numbers = brewNumbers();
+  return db
+    .select()
+    .from(brewDays)
+    .orderBy(desc(brewDays.brewedAt), desc(brewDays.id))
+    .all()
+    .map((row) => rowToBrewDay(row, numbers.get(row.id) ?? 1));
+}
+
+/** One brew day with its logged rig temperatures and derived fermentation figures. */
+export function getBrewDay(id: number): BrewDayDetail | null {
+  const row = db.select().from(brewDays).where(eq(brewDays.id, id)).get();
+  if (!row) return null;
+  const brewDay = rowToBrewDay(row, brewNumbers().get(row.id) ?? 1);
+  const rigSamples = listRigSamples(id);
+  return {
+    ...brewDay,
+    rigSamples,
+    rigStats: rigStats(rigSamples),
+    // Derived on read rather than stored: the readings are the record, and the
+    // window moves whenever the brewer corrects the pitch/package dates.
+    fermentation: fermentationSummary(brewDay),
+  };
+}
+
+/** The rig's pot temperatures logged for one brew day, oldest first. */
+export function listRigSamples(brewDayId: number): BrewDayRigSample[] {
+  return db
+    .select({
+      at: brewDayRigSamples.recordedAt,
+      bk: brewDayRigSamples.bk,
+      mlt: brewDayRigSamples.mlt,
+      hlt: brewDayRigSamples.hlt,
+    })
+    .from(brewDayRigSamples)
+    .where(eq(brewDayRigSamples.brewDayId, brewDayId))
+    .orderBy(asc(brewDayRigSamples.recordedAt))
+    .all();
+}
+
+/** Min/mean/max over one pot's samples, or null when that pot logged nothing. */
+export function tempStats(values: (number | null)[]): BrewDayTempStats | null {
+  const numbers = values.filter((v): v is number => v != null && Number.isFinite(v));
+  if (numbers.length === 0) return null;
+  const sum = numbers.reduce((total, v) => total + v, 0);
+  return {
+    min: Math.min(...numbers),
+    max: Math.max(...numbers),
+    avg: Math.round((sum / numbers.length) * 10) / 10,
+    count: numbers.length,
+  };
+}
+
+function rigStats(samples: BrewDayRigSample[]): BrewDayRigStats {
+  return {
+    bk: tempStats(samples.map((s) => s.bk)),
+    mlt: tempStats(samples.map((s) => s.mlt)),
+    hlt: tempStats(samples.map((s) => s.hlt)),
+  };
+}
+
+/**
+ * Begin the log for a batch. `brewedAt` is the brew day itself and defaults to
+ * now; passing one back-dates a brew that has already happened.
+ */
+export function startBrewDay(
+  recipeId: string,
+  recipe: RecipeDetail,
+  brewedAt?: string,
+): BrewDay {
+  const timestamp = now();
+  const result = db
+    .insert(brewDays)
+    .values({
+      recipeId,
+      recipeSnapshot: JSON.stringify(recipeSnapshot(recipe)),
+      status: 'brewing',
+      brewedAt: brewedAt ?? timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+  return getBrewDay(Number(result.lastInsertRowid))!;
+}
+
+/**
+ * Apply an edit. Only the fields present in `input` are written, so the detail
+ * page can save one figure at a time; the nullable ones accept null to clear a
+ * measurement back to unmeasured rather than to zero.
+ */
+export function updateBrewDay(id: number, input: UpdateBrewDayInput): BrewDay | null {
+  const fields: Partial<typeof brewDays.$inferInsert> = { updatedAt: now() };
+  if (input.status !== undefined) fields.status = input.status;
+  if (input.brewedAt !== undefined) fields.brewedAt = input.brewedAt;
+  if (input.durationMinutes !== undefined) fields.durationMinutes = input.durationMinutes;
+  if (input.pitchedAt !== undefined) fields.pitchedAt = input.pitchedAt;
+  if (input.packagedAt !== undefined) fields.packagedAt = input.packagedAt;
+  if (input.rating !== undefined) fields.rating = input.rating;
+  if (input.notes !== undefined) fields.notes = input.notes;
+  if (input.tastingNotes !== undefined) fields.tastingNotes = input.tastingNotes;
+  const m = input.measured;
+  if (m) {
+    if (m.preBoilGravity !== undefined) fields.preBoilGravity = m.preBoilGravity;
+    if (m.og !== undefined) fields.measuredOg = m.og;
+    if (m.fg !== undefined) fields.measuredFg = m.fg;
+    if (m.volumeL !== undefined) fields.volumeL = m.volumeL;
+    if (m.mashTempC !== undefined) fields.mashTempC = m.mashTempC;
+    if (m.boilTimeMin !== undefined) fields.boilTimeMin = m.boilTimeMin;
+    if (m.efficiencyPct !== undefined) fields.efficiencyPct = m.efficiencyPct;
+    if (m.waterL !== undefined) fields.waterL = m.waterL;
+    if (m.energyKwh !== undefined) fields.energyKwh = m.energyKwh;
+  }
+  const result = db.update(brewDays).set(fields).where(eq(brewDays.id, id)).run();
+  if (result.changes === 0) return null;
+  const row = db.select().from(brewDays).where(eq(brewDays.id, id)).get()!;
+  return rowToBrewDay(row, brewNumbers().get(row.id) ?? 1);
+}
+
+export function deleteBrewDay(id: number): boolean {
+  return db.delete(brewDays).where(eq(brewDays.id, id)).run().changes > 0;
+}
+
+/** The name a brew day is referred to by in the change history. */
+export function brewDayName(id: number): string | null {
+  const row = db
+    .select({ snapshot: brewDays.recipeSnapshot })
+    .from(brewDays)
+    .where(eq(brewDays.id, id))
+    .get();
+  if (!row) return null;
+  try {
+    return (JSON.parse(row.snapshot) as BrewDayRecipeSnapshot).name || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * How many times each recipe has been brewed, and when last — the badge on the
+ * recipe grid. One grouped query rather than a count per card.
+ */
+export function recipeBrewCounts(): RecipeBrewCount[] {
+  return db
+    .select({
+      recipeId: brewDays.recipeId,
+      count: sql<number>`count(${brewDays.id})`,
+      lastBrewedAt: sql<string>`max(${brewDays.brewedAt})`,
+    })
+    .from(brewDays)
+    .where(sql`${brewDays.recipeId} is not null`)
+    .groupBy(brewDays.recipeId)
+    .all()
+    .map((row) => ({
+      recipeId: row.recipeId ?? '',
+      count: row.count,
+      lastBrewedAt: row.lastBrewedAt,
+    }));
+}
+
+/**
+ * The brew days the sampler should be logging the rig for: everything still on
+ * the brew day itself. Ordinarily none or one — the brewery has one rig — but
+ * the query doesn't assume it, so a batch someone forgot to advance can't
+ * silently swallow another one's samples.
+ */
+export function brewDaysInProgress(): { id: number }[] {
+  return db
+    .select({ id: brewDays.id })
+    .from(brewDays)
+    .where(eq(brewDays.status, 'brewing'))
+    .orderBy(desc(brewDays.brewedAt))
+    .all();
+}
+
+/** Whether a brew day already holds a sample at this second (the sampler's dedup). */
+export function hasRigSampleAt(brewDayId: number, recordedAt: string): boolean {
+  return (
+    db
+      .select({ id: brewDayRigSamples.id })
+      .from(brewDayRigSamples)
+      .where(
+        and(
+          eq(brewDayRigSamples.brewDayId, brewDayId),
+          eq(brewDayRigSamples.recordedAt, recordedAt),
+        ),
+      )
+      .get() != null
+  );
+}
+
+/** Log one sweep of the rig's three pots against a brew day. */
+export function insertRigSample(
+  brewDayId: number,
+  sample: { recordedAt: string; bk: number | null; mlt: number | null; hlt: number | null },
+): void {
+  db.insert(brewDayRigSamples).values({ brewDayId, ...sample }).run();
+}

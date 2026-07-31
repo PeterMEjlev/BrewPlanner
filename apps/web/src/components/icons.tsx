@@ -285,6 +285,23 @@ export function BeerMugIcon(props: IconProps): JSX.Element {
   );
 }
 
+/**
+ * Brew Days: a boil kettle with steam coming off it. Deliberately a vessel
+ * rather than a calendar — the log is a list of brews, and a calendar would read
+ * as scheduling something rather than recording it.
+ */
+export function BrewKettleIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M9 3c0 1-1 1.2-1 2.2S9 6.6 9 7.6" />
+      <path d="M13 3c0 1-1 1.2-1 2.2s1 1.4 1 2.4" />
+      <path d="M4 10h16" />
+      <path d="M5 10h14l-1.1 9.2A2 2 0 0 1 15.9 21H8.1a2 2 0 0 1-2-1.8Z" />
+      <path d="M20 12h1.2a1.3 1.3 0 0 1 0 2.6H19.7" />
+    </Svg>
+  );
+}
+
 export function SettingsIcon(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>

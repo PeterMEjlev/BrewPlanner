@@ -9,6 +9,7 @@ import { usePoll } from '../usePoll';
 import {
   BellIcon,
   BookIcon,
+  BrewKettleIcon,
   ChatIcon,
   ChecklistIcon,
   ClockIcon,
@@ -38,6 +39,8 @@ export type ShellPage =
   // Both the recipe list and a single recipe's brew sheet, so the nav item stays
   // lit while browsing into a recipe.
   | 'recipes'
+  // Likewise the brew-day log and a single entry.
+  | 'brewDays'
   | 'checklists'
   | 'todos'
   | 'history';
@@ -57,6 +60,7 @@ const NAV: NavItem[] = [
   { key: 'overview', label: 'Overview', Icon: HomeIcon, to: '/', page: 'overview' },
   { key: 'kegs', label: 'Kegs', Icon: KegIcon, to: '/kegs', page: 'kegs' },
   { key: 'recipes', label: 'Recipes', Icon: BookIcon, to: '/recipes', page: 'recipes' },
+  { key: 'brewDays', label: 'Brew Days', Icon: BrewKettleIcon, to: '/brew-days', page: 'brewDays' },
   { key: 'alerts', label: 'Alerts', Icon: BellIcon, to: '/alerts', page: 'alerts' },
   { key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
   { key: 'brewSystem', label: 'Brew System', Icon: SlidersIcon, to: '/brew-system', page: 'brewSystem' },

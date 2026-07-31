@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
+import { RIG_TIMEOUT_MS, rigBase, rigGet } from '../brewSystemClient.js';
 
 /**
  * Proxy to the brewing rig (a separate Raspberry Pi running brew-system-v3).
@@ -23,22 +24,6 @@ import { requireAdmin, requireAuth } from '../auth/index.js';
  * expected state, not an error: reads answer `{ online: false }` and the UI
  * shows an offline card instead of failing.
  */
-
-/** Where the rig lives on the LAN, e.g. `http://192.168.1.60:8000` (no trailing slash). */
-function rigBase(): string | null {
-  const url = process.env.BREW_SYSTEM_URL?.trim().replace(/\/+$/, '');
-  return url ? url : null;
-}
-
-/** Short timeout: the rig answers state reads from an in-memory cache in
- * milliseconds, so anything slower means it's off or the LAN is broken. */
-const RIG_TIMEOUT_MS = 2500;
-
-async function rigGet<T>(base: string, path: string): Promise<T> {
-  const res = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(RIG_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`Rig answered ${res.status} for ${path}`);
-  return (await res.json()) as T;
-}
 
 /**
  * Forward a control command. Distinguishes "rig said no" (bad request — its

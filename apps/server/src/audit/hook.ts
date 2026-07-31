@@ -1,6 +1,14 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getSessionUser, isLocalRequest } from '../auth/index.js';
-import { accountName, checklistName, deviceName, stepText, todoText } from './names.js';
+import {
+  accountName,
+  brewDayRecipeName,
+  checklistName,
+  deviceName,
+  recipeSheetName,
+  stepText,
+  todoText,
+} from './names.js';
 import { recordAudit } from './repo.js';
 
 declare module 'fastify' {
@@ -210,6 +218,34 @@ const RULES: Rule[] = [
   { method: 'PUT', re: /^\/api\/recipe$/, build: ({ body }) => ({ entity: 'Recipe', action: `Set the active recipe${str(body, 'name') ? ` to "${str(body, 'name')}"` : ''}` }) },
   { method: 'DELETE', re: /^\/api\/recipe$/, build: () => ({ entity: 'Recipe', action: 'Cleared the active recipe' }) },
   { method: 'PUT', re: /^\/api\/fermenter$/, build: ({ body }) => ({ entity: 'Recipe', action: `Marked the fermenter ${str(body, 'state') === 'clean' ? 'clean' : 'dirty'}` }) },
+
+  // --- Brew days ------------------------------------------------------------
+  // Starting one is the brewery's own record that a batch happened, so it earns
+  // a line. Editing the log is where the measurements are typed — worth
+  // recording that the entry changed, without repeating every figure into the
+  // history (the brew day itself holds those).
+  {
+    method: 'POST',
+    re: /^\/api\/brew-days$/,
+    build: ({ body }) => {
+      const id = str(body, 'recipeId');
+      // The row doesn't exist yet at describe time, so the name has to come from
+      // the recipe the request names.
+      const name = id ? recipeSheetName(id) : null;
+      return { entity: 'Brew day', action: `Started a brew day${name ? ` for "${name}"` : ''}` };
+    },
+  },
+  {
+    method: 'PATCH',
+    re: /^\/api\/brew-days\/(\d+)$/,
+    build: ({ m, body }) => {
+      const label = named(brewDayRecipeName(m[1] ?? ''), m[1] ?? '');
+      const status = str(body, 'status');
+      if (status) return { entity: 'Brew day', action: `Moved brew day ${label} to ${status}` };
+      return { entity: 'Brew day', action: `Updated brew day ${label}` };
+    },
+  },
+  { method: 'DELETE', re: /^\/api\/brew-days\/(\d+)$/, before: (m) => brewDayRecipeName(m[1] ?? ''), build: ({ m, before }) => ({ entity: 'Brew day', action: `Deleted brew day ${named(before, m[1] ?? '')}` }) },
 
   // --- Ingredient prices ----------------------------------------------------
   // Worth recording: a price decision is stored per ingredient, so it re-costs

@@ -22,9 +22,11 @@ import {
   recipeEditSchema,
   recipeIngredientCatalogQuerySchema,
   setActiveRecipeSchema,
+  startBrewDaySchema,
   stepIdParamSchema,
   sumCost,
   unpricedIngredients,
+  updateBrewDaySchema,
   updateChecklistSchema,
   updateKegSchema,
   updateStepSchema,
@@ -34,6 +36,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { dismissAlert, dismissAllAlerts, listAlerts } from '../alerts/repo.js';
 import { listAudit } from '../audit/repo.js';
+import * as brewDays from '../brewDays/repo.js';
 import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
@@ -471,6 +474,72 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(404).send({ error: 'Recipe not found' });
     }
     if (repo.getActiveRecipe()?.id === id) repo.clearActiveRecipe();
+    return reply.status(204).send();
+  });
+
+  // --- Brew days (the brewery's logbook) ----------------------------------
+  // One row per batch, from "I'm brewing this" to packaged. Reads are open to
+  // anyone who can see the recipes; writing to the log is an admin action.
+
+  app.get('/brew-days', async () => brewDays.listBrewDays());
+
+  // How often each recipe has been brewed, for the badges on the recipe grid.
+  app.get('/brew-days/counts', async () => brewDays.recipeBrewCounts());
+
+  /**
+   * Start a brew day. The recipe is snapshotted onto the row as it reads today
+   * (targets, cost, grain and hop weights), so the log stays truthful after the
+   * recipe is edited, re-costed or deleted.
+   *
+   * Starting also puts the beer in the fermenter — the same selection the kiosk
+   * card and the Recipes page show — because that is what pressing this button
+   * means, and doing it by hand afterwards was only ever a second step.
+   */
+  app.post('/brew-days', adminOnly, async (req, reply) => {
+    const body = parse(startBrewDaySchema, req.body, reply);
+    if (!body) return;
+    const recipe = recipeRepo.getRecipe(body.recipeId);
+    if (!recipe) return reply.status(404).send({ error: 'Recipe not found' });
+    const brewDay = brewDays.startBrewDay(body.recipeId, recipe, body.brewedAt);
+    repo.setActiveRecipe({
+      id: recipe.id,
+      origin: recipe.origin,
+      name: recipe.name,
+      style: recipe.style,
+      abv: recipe.abv,
+      url: recipe.url,
+      ibu: recipe.ibu,
+      ebc: recipe.ebc,
+    });
+    // There's wort in it now, whatever it was before.
+    repo.setFermenterState('dirty');
+    return reply.status(201).send(brewDay);
+  });
+
+  app.get('/brew-days/:id', async (req, reply) => {
+    const params = parse(idParamSchema, req.params, reply);
+    if (!params) return;
+    const brewDay = brewDays.getBrewDay(params.id);
+    if (!brewDay) return reply.status(404).send({ error: 'Brew day not found' });
+    return brewDay;
+  });
+
+  app.patch('/brew-days/:id', adminOnly, async (req, reply) => {
+    const params = parse(idParamSchema, req.params, reply);
+    if (!params) return;
+    const body = parse(updateBrewDaySchema, req.body, reply);
+    if (!body) return;
+    const updated = brewDays.updateBrewDay(params.id, body);
+    if (!updated) return reply.status(404).send({ error: 'Brew day not found' });
+    return updated;
+  });
+
+  app.delete('/brew-days/:id', adminOnly, async (req, reply) => {
+    const params = parse(idParamSchema, req.params, reply);
+    if (!params) return;
+    if (!brewDays.deleteBrewDay(params.id)) {
+      return reply.status(404).send({ error: 'Brew day not found' });
+    }
     return reply.status(204).send();
   });
 

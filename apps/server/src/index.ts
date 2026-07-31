@@ -3,6 +3,7 @@ import './env.js';
 import type { FastifyInstance } from 'fastify';
 import { evaluateDeviceAlerts } from './alerts/evaluate.js';
 import { buildApp } from './app.js';
+import { startBrewDaySampler } from './brewDays/sampler.js';
 import { sqlite } from './db/index.js';
 import { RETENTION_DAYS, pruneOldReadings } from './devices/retention.js';
 import { runNotificationChecks } from './notify/checks.js';
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
     startNotificationScheduler(app);
     startRetentionScheduler(app);
     startRecipeBackupScheduler(app.log);
+    startBrewDaySampler(app.log);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

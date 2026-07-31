@@ -4,6 +4,8 @@ import type {
   Alert,
   AuditEntry,
   AuthState,
+  BrewDay,
+  BrewDayDetail,
   BrewPot,
   BrewPump,
   BrewSystemConfig,
@@ -40,6 +42,7 @@ import type {
   Recipe,
   RecipeBackupResult,
   RecipeBackupStatus,
+  RecipeBrewCount,
   RecipeCostBreakdown,
   RecipeDefaults,
   RecipeDetail,
@@ -49,6 +52,7 @@ import type {
   RecipeStatsResponse,
   Step,
   Todo,
+  UpdateBrewDayInput,
   User,
   UserRole,
 } from '@checklist/shared';
@@ -430,6 +434,23 @@ export const api = {
       body: JSON.stringify(recipe),
     }).then((r) => r.recipe),
   clearActiveRecipe: () => request<void>('/recipe', { method: 'DELETE' }),
+
+  // The brewery's logbook. Starting a brew day snapshots the recipe as it reads
+  // today (targets, cost, weights) onto the entry and puts the beer in the
+  // fermenter; from there the entry is edited as the batch progresses.
+  listBrewDays: () => request<BrewDay[]>('/brew-days'),
+  getBrewDay: (id: number) => request<BrewDayDetail>(`/brew-days/${id}`),
+  // How many times each recipe has been brewed, for the badges on the grid.
+  listRecipeBrewCounts: () => request<RecipeBrewCount[]>('/brew-days/counts'),
+  // `brewedAt` back-dates a brew that already happened; omit it for "brewing now".
+  startBrewDay: (recipeId: string, brewedAt?: string) =>
+    request<BrewDay>('/brew-days', {
+      method: 'POST',
+      body: JSON.stringify(brewedAt ? { recipeId, brewedAt } : { recipeId }),
+    }),
+  updateBrewDay: (id: number, fields: UpdateBrewDayInput) =>
+    request<BrewDay>(`/brew-days/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+  deleteBrewDay: (id: number) => request<void>(`/brew-days/${id}`, { method: 'DELETE' }),
 
   // Whether the empty fermenter has been washed. Separate from the selection
   // above — emptying the tank doesn't clean it — and null until someone says.

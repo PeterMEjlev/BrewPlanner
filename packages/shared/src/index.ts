@@ -319,6 +319,258 @@ export interface FermenterStatus {
   state: FermenterState | null;
 }
 
+// ---------------------------------------------------------------------------
+// Brew days — the brewery's logbook
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a batch is in its life. A brew day starts at `brewing` (which is also
+ * what makes the hub log the rig's pot temperatures — see the sampler), moves to
+ * `fermenting` when the wort is pitched, `conditioning` once fermentation is
+ * done and it's cold-crashing or carbonating, and ends at `packaged`.
+ */
+export type BrewDayStatus = 'brewing' | 'fermenting' | 'conditioning' | 'packaged';
+
+export const BREW_DAY_STATUSES: BrewDayStatus[] = [
+  'brewing',
+  'fermenting',
+  'conditioning',
+  'packaged',
+];
+
+export const BREW_DAY_STATUS_LABELS: Record<BrewDayStatus, string> = {
+  brewing: 'Brew day',
+  fermenting: 'Fermenting',
+  conditioning: 'Conditioning',
+  packaged: 'Packaged',
+};
+
+/**
+ * The recipe as it read on the day it was brewed, copied onto the brew day when
+ * it starts. A log has to stay truthful about what was actually brewed, and the
+ * recipe it came from is a living document — it gets re-costed as the shop's
+ * prices move, edited between batches, and can be deleted outright. Hence a
+ * snapshot rather than a join: `recipeId` is only the link back to the library.
+ */
+export interface BrewDayRecipeSnapshot {
+  name: string;
+  style: string;
+  /** Targets, as bare number strings in the shape the brew sheet holds them. */
+  og: string;
+  fg: string;
+  abv: string;
+  ibu: string;
+  ebc: string;
+  /** Litres into the fermenter the recipe was written for; null if unstated. */
+  batchSizeL: number | null;
+  /** Pre-formatted mash and fermentation temperatures (e.g. "67°C"); null if unstated. */
+  mashTemp: string | null;
+  fermentationTemp: string | null;
+  /** What the ingredients cost that day, DKK. Null when nothing could be priced. */
+  costDkk: number | null;
+  /** Grain bill in kg and total hops in grams, as the sheet stood. */
+  grainKg: number | null;
+  hopGrams: number | null;
+  /** The strain(s) the recipe pitches, comma-joined; empty when it names none. */
+  yeast: string;
+}
+
+/**
+ * What actually happened, as opposed to what the recipe targeted. Every field is
+ * the brewer's own measurement and starts empty — an unmeasured figure stays
+ * blank rather than inheriting the recipe's hope for it.
+ *
+ * Gravities are strings for the same reason recipe gravities are: a value that
+ * can't be parsed still displays rather than becoming NaN.
+ */
+export interface BrewDayMeasurements {
+  preBoilGravity: string;
+  og: string;
+  fg: string;
+  /** Litres that actually made it into the fermenter. */
+  volumeL: number | null;
+  /** The mash temperature as held, °C. */
+  mashTempC: number | null;
+  boilTimeMin: number | null;
+  /** Brewhouse efficiency as worked out afterwards, %. */
+  efficiencyPct: number | null;
+  /** Brewing liquor drawn for the batch, litres. */
+  waterL: number | null;
+  /** Electricity the brew day used, kWh. */
+  energyKwh: number | null;
+}
+
+export const EMPTY_BREW_DAY_MEASUREMENTS: BrewDayMeasurements = {
+  preBoilGravity: '',
+  og: '',
+  fg: '',
+  volumeL: null,
+  mashTempC: null,
+  boilTimeMin: null,
+  efficiencyPct: null,
+  waterL: null,
+  energyKwh: null,
+};
+
+/** One brew day in the log — what the Brew Days list shows per row. */
+export interface BrewDay {
+  id: number;
+  /** The library recipe this came from; null once that recipe has been deleted. */
+  recipeId: string | null;
+  recipe: BrewDayRecipeSnapshot;
+  status: BrewDayStatus;
+  /** The brew day itself. Editable, so a batch can be logged after the fact. */
+  brewedAt: string;
+  /** How long the brew day took, in minutes. Null until the brewer says. */
+  durationMinutes: number | null;
+  /** Which brew of this recipe this was: 1 for the first, 2 for the second… */
+  brewNumber: number;
+  /** When the yeast went in, and when the batch was packaged. Null until they happen. */
+  pitchedAt: string | null;
+  packagedAt: string | null;
+  measured: BrewDayMeasurements;
+  /** How the beer turned out, 1–5. Null until it's been tasted. */
+  rating: number | null;
+  /** Free-form brew-day notes, and how it tasted once packaged. */
+  notes: string;
+  tastingNotes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One logged reading of the rig's three pots, °C. Null where a sensor didn't answer. */
+export interface BrewDayRigSample {
+  at: string;
+  bk: number | null;
+  mlt: number | null;
+  hlt: number | null;
+}
+
+/** Min/mean/max over a logged series. Null series are reported as null, not zeroes. */
+export interface BrewDayTempStats {
+  min: number;
+  avg: number;
+  max: number;
+  /** How many samples the figures are drawn from. */
+  count: number;
+}
+
+/** The rig's three pots summarised over the brew day. */
+export interface BrewDayRigStats {
+  bk: BrewDayTempStats | null;
+  mlt: BrewDayTempStats | null;
+  hlt: BrewDayTempStats | null;
+}
+
+/**
+ * The fermentation half, derived on read from the telemetry the hub already
+ * stores rather than copied onto the brew day — the readings are the record, and
+ * the window (pitched → packaged, or → now while it's still going) can move as
+ * the brewer corrects the dates.
+ */
+export interface BrewDayFermentation {
+  /** Fermenter temperature over the window; null when nothing was logged. */
+  temp: BrewDayTempStats | null;
+  /** Gravity from a Tilt, when one was in the tank for this batch. */
+  gravity: {
+    start: number;
+    end: number;
+    min: number;
+    max: number;
+    count: number;
+  } | null;
+  /** Days from pitching to packaging, or to now while it's still fermenting. */
+  days: number | null;
+  /** Which device the figures came from, for the caption under them. */
+  deviceName: string | null;
+}
+
+/** One brew day in full (GET /api/brew-days/:id) — the detail page. */
+export interface BrewDayDetail extends BrewDay {
+  /** The rig's pot temperatures, logged while the brew day was in progress. */
+  rigSamples: BrewDayRigSample[];
+  rigStats: BrewDayRigStats;
+  fermentation: BrewDayFermentation;
+}
+
+/** How often one recipe has been brewed, for the badge on the recipe grid. */
+export interface RecipeBrewCount {
+  recipeId: string;
+  count: number;
+  /** The most recent brew day for this recipe. */
+  lastBrewedAt: string;
+}
+
+/**
+ * Apparent attenuation, %, from a measured OG and FG — how much of the extract
+ * the yeast actually took. Null unless both gravities parse and OG is above 1.
+ */
+export function apparentAttenuation(og: string | number, fg: string | number): number | null {
+  const o = typeof og === 'number' ? og : Number.parseFloat(og);
+  const f = typeof fg === 'number' ? fg : Number.parseFloat(fg);
+  if (!Number.isFinite(o) || !Number.isFinite(f) || o <= 1) return null;
+  return ((o - f) / (o - 1)) * 100;
+}
+
+/**
+ * ABV from a measured OG and FG, by the same formula the recipe calculations
+ * use. Null unless both parse.
+ */
+export function abvFromGravities(og: string | number, fg: string | number): number | null {
+  const o = typeof og === 'number' ? og : Number.parseFloat(og);
+  const f = typeof fg === 'number' ? fg : Number.parseFloat(fg);
+  if (!Number.isFinite(o) || !Number.isFinite(f)) return null;
+  return (o - f) * 131.25;
+}
+
+/** Body for `POST /api/brew-days` — start (or back-date) a brew day for a recipe. */
+export const startBrewDaySchema = z.object({
+  recipeId: z.string().trim().min(1).max(200),
+  /** Defaults to now on the server; sent when logging a brew that already happened. */
+  brewedAt: z.string().datetime({ offset: true }).optional(),
+});
+export type StartBrewDayInput = z.infer<typeof startBrewDaySchema>;
+
+/** A measured gravity, kept as text like the recipe's own figures. */
+const measuredGravity = z.string().trim().max(20);
+/** A measured quantity: a number, or null to clear it back to unmeasured. */
+const measuredNumber = (max: number) => z.number().min(0).max(max).nullable();
+const optionalTimestamp = z.string().datetime({ offset: true }).nullable();
+
+export const brewDayMeasurementsSchema = z
+  .object({
+    preBoilGravity: measuredGravity,
+    og: measuredGravity,
+    fg: measuredGravity,
+    volumeL: measuredNumber(10_000),
+    mashTempC: measuredNumber(120),
+    boilTimeMin: measuredNumber(1_440),
+    efficiencyPct: measuredNumber(100),
+    waterL: measuredNumber(10_000),
+    energyKwh: measuredNumber(10_000),
+  })
+  .partial();
+
+/**
+ * Body for `PATCH /api/brew-days/:id`. Every field is optional — the detail page
+ * saves the one thing that changed — and the nullable ones accept null to clear
+ * a figure back to unmeasured rather than to zero.
+ */
+export const updateBrewDaySchema = z.object({
+  status: z.enum(['brewing', 'fermenting', 'conditioning', 'packaged']).optional(),
+  brewedAt: z.string().datetime({ offset: true }).optional(),
+  // Three days is a generous ceiling for a brew day and still catches a
+  // mistyped figure that would otherwise read as a fortnight in the kettle.
+  durationMinutes: z.number().int().min(0).max(3 * 24 * 60).nullable().optional(),
+  pitchedAt: optionalTimestamp.optional(),
+  packagedAt: optionalTimestamp.optional(),
+  measured: brewDayMeasurementsSchema.optional(),
+  rating: z.number().int().min(1).max(5).nullable().optional(),
+  notes: z.string().max(20_000).optional(),
+  tastingNotes: z.string().max(20_000).optional(),
+});
+export type UpdateBrewDayInput = z.infer<typeof updateBrewDaySchema>;
+
 /**
  * What one ingredient line costs, priced against the local catalogue in
  * `prices/`. Null on an ingredient the catalogue doesn't stock or hasn't priced —

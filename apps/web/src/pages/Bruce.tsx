@@ -942,17 +942,46 @@ function Chat(): JSX.Element {
 
 /** Volume slider that follows the server value except while being dragged. */
 function VolumeControl({ serverPercent }: { serverPercent: number }): JSX.Element {
+  // Shown instead of the server value while the knob is being dragged — and
+  // then until the poll reports the new volume back.
   const [local, setLocal] = useState<number | null>(null);
+  const giveUp = useRef<ReturnType<typeof setTimeout> | null>(null);
   const value = local ?? serverPercent;
+
+  const follow = (): void => {
+    if (giveUp.current != null) clearTimeout(giveUp.current);
+    giveUp.current = null;
+    setLocal(null);
+  };
+
+  useEffect(
+    () => () => {
+      if (giveUp.current != null) clearTimeout(giveUp.current);
+    },
+    [],
+  );
+
+  // Hand the slider back to the server as soon as it reports the value we sent.
+  // Waiting for that (rather than for the POST to resolve) is the point: the
+  // rail only polls every POLL_MS, so `serverPercent` still holds the old
+  // volume for up to a tick afterwards and the knob would snap back to it.
+  // The timer is the escape hatch for a value that never lands — Bruce moving
+  // the volume himself via set_volume — so a stale local can't mask him.
+  useEffect(() => {
+    if (local != null && local === serverPercent) follow();
+  }, [local, serverPercent]);
 
   const commit = async (): Promise<void> => {
     if (local == null) return;
     try {
-      await api.bruceSetVolume(local);
+      // Trust the clamped value the service echoes back, not what we sent.
+      const { volumePercent } = await api.bruceSetVolume(local);
+      setLocal(volumePercent);
+      if (giveUp.current != null) clearTimeout(giveUp.current);
+      giveUp.current = setTimeout(follow, POLL_MS * 3);
     } catch {
-      // The next poll re-syncs the slider to the real value.
+      follow(); // The next poll re-syncs the slider to the real value.
     }
-    setLocal(null);
   };
 
   return (

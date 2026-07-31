@@ -1,6 +1,10 @@
-- Brew System page: When the REG is turned on for one of the pots, the cards expand vertically to the point where the user needs to scroll down to see the bottom of the page. The available screen real estate is plenty, so can you make it so the entire GUI for the brew system is shrunk a bit, so this doesnt happen. 
+- Bruce voice mode: Make it work on phones/laptops too. instead of a wakeword, it should be a button to initate conversaiton (like in chatGPT voice mode)
 
 - Bruce voice: Train "Hey Bruce" wakeword model instead of "Hey Jarvis"
+
+- Recipe back up: does it work?
+
+
 
 - ## Add support for
   - Electricity (Watt) usage

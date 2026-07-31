@@ -4,6 +4,7 @@ import type {
   KegContentColors,
   Recipe,
   RecipeBackupStatus,
+  RecipeBrewCount,
   RecipeStats,
   RecipeStyleCategory,
 } from '@checklist/shared';
@@ -14,9 +15,10 @@ import {
   styleCategory,
 } from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
+import { brewDate } from '../brewDays';
 import { DashboardShell } from '../components/DashboardShell';
 import { FermenterIcon } from '../components/icons';
 import { Select } from '../components/Select';
@@ -601,6 +603,7 @@ export function RecipesDesktopPage(): JSX.Element {
   // /api/recipe), so a read-only guest gets the same list without the control.
   const controllable = canControl(auth);
   const colors = useKegContentColors();
+  const navigate = useNavigate();
 
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [active, setActive] = useState<Recipe | null>(null);
@@ -627,6 +630,10 @@ export function RecipesDesktopPage(): JSX.Element {
   const [stats, setStats] = useState<Map<string, Stats> | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
+  // Recipe id → how many times it's been brewed, for the card badges.
+  const [brewCounts, setBrewCounts] = useState<Map<string, RecipeBrewCount>>(new Map());
+  /** The recipe whose brew day is being started, so its card can say so. */
+  const [starting, setStarting] = useState<string | null>(null);
 
   /**
    * Load (or reload) the list plus the current fermenter selection. The list
@@ -692,7 +699,7 @@ export function RecipesDesktopPage(): JSX.Element {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      await Promise.all([load(), loadStats()]);
+      await Promise.all([load(), loadStats(), loadBrewCounts()]);
       if (cancelled) return;
       const fresh = await revalidateRecipes();
       if (cancelled) return;
@@ -703,6 +710,38 @@ export function RecipesDesktopPage(): JSX.Element {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * How often each recipe has been brewed. Its own small fetch rather than a
+   * field on the recipe: the count changes when a brew day is logged, not when
+   * the recipe is edited, so it has no business invalidating the recipe cache.
+   */
+  async function loadBrewCounts(): Promise<void> {
+    try {
+      const counts = await api.listRecipeBrewCounts();
+      setBrewCounts(new Map(counts.map((count) => [count.recipeId, count])));
+    } catch {
+      // A badge nobody has brewed anything for yet is the same as no badge —
+      // never let this cost the grid its recipes.
+    }
+  }
+
+  /**
+   * Say this recipe is being brewed. The server snapshots the sheet onto the new
+   * entry and puts the beer in the fermenter; we land on the entry, which is
+   * where the brewer types what actually happened.
+   */
+  async function startBrewDay(recipeId: string): Promise<void> {
+    if (starting) return;
+    setStarting(recipeId);
+    try {
+      const brewDay = await api.startBrewDay(recipeId);
+      navigate(`/brew-days/${brewDay.id}`);
+    } catch (e) {
+      setError(asCleanMessage(e));
+      setStarting(null);
+    }
+  }
 
   /** Take the current beer out of the fermenter. */
   async function clearActive(): Promise<void> {
@@ -1099,6 +1138,9 @@ export function RecipesDesktopPage(): JSX.Element {
                     colors={colors}
                     stats={stats?.get(r.id) ?? null}
                     showHopRate={sort === 'hopsPerL'}
+                    brewCount={brewCounts.get(r.id) ?? null}
+                    onBrew={controllable ? () => void startBrewDay(r.id) : undefined}
+                    starting={starting === r.id}
                   />
                 </li>
               ))}
@@ -1122,6 +1164,9 @@ function RecipeCard({
   colors,
   stats,
   showHopRate,
+  brewCount,
+  onBrew,
+  starting,
 }: {
   recipe: Recipe;
   inFermenter: boolean;
@@ -1130,6 +1175,11 @@ function RecipeCard({
   stats: Stats | null;
   /** Show the hop rate rather than leave the card silent about what it sorted on. */
   showHopRate: boolean;
+  /** How often it's been brewed; null when never. */
+  brewCount: RecipeBrewCount | null;
+  /** Start a brew day for this recipe. Absent for a read-only guest. */
+  onBrew?: () => void;
+  starting: boolean;
 }): JSX.Element {
   // The dot shows what the beer pours: its malt colour until the ingredient
   // pass reports fruit in it, which for a sour is the difference between straw
@@ -1139,21 +1189,39 @@ function RecipeCard({
   const ibu = num(recipe.ibu, 0);
   const created = createdLabel(recipe);
   return (
-    <Link
-      to={`/recipes/${encodeURIComponent(recipe.id)}`}
-      title={stats?.fruitNote ?? undefined}
+    // A card, not a link: the brew-day button lives in its footer, and a button
+    // inside an anchor is neither valid markup nor reliably clickable. The link
+    // covers everything above the footer instead, which is the whole card as far
+    // as clicking to read the sheet is concerned.
+    <div
       style={styleColor ? { borderLeftColor: styleColor, borderLeftWidth: 3 } : undefined}
-      className={`flex h-full flex-col gap-1 rounded-xl border px-4 py-3.5 transition ${
+      className={`group flex h-full flex-col rounded-xl border transition ${
         inFermenter
           ? 'border-[#f87a68] bg-gradient-to-br from-[#f87a68]/25 to-[#e0463f]/25'
           : 'border-zinc-800 bg-zinc-900 hover:border-zinc-700 hover:bg-zinc-800/60'
       }`}
+    >
+    <Link
+      to={`/recipes/${encodeURIComponent(recipe.id)}`}
+      title={stats?.fruitNote ?? undefined}
+      className="flex flex-1 flex-col gap-1 px-4 pb-1 pt-3.5"
     >
       <span className="flex w-full items-center gap-2">
         <BeerDot color={pour} label={stats?.fruitNote ?? null} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
           {recipe.name}
         </span>
+        {/* How often it's been made — the one thing about a recipe that isn't on
+            the recipe. A house beer on its eighth batch reads differently from
+            one that has been written but never brewed. */}
+        {brewCount && (
+          <span
+            className="shrink-0 rounded border border-zinc-700 bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-300"
+            title={`Brewed ${brewCount.count} time${brewCount.count === 1 ? '' : 's'} · last on ${brewDate(brewCount.lastBrewedAt)}`}
+          >
+            ×{brewCount.count}
+          </span>
+        )}
         {recipe.origin === 'brewersfriend' && (
           <span
             className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300"
@@ -1180,10 +1248,28 @@ function RecipeCard({
           Created {created}
         </span>
       )}
-      <span className="mt-auto pl-[18px] pt-2 text-xs font-semibold text-[#f87a68]">
-        {inFermenter ? '✓ In the fermenter' : ' '}
-      </span>
     </Link>
+      <div className="mt-auto flex items-center gap-2 px-4 pb-3 pl-[34px] pt-2">
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#f87a68]">
+          {inFermenter ? '✓ In the fermenter' : ' '}
+        </span>
+        {/* The button the whole feature hangs off: say you're brewing this, and
+            the log takes over from here. Quiet until the card is hovered — the
+            grid is read far more often than it is brewed from — but always
+            there on a touchscreen, which has no hover to give. */}
+        {onBrew && (
+          <button
+            type="button"
+            onClick={onBrew}
+            disabled={starting}
+            title={`Start a brew day for ${recipe.name}`}
+            className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs font-semibold text-zinc-300 opacity-100 transition hover:border-[#f87a68] hover:bg-[#f87a68]/15 hover:text-[#f9a094] disabled:opacity-50 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+          >
+            {starting ? 'Starting…' : 'Brew'}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -142,6 +142,86 @@ export const recipes = sqliteTable(
 );
 
 /**
+ * The brewery's logbook: one row per batch, from the moment the brewer says
+ * they're brewing a recipe until it's packaged.
+ *
+ * `recipeSnapshot` holds the recipe's identity, targets and cost as they read
+ * that day. A log has to stay truthful about what was actually brewed, and the
+ * recipe it came from keeps moving — re-costed as the shop's prices change,
+ * edited between batches, deleted outright — so the snapshot is the record and
+ * `recipeId` is only the link back (set-null on delete, so history outlives the
+ * recipe). Measurements are columns rather than JSON because the list orders and
+ * filters on them.
+ */
+export const brewDays = sqliteTable(
+  'brew_days',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    recipeId: text('recipe_id').references(() => recipes.id, { onDelete: 'set null' }),
+    /** JSON encoded BrewDayRecipeSnapshot, taken when the brew day started. */
+    recipeSnapshot: text('recipe_snapshot').notNull(),
+    /** 'brewing' | 'fermenting' | 'conditioning' | 'packaged'. */
+    status: text('status').notNull().default('brewing'),
+    /** The brew day itself. Editable, so a past brew can be logged after the fact. */
+    brewedAt: text('brewed_at').notNull(),
+    /** How long the brew day took, minutes — typed by the brewer, not clocked. */
+    durationMinutes: integer('duration_minutes'),
+    pitchedAt: text('pitched_at'),
+    packagedAt: text('packaged_at'),
+    /** Measured gravities, kept as text like the recipe's own figures. */
+    preBoilGravity: text('pre_boil_gravity').notNull().default(''),
+    measuredOg: text('measured_og').notNull().default(''),
+    measuredFg: text('measured_fg').notNull().default(''),
+    volumeL: real('volume_l'),
+    mashTempC: real('mash_temp_c'),
+    boilTimeMin: real('boil_time_min'),
+    efficiencyPct: real('efficiency_pct'),
+    waterL: real('water_l'),
+    energyKwh: real('energy_kwh'),
+    /** How the beer turned out, 1–5; null until it's been tasted. */
+    rating: integer('rating'),
+    notes: text('notes').notNull().default(''),
+    tastingNotes: text('tasting_notes').notNull().default(''),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+    updatedAt: text('updated_at')
+      .notNull()
+      .default(sql`(CURRENT_TIMESTAMP)`),
+  },
+  (t) => [
+    // The list is chronological, and the recipe grid asks "how many times, and
+    // when last?" per recipe.
+    index('brew_days_brewed_at_idx').on(t.brewedAt),
+    index('brew_days_recipe_idx').on(t.recipeId),
+  ],
+);
+
+/**
+ * The brewing rig's pot temperatures, logged every sample while a brew day is in
+ * progress (see brewDays/sampler.ts). Three columns rather than three rows in
+ * `readings`: the rig is not a registered device, one row per sweep is a third
+ * of the storage, and — the reason that matters — `readings` is pruned on a
+ * retention schedule, while a brew day's temperature curve is meant to be
+ * readable years later.
+ */
+export const brewDayRigSamples = sqliteTable(
+  'brew_day_rig_samples',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    brewDayId: integer('brew_day_id')
+      .notNull()
+      .references(() => brewDays.id, { onDelete: 'cascade' }),
+    recordedAt: text('recorded_at').notNull(),
+    /** °C in the boil kettle, mash tun and hot liquor tank; null when a sensor didn't answer. */
+    bk: real('bk'),
+    mlt: real('mlt'),
+    hlt: real('hlt'),
+  },
+  (t) => [index('brew_day_rig_samples_day_time_idx').on(t.brewDayId, t.recordedAt)],
+);
+
+/**
  * Satellite devices that push telemetry to the hub (fermentation-pressure Pi,
  * brew controller, …). Each device authenticates with its own API key; only a
  * SHA-256 hash of that key is stored. The key is high-entropy and random, so an
