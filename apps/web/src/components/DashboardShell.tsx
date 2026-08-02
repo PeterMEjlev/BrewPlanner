@@ -13,7 +13,6 @@ import {
   ChatIcon,
   ChecklistIcon,
   ClockIcon,
-  FlaskIcon,
   HistoryIcon,
   HomeIcon,
   IconAccentGradient,
@@ -23,6 +22,7 @@ import {
   SlidersIcon,
   ThinkingDots,
   TodoIcon,
+  WrenchIcon,
 } from './icons';
 import { relativeTime } from '../util';
 
@@ -67,7 +67,7 @@ const NAV: NavItem[] = [
   { key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
   { key: 'brewSystem', label: 'Brew System', Icon: SlidersIcon, to: '/brew-system', page: 'brewSystem' },
   { key: 'bruce', label: 'Bruce', Icon: ChatIcon, to: '/bruce', page: 'bruce' },
-  { key: 'tools', label: 'Tools', Icon: FlaskIcon, to: '/tools', page: 'tools' },
+  { key: 'tools', label: 'Tools', Icon: WrenchIcon, to: '/tools', page: 'tools' },
   { key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin', page: 'checklists' },
   { key: 'todos', label: 'To-Do', Icon: TodoIcon, to: '/todos', page: 'todos' },
   { key: 'history', label: 'History', Icon: HistoryIcon, to: '/history', page: 'history' },

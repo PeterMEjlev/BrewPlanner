@@ -152,7 +152,7 @@ export function FermenterIcon({
   );
 }
 
-/** A wrench / tool for the Operations heading. */
+/** A wrench: the Operations heading, and the Tools rail in the sidebar. */
 export function WrenchIcon(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>
@@ -365,7 +365,7 @@ export function BoltIcon(props: IconProps): JSX.Element {
   );
 }
 
-/** A droplet for the water meter. */
+/** A droplet: the water meter, and the dilution tool. */
 export function DropletIcon(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>
@@ -402,6 +402,35 @@ export function FlaskIcon(props: IconProps): JSX.Element {
       <path d="M9 3h6" />
       <path d="M10 3v6l-5 9.5A1 1 0 0 0 5.9 20h12.2a1 1 0 0 0 .9-1.5L14 9V3" />
       <path d="M7.5 14h9" />
+    </Svg>
+  );
+}
+
+/**
+ * A test vial with a liquid line — the hydrometer tool. Its own icon rather
+ * than the flask above, which the water calculator sits next to on the same
+ * rail: a hydrometer is the thing you float in a sample tube, and two flasks
+ * would have been two of the same picture.
+ */
+export function HydrometerIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M8 3h8" />
+      <path d="M9 3v14a3 3 0 0 0 6 0V3" />
+      <path d="M9 14h6" />
+    </Svg>
+  );
+}
+
+/** Bubbles rising in a glass — the carbonation tool. */
+export function CarbonationIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9.5" />
+      <path d="M8 12c0-1.5.5-3 2-4" />
+      <path d="M14 16c0 1.5-.5 3-2 4" />
+      <path d="M12 8v1" />
+      <path d="M12 15v1" />
     </Svg>
   );
 }

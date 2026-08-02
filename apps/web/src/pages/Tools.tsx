@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Card, Metric, RawNumField, UnitSuffix } from '../components/CalcUi';
 import { DashboardShell } from '../components/DashboardShell';
+import { CarbonationIcon, DropletIcon, FlaskIcon, HydrometerIcon } from '../components/icons';
 import { Select } from '../components/Select';
 import {
   CARBONATION_GUIDELINES,
@@ -29,26 +30,35 @@ import { WaterCalculator } from './WaterCalculator';
  */
 type ToolId = 'water' | 'dilution' | 'hydrometer' | 'carbonation';
 
-const TOOLS: { id: ToolId; label: string; description: string }[] = [
+const TOOLS: {
+  id: ToolId;
+  label: string;
+  description: string;
+  Icon: (props: { className?: string }) => JSX.Element;
+}[] = [
   {
     id: 'water',
     label: 'Water',
     description: 'Salt additions, mash pH, source profile',
+    Icon: FlaskIcon,
   },
   {
     id: 'dilution',
     label: 'Dilution',
     description: 'Water to add to hit a lower gravity',
+    Icon: DropletIcon,
   },
   {
     id: 'hydrometer',
     label: 'Hydrometer',
     description: 'Correct a reading for sample temperature',
+    Icon: HydrometerIcon,
   },
   {
     id: 'carbonation',
     label: 'Carbonation',
     description: 'Regulator pressure for a target CO₂ level',
+    Icon: CarbonationIcon,
   },
 ];
 
@@ -114,9 +124,18 @@ export function ToolsPage(): JSX.Element {
                         : 'border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-950 hover:text-zinc-200'
                     }`}
                   >
-                    <span className="block text-sm font-semibold">{t.label}</span>
-                    <span className="mt-0.5 block text-xs leading-snug text-zinc-500">
-                      {t.description}
+                    <span className="flex items-start gap-2.5">
+                      {/* Left at currentColor rather than the accent gradient
+                          the main sidebar's active icon uses: the selected
+                          button here is already painted in the accent, and an
+                          accent icon on top of it stopped reading as an icon. */}
+                      <t.Icon className="mt-0.5 h-5 w-5 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold">{t.label}</span>
+                        <span className="mt-0.5 block text-xs leading-snug text-zinc-500">
+                          {t.description}
+                        </span>
+                      </span>
                     </span>
                   </button>
                 );
