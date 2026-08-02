@@ -18,7 +18,9 @@ const FIT_QUERY = '(min-width: 1280px)';
  *    scrolling rather than clipping if even that overflows.
  *
  * The scaled content is centred in the viewport, so leftover space splits evenly
- * around it. Below `xl` it's a transparent pass-through (capped at `maxWidth`).
+ * around it — unless `fill` is set, which hands that slack to the content to
+ * distribute itself. Below `xl` it's a transparent pass-through (capped at
+ * `maxWidth`).
  *
  * `zoom` is the user's manual size preference (1 = the auto-fit above). It
  * multiplies the computed fit, so values below 1 shrink everything and values
@@ -29,6 +31,7 @@ export function FitScale({
   maxScale = 2,
   maxWidth = 1580,
   zoom = 1,
+  fill = false,
   children,
 }: {
   minScale?: number;
@@ -37,6 +40,13 @@ export function FitScale({
   /** The design width the dashboard is laid out at before scaling. */
   maxWidth?: number;
   zoom?: number;
+  /**
+   * Stretch the content to the full available height when the scaled layout
+   * would leave vertical slack, instead of centring it with empty space above
+   * and below. For content that knows what to do with the extra room — a
+   * column with a `flex-grow` row that should absorb it.
+   */
+  fill?: boolean;
   children: React.ReactNode;
 }): JSX.Element {
   const outerRef = useRef<HTMLDivElement>(null);
@@ -68,9 +78,13 @@ export function FitScale({
       // Lay the content out at its fixed design width (never wider than the
       // viewport) with no transform, so `scrollHeight` reports the true natural
       // height. Transforms don't affect `scrollHeight`, but width does, so we pin
-      // the width while measuring; this read stays accurate while scaled.
+      // the width while measuring; this read stays accurate while scaled. The
+      // fill height (below) is cleared first, or we'd just read back whatever we
+      // handed the content last time. Both stay imperative: React skips style
+      // properties whose value didn't change, which would leave these reset.
       const baseW = Math.min(availW, maxWidth);
       content.style.width = `${baseW}px`;
+      content.style.height = '';
       const naturalH = content.scrollHeight;
       if (naturalH <= 0) return;
       // Uniform "contain" fit: the largest scale that fits both axes, clamped to
@@ -81,7 +95,11 @@ export function FitScale({
       const auto = Math.min(maxScale, Math.max(minScale, contain));
       const next = Math.round(auto * zoom * 1000) / 1000;
       const visualW = baseW * next;
-      const visualH = naturalH * next;
+      // `fill`: give the leftover height back to the content rather than
+      // centring it as empty margin. The content is laid out before the
+      // transform, so it's handed the slack divided by the scale.
+      const visualH = fill ? Math.max(naturalH * next, availH) : naturalH * next;
+      if (fill && visualH > naturalH * next) content.style.height = `${visualH / next}px`;
       setScale((prev) => (Math.abs(prev - next) < 0.002 ? prev : next));
       setBox((prev) =>
         prev && Math.abs(prev.w - visualW) < 0.5 && Math.abs(prev.h - visualH) < 0.5
@@ -103,7 +121,7 @@ export function FitScale({
       ro.disconnect();
       cancelAnimationFrame(raf);
     };
-  }, [enabled, minScale, maxScale, maxWidth, zoom]);
+  }, [enabled, minScale, maxScale, maxWidth, zoom, fill]);
 
   if (!enabled) {
     return (

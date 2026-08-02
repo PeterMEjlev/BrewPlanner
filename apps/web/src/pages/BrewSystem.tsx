@@ -13,6 +13,10 @@ import { FitScale } from '../components/FitScale';
  * a Target row plus a Set Temperature slider (~150px), which used to push the
  * bottom of the panel below the fold; the scaler absorbs that instead.
  *
+ * `fill` gives any leftover height to the panel rather than centring it as empty
+ * margin, so the pot row stretches and the pumps/timer sit at the bottom of the
+ * screen — the rig's own layout, where the pot row is `flex: 1`.
+ *
  * The height lock lives on `<main>` rather than `DashboardShell`'s `fit` prop
  * on purpose — `fit` also locks the *phone* layout to one screen, and here the
  * stacked single-column panel is meant to flow and scroll. Below `xl` FitScale
@@ -22,7 +26,7 @@ export function BrewSystemPage(): JSX.Element {
   return (
     <DashboardShell active="brewSystem">
       <main className="w-full max-w-[1580px] px-5 py-5 xl:h-screen xl:overflow-hidden">
-        <FitScale maxScale={1} minScale={0.6}>
+        <FitScale maxScale={1} minScale={0.6} fill>
           <BrewingPanel />
         </FitScale>
       </main>
