@@ -144,26 +144,61 @@ echo
 AFTER="$(git rev-parse HEAD)"
 echo "After:  $(git rev-parse --short HEAD) $(git --no-pager log -1 --pretty=%s)"
 
+# Both stamps live on gitignored paths (node_modules/, dist/), so writing them
+# can never dirty the tree and trip the guard above on the next run.
+DEPS_STAMP=node_modules/.brewplanner-deps-stamp
+BUILD_STAMP=dist/.brewplanner-build-commit
+
+# The dependency set node_modules was last installed from. Prefer the lockfile —
+# it pins the resolved tree — and fall back to package.json if there isn't one.
+DEPS_MANIFEST=package-lock.json
+[ -f "$DEPS_MANIFEST" ] || DEPS_MANIFEST=package.json
+deps_hash() { sha256sum "$DEPS_MANIFEST" | cut -d' ' -f1; }
+
 # dist/ is gitignored, so a fresh clone needs a build even with no new commits.
-if [ "$BEFORE" = "$AFTER" ] && [ -f dist/index.html ]; then
+# The build stamp is what makes "no new commits" trustworthy: dist/index.html
+# merely existing says nothing about which commit produced it, so a rig whose
+# build had failed (or predated the last few pulls) would report "already up to
+# date" and exit 0 with months-old code still running behind a green checkmark.
+if [ "$BEFORE" = "$AFTER" ] && [ -f dist/index.html ] &&
+   [ "$(cat "$BUILD_STAMP" 2>/dev/null || true)" = "$AFTER" ]; then
   echo
   echo "Already up to date — nothing to build, leaving the service alone."
   exit 0
 fi
 
-CHANGED="$(git diff --name-only "$BEFORE" "$AFTER" 2>/dev/null || true)"
-
-# npm install only when the dependency set actually moved (it is slow on a Pi),
-# or when node_modules is missing entirely.
-if [ ! -d node_modules ] || printf '%s\n' "$CHANGED" | grep -qE '^(package\.json|package-lock\.json)$'; then
+# npm install when the resolved dependency set differs from whatever node_modules
+# was last built against (it is slow on a Pi, so not every run), or when
+# node_modules is missing entirely.
+#
+# This deliberately does not look at what the pull changed. The commit-range test
+# it replaced — install only if this pull touched package.json — went wrong for
+# any dependency that landed while the rig was behind, or during a run that died
+# before installing: every later pull saw an untouched manifest, skipped the
+# install for good, and the build failed on a package that had been declared all
+# along. Comparing against node_modules itself catches that drift however it
+# happened.
+if [ ! -d node_modules ] || [ ! -f "$DEPS_STAMP" ] ||
+   [ "$(cat "$DEPS_STAMP")" != "$(deps_hash)" ]; then
   echo
   echo "--- npm install ---"
   npm install --no-audit --no-fund
+  # Hash after installing, not before: npm rewrites the lockfile as it resolves,
+  # and stamping the pre-install hash would re-trigger an install every run.
+  deps_hash > "$DEPS_STAMP"
+else
+  echo
+  echo "Dependencies already match node_modules — skipping npm install."
 fi
 
 echo
 echo "--- npm run build ---"
 npm run build
+# Record what this dist was built from. Written after the build because vite
+# empties dist/ on the way in, and only on success — `set -e` means a failed
+# build never reaches here, so a broken build stays visibly stale rather than
+# stamping itself as current.
+printf '%s\n' "$AFTER" > "$BUILD_STAMP"
 
 # Re-check right before restarting: the build takes a while on a Pi, and the
 # rig may have been switched on in the meantime. The server checks this too,
