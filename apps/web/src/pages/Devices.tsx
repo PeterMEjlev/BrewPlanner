@@ -8,10 +8,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import inkbirdIcon from '../assets/inkbird.png';
+import rpiIcon from '../assets/rpi.png';
 import tiltIcon from '../assets/tilt.png';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
-import { ChipIcon } from '../components/icons';
 import { Select } from '../components/Select';
 import { useFleet, useHosts } from '../useDeviceData';
 import { dateTime } from '../util';
@@ -348,7 +348,7 @@ function HostCard({ host }: { host: HostStatus }): JSX.Element {
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
-          <ChipIcon className="h-9 w-9 shrink-0 text-zinc-500" />
+          <img src={rpiIcon} alt="" aria-hidden className="h-9 w-9 shrink-0 object-contain" />
           <div className="min-w-0">
             <h3 className="truncate font-semibold text-zinc-100" title={host.name}>
               {host.name}

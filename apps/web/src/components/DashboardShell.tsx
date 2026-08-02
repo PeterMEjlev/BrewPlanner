@@ -32,7 +32,9 @@ export type ShellPage =
   | 'devices'
   | 'brewSystem'
   | 'bruce'
-  | 'water'
+  // The calculators page — water, dilution, hydrometer, carbonation. Stays lit
+  // whichever of them is showing.
+  | 'tools'
   | 'alerts'
   | 'settings'
   | 'kegs'
@@ -65,7 +67,7 @@ const NAV: NavItem[] = [
   { key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
   { key: 'brewSystem', label: 'Brew System', Icon: SlidersIcon, to: '/brew-system', page: 'brewSystem' },
   { key: 'bruce', label: 'Bruce', Icon: ChatIcon, to: '/bruce', page: 'bruce' },
-  { key: 'water', label: 'Water Calculator', Icon: FlaskIcon, to: '/water', page: 'water' },
+  { key: 'tools', label: 'Tools', Icon: FlaskIcon, to: '/tools', page: 'tools' },
   { key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin', page: 'checklists' },
   { key: 'todos', label: 'To-Do', Icon: TodoIcon, to: '/todos', page: 'todos' },
   { key: 'history', label: 'History', Icon: HistoryIcon, to: '/history', page: 'history' },

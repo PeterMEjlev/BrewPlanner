@@ -1,6 +1,6 @@
 
 
-
+- Show relevant recipe info on the brew system, when a brew day is active
 
 
 

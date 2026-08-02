@@ -878,8 +878,7 @@ export function RecipesDesktopPage(): JSX.Element {
       <main className="w-full max-w-[1100px] px-5 py-5">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold tracking-tight text-zinc-50">Recipes</h1>
-            <p className="mt-0.5 text-sm text-zinc-500">
+            <p className="text-sm text-zinc-500">
               Your BrewPlanner recipe library. Build recipes here, open a full brew sheet, or
               set what is in the fermenter.
             </p>

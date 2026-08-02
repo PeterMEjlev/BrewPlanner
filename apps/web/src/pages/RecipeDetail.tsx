@@ -1251,7 +1251,7 @@ function WaterSection({
 
       {present.length > 0 && (
         <Link
-          to={`/water?${params.toString()}`}
+          to={`/tools/water?${params.toString()}`}
           className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-3 py-1.5 text-sm font-semibold text-white shadow transition hover:brightness-110"
         >
           Open in water calculator →

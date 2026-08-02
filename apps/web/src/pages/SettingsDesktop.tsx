@@ -173,13 +173,11 @@ export function SettingsDesktopPage(): JSX.Element {
             </nav>
           </aside>
 
-          <section aria-labelledby="settings-category-title" className="min-w-0">
-            <div className="mb-4">
-              <h2 id="settings-category-title" className="text-lg font-semibold text-zinc-50">
-                {active.label}
-              </h2>
-              <p className="mt-0.5 text-sm text-zinc-500">{active.description}</p>
-            </div>
+          {/* The heading that used to sit here repeated the selected category
+              verbatim — label and description both — from the rail beside it
+              (and from the phone dropdown), so the panel is labelled for
+              screen readers instead of titled on screen. */}
+          <section aria-label={active.label} className="min-w-0">
             {SETTINGS_CATEGORIES.map((category) => (
               <div
                 key={category.id}

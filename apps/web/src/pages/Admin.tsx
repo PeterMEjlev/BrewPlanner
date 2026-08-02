@@ -97,9 +97,11 @@ export function AdminPage() {
             selectedId != null ? 'hidden sm:flex' : 'flex'
           } w-full shrink-0 flex-col border-r border-zinc-800 bg-zinc-900 sm:w-72`}
         >
-          <div className="flex items-center justify-between border-b border-zinc-800 p-4">
-            <h1 className="text-lg font-bold">Checklists</h1>
-            {controllable && (
+          {/* Without the "Checklists" heading (the nav rail already says it)
+              this bar holds nothing but the New button, so a viewer who cannot
+              create one gets no empty bordered strip. */}
+          {controllable && (
+            <div className="flex items-center justify-end border-b border-zinc-800 p-4">
               <button
                 type="button"
                 onClick={() => void createChecklist()}
@@ -107,8 +109,8 @@ export function AdminPage() {
               >
                 + New
               </button>
-            )}
-          </div>
+            </div>
+          )}
           <nav className="flex-1 overflow-y-auto p-2">
             {checklists.length === 0 ? (
               <p className="p-3 text-sm text-zinc-500">No checklists yet.</p>

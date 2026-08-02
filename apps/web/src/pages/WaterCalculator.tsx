@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { DashboardShell } from '../components/DashboardShell';
+import {
+  Card,
+  Field,
+  Metric,
+  MetricsLine,
+  NumField,
+  UnitSuffix,
+  trimNum,
+} from '../components/CalcUi';
 import {
   DEFAULT_DISTILLED_MASH_PH,
   DEFAULT_GRAIN_KG,
@@ -45,6 +53,9 @@ import {
  * (watching the resulting profile track the target live) or hits Auto-suggest
  * for a best-fit starting point. Everything is client-side and persisted per
  * browser; the chemistry lives in {@link ../water}.
+ *
+ * It's the largest of the calculators on the Tools page ([Tools.tsx]), which
+ * owns the shell and the tool picker — this file is just the water one.
  */
 
 const STORAGE_KEY = 'brewplanner.watercalc';
@@ -161,7 +172,7 @@ function loadState(): CalcState {
 
 /**
  * A recipe's target profile, handed over from its brew sheet as query params
- * (`/water?ca=80&…&volume=30&recipe=Hazy%20IPA`). Overlaid on the saved state so
+ * (`/tools/water?ca=80&…&volume=30&recipe=Hazy%20IPA`). Overlaid on the saved state so
  * the calculator opens on that recipe's numbers, with best-fit salts already
  * solved — the same "answer on screen immediately" treatment as a first visit.
  *
@@ -218,7 +229,7 @@ function applyQueryParams(base: CalcState, params: URLSearchParams): CalcState {
   };
 }
 
-export function WaterCalculatorPage(): JSX.Element {
+export function WaterCalculator(): JSX.Element {
   const [params] = useSearchParams();
   // Read once on mount: the recipe hand-off seeds the page, then it behaves like
   // any other visit (edits persist to localStorage as usual).
@@ -294,457 +305,411 @@ export function WaterCalculatorPage(): JSX.Element {
   const ratio = sulfateChlorideRatio(result);
 
   return (
-    <DashboardShell active="water">
-      <main className="w-full max-w-[1280px] px-5 py-5">
-        {/* Arrived from a recipe's brew sheet. The volume warning matters: a
-            recipe's batch size is what goes into the fermenter, while the salts
-            have to be dosed into the whole mash + sparge volume, which is
-            larger — so the pre-filled figure is a starting point, not the answer. */}
-        {fromRecipe && (
-          <div className="mb-5 rounded-xl border border-[#f87a68]/40 bg-[#f87a68]/10 px-4 py-3 text-sm text-zinc-200">
-            <span className="font-semibold">Target profile from {fromRecipe}.</span>{' '}
-            {params.get('volume')
-              ? `Water volume is set to the recipe's ${params.get('volume')} L batch size — raise it to your actual total mash + sparge water.`
-              : 'Check the water volume below before dosing.'}
-            {fromRecipeId && (
-              <>
-                {' '}
-                <Link
-                  to={`/recipes/${encodeURIComponent(fromRecipeId)}`}
-                  className="font-semibold text-[#f87a68] underline-offset-2 hover:underline"
-                >
-                  Back to recipe
-                </Link>
-              </>
-            )}
-          </div>
-        )}
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_30rem]">
-          {/* Inputs ----------------------------------------------------------- */}
-          <div className="space-y-5">
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Card title="Total brewing water">
-                <div className="grid gap-4">
-                  <Field>
-                    <NumField
-                      value={volumeL}
-                      min={0}
-                      step={0.5}
-                      ariaLabel="Total water (litres)"
-                      onChange={(v) => setState((s) => ({ ...s, volumeL: v }))}
-                    />
-                    <UnitSuffix>L</UnitSuffix>
-                  </Field>
-                </div>
-              </Card>
-
-              <Card title="Source water">
-                <div className="mb-4 inline-flex rounded-lg border border-zinc-700 p-0.5">
-                  {(['ro', 'tap'] as SourceMode[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      aria-pressed={sourceMode === mode}
-                      onClick={() => setState((s) => ({ ...s, sourceMode: mode }))}
-                      className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                        sourceMode === mode
-                          ? 'bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
-                          : 'text-zinc-300 hover:bg-zinc-800'
-                      }`}
-                    >
-                      {mode === 'ro' ? 'RO / distilled' : 'Tap water'}
-                    </button>
-                  ))}
-                </div>
-
-                {sourceMode === 'ro' ? null : (
-                  <>
-                    <p className="mb-4 text-xs leading-snug text-zinc-500">
-                      Pre-filled estimate for the brewery's area — your utility report only lists
-                      hardness (≈20 °dH) and trace metals, so replace these with a full ion analysis
-                      when you have one.
-                    </p>
-                    <IonGrid profile={source} onChange={setSourceIon} idPrefix="src" />
-                    <MetricsLine
-                      items={[
-                        { label: 'Hardness', value: `${Math.round(hardnessCaCO3(source))} ppm` },
-                        { label: '', value: `${caco3ToDH(hardnessCaCO3(source)).toFixed(1)} °dH` },
-                        { label: 'Alkalinity', value: `${Math.round(alkalinityCaCO3(source))} ppm CaCO₃` },
-                        { label: 'pH', value: DEFAULT_SOURCE_PH.toFixed(1) },
-                      ]}
-                    />
-                  </>
-                )}
-              </Card>
-            </div>
-
-            <Card title="Target profile" hint="The flavour ions you want to brew with. Pick a preset to start, then tweak.">
-              <div className="mb-4 flex flex-wrap gap-1.5">
-                {TARGET_PRESETS.map((preset) => {
-                  const active = TARGET_IONS.every((ion) => target[ion] === preset.profile[ion]);
-                  return (
-                    <button
-                      key={preset.name}
-                      type="button"
-                      title={preset.note}
-                      aria-pressed={active}
-                      onClick={() =>
-                        setState((s) => ({
-                          ...s,
-                          target: { ...preset.profile },
-                          limits: { ...preset.limits },
-                        }))
-                      }
-                      className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
-                        active
-                          ? 'border-transparent bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
-                          : 'border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800'
-                      }`}
-                    >
-                      {preset.name}
-                    </button>
-                  );
-                })}
+    <>
+      {/* Arrived from a recipe's brew sheet. The volume warning matters: a
+          recipe's batch size is what goes into the fermenter, while the salts
+          have to be dosed into the whole mash + sparge volume, which is
+          larger — so the pre-filled figure is a starting point, not the answer. */}
+      {fromRecipe && (
+        <div className="mb-5 rounded-xl border border-[#f87a68]/40 bg-[#f87a68]/10 px-4 py-3 text-sm text-zinc-200">
+          <span className="font-semibold">Target profile from {fromRecipe}.</span>{' '}
+          {params.get('volume')
+            ? `Water volume is set to the recipe's ${params.get('volume')} L batch size — raise it to your actual total mash + sparge water.`
+            : 'Check the water volume below before dosing.'}
+          {fromRecipeId && (
+            <>
+              {' '}
+              <Link
+                to={`/recipes/${encodeURIComponent(fromRecipeId)}`}
+                className="font-semibold text-[#f87a68] underline-offset-2 hover:underline"
+              >
+                Back to recipe
+              </Link>
+            </>
+          )}
+        </div>
+      )}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_30rem]">
+        {/* Inputs ----------------------------------------------------------- */}
+        <div className="space-y-5">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Card title="Total brewing water">
+              <div className="grid gap-4">
+                <Field>
+                  <NumField
+                    value={volumeL}
+                    min={0}
+                    step={0.5}
+                    ariaLabel="Total water (litres)"
+                    onChange={(v) => setState((s) => ({ ...s, volumeL: v }))}
+                  />
+                  <UnitSuffix>L</UnitSuffix>
+                </Field>
               </div>
-              <IonGrid profile={target} onChange={setTargetIon} idPrefix="tgt" ions={TARGET_IONS} limits={limits} />
-              {/* Bicarbonate is conspicuously absent, so say why rather than
-                  leaving it looking like an oversight. Naming the derived figure
-                  here would be worse than saying nothing: for any grist that
-                  starts above its target pH — every pale one — it is structurally
-                  zero, and a permanent "0 ppm HCO₃⁻" reads as a broken readout
-                  rather than as the answer it is. */}
-              <p className="mt-3 border-t border-zinc-800/60 pt-3 text-xs leading-snug text-zinc-500">
-                No bicarbonate here: alkalinity corrects mash pH rather than setting flavour, so it's
-                worked out from what the grist needs — see Predicted mash pH. A range shown under an
-                ion is an upper bound, not something to dose up to.
-              </p>
             </Card>
 
-            <Card title="Salt additions">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={autoSuggest}
-                  className="rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-3 py-1.5 text-sm font-semibold text-white shadow transition hover:brightness-110"
-                >
-                  Auto-suggest
-                </button>
-                <button
-                  type="button"
-                  onClick={clearSalts}
-                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
-                >
-                  Clear
-                </button>
-                <span className="text-xs text-zinc-500">Best-fit for the target — review and adjust.</span>
-              </div>
-              <div className="divide-y divide-zinc-800/70">
-                {SALTS.map((salt) => (
-                  <div key={salt.id} className="flex items-center justify-between gap-3 py-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-zinc-200">{salt.name}</div>
-                      <div className="text-xs text-zinc-500">
-                        {salt.formula}
-                        <span className="text-zinc-600"> · </span>
-                        {Object.keys(salt.ppmPerGramPerL)
-                          .map((ion) => ION_META[ion as Ion].symbol)
-                          .join(' · ')}
-                      </div>
-                    </div>
-                    <div className="flex w-28 shrink-0 items-center">
-                      <NumField
-                        value={salts[salt.id]}
-                        min={0}
-                        step={0.1}
-                        ariaLabel={`${salt.name} grams`}
-                        onChange={(v) => setSalt(salt.id, v)}
-                      />
-                      <UnitSuffix>g</UnitSuffix>
-                    </div>
-                  </div>
+            <Card title="Source water">
+              <div className="mb-4 inline-flex rounded-lg border border-zinc-700 p-0.5">
+                {(['ro', 'tap'] as SourceMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={sourceMode === mode}
+                    onClick={() => setState((s) => ({ ...s, sourceMode: mode }))}
+                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                      sourceMode === mode
+                        ? 'bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
+                        : 'text-zinc-300 hover:bg-zinc-800'
+                    }`}
+                  >
+                    {mode === 'ro' ? 'RO / distilled' : 'Tap water'}
+                  </button>
                 ))}
               </div>
-            </Card>
-          </div>
 
-          {/* Results --------------------------------------------------------- */}
-          <div className="space-y-5 xl:sticky xl:top-5 xl:self-start">
-            <Card title="Salts to add">
-              {SALTS.some((salt) => salts[salt.id] > 0) ? (
-                <ul className="space-y-2.5">
-                  {SALTS.filter((salt) => salts[salt.id] > 0).map((salt) => (
-                    <li
-                      key={salt.id}
-                      className="flex items-baseline justify-between gap-3 border-b border-zinc-800/60 pb-2.5 last:border-0 last:pb-0"
-                    >
-                      <span className="min-w-0">
-                        <span className="text-sm font-medium text-zinc-200">{salt.name}</span>
-                        <span className="ml-1.5 text-xs text-zinc-500">{salt.formula}</span>
-                      </span>
-                      <span className="shrink-0 text-lg font-semibold tabular-nums text-zinc-50">
-                        {trimNum(salts[salt.id])}
-                        <span className="ml-1 text-sm font-normal text-zinc-400">g</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-zinc-400">
-                  Nothing to add yet — hit{' '}
-                  <span className="font-semibold text-zinc-200">Auto-suggest</span> or enter amounts
-                  under Salt additions.
-                </p>
-              )}
-            </Card>
-
-            <Card title="Resulting water" hint="Source + salts, compared to your target.">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm tabular-nums">
-                  <thead>
-                    <tr className="text-xs uppercase tracking-wider text-zinc-500">
-                      <th className="py-1 text-left font-medium">Ion</th>
-                      <th className="py-1 text-right font-medium">Src</th>
-                      <th className="py-1 text-right font-medium">Add</th> 
-                      <th className="py-1 text-right font-medium">Result</th>
-                      <th className="py-1 text-right font-medium">Target</th>
-                      <th className="py-1 text-right font-medium">Delta</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {IONS.map((ion) => {
-                      const res = result[ion];
-                      const tgt = fullTarget[ion];
-                      const limit = limits[ion];
-                      const delta = res - tgt;
-                      const tone = deltaTone(res, tgt, limit);
-                      return (
-                        <tr key={ion} className="border-t border-zinc-800/60">
-                          <td className="py-1.5 text-left text-zinc-300">{ION_META[ion].symbol}</td>
-                          <td className="py-1.5 text-right text-zinc-500">{Math.round(effectiveSource[ion])}</td>
-                          <td className="py-1.5 text-right text-zinc-400">
-                            {added[ion] > 0 ? `+${Math.round(added[ion])}` : '—'}
-                          </td>
-                          <td className="py-1.5 text-right font-semibold text-zinc-100">{Math.round(res)}</td>
-                          {/* A banded ion states the band, so the ✓ beside it is
-                              legible as "inside the range" rather than a near-miss
-                              on a number it plainly doesn't equal. */}
-                          <td className="py-1.5 text-right text-zinc-400">
-                            {limit == null ? Math.round(tgt) : `${Math.round(tgt)}–${Math.round(limit)}`}
-                          </td>
-                          <td className={`py-1.5 text-right font-semibold ${TONE_CLASS[tone]}`}>
-                            {tone === 'good'
-                              ? '✓'
-                              : `${tone === 'over' ? '↑' : '↓'} ${Math.round(Math.abs(tone === 'over' && limit != null ? res - limit : delta))}`}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <p className="mt-2 text-xs">
-                <span className="text-emerald-400">✓ on target / within band</span>
-                <span className="text-zinc-600"> · </span>
-                <span className="text-amber-400">↓ below (add more)</span>
-                <span className="text-zinc-600"> · </span>
-                <span className="text-red-400">↑ above (can't reduce)</span>
-              </p>
-              <p className="mt-1 text-xs text-zinc-600">
-                All values ppm (mg/L). Salts only add ions — to lower one, start from RO water. The
-                HCO₃⁻ target comes from the mash-pH model, not from the style.
-              </p>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <Metric label="Hardness" value={`${Math.round(hardnessCaCO3(result))}`} unit={`ppm · ${caco3ToDH(hardnessCaCO3(result)).toFixed(1)} °dH`} />
-                <Metric label="Alkalinity" value={`${Math.round(alkalinityCaCO3(result))}`} unit="ppm CaCO₃" />
-                <Metric label="Residual alkalinity" value={`${Math.round(achievedRA)}`} unit={`needs ${Math.round(requiredRA)} ppm CaCO₃`} />
-                <Metric
-                  label="SO₄ : Cl ratio"
-                  value={ratio == null ? '—' : isFinite(ratio) ? ratio.toFixed(2) : '∞'}
-                  unit={ratioDescriptor(ratio)}
-                />
-              </div>
-            </Card>
-
-            {/* The point of all the alkalinity arithmetic, stated as the number
-                the brewer will actually meter on brew day — and, behind Adjust,
-                the grist inputs that produced it. They live here rather than in
-                their own input card because their only visible output is this
-                pH and the dose beneath it: the bicarbonate target they also feed
-                is zero for any grist starting above its target pH, which is
-                every pale one, so leading with that figure said nothing. */}
-            <Card title="Predicted mash pH" hint="From the grist's distilled-water pH and the residual alkalinity this water delivers.">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-                <div className="flex items-baseline gap-3">
-                  <span className={`text-3xl font-semibold tabular-nums ${TONE_CLASS[phTone(mashPh, mash.targetPh)]}`}>
-                    {mashPh.toFixed(2)}
-                  </span>
-                  <span className="text-sm text-zinc-500">
-                    target {mash.targetPh.toFixed(2)}
-                    {Math.abs(mashPh - mash.targetPh) >= 0.01 && (
-                      <> · {mashPh > mash.targetPh ? '+' : ''}{(mashPh - mash.targetPh).toFixed(2)}</>
-                    )}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMashOpen((open) => !open)}
-                  aria-expanded={mashOpen}
-                  className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:bg-zinc-800"
-                >
-                  {mashOpen ? 'Done' : 'Adjust grist'}
-                </button>
-              </div>
-              {acidMEq > 0.5 ? (
-                <p className="mt-3 text-sm leading-snug text-zinc-300">
-                  Acidify by{' '}
-                  <span className="font-semibold text-zinc-50">
-                    {(acidMEq / LACTIC_88_MEQ_PER_ML).toFixed(1)} mL
-                  </span>{' '}
-                  of 88 % lactic acid into the {trimNum(mashWaterL)} L of strike water (
-                  {Math.round(acidMEq)} mEq) — not the full {trimNum(volumeL)} L, since only the
-                  mash meets the grist. Salts can only raise alkalinity, so this is the one
-                  adjustment they can't make.
-                </p>
-              ) : (
-                <p className="mt-3 text-sm leading-snug text-zinc-400">
-                  No acid needed — the salt additions land this within reach of the target.
-                </p>
-              )}
-
-              {mashOpen && (
-                <div className="mt-4 border-t border-zinc-800/60 pt-4">
-                  <p className="text-xs leading-snug text-zinc-500">
-                    What the grist asks of the water.{' '}
-                    {fromRecipe && params.get('distilledph')
-                      ? `The distilled-water pH below is worked out from ${fromRecipe}'s grain bill — colour-weighted, with acidulated malt counted separately. Override it if you've measured yours.`
-                      : "Measure the distilled-water pH if you can — it's the malt's own figure, and 0.1 either way moves this prediction by about the same. With no grain bill to work from, the default assumes a pale all-malt grist; roast and crystal land lower."}
+              {sourceMode === 'ro' ? null : (
+                <>
+                  <p className="mb-4 text-xs leading-snug text-zinc-500">
+                    Pre-filled estimate for the brewery's area — your utility report only lists
+                    hardness (≈20 °dH) and trace metals, so replace these with a full ion analysis
+                    when you have one.
                   </p>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    <Field label="Distilled-water pH" hint="This grist, no minerals">
-                      <NumField
-                        value={mash.distilledPh}
-                        min={4}
-                        max={7}
-                        step={0.05}
-                        ariaLabel="Distilled-water mash pH"
-                        onChange={(v) => setMash({ distilledPh: v })}
-                      />
-                    </Field>
-                    <Field label="Target pH" hint="At room temperature">
-                      <NumField
-                        value={mash.targetPh}
-                        min={4}
-                        max={7}
-                        step={0.05}
-                        ariaLabel="Target mash pH"
-                        onChange={(v) => setMash({ targetPh: v })}
-                      />
-                    </Field>
-                    <Field label="Mash thickness" hint="Strike water per kg grain">
-                      <NumField
-                        value={mash.gristRatioLPerKg}
-                        min={1}
-                        max={10}
-                        step={0.1}
-                        ariaLabel="Mash thickness, litres per kilogram"
-                        onChange={(v) => setMash({ gristRatioLPerKg: v })}
-                      />
-                      <UnitSuffix>L/kg</UnitSuffix>
-                    </Field>
-                    {/* Not part of the pH arithmetic — it's here because with
-                        the thickness above it fixes the strike volume, which is
-                        what the acid dose gets metered into. */}
-                    <Field label="Grain bill" hint="Sets the strike volume">
-                      <NumField
-                        value={mash.grainKg}
-                        min={0}
-                        step={0.1}
-                        ariaLabel="Grain bill, kilograms"
-                        onChange={(v) => setMash({ grainKg: v })}
-                      />
-                      <UnitSuffix>kg</UnitSuffix>
-                    </Field>
-                  </div>
+                  <IonGrid profile={source} onChange={setSourceIon} idPrefix="src" />
                   <MetricsLine
                     items={[
-                      { label: 'Buffering', value: `${buffer.toFixed(1)} mEq/(pH·L)` },
-                      { label: 'Residual alkalinity needed', value: `${Math.round(requiredRA)} ppm CaCO₃` },
-                      { label: 'Strike water', value: `${trimNum(mashWaterL)} L of ${trimNum(volumeL)} L` },
+                      { label: 'Hardness', value: `${Math.round(hardnessCaCO3(source))} ppm` },
+                      { label: '', value: `${caco3ToDH(hardnessCaCO3(source)).toFixed(1)} °dH` },
+                      { label: 'Alkalinity', value: `${Math.round(alkalinityCaCO3(source))} ppm CaCO₃` },
+                      { label: 'pH', value: DEFAULT_SOURCE_PH.toFixed(1) },
                     ]}
                   />
-                  {/* Only worth saying when it's true. A pale grist needs acid
-                      and no bicarbonate at all, which the dose above already
-                      covers; naming a target of zero there would be noise. */}
-                  {requiredRA > 0 && (
-                    <p className="mt-3 text-xs leading-snug text-zinc-500">
-                      This grist starts below its target, so the water should carry{' '}
-                      <span className="font-medium text-zinc-300">
-                        {Math.round(targetHco3)} ppm HCO₃⁻
-                      </span>{' '}
-                      — Auto-suggest doses that as Baking Soda, which brings sodium with it.
-                    </p>
-                  )}
-                </div>
+                </>
               )}
-
-              <p className="mt-2 text-xs leading-snug text-zinc-600">
-                An estimate from the Kolbach/Troester buffering model, sensitive to malt bill and
-                crush. Treat it as a starting dose and check with a meter at mash-in.
-              </p>
             </Card>
           </div>
+
+          <Card title="Target profile" hint="The flavour ions you want to brew with. Pick a preset to start, then tweak.">
+            <div className="mb-4 flex flex-wrap gap-1.5">
+              {TARGET_PRESETS.map((preset) => {
+                const active = TARGET_IONS.every((ion) => target[ion] === preset.profile[ion]);
+                return (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    title={preset.note}
+                    aria-pressed={active}
+                    onClick={() =>
+                      setState((s) => ({
+                        ...s,
+                        target: { ...preset.profile },
+                        limits: { ...preset.limits },
+                      }))
+                    }
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                      active
+                        ? 'border-transparent bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
+                        : 'border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800'
+                    }`}
+                  >
+                    {preset.name}
+                  </button>
+                );
+              })}
+            </div>
+            <IonGrid profile={target} onChange={setTargetIon} idPrefix="tgt" ions={TARGET_IONS} limits={limits} />
+            {/* Bicarbonate is conspicuously absent, so say why rather than
+                leaving it looking like an oversight. Naming the derived figure
+                here would be worse than saying nothing: for any grist that
+                starts above its target pH — every pale one — it is structurally
+                zero, and a permanent "0 ppm HCO₃⁻" reads as a broken readout
+                rather than as the answer it is. */}
+            <p className="mt-3 border-t border-zinc-800/60 pt-3 text-xs leading-snug text-zinc-500">
+              No bicarbonate here: alkalinity corrects mash pH rather than setting flavour, so it's
+              worked out from what the grist needs — see Predicted mash pH. A range shown under an
+              ion is an upper bound, not something to dose up to.
+            </p>
+          </Card>
+
+          <Card title="Salt additions">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={autoSuggest}
+                className="rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-3 py-1.5 text-sm font-semibold text-white shadow transition hover:brightness-110"
+              >
+                Auto-suggest
+              </button>
+              <button
+                type="button"
+                onClick={clearSalts}
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
+              >
+                Clear
+              </button>
+              <span className="text-xs text-zinc-500">Best-fit for the target — review and adjust.</span>
+            </div>
+            <div className="divide-y divide-zinc-800/70">
+              {SALTS.map((salt) => (
+                <div key={salt.id} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-zinc-200">{salt.name}</div>
+                    <div className="text-xs text-zinc-500">
+                      {salt.formula}
+                      <span className="text-zinc-600"> · </span>
+                      {Object.keys(salt.ppmPerGramPerL)
+                        .map((ion) => ION_META[ion as Ion].symbol)
+                        .join(' · ')}
+                    </div>
+                  </div>
+                  <div className="flex w-28 shrink-0 items-center">
+                    <NumField
+                      value={salts[salt.id]}
+                      min={0}
+                      step={0.1}
+                      ariaLabel={`${salt.name} grams`}
+                      onChange={(v) => setSalt(salt.id, v)}
+                    />
+                    <UnitSuffix>g</UnitSuffix>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
         </div>
-      </main>
-    </DashboardShell>
+
+        {/* Results --------------------------------------------------------- */}
+        <div className="space-y-5 xl:sticky xl:top-5 xl:self-start">
+          <Card title="Salts to add">
+            {SALTS.some((salt) => salts[salt.id] > 0) ? (
+              <ul className="space-y-2.5">
+                {SALTS.filter((salt) => salts[salt.id] > 0).map((salt) => (
+                  <li
+                    key={salt.id}
+                    className="flex items-baseline justify-between gap-3 border-b border-zinc-800/60 pb-2.5 last:border-0 last:pb-0"
+                  >
+                    <span className="min-w-0">
+                      <span className="text-sm font-medium text-zinc-200">{salt.name}</span>
+                      <span className="ml-1.5 text-xs text-zinc-500">{salt.formula}</span>
+                    </span>
+                    <span className="shrink-0 text-lg font-semibold tabular-nums text-zinc-50">
+                      {trimNum(salts[salt.id])}
+                      <span className="ml-1 text-sm font-normal text-zinc-400">g</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-zinc-400">
+                Nothing to add yet — hit{' '}
+                <span className="font-semibold text-zinc-200">Auto-suggest</span> or enter amounts
+                under Salt additions.
+              </p>
+            )}
+          </Card>
+
+          <Card title="Resulting water" hint="Source + salts, compared to your target.">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm tabular-nums">
+                <thead>
+                  <tr className="text-xs uppercase tracking-wider text-zinc-500">
+                    <th className="py-1 text-left font-medium">Ion</th>
+                    <th className="py-1 text-right font-medium">Src</th>
+                    <th className="py-1 text-right font-medium">Add</th> 
+                    <th className="py-1 text-right font-medium">Result</th>
+                    <th className="py-1 text-right font-medium">Target</th>
+                    <th className="py-1 text-right font-medium">Delta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {IONS.map((ion) => {
+                    const res = result[ion];
+                    const tgt = fullTarget[ion];
+                    const limit = limits[ion];
+                    const delta = res - tgt;
+                    const tone = deltaTone(res, tgt, limit);
+                    return (
+                      <tr key={ion} className="border-t border-zinc-800/60">
+                        <td className="py-1.5 text-left text-zinc-300">{ION_META[ion].symbol}</td>
+                        <td className="py-1.5 text-right text-zinc-500">{Math.round(effectiveSource[ion])}</td>
+                        <td className="py-1.5 text-right text-zinc-400">
+                          {added[ion] > 0 ? `+${Math.round(added[ion])}` : '—'}
+                        </td>
+                        <td className="py-1.5 text-right font-semibold text-zinc-100">{Math.round(res)}</td>
+                        {/* A banded ion states the band, so the ✓ beside it is
+                            legible as "inside the range" rather than a near-miss
+                            on a number it plainly doesn't equal. */}
+                        <td className="py-1.5 text-right text-zinc-400">
+                          {limit == null ? Math.round(tgt) : `${Math.round(tgt)}–${Math.round(limit)}`}
+                        </td>
+                        <td className={`py-1.5 text-right font-semibold ${TONE_CLASS[tone]}`}>
+                          {tone === 'good'
+                            ? '✓'
+                            : `${tone === 'over' ? '↑' : '↓'} ${Math.round(Math.abs(tone === 'over' && limit != null ? res - limit : delta))}`}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs">
+              <span className="text-emerald-400">✓ on target / within band</span>
+              <span className="text-zinc-600"> · </span>
+              <span className="text-amber-400">↓ below (add more)</span>
+              <span className="text-zinc-600"> · </span>
+              <span className="text-red-400">↑ above (can't reduce)</span>
+            </p>
+            <p className="mt-1 text-xs text-zinc-600">
+              All values ppm (mg/L). Salts only add ions — to lower one, start from RO water. The
+              HCO₃⁻ target comes from the mash-pH model, not from the style.
+            </p>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Metric label="Hardness" value={`${Math.round(hardnessCaCO3(result))}`} unit={`ppm · ${caco3ToDH(hardnessCaCO3(result)).toFixed(1)} °dH`} />
+              <Metric label="Alkalinity" value={`${Math.round(alkalinityCaCO3(result))}`} unit="ppm CaCO₃" />
+              <Metric label="Residual alkalinity" value={`${Math.round(achievedRA)}`} unit={`needs ${Math.round(requiredRA)} ppm CaCO₃`} />
+              <Metric
+                label="SO₄ : Cl ratio"
+                value={ratio == null ? '—' : isFinite(ratio) ? ratio.toFixed(2) : '∞'}
+                unit={ratioDescriptor(ratio)}
+              />
+            </div>
+          </Card>
+
+          {/* The point of all the alkalinity arithmetic, stated as the number
+              the brewer will actually meter on brew day — and, behind Adjust,
+              the grist inputs that produced it. They live here rather than in
+              their own input card because their only visible output is this
+              pH and the dose beneath it: the bicarbonate target they also feed
+              is zero for any grist starting above its target pH, which is
+              every pale one, so leading with that figure said nothing. */}
+          <Card title="Predicted mash pH" hint="From the grist's distilled-water pH and the residual alkalinity this water delivers.">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+              <div className="flex items-baseline gap-3">
+                <span className={`text-3xl font-semibold tabular-nums ${TONE_CLASS[phTone(mashPh, mash.targetPh)]}`}>
+                  {mashPh.toFixed(2)}
+                </span>
+                <span className="text-sm text-zinc-500">
+                  target {mash.targetPh.toFixed(2)}
+                  {Math.abs(mashPh - mash.targetPh) >= 0.01 && (
+                    <> · {mashPh > mash.targetPh ? '+' : ''}{(mashPh - mash.targetPh).toFixed(2)}</>
+                  )}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMashOpen((open) => !open)}
+                aria-expanded={mashOpen}
+                className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:bg-zinc-800"
+              >
+                {mashOpen ? 'Done' : 'Adjust grist'}
+              </button>
+            </div>
+            {acidMEq > 0.5 ? (
+              <p className="mt-3 text-sm leading-snug text-zinc-300">
+                Acidify by{' '}
+                <span className="font-semibold text-zinc-50">
+                  {(acidMEq / LACTIC_88_MEQ_PER_ML).toFixed(1)} mL
+                </span>{' '}
+                of 88 % lactic acid into the {trimNum(mashWaterL)} L of strike water (
+                {Math.round(acidMEq)} mEq) — not the full {trimNum(volumeL)} L, since only the
+                mash meets the grist. Salts can only raise alkalinity, so this is the one
+                adjustment they can't make.
+              </p>
+            ) : (
+              <p className="mt-3 text-sm leading-snug text-zinc-400">
+                No acid needed — the salt additions land this within reach of the target.
+              </p>
+            )}
+
+            {mashOpen && (
+              <div className="mt-4 border-t border-zinc-800/60 pt-4">
+                <p className="text-xs leading-snug text-zinc-500">
+                  What the grist asks of the water.{' '}
+                  {fromRecipe && params.get('distilledph')
+                    ? `The distilled-water pH below is worked out from ${fromRecipe}'s grain bill — colour-weighted, with acidulated malt counted separately. Override it if you've measured yours.`
+                    : "Measure the distilled-water pH if you can — it's the malt's own figure, and 0.1 either way moves this prediction by about the same. With no grain bill to work from, the default assumes a pale all-malt grist; roast and crystal land lower."}
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <Field label="Distilled-water pH" hint="This grist, no minerals">
+                    <NumField
+                      value={mash.distilledPh}
+                      min={4}
+                      max={7}
+                      step={0.05}
+                      ariaLabel="Distilled-water mash pH"
+                      onChange={(v) => setMash({ distilledPh: v })}
+                    />
+                  </Field>
+                  <Field label="Target pH" hint="At room temperature">
+                    <NumField
+                      value={mash.targetPh}
+                      min={4}
+                      max={7}
+                      step={0.05}
+                      ariaLabel="Target mash pH"
+                      onChange={(v) => setMash({ targetPh: v })}
+                    />
+                  </Field>
+                  <Field label="Mash thickness" hint="Strike water per kg grain">
+                    <NumField
+                      value={mash.gristRatioLPerKg}
+                      min={1}
+                      max={10}
+                      step={0.1}
+                      ariaLabel="Mash thickness, litres per kilogram"
+                      onChange={(v) => setMash({ gristRatioLPerKg: v })}
+                    />
+                    <UnitSuffix>L/kg</UnitSuffix>
+                  </Field>
+                  {/* Not part of the pH arithmetic — it's here because with
+                      the thickness above it fixes the strike volume, which is
+                      what the acid dose gets metered into. */}
+                  <Field label="Grain bill" hint="Sets the strike volume">
+                    <NumField
+                      value={mash.grainKg}
+                      min={0}
+                      step={0.1}
+                      ariaLabel="Grain bill, kilograms"
+                      onChange={(v) => setMash({ grainKg: v })}
+                    />
+                    <UnitSuffix>kg</UnitSuffix>
+                  </Field>
+                </div>
+                <MetricsLine
+                  items={[
+                    { label: 'Buffering', value: `${buffer.toFixed(1)} mEq/(pH·L)` },
+                    { label: 'Residual alkalinity needed', value: `${Math.round(requiredRA)} ppm CaCO₃` },
+                    { label: 'Strike water', value: `${trimNum(mashWaterL)} L of ${trimNum(volumeL)} L` },
+                  ]}
+                />
+                {/* Only worth saying when it's true. A pale grist needs acid
+                    and no bicarbonate at all, which the dose above already
+                    covers; naming a target of zero there would be noise. */}
+                {requiredRA > 0 && (
+                  <p className="mt-3 text-xs leading-snug text-zinc-500">
+                    This grist starts below its target, so the water should carry{' '}
+                    <span className="font-medium text-zinc-300">
+                      {Math.round(targetHco3)} ppm HCO₃⁻
+                    </span>{' '}
+                    — Auto-suggest doses that as Baking Soda, which brings sodium with it.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <p className="mt-2 text-xs leading-snug text-zinc-600">
+              An estimate from the Kolbach/Troester buffering model, sensitive to malt bill and
+              crush. Treat it as a starting dose and check with a meter at mash-in.
+            </p>
+          </Card>
+        </div>
+      </div>
+    </>
   );
 }
 
 // --- Small presentational helpers ------------------------------------------
-
-function Card({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-300">{title}</h2>
-      {hint && <p className="mt-1 text-xs leading-snug text-zinc-500">{hint}</p>}
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
-
-const fieldClass =
-  'w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-right text-sm tabular-nums text-zinc-100 outline-none transition focus:border-[#f87a68]';
-
-/** A label/hint stacked over a control (control passed as children). */
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label?: string;
-  hint?: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <label className="block">
-      {label && <span className="block text-sm font-medium text-zinc-200">{label}</span>}
-      {hint && <span className="block text-xs text-zinc-500">{hint}</span>}
-      <span className="flex items-center">{children}</span>
-    </label>
-  );
-}
-
-function UnitSuffix({ children }: { children: React.ReactNode }): JSX.Element {
-  return <span className="ml-2 shrink-0 text-sm text-zinc-500">{children}</span>;
-}
 
 /**
  * A 2/3-column grid of ion inputs, each labelled with its symbol + unit. The
@@ -793,31 +758,6 @@ function IonGrid({
   );
 }
 
-/** A compact inline row of derived metrics under an input card. */
-function MetricsLine({ items }: { items: { label: string; value: string }[] }): JSX.Element {
-  return (
-    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-zinc-800/60 pt-3 text-xs text-zinc-500">
-      {items.map((it, i) => (
-        <span key={i}>
-          {it.label && <span className="text-zinc-600">{it.label}: </span>}
-          <span className="font-medium tabular-nums text-zinc-300">{it.value}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
-/** A boxed result metric: big value + unit/descriptor beneath a label. */
-function Metric({ label, value, unit }: { label: string; value: string; unit: string }): JSX.Element {
-  return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-      <div className="text-xs font-medium uppercase tracking-wider text-zinc-500">{label}</div>
-      <div className="mt-0.5 text-lg font-semibold tabular-nums text-zinc-100">{value}</div>
-      <div className="text-xs text-zinc-500">{unit}</div>
-    </div>
-  );
-}
-
 /**
  * How a resulting ion sits against its target: `good` when within ~10 % (min
  * 5 ppm, so small targets like Mg aren't flattered by a fixed floor), else
@@ -859,60 +799,3 @@ const TONE_CLASS: Record<Tone, string> = {
   over: 'text-red-400',
 };
 
-/**
- * A controlled number input that keeps a local text buffer so partial entries
- * ("0.", "1.2") survive re-renders, syncing to the numeric prop only on a real
- * external change (preset applied, Auto-suggest, etc.). Emits a parsed number.
- */
-function NumField({
-  value,
-  onChange,
-  step = 1,
-  min = 0,
-  max,
-  ariaLabel,
-  id,
-}: {
-  value: number;
-  onChange?: (value: number) => void;
-  step?: number;
-  min?: number;
-  max?: number;
-  ariaLabel?: string;
-  id?: string;
-}): JSX.Element {
-  const [text, setText] = useState(() => trimNum(value));
-  useEffect(() => {
-    const parsed = parseFloat(text);
-    const current = Number.isFinite(parsed) ? parsed : 0;
-    if (current !== value) setText(trimNum(value));
-    // Only resync when the external numeric value changes, not on every keystroke.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
-
-  return (
-    <input
-      id={id}
-      type="number"
-      inputMode="decimal"
-      step={step}
-      min={min}
-      max={max}
-      value={text}
-      aria-label={ariaLabel}
-      onChange={(e) => {
-        const raw = e.target.value;
-        setText(raw);
-        const n = parseFloat(raw);
-        onChange?.(Number.isFinite(n) ? Math.max(min, n) : 0);
-      }}
-      className={fieldClass}
-    />
-  );
-}
-
-/** Trim a number to a short, human string (no trailing zeros), '' for non-finite. */
-function trimNum(v: number): string {
-  if (!Number.isFinite(v)) return '';
-  return String(Math.round(v * 1000) / 1000);
-}

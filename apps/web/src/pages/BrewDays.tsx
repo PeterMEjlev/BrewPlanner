@@ -72,8 +72,7 @@ export function BrewDaysPage(): JSX.Element {
       <main className="w-full max-w-[1100px] px-5 py-5">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-zinc-100">Brew days</h1>
-            <p className="mt-1 text-sm text-zinc-500">
+            <p className="text-sm text-zinc-500">
               {list.length > 0
                 ? `${list.length} brew${list.length === 1 ? '' : 's'} logged${
                     inProgress.length > 0 ? ` · ${inProgress.length} in progress` : ''

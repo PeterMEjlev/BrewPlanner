@@ -2,7 +2,7 @@
 import { Style, StatusBar } from '@capacitor/status-bar';
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
+import { Navigate, RouterProvider, createBrowserRouter, useLocation } from 'react-router-dom';
 import { RequireAuth, clearCachedAuth } from './auth';
 import { hasServerUrl, hydrateConfig, isNative, setUnauthorizedHandler } from './native';
 import { ReopenSetupContext } from './setupContext';
@@ -28,7 +28,7 @@ import { RecipeCreatePage } from './pages/RecipeCreate';
 import { RecipesDesktopPage } from './pages/RecipesDesktop';
 import { SettingsDesktopPage } from './pages/SettingsDesktop';
 import { TodosPage } from './pages/Todos';
-import { WaterCalculatorPage } from './pages/WaterCalculator';
+import { ToolsPage } from './pages/Tools';
 import './index.css';
 
 // The physical Pi kiosk launches Chromium with ?kiosk=1 (see
@@ -71,6 +71,12 @@ const TemperaturePage = lazy(() =>
 const BrewDayDetailPage = lazy(() =>
   import('./pages/BrewDayDetail').then((m) => ({ default: m.BrewDayDetailPage })),
 );
+
+/** `/water?ca=80&…` → `/tools/water?ca=80&…`, params intact. */
+function WaterRedirect(): JSX.Element {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/tools/water', search }} replace />;
+}
 
 const router = createBrowserRouter([
   // The hub dashboard is the front door. The physical kiosk still boots
@@ -155,16 +161,29 @@ const router = createBrowserRouter([
       </RequireAuth>
     ),
   },
-  // Brewing-water salt calculator. Client-side only (no mutations), so any
-  // signed-in user — including a read-only guest — can use it.
+  // The brewery's calculators: water, dilution, hydrometer, carbonation. All
+  // client-side only (no mutations), so any signed-in user — including a
+  // read-only guest — can use them. The bare path opens the water calculator.
   {
-    path: '/water',
+    path: '/tools',
     element: (
       <RequireAuth>
-        <WaterCalculatorPage />
+        <ToolsPage />
       </RequireAuth>
     ),
   },
+  {
+    path: '/tools/:tool',
+    element: (
+      <RequireAuth>
+        <ToolsPage />
+      </RequireAuth>
+    ),
+  },
+  // The water calculator's old address, kept for bookmarks and for recipe links
+  // saved before the move. The query string is what carries a recipe's target
+  // profile, so it travels with the redirect.
+  { path: '/water', element: <WaterRedirect /> },
   // Desktop (mouse/keyboard) keg inventory. The kiosk keeps its touch variant
   // at /kiosk/kegs; the desktop sidebar's Kegs link points here.
   {
