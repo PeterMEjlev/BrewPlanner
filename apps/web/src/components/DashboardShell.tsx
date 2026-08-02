@@ -97,13 +97,12 @@ interface FleetStatus {
  * hooks' state from the cache keeps the last known count on screen while the
  * background refresh runs.
  *
- * The badges whose endpoint a page also polls (devices, kegs, alerts) have moved
- * to shared channels — see sharedPoll.ts — which hold the same last value *and*
- * collapse the two timers into one. What's left here is the badges nothing else
- * fetches alongside them.
+ * The badges whose endpoint a page also polls (devices, kegs, alerts, the brew
+ * system) have moved to shared channels — see sharedPoll.ts — which hold the
+ * same last value *and* collapse the two timers into one. What's left here is
+ * the badges nothing else fetches alongside them.
  */
 let cachedTodoCount: number | null = null;
-let cachedBrewSystem: BrewSystemNavStatus | null = null;
 /**
  * The phone bottom-bar's horizontal scroll offset, remembered across shell
  * remounts. The shell remounts on every navigation, so without this the
@@ -214,21 +213,17 @@ interface BrewSystemNavStatus {
  * Lives in the shell like {@link useFleetStatus} so the answer is right on
  * every page, and holds the last value through a blip.
  * The rig is off most of the year, so this is cheap and expected to read offline.
+ *
+ * On the shared channel, so the Overview's brew-system card — which wants the
+ * same payload far more often during a brew day — rides this one request
+ * instead of opening a second poll of the rig.
  */
 function useBrewSystemStatus(): BrewSystemNavStatus | null {
-  const [status, setStatus] = useState<BrewSystemNavStatus | null>(cachedBrewSystem);
-  usePoll(async (isStale) => {
-    try {
-      const state = await api.getBrewSystemState();
-      if (!isStale()) {
-        cachedBrewSystem = { configured: state.configured, online: state.online };
-        setStatus(cachedBrewSystem);
-      }
-    } catch {
-      // Keep the last known status through a transient failure.
-    }
-  }, FLEET_POLL_MS);
-  return status;
+  const { data } = useShared(SHARED.brewSystem, api.getBrewSystemState, FLEET_POLL_MS);
+  return useMemo(
+    () => (data ? { configured: data.configured, online: data.online } : null),
+    [data],
+  );
 }
 
 /**

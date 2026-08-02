@@ -3,6 +3,7 @@ import type {
   BrewPump,
   BrewSystemAppSettings,
   BrewSystemState,
+  BrewTemperatureRow,
 } from '@checklist/shared';
 import { brewEnabledSchema, brewOnSchema, brewTimerActionSchema, brewValueSchema } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -73,6 +74,44 @@ const tempAverageQuerySchema = z.object({
   minutes: z.coerce.number().positive(),
 });
 
+/**
+ * Query for GET /temperature/history. `since` (epoch ms) asks the rig for only
+ * the rows logged after it, so a chart already holding the session tops up with
+ * a few hundred bytes instead of re-pulling the whole log through the tunnel.
+ */
+const tempHistoryQuerySchema = z.object({
+  since: z.coerce.number().int().nonnegative().optional(),
+});
+
+/** A row as the rig sends it — `ts` is authoritative, `timestamp` the fallback. */
+interface RigTemperatureRow {
+  ts?: number;
+  timestamp?: string;
+  bk?: number | null;
+  mlt?: number | null;
+  hlt?: number | null;
+}
+
+/** A vessel reading: a finite number, or null for a sensor that didn't answer. */
+function reading(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Narrow the rig's log rows to the four fields the chart plots, dropping rows
+ * with no usable timestamp. Sending `timestamp` too would roughly double a
+ * full session's payload for a string the client immediately re-parses.
+ */
+function toHistoryRows(rows: RigTemperatureRow[]): BrewTemperatureRow[] {
+  const out: BrewTemperatureRow[] = [];
+  for (const row of rows) {
+    const ts = typeof row.ts === 'number' ? row.ts : Date.parse(row.timestamp ?? '');
+    if (!Number.isFinite(ts)) continue;
+    out.push({ ts, bk: reading(row.bk), mlt: reading(row.mlt), hlt: reading(row.hlt) });
+  }
+  return out;
+}
+
 export async function brewSystemRoutes(app: FastifyInstance): Promise<void> {
   registerAuditHook(app);
 
@@ -124,6 +163,26 @@ export async function brewSystemRoutes(app: FastifyInstance): Promise<void> {
         `/api/temperature/average?pot=${query.pot}&minutes=${query.minutes}`,
       );
       return { configured: true, online: true, ...data };
+    } catch {
+      return { configured: true, online: false };
+    }
+  });
+
+  // GET /api/brew-system/temperature/history?since=<epoch_ms> — the rig's
+  // session temperature log (BK/MLT/HLT), behind the Overview's brew-system
+  // chart. Same availability envelope as the other reads.
+  app.get('/temperature/history', { preHandler: requireAuth }, async (req, reply) => {
+    const base = rigBase();
+    if (!base) return { configured: false, online: false };
+    const query = parse(tempHistoryQuerySchema, req.query, reply);
+    if (!query) return;
+    const path =
+      query.since != null
+        ? `/api/temperature/history?since=${query.since}`
+        : '/api/temperature/history';
+    try {
+      const rows = await rigGet<RigTemperatureRow[]>(base, path);
+      return { configured: true, online: true, rows: toHistoryRows(rows ?? []) };
     } catch {
       return { configured: true, online: false };
     }

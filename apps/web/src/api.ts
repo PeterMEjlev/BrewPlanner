@@ -10,6 +10,7 @@ import type {
   BrewPump,
   BrewSystemConfig,
   BrewSystemStatus,
+  BrewTemperatureHistory,
   BruceBook,
   BruceChatEvent,
   BruceChatReply,
@@ -619,6 +620,13 @@ export const api = {
   // between brew days); controls are admin-only and 502 when it's unreachable.
   getBrewSystemState: () => request<BrewSystemStatus>('/brew-system/state'),
   getBrewSystemConfig: () => request<BrewSystemConfig>('/brew-system/config'),
+  /** The rig's session temperature log; `since` (epoch ms) asks for newer rows only. */
+  getBrewTemperatureHistory: (since?: number) =>
+    request<BrewTemperatureHistory>(
+      since != null
+        ? `/brew-system/temperature/history?since=${since}`
+        : '/brew-system/temperature/history',
+    ),
   setBrewPotPower: (pot: BrewPot, on: boolean) =>
     request<void>(`/brew-system/pot/${pot}/power`, { method: 'POST', body: JSON.stringify({ on }) }),
   setBrewPotEfficiency: (pot: BrewPot, value: number) =>

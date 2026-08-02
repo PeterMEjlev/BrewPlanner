@@ -1,4 +1,5 @@
 import type {
+  BrewPumpControl,
   DeviceStatus,
   DeviceType,
   LatestReading,
@@ -6,7 +7,7 @@ import type {
   Recipe,
 } from '@checklist/shared';
 import { getRecipeColor, matchContentOption } from '@checklist/shared';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
@@ -24,7 +25,6 @@ import { FitScale } from '../components/FitScale';
 import { useGraphColors, withAlpha } from '../graphColors';
 import {
   BoltIcon,
-  ChecklistIcon,
   DropletIcon,
   FermenterIcon,
   FlaskIcon,
@@ -32,11 +32,12 @@ import {
   HutIcon,
   KegIcon,
   PauseIcon,
+  SlidersIcon,
   ThermometerIcon,
-  TodoIcon,
-  WrenchIcon,
 } from '../components/icons';
 import { MetricModal } from '../components/MetricModal';
+import { useBrewSystemLive } from '../components/brewsystem/useBrewSystemLive';
+import { VESSELS, formatTemp } from '../components/brewsystem/vessels';
 import {
   type Keg,
   SHEETS_VIEW_URL,
@@ -66,6 +67,10 @@ import {
 } from '../useDeviceData';
 import { usePoll } from '../usePoll';
 import { relativeTime } from '../util';
+
+// recharts lives behind this lazy boundary, so the brew-system chart is only
+// pulled in when the card is actually opened.
+const BrewSystemModal = lazy(() => import('../components/brewsystem/BrewSystemModal'));
 
 const KEG_POLL_MS = 60_000;
 const FERMENT_POLL_MS = 60_000;
@@ -324,6 +329,7 @@ function useIsMobile(): boolean {
  */
 export function DashboardPage(): JSX.Element {
   const [chart, setChart] = useState<ChartTarget | null>(null);
+  const [brewSystemOpen, setBrewSystemOpen] = useState(false);
   // Which tab each fermenter card has open, by station name. The page owns this
   // (rather than the card) because the card's height on a phone follows its tab.
   const [fermenterTabs, setFermenterTabs] = useState<Record<string, FermenterTab>>({});
@@ -488,7 +494,9 @@ export function DashboardPage(): JSX.Element {
                 error={kegsError}
                 controllable={controllable}
               />
-              <OperationsPanel />
+              {/* Same rule as the sidebar rail: a read-only guest can't open the
+                  Brew System page, so they don't get its readings here either. */}
+              {controllable && <BrewSystemCard onOpen={() => setBrewSystemOpen(true)} />}
               <KegFridgeCard device={kegFridge} loading={devices === null} onOpen={openChart} onRefresh={reloadFleet} />
             </aside>
           </div>
@@ -512,6 +520,14 @@ export function DashboardPage(): JSX.Element {
           targetC={chart.targetC}
           onClose={() => setChart(null)}
         />
+      )}
+
+      {brewSystemOpen && (
+        // No fallback: the overlay appearing a beat after the click reads better
+        // than a placeholder card flashing in front of the dashboard.
+        <Suspense fallback={null}>
+          <BrewSystemModal onClose={() => setBrewSystemOpen(false)} />
+        </Suspense>
       )}
     </DashboardShell>
     </ChartRangeProvider>
@@ -2118,69 +2134,93 @@ function contentCounts(kegs: Keg[]): { contents: string; count: number; color: s
     .sort((a, b) => b.count - a.count || a.contents.localeCompare(b.contents));
 }
 
-// --- Operations -------------------------------------------------------------
+// --- Brewing rig ------------------------------------------------------------
 
-function OperationsPanel(): JSX.Element {
-  const [openTodos, setOpenTodos] = useState<number | null>(null);
+/**
+ * The brewing rig at a glance: the three vessel temperatures and both pump
+ * states, condensed into a rail card. Read-only — clicking it opens the
+ * enlarged view (readings plus the session temperature chart), and the controls
+ * that change any of it live on the Brew System page.
+ *
+ * Rides the shared brew-system channel the sidebar's Online/Offline badge
+ * already polls, asking it for a brew-day cadence while the Overview is open.
+ * The rig is powered off most of the year, so "offline" is an expected state
+ * and shows the last readings greyed out rather than an error.
+ */
+function BrewSystemCard({ onOpen }: { onOpen: () => void }): JSX.Element | null {
+  const { status, state } = useBrewSystemLive();
 
-  useEffect(() => {
-    void api
-      .listTodos()
-      .then((todos) => setOpenTodos(todos.filter((t) => !t.done).length))
-      .catch(() => setOpenTodos(null));
-  }, []);
+  // Nothing to say until the first answer, and nothing at all on an install
+  // with no rig — same rule the sidebar's badge follows.
+  if (status == null || !status.configured) return null;
+
+  const online = status.online;
 
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-      <PanelHeading title="Operations" icon={<WrenchIcon className="h-5 w-5" />} />
-      <div className="mt-3 grid gap-2">
-        <AppLink to="/admin" icon={<ChecklistIcon className="h-5 w-5" />} title="Brew Checklist" />
-        <AppLink
-          to="/todos"
-          icon={<TodoIcon className="h-5 w-5" />}
-          title="Brewery To-Do"
-          badge={openTodos ?? undefined}
-        />
-      </div>
+      <PanelHeading
+        title="Brew System"
+        icon={<SlidersIcon className="h-5 w-5" />}
+        right={
+          <span
+            className={`text-xs font-semibold ${online ? 'text-emerald-400' : 'text-red-400'}`}
+          >
+            {online ? 'Online' : 'Offline'}
+          </span>
+        }
+      />
+      <button
+        type="button"
+        onClick={onOpen}
+        className="mt-3 block w-full rounded-lg text-left transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+      >
+        <div className={online ? undefined : 'opacity-50'}>
+          <div className="grid grid-cols-3 gap-2">
+            {VESSELS.map((vessel) => {
+              const pot = vessel.pot ? state?.controlState.pots[vessel.pot] : undefined;
+              return (
+                <div
+                  key={vessel.key}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2 text-center"
+                >
+                  <div
+                    className="text-[11px] font-semibold uppercase tracking-wide"
+                    style={{ color: vessel.color }}
+                  >
+                    {vessel.label}
+                  </div>
+                  <div className="mt-0.5 text-lg font-semibold tabular-nums text-zinc-50">
+                    {formatTemp(state?.temperatures[vessel.key])}
+                    <span className="text-xs text-zinc-500">°</span>
+                  </div>
+                  <div className="truncate text-[10px] text-zinc-500">
+                    {pot ? (pot.heaterOn ? `Heat ${Math.round(pot.efficiency)}%` : 'Off') : '—'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <PumpPill name="Pump 1" pump={state?.controlState.pumps.P1} />
+            <PumpPill name="Pump 2" pump={state?.controlState.pumps.P2} />
+          </div>
+        </div>
+      </button>
     </section>
   );
 }
 
-function AppLink({
-  to,
-  icon,
-  title,
-  subtitle,
-  badge,
-}: {
-  to: string;
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-  /** Optional count shown in the otherwise-empty space before the chevron. */
-  badge?: number;
-}): JSX.Element {
+/** One pump on the rail card: a lit dot when running, and its duty cycle. */
+function PumpPill({ name, pump }: { name: string; pump?: BrewPumpControl }): JSX.Element {
+  const on = pump?.on ?? false;
   return (
-    <Link
-      to={to}
-      className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2 transition hover:border-zinc-700 hover:bg-zinc-800/60"
-    >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-white">
-        {icon}
+    <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 px-2.5 py-1.5">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${on ? 'bg-sky-400' : 'bg-zinc-700'}`} aria-hidden />
+      <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">{name}</span>
+      <span className="text-xs font-semibold tabular-nums text-zinc-200">
+        {on ? `${Math.round(pump?.speed ?? 0)}%` : 'Off'}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-semibold text-zinc-100">{title}</span>
-        {subtitle && <span className="block truncate text-sm text-zinc-500">{subtitle}</span>}
-      </span>
-      {badge != null && badge > 0 && (
-        <span className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-zinc-800 px-2 text-sm font-semibold text-zinc-200">
-          {badge}
-        </span>
-      )}
-      <span className="text-zinc-600" aria-hidden>
-        ›
-      </span>
-    </Link>
+    </div>
   );
 }
 

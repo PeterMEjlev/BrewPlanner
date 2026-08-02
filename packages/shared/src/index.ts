@@ -3056,6 +3056,29 @@ export interface BrewSystemStatus {
   state?: BrewSystemState;
 }
 
+/**
+ * One row of the rig's session temperature log. `ts` is epoch ms and is the
+ * rig's own clock, so rows stay ordered even if this server's clock differs.
+ * A vessel reads null when its DS18B20 didn't answer for that sample.
+ */
+export interface BrewTemperatureRow {
+  ts: number;
+  bk: number | null;
+  mlt: number | null;
+  hlt: number | null;
+}
+
+/**
+ * Envelope for GET /api/brew-system/temperature/history. `rows` covers the rig's
+ * *current session* — it starts empty and is wiped when a new brew starts, so an
+ * online rig with no rows means "logging hasn't begun", not an error.
+ */
+export interface BrewTemperatureHistory {
+  configured: boolean;
+  online: boolean;
+  rows?: BrewTemperatureRow[];
+}
+
 /** Envelope for GET /api/brew-system/config — the rig's app settings + theme colours. */
 export interface BrewSystemConfig {
   configured: boolean;

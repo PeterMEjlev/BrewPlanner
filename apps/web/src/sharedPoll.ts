@@ -220,4 +220,5 @@ export const SHARED = {
   kegs: 'kegs',
   activeRecipe: 'activeRecipe',
   hosts: 'hosts',
+  brewSystem: 'brewSystem',
 } as const;
