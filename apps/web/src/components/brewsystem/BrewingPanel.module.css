@@ -37,8 +37,18 @@
   --gradient-warm: linear-gradient(135deg, var(--color-gradient-warm-start), var(--color-gradient-warm-end));
   --gradient-cool: linear-gradient(135deg, var(--color-gradient-cool-start), var(--color-gradient-cool-end));
 
-  /* Typography */
-  --font-mono: 'Courier New', monospace;
+  /* Typography.
+
+     The rig asks for 'Courier New' for every reading. That font only exists on
+     Windows, so the two screens never matched: the Pi fell through to the
+     generic monospace face (DejaVu Sans Mono) while a PC got the actual
+     typewriter face — thin, wide, and nothing like an instrument readout.
+
+     Both now use the dashboard's own UI sans, which is what the rest of
+     BrewPlanner sets big numbers in. `tabular-nums` below buys back the one
+     thing the monospace was there for: every digit keeps the same advance
+     width, so a live reading counting up doesn't shuffle sideways. */
+  --font-numeric: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-size-xs: 12px;
   --font-size-sm: 14px;
   --font-size-base: 16px;
@@ -59,6 +69,9 @@
   --radius-xl: 16px;
   --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.3);
   --transition-fast: all 0.2s;
+
+  /* Inherited by every card, so the readouts hold a fixed digit width. */
+  font-variant-numeric: tabular-nums;
 
   display: flex;
   flex-direction: column;
@@ -150,7 +163,7 @@
   text-align: center;
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-bold);
-  font-family: var(--font-mono);
+  font-family: var(--font-numeric);
   color: var(--color-text-muted);
 }
 

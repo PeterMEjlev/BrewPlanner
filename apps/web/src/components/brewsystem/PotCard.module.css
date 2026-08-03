@@ -73,6 +73,10 @@
   padding: 20px;
   background: var(--color-bg-primary);
   border-radius: var(--radius-lg);
+  /* Query container for the MLT reading below, which is sized against this box
+     rather than the viewport. Also stops the reading from feeding its own width
+     back into the grid track that decides how wide this box is. */
+  container-type: inline-size;
 }
 
 .pvSection,
@@ -87,8 +91,15 @@
   align-items: center;
 }
 
+/* The headline MLT reading. The rig draws it at a flat 140px, which only fits a
+   1024px kiosk: here the card is one third of a grid track, and at three-up on a
+   laptop 140px puts the widest reading ("100.0°", ~3.0em) outside the dark box.
+   Sizing it against the box instead keeps it the biggest number on the page at
+   every width — phone included — and the cap means it never grows past the
+   rig's own size on a wide monitor. 30cqw is the fit for the widest reading
+   with room to spare for a fallback face with wider digits than Segoe UI. */
 .pvSection.mltTemp .pvValue {
-  font-size: 140px;
+  font-size: min(140px, 30cqw);
 }
 
 .pvLabel,
@@ -101,14 +112,14 @@
 .pvValue {
   font-size: var(--font-size-3xl);
   font-weight: var(--font-weight-bold);
-  font-family: var(--font-mono);
+  font-family: var(--font-numeric);
   letter-spacing: 1px;
 }
 
 .svValue {
   font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-semibold);
-  font-family: var(--font-mono);
+  font-family: var(--font-numeric);
 }
 
 .wattsRow {
@@ -122,7 +133,7 @@
 .wattsValue {
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-bold);
-  font-family: var(--font-mono);
+  font-family: var(--font-numeric);
   color: var(--color-text-secondary);
 }
 
@@ -159,7 +170,7 @@
 .controlValue {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
-  font-family: var(--font-mono);
+  font-family: var(--font-numeric);
 }
 
 .slider {
@@ -233,13 +244,8 @@
     gap: 10px;
   }
 
-  /* The headline MLT reading. Sized against the viewport so it stays the biggest
-     number on the page without ever outgrowing it: 20vw leaves room for the
-     widest value the card can show ("100.0°") inside the card and its paddings,
-     and the min() keeps a large phone from exceeding the kiosk's own 140px. */
-  .pvSection.mltTemp .pvValue {
-    font-size: min(140px, 20vw);
-  }
+  /* The MLT reading needs no phone-specific size: it tracks the card's own
+     width (see .tempDisplay), which is already the narrow single-column one. */
 
   .pvValue {
     letter-spacing: 0;

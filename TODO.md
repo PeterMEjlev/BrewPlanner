@@ -7,34 +7,7 @@
   - Water usage 
   - Gravity of beer/wort fermentation (Tilt gravity sensor.) Tilt broadcasts BLE/iBeacon data.
 
-- ## Incorporate the readings from the TILT hydrometer to log to brewersfriend. "The Tilt wireless hydrometer operates on bluetooth. Log readings from the phone app or using a Raspberry pi with this Cloud URL. Turn on Tilt integration in your brew session under the Fermentation tab to start collecting temperature and gravity readings. 
-  Cloud URL: https://log.brewersfriend.com/tilt/5a2c07e701f38d2c83ff2289df53f598c927129f" 
-
-
-
-- ## Implement Brew System control. 
-
-- ## Bruce voice assistant — finish the Pi setup (code is migrated, hardware isn't)
-  Bruce now lives in `apps/bruce` and runs on THIS Pi (removed from brew-system-v3).
-  Blocked on: SSH access to the Pi + a USB microphone and speaker.
-  When both are available, follow **deploy/README-bruce.md** step by step:
-  1. `sudo apt install -y sox libasound2-dev alsa-utils`, then `npm rebuild speaker`
-  2. Pick/test mic with `arecord -l` (set `BRUCE_MIC_DEVICE` if not default)
-  3. Add `OPENAI_API_KEY` + `PICOVOICE_ACCESS_KEY` to `/etc/brewplanner.env`
-  4. Reinstall the sudoers whitelist (it now covers bruce.service)
-  5. `sudo systemctl enable --now bruce.service`, check `journalctl -u bruce.service -f`
-  The Bruce page itself is built: it is a written chat (server-side, works today
-  without any of the above) with the voice service's live state, volume, speak
-  box and spoken transcript in the right-hand rail once the hardware is in.
-  Talking to him is no longer blocked on any of this either — the Talk button on
-  that page holds a voice conversation in the browser (phone, laptop, kiosk),
-  over HTTPS. The hardware above is only for the hands-free speaker in the
-  brewery.
-
 - ## Apparent attenuation & ABV live tracker — compute OG→current % attenuation and estimated ABV from Tilt readings; show projected final ABV.
-
-- ## Water profile calculator
-
 
 
 ---
