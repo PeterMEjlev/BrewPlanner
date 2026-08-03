@@ -761,6 +761,28 @@ interface RowPricing {
   onChanged: () => void;
 }
 
+/**
+ * The trailing half of an ingredient row — its figures and its price — which
+ * drops to a line of its own in portrait.
+ *
+ * Both of those are `shrink-0` by nature: a weight or a price reads as one token
+ * or not at all. That leaves the name as the only thing that can give, and on a
+ * phone there is nothing to give — the figures, the price, the swatch and the
+ * gaps already want more than the row is wide, so `truncate` ellipsises
+ * "Pilsner Malt (Weyermann)" down to nothing. Wrapping this group instead gives
+ * the name the full width above it. From `sm` up it sits back on the row's
+ * single line and the layout is the one it has always been.
+ *
+ * The row it sits in needs `flex-wrap` and a `gap-y` for this to take effect.
+ */
+function RowTrailing({ children }: { children: React.ReactNode }): JSX.Element {
+  return (
+    <span className="flex basis-full items-center justify-between gap-3 sm:basis-auto sm:shrink-0 sm:justify-end">
+      {children}
+    </span>
+  );
+}
+
 function FermentableRow({
   fermentable: f,
   editable,
@@ -777,7 +799,7 @@ function FermentableRow({
     price: f.price,
   };
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
       <Swatch color={ebcColor(f.ebc)} className="h-3 w-3" ebc={f.ebc} />
       <IngredientName
         name={f.name}
@@ -785,21 +807,28 @@ function FermentableRow({
         onClick={() => setOpen(!open)}
         className="min-w-0 flex-1 text-sm text-zinc-100"
       />
-      <span className="shrink-0 text-sm text-zinc-400">
-        {f.amount} {f.unit}
-        {f.percent && <span className="text-zinc-500"> · {fmt(f.percent, 1)}%</span>}
-        {f.ebc != null && <span className="text-zinc-500"> · {f.ebc} EBC</span>}
-        {f.ppg != null && <span className="text-zinc-500"> · {f.ppg} PPG</span>}
-        {f.lateAddition && <span className="text-zinc-500" title="Kept out of the boil gravity the hops are utilized against"> · late</span>}
-        {!isFermentableLine(f) && <span className="text-zinc-500" title="Raises the gravity but never attenuates — it lands in the FG"> · unfermentable</span>}
-      </span>
-      <PriceCell
-        line={line}
-        editable={editable}
-        open={open}
-        onOpenChange={setOpen}
-        onChanged={onChanged}
-      />
+      {/* Deliberately not indented to line up under the name: the swatch's 24px
+          is enough to push a typical grist line onto a second row, and an extra
+          line on every malt costs more than the small misalignment saves. */}
+      <RowTrailing>
+        {/* Free to wrap in portrait, where the whole grist line rarely fits
+            beside the price; pinned to one line again from `sm`. */}
+        <span className="min-w-0 text-sm text-zinc-400 sm:shrink-0">
+          {f.amount} {f.unit}
+          {f.percent && <span className="text-zinc-500"> · {fmt(f.percent, 1)}%</span>}
+          {f.ebc != null && <span className="text-zinc-500"> · {f.ebc} EBC</span>}
+          {f.ppg != null && <span className="text-zinc-500"> · {f.ppg} PPG</span>}
+          {f.lateAddition && <span className="text-zinc-500" title="Kept out of the boil gravity the hops are utilized against"> · late</span>}
+          {!isFermentableLine(f) && <span className="text-zinc-500" title="Raises the gravity but never attenuates — it lands in the FG"> · unfermentable</span>}
+        </span>
+        <PriceCell
+          line={line}
+          editable={editable}
+          open={open}
+          onOpenChange={setOpen}
+          onChanged={onChanged}
+        />
+      </RowTrailing>
     </li>
   );
 }
@@ -811,25 +840,27 @@ function OtherRow({
 }: { ingredient: RecipeOtherIngredient } & RowPricing): JSX.Element {
   const { open, setOpen } = usePricePicker();
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
       <IngredientName
         name={m.name}
         editable={editable}
         onClick={() => setOpen(!open)}
         className="min-w-0 flex-1 text-sm text-zinc-100"
       />
-      <span className="shrink-0 text-sm text-zinc-400">
-        {[`${m.amount}${m.unit ? ` ${m.unit}` : ''}`, m.type, m.use, m.time && `${m.time} ${m.timeUnit || 'min'}`]
-          .filter(Boolean)
-          .join(' · ')}
-      </span>
-      <PriceCell
-        line={{ kind: 'other', name: m.name, grams: m.grams, units: m.units, price: m.price }}
-        editable={editable}
-        open={open}
-        onOpenChange={setOpen}
-        onChanged={onChanged}
-      />
+      <RowTrailing>
+        <span className="min-w-0 text-sm text-zinc-400 sm:shrink-0">
+          {[`${m.amount}${m.unit ? ` ${m.unit}` : ''}`, m.type, m.use, m.time && `${m.time} ${m.timeUnit || 'min'}`]
+            .filter(Boolean)
+            .join(' · ')}
+        </span>
+        <PriceCell
+          line={{ kind: 'other', name: m.name, grams: m.grams, units: m.units, price: m.price }}
+          editable={editable}
+          open={open}
+          onOpenChange={setOpen}
+          onChanged={onChanged}
+        />
+      </RowTrailing>
     </li>
   );
 }
@@ -1047,7 +1078,7 @@ function HopRow({
 }: { hop: RecipeHop; stage: HopStage } & RowPricing): JSX.Element {
   const { open, setOpen } = usePricePicker();
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <IngredientName
@@ -1077,16 +1108,22 @@ function HopRow({
             .join(' · ')}
         </div>
       </div>
-      {h.ibu && Number.parseFloat(h.ibu) > 0 && (
-        <span className="shrink-0 text-sm text-zinc-400">{fmt(h.ibu, 1)} IBU</span>
-      )}
-      <PriceCell
-        line={{ kind: 'hop', name: h.name, grams: h.grams, price: h.price }}
-        editable={editable}
-        open={open}
-        onOpenChange={setOpen}
-        onChanged={onChanged}
-      />
+      <RowTrailing>
+        {h.ibu && Number.parseFloat(h.ibu) > 0 ? (
+          <span className="shrink-0 text-sm text-zinc-400">{fmt(h.ibu, 1)} IBU</span>
+        ) : (
+          // Holds the left end of the wrapped line so the price stays right-aligned
+          // under the hop it belongs to, rather than sliding over to meet it.
+          <span aria-hidden />
+        )}
+        <PriceCell
+          line={{ kind: 'hop', name: h.name, grams: h.grams, price: h.price }}
+          editable={editable}
+          open={open}
+          onOpenChange={setOpen}
+          onChanged={onChanged}
+        />
+      </RowTrailing>
     </li>
   );
 }
@@ -1124,28 +1161,32 @@ function YeastRow({
 
   return (
     <li className="px-4 py-2.5">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <IngredientName
           name={y.name}
           editable={editable}
           onClick={() => setOpen(!open)}
           className="min-w-0 flex-1 text-sm text-zinc-100"
         />
-        {range && (
-          <span
-            className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs font-semibold text-zinc-200"
-            title="Producer's recommended fermentation temperature"
-          >
-            {range}
-          </span>
-        )}
-        <PriceCell
-          line={{ kind: 'yeast', name: y.name, grams: y.grams, units: y.units, price: y.price }}
-          editable={editable}
-          open={open}
-          onOpenChange={setOpen}
-          onChanged={onChanged}
-        />
+        <RowTrailing>
+          {range ? (
+            <span
+              className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs font-semibold text-zinc-200"
+              title="Producer's recommended fermentation temperature"
+            >
+              {range}
+            </span>
+          ) : (
+            <span aria-hidden />
+          )}
+          <PriceCell
+            line={{ kind: 'yeast', name: y.name, grams: y.grams, units: y.units, price: y.price }}
+            editable={editable}
+            open={open}
+            onOpenChange={setOpen}
+            onChanged={onChanged}
+          />
+        </RowTrailing>
       </div>
       {facts.length > 0 && (
         <div className="mt-0.5 text-xs text-zinc-500">{facts.join(' · ')}</div>

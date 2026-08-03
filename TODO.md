@@ -1,5 +1,5 @@
 
-
+- Get phone app notifications when another account makes important changes (new temp set point, changes content of kegs, creates new recipe / changes recipe, starts new brew session, adds / removes from todo list, changes settings)
 
 
 - ## Add support for

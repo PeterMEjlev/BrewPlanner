@@ -98,6 +98,9 @@ export function ToolsPage(): JSX.Element {
                   value: t.id,
                   label: t.label,
                   description: t.description,
+                  // The same glyph the rail shows at sm and up, so the tool a
+                  // brewer is looking for is recognisable on a phone too.
+                  Icon: t.Icon,
                 }))}
               />
             </label>

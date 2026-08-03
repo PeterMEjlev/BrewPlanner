@@ -12,6 +12,15 @@ export interface SelectOption<Value extends string | number = string> {
    * malt carries in the recipe pickers.
    */
   swatchColor?: string | null;
+  /**
+   * Glyph in front of the label, for a dropdown that stands in for a navigation
+   * rail on a narrow screen: the phone picks from the same icons the wider
+   * layout shows, rather than from a list of bare words.
+   *
+   * Sits in the same leading slot as {@link swatchColor}, ahead of it on the
+   * rare row that carries both.
+   */
+  Icon?: (props: { className?: string }) => JSX.Element;
   /** Listed but not selectable, shown greyed rather than dropped. */
   disabled?: boolean;
 }
@@ -250,6 +259,7 @@ export function Select<Value extends string | number>({
         className={`inline-flex cursor-pointer items-center justify-between gap-2 text-left disabled:cursor-not-allowed ${className}`}
       >
         <span className="flex min-w-0 items-center gap-2">
+          {selected?.Icon && <selected.Icon className="h-4 w-4 shrink-0 text-zinc-400" />}
           {selected?.swatchColor != null && (
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/70"
@@ -318,6 +328,11 @@ export function Select<Value extends string | number>({
                 }`}
               >
                 <span className="flex items-center gap-2">
+                  {option.Icon && (
+                    <option.Icon
+                      className={`h-5 w-5 shrink-0 ${isSelected ? 'text-zinc-100' : 'text-zinc-400'}`}
+                    />
+                  )}
                   {option.swatchColor != null && (
                     <span
                       className="h-3 w-3 shrink-0 rounded-full ring-1 ring-white/70"
