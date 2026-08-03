@@ -1,9 +1,12 @@
 /**
- * Hand-rolled SVG visualizations for the desktop Overview. Kept dependency-free
- * (no recharts) so the Overview bundle stays small — recharts is loaded only on
- * the detail/chart pages. Each is a pure, presentational component driven by
- * plain numbers, so it renders the same against mock and live telemetry.
+ * Hand-rolled SVG visualizations for the desktop Overview, plus the value-axis
+ * maths the recharts charts share with them. Kept dependency-free (no recharts)
+ * so the Overview bundle stays small — recharts is loaded only on the
+ * detail/chart pages. Each component is pure and presentational, driven by plain
+ * numbers, so it renders the same against mock and live telemetry.
  */
+
+import type { Span } from './chartZoom';
 
 /**
  * Widen a value range so it spans at least `minSpan`, keeping the data centred.
@@ -16,6 +19,39 @@ export function withMinSpan(min: number, max: number, minSpan?: number): { min: 
   if (minSpan == null || max - min >= minSpan) return { min, max };
   const mid = (min + max) / 2;
   return { min: mid - minSpan / 2, max: mid + minSpan / 2 };
+}
+
+/** Round tick steps to look for within each order of magnitude. */
+const NICE_STEPS = [1, 2, 2.5, 5, 10];
+
+/**
+ * Round a value window outward onto round numbers, aiming for ~5 gridlines.
+ * recharts steps its ticks up from whatever domain minimum we hand it, so an
+ * exact-fit domain would label the axis 0.348 / 0.848 / …; snapping the ends to a
+ * round step keeps the familiar 0 / 0.5 / 1 labels (and leaves a little headroom
+ * over the peak).
+ */
+export function niceRange({ min, max }: Span): Span {
+  const rough = (max - min) / 5;
+  if (!(rough > 0)) return { min, max };
+  const mag = 10 ** Math.floor(Math.log10(rough));
+  const step = (NICE_STEPS.find((s) => s >= rough / mag - 1e-9) ?? 10) * mag;
+  return { min: Math.floor(min / step) * step, max: Math.ceil(max / step) * step };
+}
+
+/**
+ * Y tick label at a precision that suits how much of the metric is on screen —
+ * whole watts when a chart spans hundreds, three decimals once a zoom is down to
+ * a few gravity points. Also hides the float drift that snapping a domain to a
+ * round step can leave behind.
+ */
+export function formatAxisValue(v: number, span: number | null): string {
+  if (span == null || !(span > 0)) return String(v);
+  if (span >= 20) return v.toFixed(0);
+  if (span >= 2) return v.toFixed(1);
+  if (span >= 0.2) return v.toFixed(2);
+  if (span >= 0.02) return v.toFixed(3);
+  return v.toFixed(4);
 }
 
 /** A thin line sparkline that stretches to fill its box (width comes from CSS). */

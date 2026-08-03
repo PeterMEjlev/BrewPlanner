@@ -22,7 +22,7 @@ import {
 import { useSettings } from '../settings';
 import { RANGES, cumulativeMetricOf, useDeviceData, useDeviceTotal } from '../useDeviceData';
 import { dateTime } from '../util';
-import { withMinSpan } from './charts';
+import { formatAxisValue, niceRange, withMinSpan } from './charts';
 import { type Span, useChartZoom } from './chartZoom';
 import { type ThinMode, thinForPlot } from './decimate';
 import { timeAxis } from './timeAxis';
@@ -54,39 +54,6 @@ const PLOT_INSET = {
 
 /** Don't let the time axis zoom in past a one-minute window. */
 const MIN_X_SPAN_MS = 60_000;
-
-/** Round tick steps to look for within each order of magnitude. */
-const NICE_STEPS = [1, 2, 2.5, 5, 10];
-
-/**
- * Round a value window outward onto round numbers, aiming for ~5 gridlines.
- * recharts steps its ticks up from whatever domain minimum we hand it, so an
- * exact-fit domain would label the axis 0.348 / 0.848 / …; snapping the ends to a
- * round step keeps the familiar 0 / 0.5 / 1 labels (and leaves a little headroom
- * over the peak).
- */
-function niceRange({ min, max }: Span): Span {
-  const rough = (max - min) / 5;
-  if (!(rough > 0)) return { min, max };
-  const mag = 10 ** Math.floor(Math.log10(rough));
-  const step = (NICE_STEPS.find((s) => s >= rough / mag - 1e-9) ?? 10) * mag;
-  return { min: Math.floor(min / step) * step, max: Math.ceil(max / step) * step };
-}
-
-/**
- * Y tick label at a precision that suits how much of the metric is on screen —
- * whole watts when a chart spans hundreds, three decimals once a zoom is down to
- * a few gravity points. Also hides the float drift that snapping a domain to a
- * round step can leave behind.
- */
-function formatAxisValue(v: number, span: number | null): string {
-  if (span == null || !(span > 0)) return String(v);
-  if (span >= 20) return v.toFixed(0);
-  if (span >= 2) return v.toFixed(1);
-  if (span >= 0.2) return v.toFixed(2);
-  if (span >= 0.02) return v.toFixed(3);
-  return v.toFixed(4);
-}
 
 /**
  * Cap on plotted points. Roughly one per pixel of a wide chart: enough that the

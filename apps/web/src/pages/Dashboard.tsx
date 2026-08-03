@@ -2006,6 +2006,15 @@ function StatPair({ label, value }: { label: string; value: string }): JSX.Eleme
 const KEG_FALLBACK_COLORS = ['#a78bfa', '#f472b6', '#fb923c', '#34d399', '#60a5fa'];
 const EMPTY_KEG_COLOR = '#3f3f46';
 
+/**
+ * A "Dirty" keg is one waiting for a wash, not a beer on tap. It keeps its
+ * warning red in the ring, but sits flush like the empty slice — what the
+ * raised slices mean is "stocked".
+ */
+function isDirtyContents(contents: string): boolean {
+  return contents.trim().toLowerCase() === 'dirty';
+}
+
 function KegInventoryPanel({
   kegs,
   loading,
@@ -2018,20 +2027,26 @@ function KegInventoryPanel({
   /** Admin/local: may open the source Google Sheet. Hidden for read-only guests. */
   controllable: boolean;
 }): JSX.Element {
-  const filled = kegs.filter((k) => !isUnknownContents(k.contents)).length;
+  // "Filled" is a beer someone can pour, so a dirty keg counts no more than an
+  // unknown one does. They aren't the same thing though: only "???" fills the
+  // empty slice, leaving dirty kegs their own red one.
   const total = kegs.length;
-  const empty = total - filled;
+  const filled = kegs.filter(
+    (k) => !isUnknownContents(k.contents) && !isDirtyContents(k.contents),
+  ).length;
+  const empty = kegs.filter((k) => isUnknownContents(k.contents)).length;
   const contents = contentCounts(kegs);
 
   // Pop the filled (beer) slices outward so the stocked inventory stands out,
-  // leaving the empty slice flush. A small gap still separates every slice.
+  // leaving the empty and dirty slices flush. A small gap still separates every
+  // slice.
   const segments: DonutSegment[] = contents.map((c, i) => ({
     value: c.count,
     color:
       c.color ??
       getContentColor(c.contents) ??
       KEG_FALLBACK_COLORS[i % KEG_FALLBACK_COLORS.length]!,
-    explode: 7,
+    explode: isDirtyContents(c.contents) ? 0 : 7,
   }));
   if (empty > 0) segments.push({ value: empty, color: EMPTY_KEG_COLOR });
 

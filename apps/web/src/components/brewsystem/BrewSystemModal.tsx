@@ -11,7 +11,10 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '../../api';
+import { useSettings } from '../../settings';
 import { clockTime } from '../../util';
+import { formatAxisValue, niceRange, withMinSpan } from '../charts';
+import { type Span, useChartZoom } from '../chartZoom';
 import { timeAxis } from '../timeAxis';
 import { useBrewSystemLive } from './useBrewSystemLive';
 import { VESSELS, type Vessel, formatTemp, formatTimerSeconds } from './vessels';
@@ -38,6 +41,27 @@ const RANGES = [
 /** How often to ask the rig for rows logged since the ones we hold. */
 const HISTORY_POLL_MS = 10_000;
 
+const CHART_HEIGHT = 256;
+const CHART_MARGIN = { top: 8, right: 16, bottom: 8, left: 0 } as const;
+const Y_AXIS_WIDTH = 48;
+const X_AXIS_HEIGHT = 30; // recharts' default XAxis height
+
+/**
+ * Where the plot area sits inside the chart wrapper — the axes eat a gutter on
+ * the left and bottom. Mirrors the margins and axis sizes below so
+ * {@link useChartZoom} can tell "over the plot" from "over an axis", exactly as
+ * the dashboard's other temperature charts do.
+ */
+const PLOT_INSET = {
+  left: CHART_MARGIN.left + Y_AXIS_WIDTH,
+  right: CHART_MARGIN.right,
+  top: CHART_MARGIN.top,
+  bottom: CHART_MARGIN.bottom + X_AXIS_HEIGHT,
+};
+
+/** Don't let the time axis zoom in past a one-minute window. */
+const MIN_X_SPAN_MS = 60_000;
+
 /**
  * Cap on plotted rows. The rig logs every 10s and keeps 24h, so a full session
  * can reach ~8,600 rows — far more than the plot has pixels. Thinning by stride
@@ -56,6 +80,31 @@ function thinRows(rows: BrewTemperatureRow[], maxPoints: number): BrewTemperatur
   const last = rows[rows.length - 1]!;
   if (out[out.length - 1] !== last) out.push(last);
   return out;
+}
+
+/** First index whose `ts` is >= `t` (the log is sorted oldest→newest). */
+function lowerBound(rows: BrewTemperatureRow[], t: number): number {
+  let lo = 0;
+  let hi = rows.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (rows[mid]!.ts < t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * The rows inside `window`, plus the neighbour just outside each end so the
+ * traces still run to both edges of the plot instead of stopping short. Thinning
+ * then applies to the zoomed slice, so pulling in far enough brings every raw
+ * reading back.
+ */
+function sliceRows(rows: BrewTemperatureRow[], window: Span | null): BrewTemperatureRow[] {
+  if (!window) return rows;
+  const from = Math.max(0, lowerBound(rows, window.min) - 1);
+  const to = Math.min(rows.length, lowerBound(rows, window.max) + 1);
+  return from === 0 && to === rows.length ? rows : rows.slice(from, to);
 }
 
 /**
@@ -117,6 +166,7 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
   const { rows, loading } = useTemperatureHistory();
   const [rangeMs, setRangeMs] = useState<number | null>(null);
   const [hidden, setHidden] = useState<Partial<Record<Vessel, boolean>>>({});
+  const { tempMinSpanC } = useSettings();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -134,23 +184,72 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
   // The window is measured back from the newest reading, not from now: a rig
   // that stopped logging an hour ago should still show its last 15 minutes
   // rather than an empty chart.
-  const plotted = useMemo(() => {
-    if (rows.length === 0) return [];
+  const windowed = useMemo(() => {
+    if (rows.length === 0 || rangeMs == null) return rows;
     const newest = rows[rows.length - 1]!.ts;
-    const windowed = rangeMs == null ? rows : rows.filter((r) => r.ts >= newest - rangeMs);
-    return thinRows(windowed, MAX_PLOT_ROWS);
+    return rows.filter((r) => r.ts >= newest - rangeMs);
   }, [rows, rangeMs]);
 
-  const axis = useMemo(
+  const shown = useMemo(() => VESSELS.filter((v) => !hidden[v.key]), [hidden]);
+
+  // Full extent of the selected window — both the unzoomed view and the floor
+  // that zooming out returns to.
+  const xExtent = useMemo<Span | null>(
     () =>
-      timeAxis(
-        plotted.length > 1
-          ? { min: plotted[0]!.ts, max: plotted[plotted.length - 1]!.ts }
-          : null,
-        6,
-      ),
-    [plotted],
+      windowed.length > 1
+        ? { min: windowed[0]!.ts, max: windowed[windowed.length - 1]!.ts }
+        : null,
+    [windowed],
   );
+
+  // Y is framed over the traces actually shown, and honours the brewer's "Temp
+  // chart min span" setting like every other temperature chart here — an idle
+  // rig holding within a degree shouldn't have that degree stretched to full
+  // height. Taken over the whole window rather than the zoomed slice, so panning
+  // along X doesn't rescale the temperature axis under the cursor.
+  const yExtent = useMemo<Span | null>(() => {
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const row of windowed) {
+      for (const vessel of shown) {
+        const value = row[vessel.key];
+        if (value == null || !Number.isFinite(value)) continue;
+        if (value < min) min = value;
+        if (value > max) max = value;
+      }
+    }
+    if (min > max) return null;
+    return niceRange(withMinSpan(min, max, tempMinSpanC));
+  }, [windowed, shown, tempMinSpanC]);
+
+  const zoom = useChartZoom({
+    xExtent,
+    yExtent,
+    plotInset: PLOT_INSET,
+    minXSpan: MIN_X_SPAN_MS,
+    resetKey: rangeMs,
+  });
+
+  // The window actually on screen — the zoom when there is one, else the whole
+  // selected range. Handed to the axis as an explicit domain rather than left to
+  // dataMin/dataMax so every tick lands inside the plot area.
+  const xView = zoom.xDomain ?? xExtent;
+  const axis = useMemo(() => timeAxis(xView, 6), [xView]);
+
+  // Label precision follows whatever slice of the range is actually on screen.
+  const visibleYSpan = zoom.yDomain
+    ? zoom.yDomain.max - zoom.yDomain.min
+    : yExtent
+      ? yExtent.max - yExtent.min
+      : null;
+
+  // Draw only what's on screen: a zoom into ten minutes of a full session plots
+  // those rows at full resolution instead of the session's every-nth thinning.
+  const plotted = useMemo(
+    () => thinRows(sliceRows(windowed, zoom.xDomain), MAX_PLOT_ROWS),
+    [windowed, zoom.xDomain],
+  );
+  const hasChart = plotted.length > 1;
 
   const pumps = state?.controlState.pumps;
   const timer = state?.timer;
@@ -243,6 +342,15 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
           <div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div className="flex gap-1">
+                {zoom.zoomed && (
+                  <button
+                    type="button"
+                    onClick={zoom.reset}
+                    className="mr-1 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition hover:bg-zinc-800"
+                  >
+                    Reset zoom
+                  </button>
+                )}
                 {RANGES.map((range) => (
                   <button
                     key={range.label}
@@ -283,60 +391,93 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
               </div>
             </div>
 
-            <div className="h-64 w-full">
-              {plotted.length > 1 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={plotted} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                    <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
-                    <XAxis
-                      dataKey="ts"
-                      type="number"
-                      scale="time"
-                      domain={['dataMin', 'dataMax']}
-                      ticks={axis.ticks}
-                      tickFormatter={axis.format}
-                      minTickGap={40}
-                      stroke="#334155"
-                      tick={{ fontSize: 12, fill: '#94a3b8' }}
-                    />
-                    <YAxis
-                      width={48}
-                      unit="°"
-                      stroke="#334155"
-                      tick={{ fontSize: 12, fill: '#94a3b8' }}
-                      domain={['auto', 'auto']}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: '#0f172a',
-                        border: '1px solid #334155',
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                      labelFormatter={(t) => clockTime(Number(t), true)}
-                      formatter={(value, name) => [`${formatTemp(Number(value))} °C`, name]}
-                    />
-                    {VESSELS.filter((v) => !hidden[v.key]).map((vessel) => (
-                      <Line
-                        key={vessel.key}
-                        type="monotone"
-                        dataKey={vessel.key}
-                        name={vessel.label}
-                        stroke={vessel.color}
-                        strokeWidth={2}
-                        dot={false}
-                        isAnimationActive={false}
-                        connectNulls
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+              {/* Hugs the chart exactly — the zoom maths measures the cursor
+                  against this box to tell the plot area from the axis gutters.
+                  Always rendered, chart or not: the gesture listeners attach to
+                  it once, so it can't appear only after the first rows land. */}
+              <div
+                ref={zoom.ref}
+                onDoubleClick={zoom.reset}
+                className={hasChart ? 'cursor-grab select-none active:cursor-grabbing' : undefined}
+              >
+                {hasChart ? (
+                  <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+                    <LineChart data={plotted} margin={CHART_MARGIN}>
+                      <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="ts"
+                        type="number"
+                        scale="time"
+                        domain={xView ? [xView.min, xView.max] : ['dataMin', 'dataMax']}
+                        allowDataOverflow
+                        ticks={axis.ticks}
+                        tickFormatter={axis.format}
+                        minTickGap={40}
+                        height={X_AXIS_HEIGHT}
+                        stroke="#334155"
+                        tick={{ fontSize: 12, fill: '#94a3b8' }}
                       />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-zinc-800 text-sm text-zinc-600">
-                  {loading
-                    ? 'Loading temperature log…'
-                    : 'No temperature log yet — the rig logs one while a brew runs.'}
-                </div>
+                      <YAxis
+                        width={Y_AXIS_WIDTH}
+                        unit="°"
+                        stroke="#334155"
+                        tick={{ fontSize: 12, fill: '#94a3b8' }}
+                        allowDataOverflow
+                        domain={
+                          zoom.yDomain
+                            ? [zoom.yDomain.min, zoom.yDomain.max]
+                            : yExtent
+                              ? [yExtent.min, yExtent.max]
+                              : ['auto', 'auto']
+                        }
+                        tickFormatter={(v) => formatAxisValue(v, visibleYSpan)}
+                      />
+                      {/* A tooltip chasing the cursor mid-pan is noise, and
+                          skipping it keeps the drag cheaper. */}
+                      {!zoom.dragging && (
+                        <Tooltip
+                          contentStyle={{
+                            background: '#0f172a',
+                            border: '1px solid #334155',
+                            borderRadius: 8,
+                            fontSize: 12,
+                          }}
+                          labelFormatter={(t) => clockTime(Number(t), true)}
+                          formatter={(value, name) => [`${formatTemp(Number(value))} °C`, name]}
+                        />
+                      )}
+                      {shown.map((vessel) => (
+                        <Line
+                          key={vessel.key}
+                          type="monotone"
+                          dataKey={vessel.key}
+                          name={vessel.label}
+                          stroke={vessel.color}
+                          strokeWidth={2}
+                          dot={false}
+                          isAnimationActive={false}
+                          connectNulls
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div
+                    className="flex items-center justify-center px-4 text-center text-sm text-zinc-600"
+                    style={{ height: CHART_HEIGHT }}
+                  >
+                    {loading
+                      ? 'Loading temperature log…'
+                      : 'No temperature log yet — the rig logs one while a brew runs.'}
+                  </div>
+                )}
+              </div>
+              {hasChart && (
+                <p className="mt-2 text-center text-[11px] text-zinc-600">
+                  Scroll to zoom, drag to pan · over an axis to affect just that axis ·
+                  double-click to reset
+                </p>
               )}
             </div>
           </div>
