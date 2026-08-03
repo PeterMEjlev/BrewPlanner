@@ -1487,42 +1487,52 @@ function AccountsSection(): JSX.Element {
               const isSelf = auth.user?.id === u.id;
               const busy = busyId === u.id;
               return (
-                <li key={u.id} className="flex flex-wrap items-center gap-3 py-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-zinc-100">
-                      {u.username}
+                // On a phone the name gets the full width on its own line and
+                // the controls sit under it. Side by side (as at `sm`+) the
+                // name is the only flexible item in the row, so it was the one
+                // that shrank — down to "P…" — while the fixed-width role
+                // picker and buttons kept their space.
+                <li
+                  key={u.id}
+                  className="flex flex-col gap-2.5 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
+                >
+                  <div className="min-w-0 sm:flex-1">
+                    <div className="text-sm font-medium text-zinc-100 sm:truncate">
+                      <span className="break-words">{u.username}</span>
                       {isSelf && <span className="ml-2 text-xs text-zinc-500">(you)</span>}
                     </div>
                     <div className="text-xs text-zinc-500">
                       Added {new Date(u.createdAt).toLocaleDateString()}
                     </div>
                   </div>
-                  <Select
-                    aria-label={`Role for ${u.username}`}
-                    value={u.role}
-                    disabled={busy || isSelf}
-                    onChange={(role) => changeRole(u, role)}
-                    className={`${inputClass} py-1 disabled:opacity-60`}
-                    align="right"
-                    options={ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => resetPassword(u)}
-                    disabled={busy}
-                    className={btnGhost}
-                  >
-                    Reset password
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(u)}
-                    disabled={busy || isSelf}
-                    title={isSelf ? "You can't delete your own account here." : undefined}
-                    className="rounded-lg border border-red-500/40 px-3.5 py-1.5 text-sm font-medium text-red-400 transition hover:bg-red-500/10 disabled:opacity-40"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                    <Select
+                      aria-label={`Role for ${u.username}`}
+                      value={u.role}
+                      disabled={busy || isSelf}
+                      onChange={(role) => changeRole(u, role)}
+                      className={`${inputClass} py-1 disabled:opacity-60`}
+                      align="right"
+                      options={ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => resetPassword(u)}
+                      disabled={busy}
+                      className={btnGhost}
+                    >
+                      Reset password
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => remove(u)}
+                      disabled={busy || isSelf}
+                      title={isSelf ? "You can't delete your own account here." : undefined}
+                      className="rounded-lg border border-red-500/40 px-3.5 py-1.5 text-sm font-medium text-red-400 transition hover:bg-red-500/10 disabled:opacity-40"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </li>
               );
             })}

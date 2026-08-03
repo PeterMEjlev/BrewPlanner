@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { useBrucePhase } from '../bruceActivity';
 import { isUnknownContents } from '../kegs';
+import { isNative } from '../native';
 import { unregisterPush } from '../push';
+import { useReopenSetup } from '../setupContext';
 import { SHARED, useShared } from '../sharedPoll';
 import { usePoll } from '../usePoll';
 import {
@@ -14,6 +16,7 @@ import {
   ChatIcon,
   ChecklistIcon,
   ClockIcon,
+  CloseIcon,
   HistoryIcon,
   HomeIcon,
   IconAccentGradient,
@@ -23,6 +26,7 @@ import {
   SlidersIcon,
   ThinkingDots,
   TodoIcon,
+  UserIcon,
   WrenchIcon,
 } from './icons';
 import { relativeTime } from '../util';
@@ -322,6 +326,22 @@ function useArrowPageNav(active: ShellPage): void {
   }, [active, items, navigate]);
 }
 
+/**
+ * End this session. Shared by the desktop sidebar footer and the phone's account
+ * sheet, because the order matters: withdraw this phone's push token *first* —
+ * after the session is gone the call would be refused, and the token would keep
+ * buzzing with the next user's notifications — then drop the session and re-read
+ * auth, which sends every gated page to /login.
+ */
+function useSignOut(): () => Promise<void> {
+  const { refresh } = useAuth();
+  return useCallback(async () => {
+    await unregisterPush();
+    await api.logout();
+    await refresh();
+  }, [refresh]);
+}
+
 /** Drop the nav rails a read-only guest may not open (matches the sidebar). */
 function visibleNav(controllable: boolean): NavItem[] {
   if (controllable) return NAV;
@@ -400,7 +420,7 @@ export function DashboardShell({
       >
         {children}
       </div>
-      <BottomNav active={active} alertCount={alertCount} fleet={fleet} />
+      <BottomNav active={active} alertCount={alertCount} fleet={fleet} lastUpdate={lastUpdate} />
     </div>
   );
 }
@@ -422,8 +442,9 @@ function Sidebar({
   brewSystem: BrewSystemNavStatus | null;
   lastUpdate?: string | null;
 }): JSX.Element {
-  const { auth, refresh } = useAuth();
+  const { auth } = useAuth();
   const brucePhase = useBrucePhase();
+  const signOut = useSignOut();
 
   // Guests are read-only and can't open the Brew System, Bruce, Settings or
   // History pages (History reveals who changed what, so it stays admin-only),
@@ -493,14 +514,7 @@ function Sidebar({
             <span className="truncate text-zinc-400">{auth.user.username}</span>
             <button
               type="button"
-              onClick={async () => {
-                // Withdraw this phone's push token first: after the session is
-                // gone the call would be refused, and the token would keep
-                // buzzing with the next user's notifications.
-                await unregisterPush();
-                await api.logout();
-                await refresh();
-              }}
+              onClick={() => void signOut()}
               className="rounded-lg px-2 py-1 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
             >
               Sign out
@@ -514,23 +528,27 @@ function Sidebar({
 
 /**
  * The phone-only navigation: a fixed bottom tab bar (hidden at `md`+, where the
- * sidebar takes over). The four primary destinations get a tab each; everything
- * else — plus the last-update stamp and sign-out that live in the sidebar
- * footer — folds into a slide-up "More" sheet.
+ * sidebar takes over). The four primary destinations lead a strip holding every
+ * page, which swipes sideways for the rest. Pinned to its right, outside that
+ * strip so it's reachable without swiping, an account tab opens the sheet with
+ * the last-update stamp and sign-out that the sidebar keeps in its footer.
  */
 function BottomNav({
   active,
   alertCount,
   fleet,
+  lastUpdate,
 }: {
   active: ShellPage;
   alertCount: number;
   fleet: FleetStatus | null;
+  lastUpdate?: string | null;
 }): JSX.Element {
   const { auth } = useAuth();
   const nav = visibleNav(canControl(auth));
   const brucePhase = useBrucePhase();
   const scrollRef = useRef<HTMLElement>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   // The primary four lead the strip; the remaining destinations follow in the
   // same row and become reachable by swiping the bar sideways.
@@ -557,38 +575,161 @@ function BottomNav({
   }, [active]);
 
   return (
-      <nav
-        ref={scrollRef}
-        onScroll={(e) => {
-          cachedNavScrollLeft = e.currentTarget.scrollLeft;
-        }}
-        className="fixed inset-x-0 bottom-0 z-30 flex snap-x overflow-x-auto overscroll-x-contain border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur [-ms-overflow-style:none] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden"
-      >
-        {tabs.map((item) => {
-          const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
-          const dot = item.key === 'devices' && fleet ? fleetDotColor(fleet) : undefined;
-          const isActive = item.page === active;
-          // Same signal as the sidebar's Bruce row, in the shape this bar has
-          // room for: a dot rather than the three-dot animation.
-          const busy = item.key === 'bruce' && brucePhase != null;
-          return (
-            <Link
-              key={item.key}
-              to={item.to}
-              data-active={isActive}
-              className="w-[4.5rem] shrink-0 snap-start"
-            >
-              <BottomTab
-                Icon={item.Icon}
-                label={item.label}
-                active={isActive}
-                badge={badge}
-                dot={busy ? `animate-pulse ${brucePhase?.phase === 'web' ? 'bg-sky-400' : 'bg-zinc-300'}` : dot}
-              />
-            </Link>
-          );
-        })}
-      </nav>
+    // The sheet is a sibling of the bar, not a child: `backdrop-blur` makes the
+    // bar a containing block for fixed-position descendants, so a sheet nested
+    // inside it would be trapped in the bar's own 4rem strip instead of
+    // covering the screen.
+    <>
+      <div className="fixed inset-x-0 bottom-0 z-30 flex border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+        <nav
+          ref={scrollRef}
+          onScroll={(e) => {
+            cachedNavScrollLeft = e.currentTarget.scrollLeft;
+          }}
+          className="flex min-w-0 flex-1 snap-x overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {tabs.map((item) => {
+            const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
+            const dot = item.key === 'devices' && fleet ? fleetDotColor(fleet) : undefined;
+            const isActive = item.page === active;
+            // Same signal as the sidebar's Bruce row, in the shape this bar has
+            // room for: a dot rather than the three-dot animation.
+            const busy = item.key === 'bruce' && brucePhase != null;
+            return (
+              <Link
+                key={item.key}
+                to={item.to}
+                data-active={isActive}
+                className="w-[4.5rem] shrink-0 snap-start"
+              >
+                <BottomTab
+                  Icon={item.Icon}
+                  label={item.label}
+                  active={isActive}
+                  badge={badge}
+                  dot={
+                    busy
+                      ? `animate-pulse ${brucePhase?.phase === 'web' ? 'bg-sky-400' : 'bg-zinc-300'}`
+                      : dot
+                  }
+                />
+              </Link>
+            );
+          })}
+        </nav>
+        {/* Only a logged-in session has anything to sign out of — the kiosk on
+            the LAN is trusted-local with no account, so it gets no tab. */}
+        {auth.user && (
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={accountOpen}
+            onClick={() => setAccountOpen(true)}
+            className="w-[4.5rem] shrink-0 border-l border-zinc-800"
+          >
+            <BottomTab Icon={UserIcon} label="Account" active={accountOpen} />
+          </button>
+        )}
+      </div>
+      {accountOpen && (
+        <AccountSheet lastUpdate={lastUpdate} onClose={() => setAccountOpen(false)} />
+      )}
+    </>
+  );
+}
+
+/**
+ * The phone's account panel, slid up from the bottom bar's account tab: who
+ * you're signed in as, when the fleet last reported, and the way out. The
+ * sidebar footer carries the same two things on desktop — before this the phone
+ * (and the Android app, which is this UI in a shell) had no sign-out anywhere,
+ * and Settings couldn't be the home for one since a guest can't open it.
+ */
+function AccountSheet({
+  lastUpdate,
+  onClose,
+}: {
+  lastUpdate?: string | null;
+  onClose: () => void;
+}): JSX.Element {
+  const { auth } = useAuth();
+  const signOut = useSignOut();
+  const reopenSetup = useReopenSetup();
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      // Claim the key so the shell's Escape-to-Overview doesn't also fire.
+      e.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Account"
+      className="fixed inset-0 z-40 flex items-end bg-black/60 md:hidden"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full rounded-t-2xl border-t border-zinc-800 bg-zinc-900 p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate text-base font-semibold text-zinc-100">
+              {auth.user?.username}
+            </div>
+            <div className="mt-0.5 text-xs text-zinc-500">
+              {auth.user?.role === 'admin' ? 'Admin' : 'Guest'} · updated{' '}
+              {lastUpdate ? relativeTime(lastUpdate) : '—'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="-m-1 rounded-lg p-1 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await signOut();
+            } catch {
+              // Server unreachable: stay put with the button live so it can be
+              // tried again, rather than stuck on "Signing out…".
+              setBusy(false);
+            }
+          }}
+          className="mt-5 w-full rounded-xl border border-zinc-700 px-4 py-3 text-sm font-semibold text-zinc-100 transition hover:bg-zinc-800 disabled:opacity-50"
+        >
+          {busy ? 'Signing out…' : 'Sign out'}
+        </button>
+
+        {/* The native app talks to a server it was pointed at once, at setup —
+            same escape hatch the login and connection-error screens offer. */}
+        {isNative() && reopenSetup && (
+          <button
+            type="button"
+            onClick={reopenSetup}
+            className="mt-2 w-full rounded-xl px-4 py-3 text-sm font-medium text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200"
+          >
+            Connect to a different server
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

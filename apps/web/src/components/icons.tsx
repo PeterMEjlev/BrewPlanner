@@ -334,6 +334,16 @@ export function MoreIcon(props: IconProps): JSX.Element {
   );
 }
 
+/** Head and shoulders — the phone bottom bar's account tab. */
+export function UserIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M4.5 20c0-3.6 3.4-5.6 7.5-5.6s7.5 2 7.5 5.6" />
+    </Svg>
+  );
+}
+
 /** An X / close mark for dismissing the phone "More" sheet. */
 export function CloseIcon(props: IconProps): JSX.Element {
   return (
