@@ -175,3 +175,43 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Phone. The rig's type scale is drawn for a 1024px kiosk touchscreen and
+   overflows a ~360px viewport several times over — the MLT reading alone is
+   140px of monospace. Retuning the tokens here resizes every child card at
+   once (they inherit these custom properties from this root), so the phone
+   layout stays one set of numbers rather than a parallel stylesheet.
+
+   Sizes are floored at what a wet-handed brewer can still hit: controls stay
+   >=44px tall, which is why the paddings shrink less than the fonts do. */
+@media (max-width: 640px) {
+  .brewingPanel {
+    --font-size-xs: 11px;
+    --font-size-sm: 13px;
+    --font-size-base: 14px;
+    --font-size-lg: 16px;
+    --font-size-xl: 20px;
+    --font-size-2xl: 22px;
+    --font-size-3xl: 34px;
+    --font-size-4xl: 34px;
+    gap: 12px;
+  }
+
+  .panelBody {
+    gap: 12px;
+  }
+
+  .potRow,
+  .pumpRow {
+    gap: 12px;
+  }
+
+  .connectionBanner {
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  .placeholder {
+    padding: 32px 20px;
+  }
+}

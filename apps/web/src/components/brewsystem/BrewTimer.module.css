@@ -96,3 +96,22 @@
   text-align: center;
   font-weight: var(--font-weight-medium);
 }
+
+@media (max-width: 640px) {
+  .brewTimer {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  /* HH:MM:SS is eight monospace characters plus the segment padding either side
+     of each pair — at the kiosk's 56px and 4px tracking that is ~420px, so the
+     tracking goes as well as the size (via --font-size-4xl) to bring the row
+     inside a narrow phone. */
+  .timeDisplay {
+    letter-spacing: 1px;
+  }
+
+  .segment {
+    padding: 8px 4px;
+  }
+}

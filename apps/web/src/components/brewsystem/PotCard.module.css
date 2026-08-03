@@ -206,3 +206,50 @@
 .slider:disabled::-moz-range-thumb {
   cursor: not-allowed;
 }
+
+@media (max-width: 640px) {
+  .potCard {
+    /* The 300px floor is what pushes the card past a narrow viewport: as a grid
+       item in the single-column phone layout it sets the track width, so the row
+       overflows rather than the card shrinking. */
+    min-width: 0;
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .headerControls {
+    gap: 8px;
+  }
+
+  .toggleBtn {
+    min-width: 0;
+    /* Horizontal padding gives way, vertical does not — 12px + 16px text + 12px
+       keeps the button at ~44px, the smallest reliable touch target. */
+    padding: 12px 16px;
+  }
+
+  .tempDisplay {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  /* The headline MLT reading. Sized against the viewport so it stays the biggest
+     number on the page without ever outgrowing it: 20vw leaves room for the
+     widest value the card can show ("100.0°") inside the card and its paddings,
+     and the min() keeps a large phone from exceeding the kiosk's own 140px. */
+  .pvSection.mltTemp .pvValue {
+    font-size: min(140px, 20vw);
+  }
+
+  .pvValue {
+    letter-spacing: 0;
+  }
+
+  .slider {
+    height: 44px;
+  }
+
+  .slider::-webkit-slider-thumb {
+    height: 52px;
+  }
+}
