@@ -5,7 +5,7 @@
  * /api/brew-system/* proxy (see apps/server/src/routes/brewSystem.ts).
  *
  * The proxy wraps reads in a { configured, online, ... } envelope because the
- * rig is normally powered off between brew days; the helpers below turn that
+ * rig is normally powered off between brew sessions; the helpers below turn that
  * envelope into a spoken-friendly error instead of making every function
  * repeat the check. Control POSTs answer 502 with a human-readable message
  * when the rig is off — apiCall throws that message and the Realtime client

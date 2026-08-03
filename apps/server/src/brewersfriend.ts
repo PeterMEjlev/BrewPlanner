@@ -795,7 +795,7 @@ function fermentables(r: BrewersFriendRecipe): RecipeFermentable[] {
 }
 
 /**
- * Reduce the recipe's own wording for a hop addition to a brew-day stage.
+ * Reduce the recipe's own wording for a hop addition to a brew-session stage.
  * Brewer's Friend qualifies some uses ("Dry Hop (High Krausen)", "Aroma /
  * Whirlpool"), so this matches on substrings rather than exact values.
  */

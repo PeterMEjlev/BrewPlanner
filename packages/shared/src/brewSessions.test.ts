@@ -10,7 +10,7 @@ import {
 import type { RecipeEditInput } from './index.js';
 
 /**
- * What a brew day's measured gravities add up to. Both take the figures as the
+ * What a brew session's measured gravities add up to. Both take the figures as the
  * brewer typed them, which is why the string cases matter as much as the maths.
  */
 

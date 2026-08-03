@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
-import { brewDate } from '../brewDays';
+import { brewDate } from '../brewSessions';
 import { DashboardShell } from '../components/DashboardShell';
 import { FermenterIcon } from '../components/icons';
 import { Select } from '../components/Select';
@@ -632,7 +632,7 @@ export function RecipesDesktopPage(): JSX.Element {
   const [statsError, setStatsError] = useState<string | null>(null);
   // Recipe id → how many times it's been brewed, for the card badges.
   const [brewCounts, setBrewCounts] = useState<Map<string, RecipeBrewCount>>(new Map());
-  /** The recipe whose brew day is being started, so its card can say so. */
+  /** The recipe whose brew session is being started, so its card can say so. */
   const [starting, setStarting] = useState<string | null>(null);
 
   /**
@@ -713,7 +713,7 @@ export function RecipesDesktopPage(): JSX.Element {
 
   /**
    * How often each recipe has been brewed. Its own small fetch rather than a
-   * field on the recipe: the count changes when a brew day is logged, not when
+   * field on the recipe: the count changes when a brew session is logged, not when
    * the recipe is edited, so it has no business invalidating the recipe cache.
    */
   async function loadBrewCounts(): Promise<void> {
@@ -731,12 +731,12 @@ export function RecipesDesktopPage(): JSX.Element {
    * entry and puts the beer in the fermenter; we land on the entry, which is
    * where the brewer types what actually happened.
    */
-  async function startBrewDay(recipeId: string): Promise<void> {
+  async function startBrewSession(recipeId: string): Promise<void> {
     if (starting) return;
     setStarting(recipeId);
     try {
-      const brewDay = await api.startBrewDay(recipeId);
-      navigate(`/brew-days/${brewDay.id}`);
+      const brewSession = await api.startBrewSession(recipeId);
+      navigate(`/brew-sessions/${brewSession.id}`);
     } catch (e) {
       setError(asCleanMessage(e));
       setStarting(null);
@@ -1138,7 +1138,7 @@ export function RecipesDesktopPage(): JSX.Element {
                     stats={stats?.get(r.id) ?? null}
                     showHopRate={sort === 'hopsPerL'}
                     brewCount={brewCounts.get(r.id) ?? null}
-                    onBrew={controllable ? () => void startBrewDay(r.id) : undefined}
+                    onBrew={controllable ? () => void startBrewSession(r.id) : undefined}
                     starting={starting === r.id}
                   />
                 </li>
@@ -1176,7 +1176,7 @@ function RecipeCard({
   showHopRate: boolean;
   /** How often it's been brewed; null when never. */
   brewCount: RecipeBrewCount | null;
-  /** Start a brew day for this recipe. Absent for a read-only guest. */
+  /** Start a brew session for this recipe. Absent for a read-only guest. */
   onBrew?: () => void;
   starting: boolean;
 }): JSX.Element {
@@ -1188,7 +1188,7 @@ function RecipeCard({
   const ibu = num(recipe.ibu, 0);
   const created = createdLabel(recipe);
   return (
-    // A card, not a link: the brew-day button lives in its footer, and a button
+    // A card, not a link: the brew-session button lives in its footer, and a button
     // inside an anchor is neither valid markup nor reliably clickable. The link
     // covers everything above the footer instead, which is the whole card as far
     // as clicking to read the sheet is concerned.
@@ -1261,7 +1261,7 @@ function RecipeCard({
             type="button"
             onClick={onBrew}
             disabled={starting}
-            title={`Start a brew day for ${recipe.name}`}
+            title={`Start a brew session for ${recipe.name}`}
             className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs font-semibold text-zinc-300 opacity-100 transition hover:border-[#f87a68] hover:bg-[#f87a68]/15 hover:text-[#f9a094] disabled:opacity-50 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
           >
             {starting ? 'Starting…' : 'Brew'}

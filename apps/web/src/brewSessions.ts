@@ -1,12 +1,12 @@
-import type { BrewDay, BrewDayStatus } from '@checklist/shared';
+import type { BrewSession, BrewSessionStatus } from '@checklist/shared';
 
 /**
- * Shared formatting for the brew-day log — used by both the list and the detail
+ * Shared formatting for the brew-session log — used by both the list and the detail
  * page, so a batch reads the same in either place.
  */
 
 /** A muted accent per stage, matching how the rest of the app chips state. */
-export const STATUS_CHIP: Record<BrewDayStatus, string> = {
+export const STATUS_CHIP: Record<BrewSessionStatus, string> = {
   brewing: 'bg-[#f87a68]/20 text-[#f9a094]',
   fermenting: 'bg-amber-500/15 text-amber-300',
   conditioning: 'bg-sky-500/15 text-sky-300',
@@ -14,8 +14,8 @@ export const STATUS_CHIP: Record<BrewDayStatus, string> = {
 };
 
 /** A batch still on its way to the keg — pinned to the top of the log. */
-export function isInProgress(brewDay: BrewDay): boolean {
-  return brewDay.status !== 'packaged';
+export function isInProgress(brewSession: BrewSession): boolean {
+  return brewSession.status !== 'packaged';
 }
 
 /** "5h 40m", "45m", or "—" when the brewer hasn't said how long it took. */
@@ -35,7 +35,7 @@ export function brewDate(iso: string): string {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-/** The year a brew day falls in, for the log's separators. */
+/** The year a brew session falls in, for the log's separators. */
 export function brewYear(iso: string): number | null {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d.getFullYear();
@@ -56,7 +56,7 @@ export function dateInputValue(iso: string | null): string {
 /**
  * A `yyyy-mm-dd` from a date input back to an ISO instant, keeping the clock
  * time the entry already had. Editing "which day was this?" shouldn't silently
- * move a brew that started at 09:00 to midnight — and for a brew day being
+ * move a brew that started at 09:00 to midnight — and for a brew session being
  * back-dated from scratch, midday is a better guess than either midnight.
  */
 export function dateInputToIso(value: string, keepTimeFrom: string | null): string | null {

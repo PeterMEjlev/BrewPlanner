@@ -1,14 +1,15 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { getSessionUser, isLocalRequest } from '../auth/index.js';
+import { getRequestUser, isLocalRequest } from '../auth/index.js';
 import {
   accountName,
-  brewDayRecipeName,
+  brewSessionRecipeName,
   checklistName,
   deviceName,
   recipeSheetName,
   stepText,
   todoText,
 } from './names.js';
+import { pushChangeToOthers } from '../notify/push.js';
 import { recordAudit } from './repo.js';
 
 declare module 'fastify' {
@@ -68,10 +69,12 @@ export function registerAuditHook(app: FastifyInstance): void {
       const change = describeChange(req.method, path, req.body, req.auditBefore ?? null);
       if (!change) return;
 
-      // Resolve the actor: a logged-in account, or the trusted-local kiosk/LAN
-      // (which has no user but full control). Anything else shouldn't reach an
-      // admin route, but guard rather than record a mystery entry.
-      const user = getSessionUser(req);
+      // Resolve the actor: a logged-in account — by session cookie in a browser
+      // or by bearer token from the Android app, which cannot hold a
+      // cross-origin cookie — or the trusted-local kiosk/LAN (which has no user
+      // but full control). Anything else shouldn't reach an admin route, but
+      // guard rather than record a mystery entry.
+      const user = getRequestUser(req);
       let userId: number | null = null;
       let username: string;
       if (user) {
@@ -91,6 +94,20 @@ export function registerAuditHook(app: FastifyInstance): void {
         method: req.method,
         path,
       });
+
+      // Tell the *other* accounts' phones about the changes worth interrupting
+      // someone for (the `push` rules above). Deliberately not awaited: the
+      // response has already gone, FCM is a network round trip per device, and a
+      // notification that fails is never worth surfacing to the person who made
+      // the change.
+      const openAt = matchRule(req.method, path)?.push;
+      if (openAt) {
+        void pushChangeToOthers(
+          userId,
+          { title: `${username} — ${change.entity}`, body: change.action, path: openAt },
+          req.log,
+        );
+      }
     } catch (err) {
       req.log.error(err, 'Failed to record audit-log entry');
     }
@@ -126,7 +143,7 @@ function str(body: unknown, key: string): string | undefined {
   return undefined;
 }
 
-/** `"Brew Day"` when the name is known, else `#<id>` — for naming a subject. */
+/** `"Brew Session"` when the name is known, else `#<id>` — for naming a subject. */
 function named(name: string | null | undefined, id: string): string {
   return name ? `"${name}"` : `#${id}`;
 }
@@ -141,6 +158,15 @@ type Rule = {
    */
   before?: (m: RegExpMatchArray) => string | null;
   build: (ctx: BuildCtx) => Change | null;
+  /**
+   * Push this change to the *other* accounts' phones (see notify/push.ts), with
+   * the in-app path a tap should open. Absent on most rules: the history page is
+   * there to be read, while a notification interrupts someone, so only the
+   * handful of changes a second brewer would want to hear about carry one —
+   * setpoints, keg contents, saved recipes, a started brew session, to-dos
+   * added or removed, and settings.
+   */
+  push?: string;
 };
 
 /**
@@ -183,7 +209,7 @@ const RULES: Rule[] = [
   { method: 'POST', re: /^\/api\/runs\//, build: () => null },
 
   // --- To-dos ---------------------------------------------------------------
-  { method: 'POST', re: /^\/api\/todos$/, build: ({ body }) => ({ entity: 'To-do', action: str(body, 'text') ? `Added a to-do "${str(body, 'text')}"` : 'Added a to-do' }) },
+  { method: 'POST', re: /^\/api\/todos$/, push: '/todos', build: ({ body }) => ({ entity: 'To-do', action: str(body, 'text') ? `Added a to-do "${str(body, 'text')}"` : 'Added a to-do' }) },
   { method: 'POST', re: /^\/api\/todos\/reorder$/, build: () => ({ entity: 'To-do', action: 'Reordered the to-do list' }) },
   { method: 'POST', re: /^\/api\/todos\/clear-completed$/, build: () => ({ entity: 'To-do', action: 'Cleared completed to-dos' }) },
   {
@@ -197,7 +223,7 @@ const RULES: Rule[] = [
       return { entity: 'To-do', action: `Edited to-do ${label}` };
     },
   },
-  { method: 'DELETE', re: /^\/api\/todos\/(\d+)$/, before: (m) => todoText(m[1] ?? ''), build: ({ m, before }) => ({ entity: 'To-do', action: `Deleted to-do ${named(before, m[1] ?? '')}` }) },
+  { method: 'DELETE', re: /^\/api\/todos\/(\d+)$/, before: (m) => todoText(m[1] ?? ''), push: '/todos', build: ({ m, before }) => ({ entity: 'To-do', action: `Deleted to-do ${named(before, m[1] ?? '')}` }) },
 
   // --- Alerts ---------------------------------------------------------------
   // Clearing the whole feed is worth a line in the history; dismissing a single
@@ -208,8 +234,8 @@ const RULES: Rule[] = [
   // Costing the sheet in the editor saves nothing — it's a POST only because the
   // whole draft is the question, and it repeats as the brewer types.
   { method: 'POST', re: /^\/api\/recipes\/price$/, build: () => null },
-  { method: 'POST', re: /^\/api\/recipes$/, build: ({ body }) => ({ entity: 'Recipe', action: `Created recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
-  { method: 'PUT', re: /^\/api\/recipes\/([^/]+)$/, build: ({ body }) => ({ entity: 'Recipe', action: `Edited recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
+  { method: 'POST', re: /^\/api\/recipes$/, push: '/recipes', build: ({ body }) => ({ entity: 'Recipe', action: `Created recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
+  { method: 'PUT', re: /^\/api\/recipes\/([^/]+)$/, push: '/recipes', build: ({ body }) => ({ entity: 'Recipe', action: `Edited recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
   { method: 'DELETE', re: /^\/api\/recipes\/([^/]+)$/, build: () => ({ entity: 'Recipe', action: 'Deleted a recipe from BrewPlanner' }) },
   { method: 'POST', re: /^\/api\/recipes\/import\/brewersfriend$/, build: () => ({ entity: 'Recipe', action: 'Imported recipes from Brewer\'s Friend' }) },
   // The nightly backup writes no audit row (it isn't a request); a backup
@@ -219,33 +245,34 @@ const RULES: Rule[] = [
   { method: 'DELETE', re: /^\/api\/recipe$/, build: () => ({ entity: 'Recipe', action: 'Cleared the active recipe' }) },
   { method: 'PUT', re: /^\/api\/fermenter$/, build: ({ body }) => ({ entity: 'Recipe', action: `Marked the fermenter ${str(body, 'state') === 'clean' ? 'clean' : 'dirty'}` }) },
 
-  // --- Brew days ------------------------------------------------------------
+  // --- Brew sessions ------------------------------------------------------------
   // Starting one is the brewery's own record that a batch happened, so it earns
   // a line. Editing the log is where the measurements are typed — worth
   // recording that the entry changed, without repeating every figure into the
-  // history (the brew day itself holds those).
+  // history (the brew session itself holds those).
   {
     method: 'POST',
-    re: /^\/api\/brew-days$/,
+    re: /^\/api\/brew-sessions$/,
+    push: '/brew-sessions',
     build: ({ body }) => {
       const id = str(body, 'recipeId');
       // The row doesn't exist yet at describe time, so the name has to come from
       // the recipe the request names.
       const name = id ? recipeSheetName(id) : null;
-      return { entity: 'Brew day', action: `Started a brew day${name ? ` for "${name}"` : ''}` };
+      return { entity: 'Brew session', action: `Started a brew session${name ? ` for "${name}"` : ''}` };
     },
   },
   {
     method: 'PATCH',
-    re: /^\/api\/brew-days\/(\d+)$/,
+    re: /^\/api\/brew-sessions\/(\d+)$/,
     build: ({ m, body }) => {
-      const label = named(brewDayRecipeName(m[1] ?? ''), m[1] ?? '');
+      const label = named(brewSessionRecipeName(m[1] ?? ''), m[1] ?? '');
       const status = str(body, 'status');
-      if (status) return { entity: 'Brew day', action: `Moved brew day ${label} to ${status}` };
-      return { entity: 'Brew day', action: `Updated brew day ${label}` };
+      if (status) return { entity: 'Brew session', action: `Moved brew session ${label} to ${status}` };
+      return { entity: 'Brew session', action: `Updated brew session ${label}` };
     },
   },
-  { method: 'DELETE', re: /^\/api\/brew-days\/(\d+)$/, before: (m) => brewDayRecipeName(m[1] ?? ''), build: ({ m, before }) => ({ entity: 'Brew day', action: `Deleted brew day ${named(before, m[1] ?? '')}` }) },
+  { method: 'DELETE', re: /^\/api\/brew-sessions\/(\d+)$/, before: (m) => brewSessionRecipeName(m[1] ?? ''), build: ({ m, before }) => ({ entity: 'Brew session', action: `Deleted brew session ${named(before, m[1] ?? '')}` }) },
 
   // --- Ingredient prices ----------------------------------------------------
   // Worth recording: a price decision is stored per ingredient, so it re-costs
@@ -269,15 +296,18 @@ const RULES: Rule[] = [
   { method: 'DELETE', re: /^\/api\/prices\/override$/, build: () => ({ entity: 'Recipe', action: 'Reset an ingredient to automatic pricing' }) },
 
   // --- Keg inventory (referred to by keg #, per the sheet) ------------------
-  { method: 'PUT', re: /^\/api\/kegs\/([^/]+)$/, build: ({ m, body }) => ({ entity: 'Keg', action: `Updated keg #${decodeURIComponent(m[1] ?? '')}${str(body, 'contents') ? ` (${str(body, 'contents')})` : ''}` }) },
+  { method: 'PUT', re: /^\/api\/kegs\/([^/]+)$/, push: '/kegs', build: ({ m, body }) => ({ entity: 'Keg', action: `Updated keg #${decodeURIComponent(m[1] ?? '')}${str(body, 'contents') ? ` (${str(body, 'contents')})` : ''}` }) },
 
   // --- Settings family ------------------------------------------------------
-  { method: 'PUT', re: /^\/api\/notifications\/settings$/, build: () => ({ entity: 'Settings', action: 'Updated notification settings' }) },
+  { method: 'PUT', re: /^\/api\/notifications\/settings$/, push: '/settings', build: () => ({ entity: 'Settings', action: 'Updated notification settings' }) },
   // A test notification sends a message but changes nothing on the server.
   { method: 'POST', re: /^\/api\/notifications\/test$/, build: () => null },
-  { method: 'PUT', re: /^\/api\/recipe-defaults$/, build: () => ({ entity: 'Settings', action: 'Changed what a new recipe starts from' }) },
-  { method: 'PUT', re: /^\/api\/graph-colors$/, build: () => ({ entity: 'Settings', action: 'Updated graph colours' }) },
-  { method: 'PUT', re: /^\/api\/keg-content-colors$/, build: () => ({ entity: 'Settings', action: 'Updated keg colours' }) },
+  // A phone handing over its push token on launch (and back on sign-out) is
+  // bookkeeping between the app and the hub, not a change to the brewery.
+  { method: 'POST', re: /^\/api\/push\/(register|unregister)$/, build: () => null },
+  { method: 'PUT', re: /^\/api\/recipe-defaults$/, push: '/settings', build: () => ({ entity: 'Settings', action: 'Changed what a new recipe starts from' }) },
+  { method: 'PUT', re: /^\/api\/graph-colors$/, push: '/settings', build: () => ({ entity: 'Settings', action: 'Updated graph colours' }) },
+  { method: 'PUT', re: /^\/api\/keg-content-colors$/, push: '/settings', build: () => ({ entity: 'Settings', action: 'Updated keg colours' }) },
 
   // --- System ---------------------------------------------------------------
   { method: 'POST', re: /^\/api\/system\/update$/, build: () => ({ entity: 'System', action: 'Triggered a software update' }) },
@@ -286,6 +316,7 @@ const RULES: Rule[] = [
   {
     method: 'POST',
     re: /^\/api\/devices\/(\d+)\/setpoint$/,
+    push: '/devices',
     build: ({ m, body }) => {
       const dn = deviceName(m[1] ?? '');
       const ref = dn ? `"${dn}"` : `device #${m[1]}`;
@@ -357,6 +388,20 @@ const RULES: Rule[] = [
 /** The first rule whose method and path pattern match, or undefined. */
 function matchRule(method: string, path: string): Rule | undefined {
   return RULES.find((rule) => rule.method === method && rule.re.test(path));
+}
+
+/**
+ * The changes that push a notification to the other accounts' phones, as
+ * method + pattern + the page a tap opens. Exported for the test that pins the
+ * set: which changes are worth interrupting someone for is a judgement, and one
+ * that should not drift by accident when a route is added.
+ */
+export function notifyRules(): { method: string; pattern: RegExp; path: string }[] {
+  return RULES.filter((rule) => rule.push).map((rule) => ({
+    method: rule.method,
+    pattern: rule.re,
+    path: rule.push!,
+  }));
 }
 
 /**

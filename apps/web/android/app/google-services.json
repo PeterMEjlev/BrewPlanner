@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "240484581702",
+    "project_id": "konfus-a5b5f",
+    "storage_bucket": "konfus-a5b5f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:240484581702:android:cb6218508fac6ac592a547",
+        "android_client_info": {
+          "package_name": "com.konfus.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEINr-5wRu68hddStl6kLbfuz3KBdPEno"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

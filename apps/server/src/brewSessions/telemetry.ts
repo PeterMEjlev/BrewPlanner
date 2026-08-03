@@ -1,4 +1,4 @@
-import type { BrewDay, BrewDayFermentation, Device } from '@checklist/shared';
+import type { BrewSession, BrewSessionFermentation, Device } from '@checklist/shared';
 import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { readings } from '../db/schema.js';
@@ -6,15 +6,15 @@ import { listDevices } from '../devices/repo.js';
 import { tempStats } from './repo.js';
 
 /**
- * The fermentation half of a brew day's record, read out of the telemetry the
+ * The fermentation half of a brew session's record, read out of the telemetry the
  * hub is already collecting.
  *
- * Derived on every read rather than copied onto the brew day: the readings are
+ * Derived on every read rather than copied onto the brew session: the readings are
  * the record, and the window they're read over moves whenever the brewer
  * corrects the pitch or package date. The one thing it can't recover is a window
  * that has aged past READINGS_RETENTION_DAYS — those samples are gone, and an
  * old batch then simply reports nothing rather than a partial average, which is
- * why the rig's brew-day curve gets its own unpruned table instead.
+ * why the rig's brew-session curve gets its own unpruned table instead.
  */
 
 /** The metric the Inkbird and Tilt agents both report temperature under. */
@@ -68,12 +68,12 @@ function daysBetween(from: string, to: string): number | null {
   return Math.floor((end - start) / (24 * 60 * 60 * 1000));
 }
 
-export function fermentationSummary(brewDay: BrewDay): BrewDayFermentation {
-  // Pitching is the honest start; before it's recorded, the brew day itself is
+export function fermentationSummary(brewSession: BrewSession): BrewSessionFermentation {
+  // Pitching is the honest start; before it's recorded, the brew session itself is
   // the best the log has. The end is packaging, or now while it's still going.
-  const from = brewDay.pitchedAt ?? brewDay.brewedAt;
-  const to = brewDay.packagedAt ?? new Date().toISOString();
-  const empty: BrewDayFermentation = {
+  const from = brewSession.pitchedAt ?? brewSession.brewedAt;
+  const to = brewSession.packagedAt ?? new Date().toISOString();
+  const empty: BrewSessionFermentation = {
     temp: null,
     gravity: null,
     days: daysBetween(from, to),

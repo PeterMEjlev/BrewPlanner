@@ -21,7 +21,7 @@ import { RIG_TIMEOUT_MS, rigBase, rigGet } from '../brewSystemClient.js';
  * endpoints named here are forwarded — never a blind pass-through — so the rig's
  * destructive endpoints (hardware re-init, settings reset) stay unreachable.
  *
- * The rig is normally powered off between brew days, so "unreachable" is an
+ * The rig is normally powered off between brew sessions, so "unreachable" is an
  * expected state, not an error: reads answer `{ online: false }` and the UI
  * shows an offline card instead of failing.
  */

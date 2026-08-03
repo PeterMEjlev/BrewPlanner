@@ -1,12 +1,12 @@
 import { eq } from 'drizzle-orm';
-import { brewDayName } from '../brewDays/repo.js';
+import { brewSessionName } from '../brewSessions/repo.js';
 import { db } from '../db/index.js';
 import { checklists, recipes, steps, todos, users } from '../db/schema.js';
 import { getDevice } from '../devices/repo.js';
 
 /**
  * Resolve the human-readable name of an audited subject from its id, so the
- * change history reads "Deleted checklist 'Brew Day'" rather than "...#1". Each
+ * change history reads "Deleted checklist 'Brew Session'" rather than "...#1". Each
  * returns null when the row no longer exists (e.g. looked up too late), letting
  * the caller fall back to the id. Kept tiny and synchronous (better-sqlite3) so
  * the audit hook can call them inline without going async.
@@ -50,9 +50,9 @@ export function recipeSheetName(id: string): string | null {
   }
 }
 
-/** The recipe a brew day was logged for, or null if the entry is gone. */
-export function brewDayRecipeName(id: string): string | null {
-  return brewDayName(num(id));
+/** The recipe a brew session was logged for, or null if the entry is gone. */
+export function brewSessionRecipeName(id: string): string | null {
+  return brewSessionName(num(id));
 }
 
 /** An account's username, or null if it's gone. */

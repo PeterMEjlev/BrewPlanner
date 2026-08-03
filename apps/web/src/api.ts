@@ -4,8 +4,8 @@ import type {
   Alert,
   AuditEntry,
   AuthState,
-  BrewDay,
-  BrewDayDetail,
+  BrewSession,
+  BrewSessionDetail,
   BrewPot,
   BrewPump,
   BrewSystemConfig,
@@ -56,7 +56,7 @@ import type {
   RecipeStatsResponse,
   Step,
   Todo,
-  UpdateBrewDayInput,
+  UpdateBrewSessionInput,
   User,
   UserRole,
 } from '@checklist/shared';
@@ -444,22 +444,22 @@ export const api = {
     }).then((r) => r.recipe),
   clearActiveRecipe: () => request<void>('/recipe', { method: 'DELETE' }),
 
-  // The brewery's logbook. Starting a brew day snapshots the recipe as it reads
+  // The brewery's logbook. Starting a brew session snapshots the recipe as it reads
   // today (targets, cost, weights) onto the entry and puts the beer in the
   // fermenter; from there the entry is edited as the batch progresses.
-  listBrewDays: () => request<BrewDay[]>('/brew-days'),
-  getBrewDay: (id: number) => request<BrewDayDetail>(`/brew-days/${id}`),
+  listBrewSessions: () => request<BrewSession[]>('/brew-sessions'),
+  getBrewSession: (id: number) => request<BrewSessionDetail>(`/brew-sessions/${id}`),
   // How many times each recipe has been brewed, for the badges on the grid.
-  listRecipeBrewCounts: () => request<RecipeBrewCount[]>('/brew-days/counts'),
+  listRecipeBrewCounts: () => request<RecipeBrewCount[]>('/brew-sessions/counts'),
   // `brewedAt` back-dates a brew that already happened; omit it for "brewing now".
-  startBrewDay: (recipeId: string, brewedAt?: string) =>
-    request<BrewDay>('/brew-days', {
+  startBrewSession: (recipeId: string, brewedAt?: string) =>
+    request<BrewSession>('/brew-sessions', {
       method: 'POST',
       body: JSON.stringify(brewedAt ? { recipeId, brewedAt } : { recipeId }),
     }),
-  updateBrewDay: (id: number, fields: UpdateBrewDayInput) =>
-    request<BrewDay>(`/brew-days/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
-  deleteBrewDay: (id: number) => request<void>(`/brew-days/${id}`, { method: 'DELETE' }),
+  updateBrewSession: (id: number, fields: UpdateBrewSessionInput) =>
+    request<BrewSession>(`/brew-sessions/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+  deleteBrewSession: (id: number) => request<void>(`/brew-sessions/${id}`, { method: 'DELETE' }),
 
   // Whether the empty fermenter has been washed. Separate from the selection
   // above — emptying the tank doesn't clean it — and null until someone says.
@@ -514,6 +514,18 @@ export const api = {
     }),
   sendTestNotification: () =>
     request<{ sent: boolean }>('/notifications/test', { method: 'POST' }),
+
+  // This phone's Firebase token, so the hub can push other people's changes to
+  // it (native app only — see push.ts). `configured` says whether the hub has
+  // Firebase credentials at all, so a build can tell "registered" from
+  // "registered, but nothing will ever arrive".
+  registerPushToken: (token: string) =>
+    request<{ registered: boolean; configured: boolean }>('/push/register', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+  unregisterPushToken: (token: string) =>
+    request<void>('/push/unregister', { method: 'POST', body: JSON.stringify({ token }) }),
 
   // Recorded alert history (device offline episodes, keg-age and
   // fermentation-complete events), newest first.
@@ -617,7 +629,7 @@ export const api = {
 
   // Brewing rig (brew-system-v3 Pi), proxied server-side over the LAN. Reads
   // answer `{ online: false }` when the rig is powered off (its normal state
-  // between brew days); controls are admin-only and 502 when it's unreachable.
+  // between brew sessions); controls are admin-only and 502 when it's unreachable.
   getBrewSystemState: () => request<BrewSystemStatus>('/brew-system/state'),
   getBrewSystemConfig: () => request<BrewSystemConfig>('/brew-system/config'),
   /** The rig's session temperature log; `since` (epoch ms) asks for newer rows only. */
@@ -710,7 +722,7 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
 
-  // Chat threads: separate conversations so a brew day's water questions stay
+  // Chat threads: separate conversations so a brew session's water questions stay
   // apart from last month's hop reading.
   newBruceConversation: () =>
     request<BruceConversation>('/bruce/chat/conversations', { method: 'POST' }),

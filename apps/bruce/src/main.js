@@ -72,7 +72,7 @@ async function main() {
   brewSystemFunctions.register(bruce, apiCall);
   toolFunctions.register(bruce);
   // Everything about BrewPlanner itself — the fermenter, the kegs, the books'
-  // brewery, the brew-day log, the calculators — comes from the hub's own tool
+  // brewery, the brew-session log, the calculators — comes from the hub's own tool
   // set rather than a second copy here. Registers in the background, so a
   // server that hasn't finished booting doesn't hold up the wake word.
   hubFunctions.register(bruce, apiCall);

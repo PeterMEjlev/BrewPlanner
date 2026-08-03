@@ -27,9 +27,9 @@ import {
   abvFromGravities,
   apparentAttenuation,
   measuredEfficiency,
-  type BrewDay,
-  type BrewDayDetail,
-  type BrewDayTempStats,
+  type BrewSession,
+  type BrewSessionDetail,
+  type BrewSessionTempStats,
   type BrewPotControl,
   type BrewSystemState,
   type BrucePhase,
@@ -43,7 +43,7 @@ import {
 } from '@checklist/shared';
 import { recordAudit } from '../audit/repo.js';
 import { listAlerts } from '../alerts/repo.js';
-import { getBrewDay, listBrewDays } from '../brewDays/repo.js';
+import { getBrewSession, listBrewSessions } from '../brewSessions/repo.js';
 import { readBrewSystemState, rigBase } from '../brewSystemClient.js';
 import * as deviceFallback from '../devices/fallback.js';
 import { setReportingInterval } from '../devices/repo.js';
@@ -504,7 +504,7 @@ function historySection(device: DeviceStatus, hours: number, wanted?: string, br
   }
 
   // The all-time totals live beside the window, because "how much power have I
-  // ever used" and "how much did this brew day use" are both asked.
+  // ever used" and "how much did this brew session use" are both asked.
   for (const name of CUMULATIVE) {
     if (!byMetric.has(name)) continue;
     const total = deviceFallback.getMetricTotal(device.id, name);
@@ -517,7 +517,7 @@ function historySection(device: DeviceStatus, hours: number, wanted?: string, br
 }
 
 // ---------------------------------------------------------------------------
-// Brew days
+// Brew sessions
 // ---------------------------------------------------------------------------
 
 /** A gravity as the sheet holds it, or a dash. */
@@ -525,8 +525,8 @@ function gravityText(value: string): string {
   return value.trim() || '—';
 }
 
-/** Both efficiency figures for a logged brew day; see BrewDayDetail for the why. */
-function efficiencies(day: BrewDayDetail | BrewDay): { brewhouse: number | null; mash: number | null } {
+/** Both efficiency figures for a logged brew session; see BrewSessionDetail for the why. */
+function efficiencies(day: BrewSessionDetail | BrewSession): { brewhouse: number | null; mash: number | null } {
   return {
     brewhouse:
       day.measured.efficiencyPct ??
@@ -550,26 +550,26 @@ function pct(value: number | null): string {
   return value == null ? '—' : `${value.toFixed(0)} %`;
 }
 
-/** The day itself: "12 Jul 2026". Brew days are days, not timestamps. */
+/** The day itself: "12 Jul 2026". A session is logged against a date, not a timestamp. */
 function day(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-/** The brew-day log as a sentence: the last few brews, newest first. */
-function brewDaySummary(days: BrewDay[]): string {
-  const recent = days.slice(0, SPOKEN_LIST_MAX).map((entry) => {
+/** The brew-session log as a sentence: the last few brews, newest first. */
+function brewSessionSummary(sessions: BrewSession[]): string {
+  const recent = sessions.slice(0, SPOKEN_LIST_MAX).map((entry) => {
     const { brewhouse } = efficiencies(entry);
     return `${entry.recipe.name} on ${day(entry.brewedAt)}${brewhouse != null ? ` at ${pct(brewhouse)}` : ''}`;
   });
-  return `${days.length} brew day${days.length === 1 ? '' : 's'} logged. Most recent: ${recent.join('; ')}.${
-    days.length > recent.length ? ' Ask for one by name for its numbers.' : ''
+  return `${sessions.length} brew session${sessions.length === 1 ? '' : 's'} logged. Most recent: ${recent.join('; ')}.${
+    sessions.length > recent.length ? ' Ask for one by name for its numbers.' : ''
   }`;
 }
 
-function brewDayRows(days: BrewDay[]): string {
-  const rows = days.map((entry) => {
+function brewSessionRows(sessions: BrewSession[]): string {
+  const rows = sessions.map((entry) => {
     const { brewhouse } = efficiencies(entry);
     const abv = abvFromGravities(entry.measured.og, entry.measured.fg);
     return `| ${entry.id} | ${day(entry.brewedAt)} | ${entry.recipe.name} | #${entry.brewNumber} | ${entry.status} | ${gravityText(entry.measured.og)} | ${gravityText(entry.measured.fg)} | ${abv == null ? '—' : `${abv.toFixed(1)} %`} | ${pct(brewhouse)} | ${entry.rating == null ? '—' : `${entry.rating}/5`} |`;
@@ -582,12 +582,12 @@ function brewDayRows(days: BrewDay[]): string {
 }
 
 /** Min/mean/max as one phrase, or nothing when the series was empty. */
-function statsText(stats: BrewDayTempStats | null, unit = '°C'): string {
+function statsText(stats: BrewSessionTempStats | null, unit = '°C'): string {
   if (!stats) return 'not logged';
   return `${stats.avg.toFixed(1)} ${unit} average, ${stats.min.toFixed(1)}–${stats.max.toFixed(1)} ${unit} (${stats.count} samples)`;
 }
 
-function brewDayDetail(entry: BrewDayDetail): string {
+function brewSessionDetail(entry: BrewSessionDetail): string {
   const { brewhouse, mash } = efficiencies(entry);
   const abv = abvFromGravities(entry.measured.og, entry.measured.fg);
   const attenuation = apparentAttenuation(entry.measured.og, entry.measured.fg);
@@ -646,7 +646,7 @@ function brewDayDetail(entry: BrewDayDetail): string {
     );
   }
 
-  if (entry.notes.trim()) sections.push(`### Brew-day notes\n${entry.notes.trim()}`);
+  if (entry.notes.trim()) sections.push(`### Brew-session notes\n${entry.notes.trim()}`);
   if (entry.tastingNotes.trim()) sections.push(`### Tasting notes\n${entry.tastingNotes.trim()}`);
   return sections.join('\n\n');
 }
@@ -893,7 +893,7 @@ async function rigSection(): Promise<string> {
     return 'The brewing rig is not configured on this hub (no BREW_SYSTEM_URL), so there is nothing to read.';
   }
   if (!state) {
-    return 'The brewing rig did not answer — it is almost certainly powered off, which is normal between brew days.';
+    return 'The brewing rig did not answer — it is almost certainly powered off, which is normal between brew sessions.';
   }
 
   const { temperatures: t, controlState, timer } = state;
@@ -1038,7 +1038,7 @@ const TOOLS: Record<string, ToolSpec> = {
   get_sensor_history: {
     definition: tool(
       'get_sensor_history',
-      'Read how a sensor has behaved OVER TIME rather than right now: min, mean, max, where it started and ended, and how much a meter consumed over the window. Use it for anything with a period in the question — "has the fermenter held its temperature overnight?", "how much power did the brew day use?", "how much has the keg fridge been cycling?", "was the brewery cold last night?". get_brewery_status only ever shows the latest single reading, which cannot answer any of those.',
+      'Read how a sensor has behaved OVER TIME rather than right now: min, mean, max, where it started and ended, and how much a meter consumed over the window. Use it for anything with a period in the question — "has the fermenter held its temperature overnight?", "how much power did the brew session use?", "how much has the keg fridge been cycling?", "was the brewery cold last night?". get_brewery_status only ever shows the latest single reading, which cannot answer any of those.',
       {
         sensor: {
           type: 'string',
@@ -1085,10 +1085,10 @@ const TOOLS: Record<string, ToolSpec> = {
     },
   },
 
-  get_brew_days: {
+  get_brew_sessions: {
     definition: tool(
-      'get_brew_days',
-      'Read the brew-day log: what was brewed and when, the measured gravities, the brewhouse and mash efficiency worked back from them, how the rig ran on the day, how the fermentation went, and the rating and notes. Use it for anything about a past batch or a trend across batches — "how did the last saison go?", "is my efficiency improving?", "when did I last brew?", "what did I mash at last time?".',
+      'get_brew_sessions',
+      'Read the brew-session log: what was brewed and when, the measured gravities, the brewhouse and mash efficiency worked back from them, how the rig ran on the day, how the fermentation went, and the rating and notes. Use it for anything about a past batch or a trend across batches — "how did the last saison go?", "is my efficiency improving?", "when did I last brew?", "what did I mash at last time?".',
       {
         recipe: {
           type: 'string',
@@ -1096,34 +1096,34 @@ const TOOLS: Record<string, ToolSpec> = {
         },
         id: {
           type: 'number',
-          description: 'A specific brew day, by the id shown in the list. Returns the full detail for it.',
+          description: 'A specific brew session, by the id shown in the list. Returns the full detail for it.',
         },
         full_writeup: {
           type: 'boolean',
           description:
-            'True to return one brew day in full — its measurements, rig temperatures, fermentation and notes — rather than a row. Use with `recipe` when it names one brew; with several matches you get the list back and should ask which.',
+            'True to return one brew session in full — its measurements, rig temperatures, fermentation and notes — rather than a row. Use with `recipe` when it names one brew; with several matches you get the list back and should ask which.',
         },
         limit: { type: 'number', description: 'How many rows to list, newest first. Default 10, maximum 50.' },
         detail: DETAIL_ARG,
       },
     ),
-    phase: () => ({ phase: 'brewery', detail: 'the brew-day log' }),
+    phase: () => ({ phase: 'brewery', detail: 'the brew-session log' }),
     run: (args, _actor, brief) => {
       const wantedId = num(args, 'id');
       if (wantedId != null) {
-        const entry = getBrewDay(Math.round(wantedId));
-        return entry ? brewDayDetail(entry) : `There is no brew day with id ${Math.round(wantedId)}.`;
+        const entry = getBrewSession(Math.round(wantedId));
+        return entry ? brewSessionDetail(entry) : `There is no brew session with id ${Math.round(wantedId)}.`;
       }
 
-      const all = listBrewDays();
-      if (all.length === 0) return 'Nothing has been logged in the brew-day log yet.';
+      const all = listBrewSessions();
+      if (all.length === 0) return 'Nothing has been logged in the brew-session log yet.';
 
       const wantedRecipe = text(args, 'recipe');
       const matches = wantedRecipe
         ? all.filter((entry) => entry.recipe.name.toLowerCase().includes(wantedRecipe.toLowerCase()))
         : all;
       if (matches.length === 0) {
-        return `No brew day matches "${wantedRecipe}". Brewed so far: ${[...new Set(all.map((e) => e.recipe.name))].join(', ')}.`;
+        return `No brew session matches "${wantedRecipe}". Brewed so far: ${[...new Set(all.map((e) => e.recipe.name))].join(', ')}.`;
       }
 
       // One match plus a request for the write-up is unambiguous; several is
@@ -1131,27 +1131,27 @@ const TOOLS: Record<string, ToolSpec> = {
       // in front of them with no way to tell.
       if (args.full_writeup === true) {
         if (matches.length === 1 && matches[0]) {
-          const full = getBrewDay(matches[0].id);
-          if (full) return brewDayDetail(full);
+          const full = getBrewSession(matches[0].id);
+          if (full) return brewSessionDetail(full);
         }
-        return `${matches.length} brew days match. Ask which one, by id:\n\n${brewDayRows(matches.slice(0, 20))}`;
+        return `${matches.length} brew sessions match. Ask which one, by id:\n\n${brewSessionRows(matches.slice(0, 20))}`;
       }
 
-      if (brief) return brewDaySummary(matches);
+      if (brief) return brewSessionSummary(matches);
 
       const limit = Math.min(Math.max(Math.round(num(args, 'limit') ?? 10), 1), 50);
       const shown = matches.slice(0, limit);
       const header = wantedRecipe
         ? `${matches.length} brew${matches.length === 1 ? '' : 's'} of ${wantedRecipe}`
-        : `${all.length} brew day${all.length === 1 ? '' : 's'} logged, newest first`;
-      return `## Brew days\n${header}${matches.length > shown.length ? ` (showing ${shown.length})` : ''}\n\n${brewDayRows(shown)}\n\nAsk for one by id with \`full_writeup\` for its rig temperatures, fermentation and notes.`;
+        : `${all.length} brew session${all.length === 1 ? '' : 's'} logged, newest first`;
+      return `## Brew sessions\n${header}${matches.length > shown.length ? ` (showing ${shown.length})` : ''}\n\n${brewSessionRows(shown)}\n\nAsk for one by id with \`full_writeup\` for its rig temperatures, fermentation and notes.`;
     },
   },
 
   get_rig_status: {
     definition: tool(
       'get_rig_status',
-      'Read the brewing rig: the boil kettle, mash tun and hot liquor tank temperatures, whether the elements are on and what they are aiming at, the pumps, and the brew timer. Read-only — you cannot switch anything on the rig from here. The rig is a separate machine that is normally powered off between brew days, and reports as offline then.',
+      'Read the brewing rig: the boil kettle, mash tun and hot liquor tank temperatures, whether the elements are on and what they are aiming at, the pumps, and the brew timer. Read-only — you cannot switch anything on the rig from here. The rig is a separate machine that is normally powered off between brew sessions, and reports as offline then.',
       {},
     ),
     phase: () => ({ phase: 'brewery', detail: 'the brewing rig' }),
@@ -1237,7 +1237,7 @@ const TOOLS: Record<string, ToolSpec> = {
   get_todos: {
     definition: tool(
       'get_todos',
-      'Read the brewery to-do list — the running list of jobs, which is not the brew-day checklist.',
+      'Read the brewery to-do list — the running list of jobs, which is not the brew-session checklist.',
       { detail: DETAIL_ARG },
     ),
     phase: () => ({ phase: 'brewery', detail: 'to-do list' }),

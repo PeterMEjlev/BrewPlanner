@@ -213,7 +213,7 @@ function gravityFromPointGallons(pointGallons: number, litres: number | null): n
  * and land in the wort whatever the brewhouse manages.
  *
  * This is {@link calculateRecipe}'s contribution sum with the efficiency factor
- * left out — the denominator, kept apart so a brew day can measure against it.
+ * left out — the denominator, kept apart so a brew session can measure against it.
  */
 export interface ExtractPotential {
   /** Point-gallons the mash would deliver if it extracted everything. */

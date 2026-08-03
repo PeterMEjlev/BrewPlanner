@@ -34,6 +34,36 @@ export const users = sqliteTable('users', {
     .default(sql`(CURRENT_TIMESTAMP)`),
 });
 
+/**
+ * Firebase Cloud Messaging registration tokens — one row per installed copy of
+ * the Android app, so the hub can push "someone else changed something" to the
+ * phones (see notify/push.ts).
+ *
+ * The row belongs to the account that was signed in when the token was
+ * registered, because that is what tells us whose change *not* to announce: a
+ * notification for your own edit is noise. `on delete cascade` means deleting an
+ * account also stops its phone being pushed to. Re-registering an existing token
+ * (the app does it every launch, and FCM rotates them) moves it to the current
+ * account rather than duplicating the row — the token is unique.
+ */
+export const pushTokens = sqliteTable('push_tokens', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  /** The FCM registration token — opaque, device-specific, and rotated by FCM. */
+  token: text('token').notNull().unique(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** Only 'android' today; stored so an iOS build wouldn't need a migration. */
+  platform: text('platform').notNull().default('android'),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  /** Touched on every re-registration, so a stale device is recognisable. */
+  lastSeenAt: text('last_seen_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
 export const checklists = sqliteTable('checklists', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
@@ -153,18 +183,18 @@ export const recipes = sqliteTable(
  * recipe). Measurements are columns rather than JSON because the list orders and
  * filters on them.
  */
-export const brewDays = sqliteTable(
-  'brew_days',
+export const brewSessions = sqliteTable(
+  'brew_sessions',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     recipeId: text('recipe_id').references(() => recipes.id, { onDelete: 'set null' }),
-    /** JSON encoded BrewDayRecipeSnapshot, taken when the brew day started. */
+    /** JSON encoded BrewSessionRecipeSnapshot, taken when the brew session started. */
     recipeSnapshot: text('recipe_snapshot').notNull(),
     /** 'brewing' | 'fermenting' | 'conditioning' | 'packaged'. */
     status: text('status').notNull().default('brewing'),
-    /** The brew day itself. Editable, so a past brew can be logged after the fact. */
+    /** The brew session itself. Editable, so a past brew can be logged after the fact. */
     brewedAt: text('brewed_at').notNull(),
-    /** How long the brew day took, minutes — typed by the brewer, not clocked. */
+    /** How long the brew session took, minutes — typed by the brewer, not clocked. */
     durationMinutes: integer('duration_minutes'),
     pitchedAt: text('pitched_at'),
     packagedAt: text('packaged_at'),
@@ -198,33 +228,33 @@ export const brewDays = sqliteTable(
   (t) => [
     // The list is chronological, and the recipe grid asks "how many times, and
     // when last?" per recipe.
-    index('brew_days_brewed_at_idx').on(t.brewedAt),
-    index('brew_days_recipe_idx').on(t.recipeId),
+    index('brew_sessions_brewed_at_idx').on(t.brewedAt),
+    index('brew_sessions_recipe_idx').on(t.recipeId),
   ],
 );
 
 /**
- * The brewing rig's pot temperatures, logged every sample while a brew day is in
- * progress (see brewDays/sampler.ts). Three columns rather than three rows in
+ * The brewing rig's pot temperatures, logged every sample while a brew session is in
+ * progress (see brewSessions/sampler.ts). Three columns rather than three rows in
  * `readings`: the rig is not a registered device, one row per sweep is a third
  * of the storage, and — the reason that matters — `readings` is pruned on a
- * retention schedule, while a brew day's temperature curve is meant to be
+ * retention schedule, while a brew session's temperature curve is meant to be
  * readable years later.
  */
-export const brewDayRigSamples = sqliteTable(
-  'brew_day_rig_samples',
+export const brewSessionRigSamples = sqliteTable(
+  'brew_session_rig_samples',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
-    brewDayId: integer('brew_day_id')
+    brewSessionId: integer('brew_session_id')
       .notNull()
-      .references(() => brewDays.id, { onDelete: 'cascade' }),
+      .references(() => brewSessions.id, { onDelete: 'cascade' }),
     recordedAt: text('recorded_at').notNull(),
     /** °C in the boil kettle, mash tun and hot liquor tank; null when a sensor didn't answer. */
     bk: real('bk'),
     mlt: real('mlt'),
     hlt: real('hlt'),
   },
-  (t) => [index('brew_day_rig_samples_day_time_idx').on(t.brewDayId, t.recordedAt)],
+  (t) => [index('brew_session_rig_samples_session_time_idx').on(t.brewSessionId, t.recordedAt)],
 );
 
 /**
@@ -391,7 +421,7 @@ export const runSteps = sqliteTable(
 );
 
 /**
- * One thread of Bruce's text chat — a brew day's water questions kept apart
+ * One thread of Bruce's text chat — a brew session's water questions kept apart
  * from last month's hop reading. Threads are shared, not per-account: this is
  * one brewery with a kiosk and a couple of logins, and a question asked on the
  * phone should still be there on the kiosk screen.

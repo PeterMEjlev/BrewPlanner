@@ -23,7 +23,7 @@ import { promisify } from 'node:util';
  * reads them: the local box straight from /proc and /sys, the rig over the same
  * SSH trust the updater uses (see deploy/update-brew-system.sh).
  *
- * The rig is powered off between brew days, and a dead host is the slowest thing
+ * The rig is powered off between brew sessions, and a dead host is the slowest thing
  * to ask a question of. So a reachability probe on port 22 runs first and skips
  * the SSH entirely when nothing is listening — an offline rig costs ~1s rather
  * than the full connect timeout, and the answer is cached either way.

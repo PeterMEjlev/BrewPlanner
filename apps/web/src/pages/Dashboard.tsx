@@ -2158,7 +2158,7 @@ function contentCounts(kegs: Keg[]): { contents: string; count: number; color: s
  * that change any of it live on the Brew System page.
  *
  * Rides the shared brew-system channel the sidebar's Online/Offline badge
- * already polls, asking it for a brew-day cadence while the Overview is open.
+ * already polls, asking it for a brew-session cadence while the Overview is open.
  * The rig is powered off most of the year, so "offline" is an expected state
  * and shows the last readings greyed out rather than an error.
  */

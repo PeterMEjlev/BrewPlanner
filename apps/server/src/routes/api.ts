@@ -11,6 +11,7 @@ import {
   kegContentColorsSchema,
   kegNumberParamSchema,
   notificationSettingsSchema,
+  pushTokenSchema,
   priceOptionsQuerySchema,
   priceOverrideQuerySchema,
   priceOverrideSchema,
@@ -22,11 +23,11 @@ import {
   recipeEditSchema,
   recipeIngredientCatalogQuerySchema,
   setActiveRecipeSchema,
-  startBrewDaySchema,
+  startBrewSessionSchema,
   stepIdParamSchema,
   sumCost,
   unpricedIngredients,
-  updateBrewDaySchema,
+  updateBrewSessionSchema,
   updateChecklistSchema,
   updateKegSchema,
   updateStepSchema,
@@ -36,11 +37,13 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { dismissAlert, dismissAllAlerts, listAlerts } from '../alerts/repo.js';
 import { listAudit } from '../audit/repo.js';
-import * as brewDays from '../brewDays/repo.js';
+import * as brewSessions from '../brewSessions/repo.js';
 import { registerAuditHook } from '../audit/hook.js';
-import { requireAdmin, requireAuth } from '../auth/index.js';
+import { getRequestUser, requireAdmin, requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
 import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
+import { pushConfigured } from '../notify/push.js';
+import { registerPushToken, unregisterPushToken } from '../notify/pushTokens.js';
 import * as prices from '../prices.js';
 import { pricingInfo } from '../prices.js';
 import { deleteOverride as deletePriceOverride, saveOverride as savePriceOverride } from '../priceOverrides.js';
@@ -477,17 +480,17 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return reply.status(204).send();
   });
 
-  // --- Brew days (the brewery's logbook) ----------------------------------
+  // --- Brew sessions (the brewery's logbook) ----------------------------------
   // One row per batch, from "I'm brewing this" to packaged. Reads are open to
   // anyone who can see the recipes; writing to the log is an admin action.
 
-  app.get('/brew-days', async () => brewDays.listBrewDays());
+  app.get('/brew-sessions', async () => brewSessions.listBrewSessions());
 
   // How often each recipe has been brewed, for the badges on the recipe grid.
-  app.get('/brew-days/counts', async () => brewDays.recipeBrewCounts());
+  app.get('/brew-sessions/counts', async () => brewSessions.recipeBrewCounts());
 
   /**
-   * Start a brew day. The recipe is snapshotted onto the row as it reads today
+   * Start a brew session. The recipe is snapshotted onto the row as it reads today
    * (targets, cost, grain and hop weights), so the log stays truthful after the
    * recipe is edited, re-costed or deleted.
    *
@@ -495,12 +498,12 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
    * card and the Recipes page show — because that is what pressing this button
    * means, and doing it by hand afterwards was only ever a second step.
    */
-  app.post('/brew-days', adminOnly, async (req, reply) => {
-    const body = parse(startBrewDaySchema, req.body, reply);
+  app.post('/brew-sessions', adminOnly, async (req, reply) => {
+    const body = parse(startBrewSessionSchema, req.body, reply);
     if (!body) return;
     const recipe = recipeRepo.getRecipe(body.recipeId);
     if (!recipe) return reply.status(404).send({ error: 'Recipe not found' });
-    const brewDay = brewDays.startBrewDay(body.recipeId, recipe, body.brewedAt);
+    const brewSession = brewSessions.startBrewSession(body.recipeId, recipe, body.brewedAt);
     repo.setActiveRecipe({
       id: recipe.id,
       origin: recipe.origin,
@@ -513,32 +516,32 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     });
     // There's wort in it now, whatever it was before.
     repo.setFermenterState('dirty');
-    return reply.status(201).send(brewDay);
+    return reply.status(201).send(brewSession);
   });
 
-  app.get('/brew-days/:id', async (req, reply) => {
+  app.get('/brew-sessions/:id', async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
-    const brewDay = brewDays.getBrewDay(params.id);
-    if (!brewDay) return reply.status(404).send({ error: 'Brew day not found' });
-    return brewDay;
+    const brewSession = brewSessions.getBrewSession(params.id);
+    if (!brewSession) return reply.status(404).send({ error: 'Brew session not found' });
+    return brewSession;
   });
 
-  app.patch('/brew-days/:id', adminOnly, async (req, reply) => {
+  app.patch('/brew-sessions/:id', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
-    const body = parse(updateBrewDaySchema, req.body, reply);
+    const body = parse(updateBrewSessionSchema, req.body, reply);
     if (!body) return;
-    const updated = brewDays.updateBrewDay(params.id, body);
-    if (!updated) return reply.status(404).send({ error: 'Brew day not found' });
+    const updated = brewSessions.updateBrewSession(params.id, body);
+    if (!updated) return reply.status(404).send({ error: 'Brew session not found' });
     return updated;
   });
 
-  app.delete('/brew-days/:id', adminOnly, async (req, reply) => {
+  app.delete('/brew-sessions/:id', adminOnly, async (req, reply) => {
     const params = parse(idParamSchema, req.params, reply);
     if (!params) return;
-    if (!brewDays.deleteBrewDay(params.id)) {
-      return reply.status(404).send({ error: 'Brew day not found' });
+    if (!brewSessions.deleteBrewSession(params.id)) {
+      return reply.status(404).send({ error: 'Brew session not found' });
     }
     return reply.status(204).send();
   });
@@ -748,6 +751,31 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
       req.log.error(err, 'Telegram test send failed');
       return reply.status(502).send({ error: 'Telegram send failed.' });
     }
+  });
+
+  // --- Push notifications (Android app) ---------------------------------
+  // The app hands over its FCM token after signing in, and gives it back on
+  // sign-out. Deliberately NOT adminOnly: a guest account may want to be told
+  // what changed too, and receiving a notification grants nothing.
+  //
+  // The token is stored against the signed-in account, which is what lets the
+  // hub leave the person who made a change out of the announcement — so a
+  // request with no account behind it (the trusted-local kiosk, which has no
+  // user) has nothing to attach and is refused rather than stored ownerless.
+  app.post('/push/register', async (req, reply) => {
+    const body = parse(pushTokenSchema, req.body, reply);
+    if (!body) return;
+    const user = getRequestUser(req);
+    if (!user) return reply.status(401).send({ error: 'Sign in to receive notifications.' });
+    registerPushToken(body.token, user.id);
+    return { registered: true, configured: pushConfigured() };
+  });
+
+  app.post('/push/unregister', async (req, reply) => {
+    const body = parse(pushTokenSchema, req.body, reply);
+    if (!body) return;
+    unregisterPushToken(body.token);
+    return reply.status(204).send();
   });
 
   // --- System / software update ----------------------------------------

@@ -48,4 +48,12 @@
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!--
+      Push notifications about other people's changes (see src/push.ts and the
+      server's notify/push.ts). Android 13+ will not show a notification without
+      this declared *and* granted at runtime; the plugin asks for it on first
+      launch after signing in. Older versions grant it at install time.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

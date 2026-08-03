@@ -32,7 +32,7 @@ BrewPlanner server over loopback, which passes as trusted-local — no tokens.
   There used to be six more files here — kegs, stats, devices, recipes, todos,
   settings — each a second implementation of a tool the server already had.
   Two copies of "what is in the fermenter" drift, and they did: the server grew
-  the brew-day log, sensor history and the brewing calculators while this
+  the brew-session log, sensor history and the brewing calculators while this
   process kept answering from the older set. One tool set now serves all three
   Bruces (this speaker, the written chat, and the phone), so a tool added to
   `apps/server/src/bruce/tools.ts` appears in all of them at once.

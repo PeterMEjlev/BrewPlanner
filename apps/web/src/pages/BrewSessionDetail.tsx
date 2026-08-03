@@ -1,13 +1,13 @@
 import type {
-  BrewDayDetail,
-  BrewDayRigSample,
-  BrewDayStatus,
-  BrewDayTempStats,
-  UpdateBrewDayInput,
+  BrewSessionDetail,
+  BrewSessionRigSample,
+  BrewSessionStatus,
+  BrewSessionTempStats,
+  UpdateBrewSessionInput,
 } from '@checklist/shared';
 import {
-  BREW_DAY_STATUSES,
-  BREW_DAY_STATUS_LABELS,
+  BREW_SESSION_STATUSES,
+  BREW_SESSION_STATUS_LABELS,
   abvFromGravities,
   apparentAttenuation,
   ebcColor,
@@ -32,7 +32,7 @@ import {
   dateInputToIso,
   dateInputValue,
   formatDuration,
-} from '../brewDays';
+} from '../brewSessions';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
 import { SheetSection } from '../components/SheetSection';
@@ -41,7 +41,7 @@ import { kr } from '../money';
 import { asCleanMessage, clockTime, dateTime } from '../util';
 
 /**
- * One brew day in full: what was brewed, what it measured, how long each stage
+ * One brew session in full: what was brewed, what it measured, how long each stage
  * took, and the temperatures the rig and the fermenter ran at while it happened.
  *
  * The page is a form that saves itself. A brew log is filled in over days — the
@@ -62,14 +62,14 @@ const POT_LINES = [
 ];
 
 /** The page's cards, in the order they appear. */
-type SectionKey = 'stage' | 'brewDay' | 'rig' | 'fermentation' | 'recipe' | 'notes';
+type SectionKey = 'stage' | 'brewSession' | 'rig' | 'fermentation' | 'recipe' | 'notes';
 
-const COLLAPSE_KEY = 'brewplanner.brewDaySections';
+const COLLAPSE_KEY = 'brewplanner.brewSessionSections';
 
 /** Everything open: a log entry is meant to be read top to bottom. */
 const ALL_OPEN: Record<SectionKey, boolean> = {
   stage: false,
-  brewDay: false,
+  brewSession: false,
   rig: false,
   fermentation: false,
   recipe: false,
@@ -87,7 +87,7 @@ function loadCollapsed(): Record<SectionKey, boolean> {
 }
 
 /**
- * One card, in the same shape a brew sheet's sections have — so a brew day reads
+ * One card, in the same shape a brew sheet's sections have — so a brew session reads
  * as a document of the same family rather than a different kind of page. The
  * fold state is per browser, like the recipe page's.
  */
@@ -121,13 +121,13 @@ function Section({
   );
 }
 
-export function BrewDayDetailPage(): JSX.Element {
+export function BrewSessionDetailPage(): JSX.Element {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { auth } = useAuth();
   const controllable = canControl(auth);
 
-  const [brewDay, setBrewDay] = useState<BrewDayDetail | null>(null);
+  const [brewSession, setBrewSession] = useState<BrewSessionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -147,7 +147,7 @@ export function BrewDayDetailPage(): JSX.Element {
 
   const load = useCallback(async (): Promise<void> => {
     try {
-      setBrewDay(await api.getBrewDay(Number(id)));
+      setBrewSession(await api.getBrewSession(Number(id)));
       setError(null);
     } catch (e) {
       setError(asCleanMessage(e));
@@ -164,12 +164,12 @@ export function BrewDayDetailPage(): JSX.Element {
    * over (the dates, and the status that ends the rig log) is followed by a
    * re-read, since the server works those out on the fly.
    */
-  async function save(fields: UpdateBrewDayInput): Promise<void> {
-    if (!brewDay || saving) return;
+  async function save(fields: UpdateBrewSessionInput): Promise<void> {
+    if (!brewSession || saving) return;
     setSaving(true);
     try {
-      const updated = await api.updateBrewDay(brewDay.id, fields);
-      setBrewDay((prev) => (prev ? { ...prev, ...updated } : prev));
+      const updated = await api.updateBrewSession(brewSession.id, fields);
+      setBrewSession((prev) => (prev ? { ...prev, ...updated } : prev));
       setError(null);
       const movesWindow =
         fields.status !== undefined ||
@@ -187,27 +187,27 @@ export function BrewDayDetailPage(): JSX.Element {
   }
 
   async function remove(): Promise<void> {
-    if (!brewDay || deleting) return;
+    if (!brewSession || deleting) return;
     if (
       !window.confirm(
-        `Delete the brew day for “${brewDay.recipe.name}” on ${brewDate(brewDay.brewedAt)}? This cannot be undone.`,
+        `Delete the brew session for “${brewSession.recipe.name}” on ${brewDate(brewSession.brewedAt)}? This cannot be undone.`,
       )
     ) {
       return;
     }
     setDeleting(true);
     try {
-      await api.deleteBrewDay(brewDay.id);
-      navigate('/brew-days');
+      await api.deleteBrewSession(brewSession.id);
+      navigate('/brew-sessions');
     } catch (e) {
       setError(asCleanMessage(e));
       setDeleting(false);
     }
   }
 
-  if (!brewDay) {
+  if (!brewSession) {
     return (
-      <DashboardShell active="brewDays">
+      <DashboardShell active="brewSessions">
         <main className="w-full max-w-[1100px] px-5 py-5">
           {error ? (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
@@ -215,18 +215,18 @@ export function BrewDayDetailPage(): JSX.Element {
             </div>
           ) : (
             <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
-              Loading brew day…
+              Loading brew session…
             </div>
           )}
-          <Link to="/brew-days" className="mt-4 inline-block text-sm text-zinc-400 hover:text-zinc-200">
-            ← Back to brew days
+          <Link to="/brew-sessions" className="mt-4 inline-block text-sm text-zinc-400 hover:text-zinc-200">
+            ← Back to brew sessions
           </Link>
         </main>
       </DashboardShell>
     );
   }
 
-  const { recipe, measured } = brewDay;
+  const { recipe, measured } = brewSession;
   const abv = abvFromGravities(measured.og, measured.fg);
   const attenuation = apparentAttenuation(measured.og, measured.fg);
   const pour = ebcColor(recipe.ebc);
@@ -253,10 +253,10 @@ export function BrewDayDetailPage(): JSX.Element {
   const pct = (value: number): string => `${value.toFixed(0)}%`;
 
   return (
-    <DashboardShell active="brewDays">
+    <DashboardShell active="brewSessions">
       <main className="w-full max-w-[1100px] px-5 py-5">
-        <Link to="/brew-days" className="text-sm text-zinc-400 transition hover:text-zinc-200">
-          ← Brew days
+        <Link to="/brew-sessions" className="text-sm text-zinc-400 transition hover:text-zinc-200">
+          ← Brew sessions
         </Link>
 
         <header className="mt-3 flex flex-wrap items-start justify-between gap-3">
@@ -272,26 +272,26 @@ export function BrewDayDetailPage(): JSX.Element {
               <h1 className="truncate text-xl font-semibold text-zinc-100">{recipe.name}</h1>
               <span
                 className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                  STATUS_CHIP[brewDay.status]
+                  STATUS_CHIP[brewSession.status]
                 }`}
               >
-                {BREW_DAY_STATUS_LABELS[brewDay.status]}
+                {BREW_SESSION_STATUS_LABELS[brewSession.status]}
               </span>
             </div>
             <p className="mt-1 text-sm text-zinc-500">
               {[
                 recipe.style,
-                brewDay.brewNumber > 1 ? `brew #${brewDay.brewNumber} of this recipe` : null,
-                `brewed ${brewDate(brewDay.brewedAt)}`,
+                brewSession.brewNumber > 1 ? `brew #${brewSession.brewNumber} of this recipe` : null,
+                `brewed ${brewDate(brewSession.brewedAt)}`,
               ]
                 .filter(Boolean)
                 .join(' · ')}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {brewDay.recipeId && (
+            {brewSession.recipeId && (
               <Link
-                to={`/recipes/${encodeURIComponent(brewDay.recipeId)}`}
+                to={`/recipes/${encodeURIComponent(brewSession.recipeId)}`}
                 className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100"
               >
                 Brew sheet
@@ -318,7 +318,7 @@ export function BrewDayDetailPage(): JSX.Element {
 
         <div className="mt-5 space-y-4">
           <StageCard
-            brewDay={brewDay}
+            brewSession={brewSession}
             editable={controllable}
             onSave={save}
             collapsed={collapsed}
@@ -326,16 +326,16 @@ export function BrewDayDetailPage(): JSX.Element {
           />
 
           <Section
-            section="brewDay"
-            title="The brew day"
+            section="brewSession"
+            title="The brew session"
             icon="🔥"
-            meta={formatDuration(brewDay.durationMinutes)}
+            meta={formatDuration(brewSession.durationMinutes)}
             collapsed={collapsed}
             onToggle={toggle}
           >
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <DurationField
-                minutes={brewDay.durationMinutes}
+                minutes={brewSession.durationMinutes}
                 editable={controllable}
                 onSave={(minutes) => save({ durationMinutes: minutes })}
               />
@@ -438,13 +438,13 @@ export function BrewDayDetailPage(): JSX.Element {
           </Section>
 
           <RigTemperatures
-            samples={brewDay.rigSamples}
-            stats={brewDay.rigStats}
+            samples={brewSession.rigSamples}
+            stats={brewSession.rigStats}
             collapsed={collapsed}
             onToggle={toggle}
           />
 
-          <FermentationCard brewDay={brewDay} collapsed={collapsed} onToggle={toggle} />
+          <FermentationCard brewSession={brewSession} collapsed={collapsed} onToggle={toggle} />
 
           <Section
             section="recipe"
@@ -468,9 +468,9 @@ export function BrewDayDetailPage(): JSX.Element {
               <Fact label="Fermentation" value={recipe.fermentationTemp ?? '—'} />
             </div>
             <p className="mt-3 text-xs text-zinc-600">
-              Copied onto this entry when the brew day started, so it still says what was
+              Copied onto this entry when the brew session started, so it still says what was
               actually brewed after the recipe is edited or re-costed.
-              {!brewDay.recipeId && ' The recipe it came from has since been deleted.'}
+              {!brewSession.recipeId && ' The recipe it came from has since been deleted.'}
             </p>
           </Section>
 
@@ -478,14 +478,14 @@ export function BrewDayDetailPage(): JSX.Element {
             section="notes"
             title="Notes"
             icon="📝"
-            meta={brewDay.rating != null ? '★'.repeat(brewDay.rating) : undefined}
+            meta={brewSession.rating != null ? '★'.repeat(brewSession.rating) : undefined}
             collapsed={collapsed}
             onToggle={toggle}
           >
             <NotesField
-              label="Brew day"
+              label="Brew session"
               placeholder="How it went: what ran long, what you'd do differently…"
-              value={brewDay.notes}
+              value={brewSession.notes}
               editable={controllable}
               onSave={(notes) => save({ notes })}
             />
@@ -493,14 +493,14 @@ export function BrewDayDetailPage(): JSX.Element {
               <NotesField
                 label="Tasting"
                 placeholder="How it turned out once it was in the glass…"
-                value={brewDay.tastingNotes}
+                value={brewSession.tastingNotes}
                 editable={controllable}
                 onSave={(tastingNotes) => save({ tastingNotes })}
               />
             </div>
             <div className="mt-4">
               <RatingField
-                rating={brewDay.rating}
+                rating={brewSession.rating}
                 editable={controllable}
                 onSave={(rating) => save({ rating })}
               />
@@ -509,7 +509,7 @@ export function BrewDayDetailPage(): JSX.Element {
         </div>
 
         <p className="mt-4 text-xs text-zinc-600">
-          Logged {dateTime(brewDay.createdAt)} · last edited {dateTime(brewDay.updatedAt)}
+          Logged {dateTime(brewSession.createdAt)} · last edited {dateTime(brewSession.updatedAt)}
         </p>
       </main>
     </DashboardShell>
@@ -522,7 +522,7 @@ export function BrewDayDetailPage(): JSX.Element {
  * typed, so recomputing them is both cheaper and more honest than keeping a copy
  * that a corrected gravity would leave stale.
  *
- * Silent until there is something to say — a half-filled brew day shows the
+ * Silent until there is something to say — a half-filled brew session shows the
  * figures it has earned and no placeholders for the rest.
  */
 function DerivedFigures({
@@ -573,28 +573,28 @@ function DerivedFigures({
  * for them separately only creates a second thing to forget.
  */
 function StageCard({
-  brewDay,
+  brewSession,
   editable,
   onSave,
   collapsed,
   onToggle,
 }: {
-  brewDay: BrewDayDetail;
+  brewSession: BrewSessionDetail;
   editable: boolean;
-  onSave: (fields: UpdateBrewDayInput) => Promise<void>;
+  onSave: (fields: UpdateBrewSessionInput) => Promise<void>;
   collapsed: Record<SectionKey, boolean>;
   onToggle: (section: SectionKey) => void;
 }): JSX.Element {
-  const next = nextStage(brewDay.status);
+  const next = nextStage(brewSession.status);
 
   async function advance(): Promise<void> {
     if (!next) return;
     const now = new Date().toISOString();
-    const fields: UpdateBrewDayInput = { status: next };
+    const fields: UpdateBrewSessionInput = { status: next };
     // Only stamp a date that isn't already recorded — advancing a batch someone
     // back-filled the dates for shouldn't overwrite them with today.
-    if (next === 'fermenting' && brewDay.pitchedAt == null) fields.pitchedAt = now;
-    if (next === 'packaged' && brewDay.packagedAt == null) fields.packagedAt = now;
+    if (next === 'fermenting' && brewSession.pitchedAt == null) fields.pitchedAt = now;
+    if (next === 'packaged' && brewSession.packagedAt == null) fields.packagedAt = now;
     await onSave(fields);
   }
 
@@ -603,14 +603,14 @@ function StageCard({
       section="stage"
       title="Stage"
       icon="🗓️"
-      meta={BREW_DAY_STATUS_LABELS[brewDay.status]}
+      meta={BREW_SESSION_STATUS_LABELS[brewSession.status]}
       collapsed={collapsed}
       onToggle={onToggle}
     >
       <div className="flex flex-wrap items-end gap-3">
         <DateField
           label="Brewed"
-          iso={brewDay.brewedAt}
+          iso={brewSession.brewedAt}
           editable={editable}
           // Every entry has a brew date — emptying the field (which a date input
           // allows from the keyboard) is a no-op rather than a way to lose it.
@@ -618,14 +618,14 @@ function StageCard({
         />
         <DateField
           label="Pitched"
-          iso={brewDay.pitchedAt}
+          iso={brewSession.pitchedAt}
           clearable
           editable={editable}
           onSave={(pitchedAt) => onSave({ pitchedAt })}
         />
         <DateField
           label="Packaged"
-          iso={brewDay.packagedAt}
+          iso={brewSession.packagedAt}
           clearable
           editable={editable}
           onSave={(packagedAt) => onSave({ packagedAt })}
@@ -637,12 +637,12 @@ function StageCard({
                 Stage
               </span>
               <Select
-                value={brewDay.status}
-                options={BREW_DAY_STATUSES.map((status) => ({
+                value={brewSession.status}
+                options={BREW_SESSION_STATUSES.map((status) => ({
                   value: status,
-                  label: BREW_DAY_STATUS_LABELS[status],
+                  label: BREW_SESSION_STATUS_LABELS[status],
                 }))}
-                onChange={(status) => void onSave({ status: status as BrewDayStatus })}
+                onChange={(status) => void onSave({ status: status as BrewSessionStatus })}
                 aria-label="Stage"
                 className="mt-1.5 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-left text-sm text-zinc-100"
               />
@@ -659,9 +659,9 @@ function StageCard({
           </div>
         )}
       </div>
-      {brewDay.status === 'brewing' && (
+      {brewSession.status === 'brewing' && (
         <p className="mt-3 text-xs text-zinc-500">
-          While a batch is on its brew day, the hub logs the rig's pot temperatures every
+          While a batch is in its brew session, the hub logs the rig's pot temperatures every
           half-minute. Moving it on to fermenting stops that and starts the fermentation clock.
         </p>
       )}
@@ -669,20 +669,20 @@ function StageCard({
   );
 }
 
-const ADVANCE_LABELS: Record<BrewDayStatus, string> = {
-  brewing: 'Back to brew day',
+const ADVANCE_LABELS: Record<BrewSessionStatus, string> = {
+  brewing: 'Back to brew session',
   fermenting: 'Into the fermenter',
   conditioning: 'Conditioning',
   packaged: 'Packaged',
 };
 
-function nextStage(status: BrewDayStatus): BrewDayStatus | null {
-  const index = BREW_DAY_STATUSES.indexOf(status);
-  return index >= 0 ? BREW_DAY_STATUSES[index + 1] ?? null : null;
+function nextStage(status: BrewSessionStatus): BrewSessionStatus | null {
+  const index = BREW_SESSION_STATUSES.indexOf(status);
+  return index >= 0 ? BREW_SESSION_STATUSES[index + 1] ?? null : null;
 }
 
 /**
- * The rig's pot temperatures over the brew day. Silent — rather than an empty
+ * The rig's pot temperatures over the brew session. Silent — rather than an empty
  * chart — for a batch that was logged after the fact or brewed with the rig off:
  * there is nothing to say about it, and an axis with no line reads as a fault.
  */
@@ -692,8 +692,8 @@ function RigTemperatures({
   collapsed,
   onToggle,
 }: {
-  samples: BrewDayRigSample[];
-  stats: BrewDayDetail['rigStats'];
+  samples: BrewSessionRigSample[];
+  stats: BrewSessionDetail['rigStats'];
   collapsed: Record<SectionKey, boolean>;
   onToggle: (section: SectionKey) => void;
 }): JSX.Element | null {
@@ -783,7 +783,7 @@ function RigTemperatures({
         ))}
       </div>
       <p className="mt-3 text-xs text-zinc-600">
-        Logged from the rig while this was on its brew day. Kept with the entry rather than with
+        Logged from the rig while this was in its brew session. Kept with the entry rather than with
         the fleet's telemetry, so the curve is still here years later.
       </p>
     </Section>
@@ -797,7 +797,7 @@ function PotStats({
 }: {
   label: string;
   color: string;
-  stats: BrewDayTempStats | null;
+  stats: BrewSessionTempStats | null;
 }): JSX.Element {
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
@@ -820,20 +820,20 @@ function PotStats({
  * pruned on the retention schedule, which is a fact about the log, not a fault.
  */
 function FermentationCard({
-  brewDay,
+  brewSession,
   collapsed,
   onToggle,
 }: {
-  brewDay: BrewDayDetail;
+  brewSession: BrewSessionDetail;
   collapsed: Record<SectionKey, boolean>;
   onToggle: (section: SectionKey) => void;
 }): JSX.Element {
-  const { fermentation } = brewDay;
+  const { fermentation } = brewSession;
   const dayLabel =
     fermentation.days == null
       ? '—'
       : `${fermentation.days} day${fermentation.days === 1 ? '' : 's'}${
-          brewDay.packagedAt ? '' : ' so far'
+          brewSession.packagedAt ? '' : ' so far'
         }`;
   return (
     <Section
@@ -870,8 +870,8 @@ function FermentationCard({
       <p className="mt-3 text-xs text-zinc-600">
         {fermentation.temp
           ? `From ${fermentation.deviceName ?? 'the fermenter'}, over ${
-              brewDay.pitchedAt ? 'pitching' : 'the brew day'
-            } to ${brewDay.packagedAt ? 'packaging' : 'now'}.`
+              brewSession.pitchedAt ? 'pitching' : 'the brew session'
+            } to ${brewSession.packagedAt ? 'packaging' : 'now'}.`
           : 'No fermenter readings for this window — either nothing was logging, or the samples have since aged out of the telemetry retention.'}
       </p>
     </Section>
@@ -1051,8 +1051,8 @@ function GravityField({
 }
 
 /**
- * How long the brew day took, as hours and minutes rather than one number of
- * minutes — nobody remembers a brew day as "340 minutes".
+ * How long the brew session took, as hours and minutes rather than one number of
+ * minutes — nobody remembers a brew session as "340 minutes".
  */
 function DurationField({
   minutes,

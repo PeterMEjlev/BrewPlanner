@@ -18,7 +18,7 @@ import { SHARED, useShared } from '../../sharedPoll';
 /**
  * Cadence while an Overview brew-system view is on screen. Faster than the
  * sidebar badge's 15s — a heater ramp or a pump change is worth seeing promptly
- * on a brew day — but slower than the Brew System page's 2s, since nothing here
+ * on a brew session — but slower than the Brew System page's 2s, since nothing here
  * is a control and these requests usually cross the tunnel.
  */
 export const BREW_SYSTEM_POLL_MS = 5_000;

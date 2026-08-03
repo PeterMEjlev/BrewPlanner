@@ -6,7 +6,7 @@
  * This one file replaces what used to be six — kegs, stats, devices, recipes,
  * todos and settings — each of which was a second implementation of a tool the
  * server already had for its written chat. Two copies of "what is in the
- * fermenter" drift, and they did: the server grew the brew-day log, sensor
+ * fermenter" drift, and they did: the server grew the brew-session log, sensor
  * history and the calculators while the speaker in the brewery kept answering
  * from the older set.
  *

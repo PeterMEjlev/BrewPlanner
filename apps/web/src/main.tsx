@@ -2,15 +2,22 @@
 import { Style, StatusBar } from '@capacitor/status-bar';
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { Navigate, RouterProvider, createBrowserRouter, useLocation } from 'react-router-dom';
+import {
+  Navigate,
+  RouterProvider,
+  createBrowserRouter,
+  useLocation,
+  useParams,
+} from 'react-router-dom';
 import { RequireAuth, clearCachedAuth } from './auth';
 import { hasServerUrl, hydrateConfig, isNative, setUnauthorizedHandler } from './native';
+import { setPushOpenHandler } from './push';
 import { ReopenSetupContext } from './setupContext';
 import { ServerSetup } from './pages/ServerSetup';
 import { KioskFrame } from './components/KioskFrame';
 import { AdminPage } from './pages/Admin';
 import { AlertsPage } from './pages/Alerts';
-import { BrewDaysPage } from './pages/BrewDays';
+import { BrewSessionsPage } from './pages/BrewSessions';
 import { BrewSystemPage } from './pages/BrewSystem';
 import { BrucePage } from './pages/Bruce';
 import { DashboardPage } from './pages/Dashboard';
@@ -66,16 +73,22 @@ const KioskDevicePage = lazy(() =>
 const TemperaturePage = lazy(() =>
   import('./pages/Temperature').then((m) => ({ default: m.TemperaturePage })),
 );
-// One brew day's detail plots the rig's pot temperatures, so it pulls in
+// One brew session's detail plots the rig's pot temperatures, so it pulls in
 // recharts too — the log list itself stays in the main bundle.
-const BrewDayDetailPage = lazy(() =>
-  import('./pages/BrewDayDetail').then((m) => ({ default: m.BrewDayDetailPage })),
+const BrewSessionDetailPage = lazy(() =>
+  import('./pages/BrewSessionDetail').then((m) => ({ default: m.BrewSessionDetailPage })),
 );
 
 /** `/water?ca=80&…` → `/tools/water?ca=80&…`, params intact. */
 function WaterRedirect(): JSX.Element {
   const { search } = useLocation();
   return <Navigate to={{ pathname: '/tools/water', search }} replace />;
+}
+
+/** `/brew-days/12` → `/brew-sessions/12`, from before the log was renamed. */
+function BrewSessionRedirect(): JSX.Element {
+  const { id } = useParams();
+  return <Navigate to={`/brew-sessions/${id ?? ''}`} replace />;
 }
 
 const router = createBrowserRouter([
@@ -225,23 +238,27 @@ const router = createBrowserRouter([
   // by anyone signed in (a guest sees the log without the controls); writing to
   // it is admin-only server-side.
   {
-    path: '/brew-days',
+    path: '/brew-sessions',
     element: (
       <RequireAuth>
-        <BrewDaysPage />
+        <BrewSessionsPage />
       </RequireAuth>
     ),
   },
   {
-    path: '/brew-days/:id',
+    path: '/brew-sessions/:id',
     element: (
       <RequireAuth>
-        <Suspense fallback={<div className="p-6 text-sm text-zinc-400">Loading brew day…</div>}>
-          <BrewDayDetailPage />
+        <Suspense fallback={<div className="p-6 text-sm text-zinc-400">Loading brew session…</div>}>
+          <BrewSessionDetailPage />
         </Suspense>
       </RequireAuth>
     ),
   },
+  // The log used to live at /brew-days. Bookmarks and older app builds still
+  // point there, so send them on rather than showing them a blank page.
+  { path: '/brew-days', element: <Navigate to="/brew-sessions" replace /> },
+  { path: '/brew-days/:id', element: <BrewSessionRedirect /> },
   // Settings live here only (the kiosk's touch Settings page was retired — the
   // desktop UI is richer and the kiosk now uses that slot for the speaker).
   {
@@ -355,6 +372,13 @@ setUnauthorizedHandler(() => {
   // stale — drop it, or coming back would flash the old signed-in shell.
   clearCachedAuth();
   void router.navigate('/login');
+});
+
+// Tapping a push notification opens the page the change was on (the server puts
+// the path in the message — see notify/push.ts). Routed rather than reloaded, so
+// the app doesn't restart to show a keg.
+setPushOpenHandler((path) => {
+  void router.navigate(path);
 });
 
 /**

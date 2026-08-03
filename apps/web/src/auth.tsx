@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { api } from './api';
 import { isNative } from './native';
+import { ensurePushRegistered } from './push';
 import { useReopenSetup } from './setupContext';
 
 interface AuthContextValue {
@@ -79,6 +80,11 @@ export function RequireAuth({
     // /auth/me could land.
     cachedAuth = next.user || next.isLocal ? next : null;
     setAuth(next);
+    // The session is now known, which is the first moment this phone can be
+    // registered for push: the hub files the token against the account, so it
+    // can leave you out of announcements about your own changes. No-op in the
+    // browser, and only does its work once per app run (see push.ts).
+    if (next.user) void ensurePushRegistered();
   }, []);
 
   const refresh = useCallback(async () => {

@@ -4,6 +4,7 @@ import { api } from '../api';
 import { canControl, useAuth } from '../auth';
 import { useBrucePhase } from '../bruceActivity';
 import { isUnknownContents } from '../kegs';
+import { unregisterPush } from '../push';
 import { SHARED, useShared } from '../sharedPoll';
 import { usePoll } from '../usePoll';
 import {
@@ -41,8 +42,8 @@ export type ShellPage =
   // Both the recipe list and a single recipe's brew sheet, so the nav item stays
   // lit while browsing into a recipe.
   | 'recipes'
-  // Likewise the brew-day log and a single entry.
-  | 'brewDays'
+  // Likewise the brew-session log and a single entry.
+  | 'brewSessions'
   | 'checklists'
   | 'todos'
   | 'history';
@@ -60,17 +61,17 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { key: 'overview', label: 'Overview', Icon: HomeIcon, to: '/', page: 'overview' },
-  { key: 'kegs', label: 'Kegs', Icon: KegIcon, to: '/kegs', page: 'kegs' },
-  { key: 'recipes', label: 'Recipes', Icon: BookIcon, to: '/recipes', page: 'recipes' },
-  { key: 'brewDays', label: 'Brew Days', Icon: BrewKettleIcon, to: '/brew-days', page: 'brewDays' },
-  { key: 'alerts', label: 'Alerts', Icon: BellIcon, to: '/alerts', page: 'alerts' },
-  { key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
   { key: 'brewSystem', label: 'Brew System', Icon: SlidersIcon, to: '/brew-system', page: 'brewSystem' },
+  { key: 'recipes', label: 'Recipes', Icon: BookIcon, to: '/recipes', page: 'recipes' },
+  { key: 'kegs', label: 'Kegs', Icon: KegIcon, to: '/kegs', page: 'kegs' },
+  { key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
   { key: 'bruce', label: 'Bruce', Icon: ChatIcon, to: '/bruce', page: 'bruce' },
+  { key: 'brewSessions', label: 'Brew Sessions', Icon: BrewKettleIcon, to: '/brew-sessions', page: 'brewSessions' },
   { key: 'tools', label: 'Tools', Icon: WrenchIcon, to: '/tools', page: 'tools' },
-  { key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin', page: 'checklists' },
   { key: 'todos', label: 'To-Do', Icon: TodoIcon, to: '/todos', page: 'todos' },
+  { key: 'checklists', label: 'Checklists', Icon: ChecklistIcon, to: '/admin', page: 'checklists' },
   { key: 'history', label: 'History', Icon: HistoryIcon, to: '/history', page: 'history' },
+  { key: 'alerts', label: 'Alerts', Icon: BellIcon, to: '/alerts', page: 'alerts' },
   { key: 'settings', label: 'Settings', Icon: SettingsIcon, to: '/settings', page: 'settings' },
 ];
 
@@ -80,7 +81,7 @@ const NAV: NavItem[] = [
  * horizontal scrolling. The rest of the nav follows them in the same scrollable
  * strip; only the account/last-update footer lives behind "More".
  */
-const BOTTOM_BAR_PAGES: ShellPage[] = ['overview', 'kegs', 'alerts', 'devices'];
+const BOTTOM_BAR_PAGES: ShellPage[] = ['overview', 'brewSystem', 'recipes', 'kegs'];
 
 /** How often the nav re-checks the fleet's online/total counts. */
 const FLEET_POLL_MS = 15_000;
@@ -215,7 +216,7 @@ interface BrewSystemNavStatus {
  * The rig is off most of the year, so this is cheap and expected to read offline.
  *
  * On the shared channel, so the Overview's brew-system card — which wants the
- * same payload far more often during a brew day — rides this one request
+ * same payload far more often during a brew session — rides this one request
  * instead of opening a second poll of the rig.
  */
 function useBrewSystemStatus(): BrewSystemNavStatus | null {
@@ -493,6 +494,10 @@ function Sidebar({
             <button
               type="button"
               onClick={async () => {
+                // Withdraw this phone's push token first: after the session is
+                // gone the call would be refused, and the token would keep
+                // buzzing with the next user's notifications.
+                await unregisterPush();
                 await api.logout();
                 await refresh();
               }}

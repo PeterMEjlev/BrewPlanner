@@ -176,6 +176,20 @@
       "when": 1785498930559,
       "tag": "0024_hesitant_moonstone",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1785781669193,
+      "tag": "0025_wandering_moondragon",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1785782677147,
+      "tag": "0026_thin_banshee",
+      "breakpoints": true
     }
   ]
 }

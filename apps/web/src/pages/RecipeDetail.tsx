@@ -483,7 +483,7 @@ export function RecipeDetailPage(): JSX.Element {
           />
           {recipe.mashTemp && <Stat label="Mash" value={recipe.mashTemp} />}
           {recipe.fermentationTemp && <Stat label="Fermentation" value={recipe.fermentationTemp} />}
-          {/* When the fermenter comes free, near enough to plan a brew day
+          {/* When the fermenter comes free, near enough to plan a brew session
               around. An estimate from the strain, the temperature and the
               gravity — never a substitute for a hydrometer, which is what the
               tooltip says. */}
@@ -998,7 +998,7 @@ function CostSummary({
 }
 
 /**
- * The hop schedule, split into the stages of brew day — bittering in the boil,
+ * The hop schedule, split into the stages of brew session — bittering in the boil,
  * then whirlpool, then dry hops — because that's how the additions are actually
  * used, and a flat list of seven rows makes "what goes in when" hard to read.
  * Each stage carries its own weight subtotal.

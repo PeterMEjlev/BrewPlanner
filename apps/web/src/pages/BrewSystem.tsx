@@ -25,7 +25,7 @@ import { FitScale } from '../components/FitScale';
  * On a phone the panel restyles rather than scales: the gutter tightens here and
  * the card modules retune their type scale below 640px (see BrewingPanel.module.css).
  * Shrinking the kiosk layout uniformly would have taken its controls well under
- * a usable touch target, which is the one thing a brew day cannot give up.
+ * a usable touch target, which is the one thing a brew session cannot give up.
  */
 export function BrewSystemPage(): JSX.Element {
   return (

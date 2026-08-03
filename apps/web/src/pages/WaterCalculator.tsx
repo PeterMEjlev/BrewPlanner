@@ -577,7 +577,7 @@ export function WaterCalculator(): JSX.Element {
           </Card>
 
           {/* The point of all the alkalinity arithmetic, stated as the number
-              the brewer will actually meter on brew day — and, behind Adjust,
+              the brewer will actually meter on brew session — and, behind Adjust,
               the grist inputs that produced it. They live here rather than in
               their own input card because their only visible output is this
               pH and the dose beneath it: the bicarbonate target they also feed

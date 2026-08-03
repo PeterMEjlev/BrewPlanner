@@ -3,10 +3,11 @@ import './env.js';
 import type { FastifyInstance } from 'fastify';
 import { evaluateDeviceAlerts } from './alerts/evaluate.js';
 import { buildApp } from './app.js';
-import { startBrewDaySampler } from './brewDays/sampler.js';
+import { startBrewSessionSampler } from './brewSessions/sampler.js';
 import { sqlite } from './db/index.js';
 import { RETENTION_DAYS, pruneOldReadings } from './devices/retention.js';
 import { runNotificationChecks } from './notify/checks.js';
+import { pushConfigError, pushConfigured } from './notify/push.js';
 import { isConfigured as telegramConfigured } from './notify/telegram.js';
 import { startRecipeBackupScheduler } from './recipeBackup.js';
 
@@ -25,9 +26,10 @@ async function main(): Promise<void> {
     installShutdownHandlers(app);
     startAlertScheduler(app);
     startNotificationScheduler(app);
+    reportPushStatus(app);
     startRetentionScheduler(app);
     startRecipeBackupScheduler(app.log);
-    startBrewDaySampler(app.log);
+    startBrewSessionSampler(app.log);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
@@ -101,6 +103,22 @@ function startNotificationScheduler(app: FastifyInstance): void {
   // Run once shortly after boot so a due alert doesn't wait a full interval.
   setTimeout(tick, 15_000).unref();
   app.log.info(`Telegram notifications enabled (checking every ${intervalMs / 1000}s).`);
+}
+
+/**
+ * Say once, at boot, whether the phones will be told about other people's
+ * changes (see notify/push.ts). There is no scheduler behind this — pushes are
+ * sent as changes happen — but "my phone stopped buzzing" is otherwise a silent
+ * failure, and a line in the journal is where you'd go looking.
+ */
+function reportPushStatus(app: FastifyInstance): void {
+  if (pushConfigured()) {
+    app.log.info('Push notifications enabled (Android app is told about others\' changes).');
+    return;
+  }
+  const err = pushConfigError();
+  if (err) app.log.warn(`Push notifications disabled — the Firebase key was unreadable: ${err}`);
+  else app.log.info('Push notifications disabled (set FCM_SERVICE_ACCOUNT_KEY_FILE to enable).');
 }
 
 /**

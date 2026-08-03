@@ -31,14 +31,14 @@ type Repo = typeof import('./repo.js');
 type RecipeRepo = typeof import('./recipeRepo.js');
 type Audit = typeof import('./audit/repo.js');
 type Devices = typeof import('./devices/repo.js');
-type BrewDays = typeof import('./brewDays/repo.js');
+type BrewSessions = typeof import('./brewSessions/repo.js');
 
 let tools: Tools;
 let repo: Repo;
 let recipeRepo: RecipeRepo;
 let audit: Audit;
 let devices: Devices;
-let brewDays: BrewDays;
+let brewSessions: BrewSessions;
 let sqlite: import('better-sqlite3').Database;
 
 /**
@@ -89,7 +89,7 @@ before(async () => {
   recipeRepo = await import('./recipeRepo.js');
   audit = await import('./audit/repo.js');
   devices = await import('./devices/repo.js');
-  brewDays = await import('./brewDays/repo.js');
+  brewSessions = await import('./brewSessions/repo.js');
 
   const { upsertUser } = await import('./auth/users.js');
   ASKER = { userId: upsertUser('peter', 'a-long-enough-test-password').id, username: 'peter' };
@@ -496,15 +496,15 @@ describe('Bruce chat tools', () => {
     assert.match(missing, /Test cellar probe/);
   });
 
-  // --- Brew days ------------------------------------------------------------
+  // --- Brew sessions ------------------------------------------------------------
 
-  it('reads the brew-day log and works the efficiency back from the gravities', async () => {
-    const empty = await tools.runBruceTool('get_brew_days', {}, ASKER);
+  it('reads the brew-session log and works the efficiency back from the gravities', async () => {
+    const empty = await tools.runBruceTool('get_brew_sessions', {}, ASKER);
     assert.match(empty, /Nothing has been logged/);
 
     const recipe = recipeRepo.createRecipe(sheet('Efficiency Ale'));
-    const entry = brewDays.startBrewDay(recipe.id, recipe);
-    brewDays.updateBrewDay(entry.id, {
+    const entry = brewSessions.startBrewSession(recipe.id, recipe);
+    brewSessions.updateBrewSession(entry.id, {
       status: 'fermenting',
       measured: {
         ...recipe.measured,
@@ -521,14 +521,14 @@ describe('Bruce chat tools', () => {
       },
     });
 
-    const list = await tools.runBruceTool('get_brew_days', {}, ASKER);
+    const list = await tools.runBruceTool('get_brew_sessions', {}, ASKER);
     assert.match(list, /Efficiency Ale/);
     assert.match(list, /1\.058/);
     // ABV is derived from the gravities, not read off the recipe's target.
     assert.match(list, /6\.2 %/);
 
     const detail = await tools.runBruceTool(
-      'get_brew_days',
+      'get_brew_sessions',
       { recipe: 'Efficiency', full_writeup: true },
       ASKER,
     );
@@ -536,12 +536,12 @@ describe('Bruce chat tools', () => {
     assert.match(detail, /Mashed at 67 °C/);
     assert.match(detail, /apparent attenuation/);
 
-    const unknown = await tools.runBruceTool('get_brew_days', { recipe: 'Vienna Lager' }, ASKER);
-    assert.match(unknown, /No brew day matches "Vienna Lager"/);
+    const unknown = await tools.runBruceTool('get_brew_sessions', { recipe: 'Vienna Lager' }, ASKER);
+    assert.match(unknown, /No brew session matches "Vienna Lager"/);
     assert.match(unknown, /Efficiency Ale/);
 
-    const noSuchId = await tools.runBruceTool('get_brew_days', { id: 9999 }, ASKER);
-    assert.match(noSuchId, /no brew day with id 9999/);
+    const noSuchId = await tools.runBruceTool('get_brew_sessions', { id: 9999 }, ASKER);
+    assert.match(noSuchId, /no brew session with id 9999/);
   });
 
   // --- Calculators ----------------------------------------------------------

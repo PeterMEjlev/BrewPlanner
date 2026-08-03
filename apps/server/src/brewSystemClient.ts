@@ -4,11 +4,11 @@ import type { BrewSystemState } from '@checklist/shared';
  * Talking to the brewing rig (the separate Raspberry Pi running brew-system-v3).
  *
  * Split out of routes/brewSystem.ts because two callers need it now: the proxy
- * routes the dashboard drives, and the brew-day sampler that logs pot
+ * routes the dashboard drives, and the brew-session sampler that logs pot
  * temperatures in the background. The routes own the *policy* (which endpoints
  * are forwarded, who may call them); this module only knows how to reach the rig.
  *
- * The rig is normally powered off between brew days, so "unreachable" is an
+ * The rig is normally powered off between brew sessions, so "unreachable" is an
  * expected state rather than an error — every read here answers null instead of
  * throwing at the caller.
  */

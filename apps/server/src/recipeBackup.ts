@@ -224,7 +224,7 @@ export function recipeBackupStatus(): RecipeBackupStatus {
 
 /**
  * Once a day, plus one shortly after boot so a Pi that is only switched on for
- * brew days still files something. Unref'd like the other schedulers, so it
+ * brew sessions still files something. Unref'd like the other schedulers, so it
  * never holds the process open.
  */
 export function startRecipeBackupScheduler(log: FastifyBaseLogger): void {

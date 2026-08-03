@@ -189,7 +189,7 @@ LAN (`BREW_SYSTEM_URL` in `/etc/brewplanner.env`, e.g. `http://192.168.1.60:8000
 — give that Pi a DHCP reservation). The rig's API is unauthenticated by design
 (LAN-only), so this proxy is its only remote door: reads need a session,
 controls need the admin role, and heater/pump commands land in the change
-history. The rig is normally powered off between brew days — the page shows an
+history. The rig is normally powered off between brew sessions — the page shows an
 offline card and reconnects automatically. The rig's backend keeps running the
 regulation loop, power limit, and safety watchdog itself, so a dropped remote
 connection can never leave a heater unmanaged.
@@ -231,7 +231,7 @@ but cannot ask, so they cannot reach a change through him that they couldn't
 make themselves.
 
 Conversations are separate threads (`bruce_conversations` + `bruce_messages`),
-switched from the menu in the chat header: start a new one per brew day or
+switched from the menu in the chat header: start a new one per brew session or
 topic, rename it, delete it. A thread names itself after its opening question.
 Threads are shared, not per-account — a question asked on the phone is there on
 the kiosk — and survive restarts.
@@ -265,7 +265,7 @@ Bruce (`apps/bruce`, migrated from brew-system-v3) is a wake-word voice
 assistant that runs on this Pi as its own systemd service (`bruce.service`).
 Say "hey Bruce" near the microphone to control the rig (through the same audited
 `/api/brew-system/*` proxy), check or update the keg inventory, hear fermenter
-status, sensor readings and alerts, change controller setpoints, set brew-day
+status, sensor readings and alerts, change controller setpoints, set brew-session
 reminders, and run brewing calculators. He also reads the recipe library and
 records which beer is in the fermenter, keeps the brewery to-do list, reports
 the sensor fleet's health (online/offline, last seen, logging interval, IP) and
@@ -320,6 +320,29 @@ access.
 To expose the app at your own domain over HTTPS via a **Cloudflare Tunnel** (no
 port-forwarding, home IP stays hidden), see
 **[deploy/README-internet.md](deploy/README-internet.md)**.
+
+### Push notifications to the Android app
+
+When one account changes something worth knowing about — a setpoint, keg
+contents, a saved recipe, a started brew session, a to-do, a setting — every
+*other* signed-in phone is notified, and tapping it opens the page the change
+was on. You are never told about your own changes: each phone's Firebase token
+is stored against the account that registered it (`push_tokens`), which is what
+lets the hub leave the actor out.
+
+Which changes qualify is one list, marked `push:` on the audit rules in
+`apps/server/src/audit/hook.ts` and pinned by a test. Everything else still goes
+to the history page and nowhere else.
+
+Off by default — a hub with no Firebase credentials never pushes and says so
+once at boot. Setup (Firebase project, `google-services.json`, the Pi's sending
+key, rebuilding the APK) is in
+**[deploy/README-push.md](deploy/README-push.md)**.
+
+| Env var                        | Purpose                                        |
+| ------------------------------ | ---------------------------------------------- |
+| `FCM_SERVICE_ACCOUNT_KEY_FILE` | Path to the Firebase service-account JSON.     |
+| `FCM_SERVICE_ACCOUNT_KEY`      | The same JSON inline, instead of a file path.  |
 
 ## Raspberry Pi deployment
 

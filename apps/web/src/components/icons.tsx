@@ -298,7 +298,7 @@ export function BeerMugIcon(props: IconProps): JSX.Element {
 }
 
 /**
- * Brew Days: a boil kettle with steam coming off it. Deliberately a vessel
+ * Brew Sessions: a boil kettle with steam coming off it. Deliberately a vessel
  * rather than a calendar — the log is a list of brews, and a calendar would read
  * as scheduling something rather than recording it.
  */
