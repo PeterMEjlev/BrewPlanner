@@ -6,25 +6,15 @@ update to the Raspberry Pi.
 ## Run locally (laptop)
 
 ```bash
-npm install        # first time only
 npm run dev
 ```
 
-`npm run dev` builds the shared package, then starts the API (port 3000) and the
-Vite dev server (port 5173) together. Open:
-
-- Admin:   http://localhost:5173/admin
-- Display: http://localhost:5173/display
-- Hub:     http://localhost:5173/
-
-Localhost is trusted, so no login is needed in dev. The SQLite file is created
-automatically at `apps/server/data/checklist.sqlite`.
-
-Optional sanity check before deploying:
-
+## Build Android .APK
 ```bash
-npm run typecheck
-npm run build      # same build the Pi runs
+npm run android:build --workspace @checklist/web
+
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+.\apps\web\android\gradlew.bat assembleDebug -p apps\web\android
 ```
 
 ## Deploy to the Pi (over SSH) - "~/checklist/deploy/update.sh"

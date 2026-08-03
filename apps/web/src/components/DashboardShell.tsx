@@ -575,18 +575,26 @@ function BottomNav({
   }, [active]);
 
   return (
-    // The sheet is a sibling of the bar, not a child: `backdrop-blur` makes the
-    // bar a containing block for fixed-position descendants, so a sheet nested
-    // inside it would be trapped in the bar's own 4rem strip instead of
-    // covering the screen.
+    // The sheet is a sibling of the bar rather than a child, so it isn't caught
+    // by the bar's stacking context and can cover the screen.
     <>
-      <div className="fixed inset-x-0 bottom-0 z-30 flex border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+      {/* Opaque, and no backdrop-blur: a blur behind a bar that is already solid
+          is invisible, but the compositor still re-ran it over the whole bar on
+          every frame the strip below scrolled — which is what made swiping it
+          feel heavy on a phone. */}
+      <div className="fixed inset-x-0 bottom-0 z-30 flex border-t border-zinc-800 bg-zinc-950 pb-[env(safe-area-inset-bottom)] md:hidden">
+        {/* `touch-pan-x`: the strip only ever scrolls sideways, so say so and the
+            browser starts moving with the finger instead of first waiting to see
+            whether the gesture was meant to scroll the page vertically.
+            Deliberately not snapped — scroll-snap re-aimed every fling at the
+            nearest tab edge, so a hard swipe stopped a tab or two along instead
+            of coasting down the strip. */}
         <nav
           ref={scrollRef}
           onScroll={(e) => {
             cachedNavScrollLeft = e.currentTarget.scrollLeft;
           }}
-          className="flex min-w-0 flex-1 snap-x overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 touch-pan-x overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {tabs.map((item) => {
             const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
@@ -600,7 +608,7 @@ function BottomNav({
                 key={item.key}
                 to={item.to}
                 data-active={isActive}
-                className="w-[4.5rem] shrink-0 snap-start"
+                className="w-[4.5rem] shrink-0"
               >
                 <BottomTab
                   Icon={item.Icon}
