@@ -11,7 +11,36 @@ declare module 'sonos' {
     duration?: number;
     position?: number;
     uri?: string;
+    /** 1-based slot in the queue; NaN/0 when the source isn't the queue. */
+    queuePosition?: number;
   }
+
+  /** A queue entry as returned by getQueue() — browse results, not the loaded track. */
+  export interface QueueItem {
+    id?: string;
+    title?: string;
+    artist?: string;
+    album?: string;
+    /** Already absolutised to `http://<speaker>:1400/...` by the library. */
+    albumArtURI?: string | null;
+    uri?: string;
+  }
+
+  export interface QueueResult {
+    returned?: string;
+    total?: string;
+    updateID?: string;
+    /** Undefined rather than empty when the queue has no tracks. */
+    items?: QueueItem[];
+  }
+
+  export type PlayMode =
+    | 'NORMAL'
+    | 'REPEAT_ONE'
+    | 'REPEAT_ALL'
+    | 'SHUFFLE'
+    | 'SHUFFLE_NOREPEAT'
+    | 'SHUFFLE_REPEAT_ONE';
 
   export interface ZoneGroupMember {
     ZoneName: string;
@@ -41,6 +70,18 @@ declare module 'sonos' {
     seek(seconds: number): Promise<unknown>;
     getAllGroups(): Promise<ZoneGroup[]>;
     getZoneAttrs(): Promise<{ CurrentZoneName?: string }>;
+    getQueue(): Promise<QueueResult>;
+    /** Jump to a queue slot (1-based). */
+    selectTrack(trackNr: number): Promise<unknown>;
+    removeTracksFromQueue(startIndex: number, numberOfTracks?: number): Promise<unknown>;
+    reorderTracksInQueue(
+      startingIndex: number,
+      numberOfTracks: number,
+      insertBefore: number,
+      updateId?: number,
+    ): Promise<unknown>;
+    getPlayMode(): Promise<string>;
+    setPlayMode(playmode: PlayMode): Promise<unknown>;
   }
 
   export class AsyncDeviceDiscovery {

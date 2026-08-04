@@ -508,6 +508,63 @@ export function SpeakerIcon(props: IconProps): JSX.Element {
   );
 }
 
+/** Shuffle — two crossing paths with arrowheads. */
+export function ShuffleIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M3 7h3.5c1.4 0 2.3.8 3.2 2l4.6 6c.9 1.2 1.8 2 3.2 2H21" />
+      <path d="M3 17h3.5c1.4 0 2.3-.8 3.2-2" />
+      <path d="M14.3 9c.9-1.2 1.8-2 3.2-2H21" />
+      <path d="m18.5 4.2 2.8 2.8-2.8 2.8" />
+      <path d="m18.5 14.2 2.8 2.8-2.8 2.8" />
+    </Svg>
+  );
+}
+
+/** Repeat the whole queue — a loop with an arrowhead. */
+export function RepeatIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M6.5 7h11a3 3 0 0 1 3 3v1" />
+      <path d="m16.8 4 2.9 3-2.9 3" />
+      <path d="M17.5 17h-11a3 3 0 0 1-3-3v-1" />
+      <path d="m7.2 20-2.9-3 2.9-3" />
+    </Svg>
+  );
+}
+
+/** Repeat one — the same loop with a "1" in the middle. */
+export function RepeatOneIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M6.5 7h11a3 3 0 0 1 3 3v1" />
+      <path d="m16.8 4 2.9 3-2.9 3" />
+      <path d="M17.5 17h-11a3 3 0 0 1-3-3v-1" />
+      <path d="m7.2 20-2.9-3 2.9-3" />
+      <path d="M11 10.6 12.6 9.7V15" />
+    </Svg>
+  );
+}
+
+/** A stacked play-list — opens the queue. */
+export function QueueIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M4 7h11M4 12h11M4 17h6" />
+      <path d="M15.5 14.5v-4l4.5 2z" fill="currentColor" />
+    </Svg>
+  );
+}
+
+/** A grip handle (two columns of dots) — the drag affordance on a queue row. */
+export function GripIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01" strokeWidth={2.6} />
+    </Svg>
+  );
+}
+
 /** A low-volume speaker (for the volume slider end-cap). */
 export function VolumeIcon(props: IconProps): JSX.Element {
   return (

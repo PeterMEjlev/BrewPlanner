@@ -1,12 +1,17 @@
-import type { NowPlaying } from '@checklist/shared';
+import type { MusicRepeat, NowPlaying } from '@checklist/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { usePoll } from '../usePoll';
+import { KioskQueuePanel } from '../components/KioskQueuePanel';
 import {
   HomeIcon,
   PauseIcon,
   PlayIcon,
+  QueueIcon,
+  RepeatIcon,
+  RepeatOneIcon,
+  ShuffleIcon,
   SkipNextIcon,
   SkipPrevIcon,
   SpeakerIcon,
@@ -15,6 +20,9 @@ import {
 
 /** Now-playing moves quickly enough that a few seconds feels live. */
 const POLL_MS = 4000;
+
+/** Repeat cycles off → all → one → off, the order every music app uses. */
+const NEXT_REPEAT: Record<MusicRepeat, MusicRepeat> = { off: 'all', all: 'one', one: 'off' };
 
 /** Hard-coded speaker identity (the brewery's IKEA SYMFONISK, Sonos firmware). */
 const SPEAKER_NAME = 'IKEA - Symfoni';
@@ -35,15 +43,20 @@ function fillStyle(pct: number): React.CSSProperties {
 
 /**
  * Touch-first "now playing" screen for the brewery speaker (IKEA SYMFONISK on
- * Sonos firmware), reached from the kiosk home. Landscape layout: album art on
- * the left; speaker label, track, scrubbable progress bar, and transport on the
- * right; a full-width volume bar along the bottom. Everything is driven
- * server-side over the LAN — no Spotify account or browse/search here.
+ * Sonos firmware), reached from the kiosk home. Landscape layout for the Pi's
+ * 800×480 panel: fixed-size album art on the left; speaker label, track,
+ * scrubbable progress and the transport row on the right; a full-width volume
+ * bar along the bottom. The queue lives behind the header's Queue button, as a
+ * panel that slides over the whole view — at this size it needs the full height
+ * to be usable, and overlaying it keeps the two from crowding each other.
+ * Everything is driven server-side over the LAN — no Spotify account or
+ * browse/search here.
  */
 export function KioskMusicPage(): JSX.Element {
   const [now, setNow] = useState<NowPlaying | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [artFailed, setArtFailed] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
 
   // The volume slider and the progress/seek bar are both driven locally while a
   // finger is down, then pushed to the speaker on release — otherwise every drag
@@ -127,6 +140,15 @@ export function KioskMusicPage(): JSX.Element {
     }
   }
 
+  // Sonos folds shuffle and repeat into a single setting, so either toggle has
+  // to send both — hence the current mode is read back off `now`.
+  const shuffle = now?.shuffle ?? false;
+  const repeat = now?.repeat ?? 'off';
+  const toggleShuffle = (): void =>
+    void run(() => api.musicSetPlayMode(!shuffle, repeat));
+  const cycleRepeat = (): void =>
+    void run(() => api.musicSetPlayMode(shuffle, NEXT_REPEAT[repeat]));
+
   const hasMedia = now != null && now.state !== 'no_media' && now.state !== 'stopped';
   const showArt = artUrl && !artFailed;
   const hasProgress = hasMedia && duration != null;
@@ -135,22 +157,33 @@ export function KioskMusicPage(): JSX.Element {
   const status = error != null ? 'offline' : now != null ? 'online' : 'connecting';
 
   return (
-    <div className="touch-none-select flex h-full flex-col bg-black text-white">
-      <header className="flex items-center gap-4 px-8 py-5">
+    // `relative` is the containing block for the queue panel's absolute inset-0.
+    <div className="touch-none-select relative flex h-full flex-col overflow-hidden bg-black text-white">
+      <header className="flex shrink-0 items-center gap-3 px-5 py-2.5">
         <Link
           to="/kiosk"
-          className="shrink-0 rounded-2xl bg-zinc-800 p-3 active:bg-zinc-700"
+          className="shrink-0 rounded-2xl bg-zinc-800 p-2.5 active:bg-zinc-700"
           aria-label="Home"
         >
-          <HomeIcon className="h-7 w-7" />
+          <HomeIcon className="h-6 w-6" />
         </Link>
-        <h1 className="truncate text-3xl font-bold">Brewery Speaker</h1>
+        <h1 className="truncate text-2xl font-bold">Brewery Speaker</h1>
+        <button
+          type="button"
+          onClick={() => setQueueOpen(true)}
+          className="ml-auto flex shrink-0 touch-manipulation items-center gap-2 rounded-2xl bg-zinc-800 px-4 py-2.5 text-lg font-semibold active:bg-zinc-700"
+        >
+          <QueueIcon className="h-6 w-6" />
+          Queue
+        </button>
         <ConnectionPill status={status} />
       </header>
 
-      <main className="flex min-h-0 flex-1 items-stretch gap-8 px-8">
-        {/* Album art (or a speaker placeholder), sized to fill the column height. */}
-        <div className="flex aspect-square h-full shrink-0 items-center justify-center overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
+      {/* min-h-0 lets this column shrink inside the fixed 480px frame; the art is
+          a fixed square rather than h-full so the right column keeps enough room
+          for five transport buttons on one line. */}
+      <main className="flex min-h-0 flex-1 items-center gap-6 px-5">
+        <div className="flex h-[264px] w-[264px] shrink-0 items-center justify-center overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
           {showArt ? (
             <img
               src={artUrl}
@@ -159,17 +192,17 @@ export function KioskMusicPage(): JSX.Element {
               onError={() => setArtFailed(true)}
             />
           ) : (
-            <SpeakerIcon className="h-28 w-28 text-zinc-700" />
+            <SpeakerIcon className="h-24 w-24 text-zinc-700" />
           )}
         </div>
 
         {/* Right column: speaker label, track, progress, transport. */}
-        <div className="flex min-w-0 flex-1 flex-col justify-center gap-5">
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-3">
           <div className="flex items-center gap-3 text-zinc-400">
-            <SpeakerIcon className="h-9 w-9 shrink-0" />
+            <SpeakerIcon className="h-7 w-7 shrink-0" />
             <div className="min-w-0 leading-tight">
-              <div className="truncate text-xl">{SPEAKER_NAME}</div>
-              <div className="truncate text-lg text-zinc-500">{SPEAKER_ROOM}</div>
+              <div className="truncate text-lg">{SPEAKER_NAME}</div>
+              <div className="truncate text-base text-zinc-500">{SPEAKER_ROOM}</div>
             </div>
           </div>
 
@@ -177,20 +210,20 @@ export function KioskMusicPage(): JSX.Element {
             <div className="min-w-0">
               <ScrollingText
                 text={now?.title ?? 'Unknown track'}
-                className="text-4xl font-extrabold leading-tight xl:text-5xl"
+                className="text-3xl font-extrabold leading-tight"
               />
-              <div className="mt-2 truncate text-2xl text-zinc-400">{now?.artist ?? '—'}</div>
+              <div className="mt-1 truncate text-xl text-zinc-400">{now?.artist ?? '—'}</div>
             </div>
           ) : (
-            <div className="text-3xl text-zinc-500">
+            <div className="text-2xl text-zinc-500">
               {status === 'offline' ? 'No speaker found' : 'Nothing playing'}
             </div>
           )}
 
           {/* Scrubbable progress (hidden for live streams with no duration). */}
           {hasProgress && (
-            <div className="flex items-center gap-4">
-              <span className="w-14 shrink-0 text-lg tabular-nums text-zinc-300">
+            <div className="flex items-center gap-3">
+              <span className="w-12 shrink-0 text-base tabular-nums text-zinc-300">
                 {formatTime(position)}
               </span>
               <input
@@ -208,39 +241,49 @@ export function KioskMusicPage(): JSX.Element {
                 onPointerUp={(e) => void commitSeek(Number((e.target as HTMLInputElement).value))}
                 onTouchEnd={(e) => void commitSeek(Number((e.target as HTMLInputElement).value))}
               />
-              <span className="w-16 shrink-0 text-right text-lg tabular-nums text-zinc-400">
+              <span className="w-14 shrink-0 text-right text-base tabular-nums text-zinc-400">
                 -{formatTime((duration ?? 0) - position)}
               </span>
             </div>
           )}
 
-          {/* Transport: previous · play/pause · next. */}
-          <div className="flex items-center gap-6">
+          {/* Transport: shuffle · previous · play/pause · next · repeat. */}
+          <div className="flex items-center gap-3">
+            <TransportButton label="Shuffle" onClick={toggleShuffle} active={shuffle}>
+              <ShuffleIcon className="h-6 w-6" />
+            </TransportButton>
             <TransportButton label="Previous" onClick={() => void run(api.musicPrevious)}>
-              <SkipPrevIcon className="h-9 w-9" />
+              <SkipPrevIcon className="h-7 w-7" />
             </TransportButton>
             <button
               type="button"
               onClick={togglePlay}
               aria-label={playing ? 'Pause' : 'Play'}
-              className="flex h-20 w-20 touch-manipulation items-center justify-center rounded-full border-2 border-emerald-400 bg-zinc-900 text-white shadow-[0_0_25px_rgba(52,211,153,0.35)] transition active:scale-95"
+              className="flex h-[68px] w-[68px] shrink-0 touch-manipulation items-center justify-center rounded-full border-2 border-emerald-400 bg-zinc-900 text-white shadow-[0_0_25px_rgba(52,211,153,0.35)] transition active:scale-95"
             >
-              {playing ? (
-                <PauseIcon className="h-10 w-10" />
-              ) : (
-                <PlayIcon className="ml-1 h-10 w-10" />
-              )}
+              {playing ? <PauseIcon className="h-9 w-9" /> : <PlayIcon className="ml-1 h-9 w-9" />}
             </button>
             <TransportButton label="Next" onClick={() => void run(api.musicNext)}>
-              <SkipNextIcon className="h-9 w-9" />
+              <SkipNextIcon className="h-7 w-7" />
+            </TransportButton>
+            <TransportButton
+              label={`Repeat: ${repeat === 'off' ? 'off' : repeat === 'all' ? 'all' : 'this track'}`}
+              onClick={cycleRepeat}
+              active={repeat !== 'off'}
+            >
+              {repeat === 'one' ? (
+                <RepeatOneIcon className="h-6 w-6" />
+              ) : (
+                <RepeatIcon className="h-6 w-6" />
+              )}
             </TransportButton>
           </div>
         </div>
       </main>
 
       {/* Volume — full width along the bottom. */}
-      <div className="mx-6 mb-6 mt-4 flex items-center gap-5 rounded-3xl bg-zinc-900/60 px-8 py-5">
-        <VolumeIcon className="h-8 w-8 shrink-0 text-zinc-300" />
+      <div className="mx-5 mb-3 mt-2 flex shrink-0 items-center gap-4 rounded-2xl bg-zinc-900/60 px-6 py-3">
+        <VolumeIcon className="h-7 w-7 shrink-0 text-zinc-300" />
         <input
           type="range"
           min={0}
@@ -256,10 +299,14 @@ export function KioskMusicPage(): JSX.Element {
           onPointerUp={(e) => void commitVolume(Number((e.target as HTMLInputElement).value))}
           onTouchEnd={(e) => void commitVolume(Number((e.target as HTMLInputElement).value))}
         />
-        <span className="w-12 shrink-0 text-right text-2xl tabular-nums text-zinc-300">
+        <span className="w-11 shrink-0 text-right text-xl tabular-nums text-zinc-300">
           {volume}
         </span>
       </div>
+
+      {queueOpen && (
+        <KioskQueuePanel onClose={() => setQueueOpen(false)} onChanged={() => void load()} />
+      )}
     </div>
   );
 }
@@ -281,14 +328,21 @@ function ConnectionPill({ status }: { status: 'online' | 'offline' | 'connecting
   );
 }
 
-/** A round secondary transport button (previous / next). */
+/**
+ * A round secondary transport button (skip, shuffle, repeat). `active` lights it
+ * green — the only state shuffle and repeat have to show, since Sonos gives no
+ * other feedback that they're on.
+ */
 function TransportButton({
   label,
   onClick,
+  active,
   children,
 }: {
   label: string;
   onClick: () => void;
+  /** Omit on the plain skip buttons; they're actions, not toggles. */
+  active?: boolean;
   children: React.ReactNode;
 }): JSX.Element {
   return (
@@ -296,7 +350,12 @@ function TransportButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="flex h-16 w-16 touch-manipulation items-center justify-center rounded-full border border-zinc-800 bg-zinc-950 text-zinc-200 transition active:scale-95 active:bg-zinc-800"
+      aria-pressed={active}
+      className={`flex h-14 w-14 shrink-0 touch-manipulation items-center justify-center rounded-full border transition active:scale-95 ${
+        active
+          ? 'border-emerald-400/70 bg-emerald-500/15 text-emerald-300'
+          : 'border-zinc-800 bg-zinc-950 text-zinc-200 active:bg-zinc-800'
+      }`}
     >
       {children}
     </button>

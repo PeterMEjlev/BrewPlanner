@@ -1,5 +1,5 @@
-import type { NowPlaying } from '@checklist/shared';
-import { AsyncDeviceDiscovery, Sonos } from 'sonos';
+import type { MusicQueue, MusicRepeat, NowPlaying } from '@checklist/shared';
+import { AsyncDeviceDiscovery, type PlayMode, Sonos } from 'sonos';
 
 /**
  * Brewery speaker control. The IKEA SYMFONISK in the brewery runs Sonos
@@ -115,14 +115,55 @@ function positiveOrNull(value: number | undefined): number | null {
   return typeof value === 'number' && value > 0 ? value : null;
 }
 
+/**
+ * Split the speaker's single PlayMode string into the two toggles the UI shows.
+ * Sonos folds shuffle and repeat into one enum, and confusingly plain `SHUFFLE`
+ * means "shuffle *and* repeat all" — `SHUFFLE_NOREPEAT` is shuffle on its own.
+ */
+function splitPlayMode(mode: string): { shuffle: boolean; repeat: MusicRepeat } {
+  switch (mode) {
+    case 'REPEAT_ALL':
+      return { shuffle: false, repeat: 'all' };
+    case 'REPEAT_ONE':
+      return { shuffle: false, repeat: 'one' };
+    case 'SHUFFLE':
+      return { shuffle: true, repeat: 'all' };
+    case 'SHUFFLE_NOREPEAT':
+      return { shuffle: true, repeat: 'off' };
+    case 'SHUFFLE_REPEAT_ONE':
+      return { shuffle: true, repeat: 'one' };
+    default:
+      return { shuffle: false, repeat: 'off' };
+  }
+}
+
+/** The inverse of splitPlayMode: the two toggles back into one Sonos PlayMode. */
+function joinPlayMode(shuffle: boolean, repeat: MusicRepeat): PlayMode {
+  if (shuffle) {
+    if (repeat === 'all') return 'SHUFFLE';
+    return repeat === 'one' ? 'SHUFFLE_REPEAT_ONE' : 'SHUFFLE_NOREPEAT';
+  }
+  if (repeat === 'all') return 'REPEAT_ALL';
+  return repeat === 'one' ? 'REPEAT_ONE' : 'NORMAL';
+}
+
+/** currentTrack() reports NaN or 0 for a source that isn't the queue. */
+function queueSlotOrNull(value: number | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
 /** Read what the brewery speaker is currently playing. */
 export async function getNowPlaying(): Promise<NowPlaying> {
   return withDevice(async (device) => {
-    const [track, rawState, volume] = await Promise.all([
+    const [track, rawState, volume, rawMode] = await Promise.all([
       device.currentTrack(),
       device.getCurrentState(),
       device.getVolume(),
+      // Some sources don't implement GetTransportSettings; a missing play mode
+      // shouldn't take the whole now-playing panel down with it.
+      device.getPlayMode().catch(() => 'NORMAL'),
     ]);
+    const { shuffle, repeat } = splitPlayMode(rawMode);
     return {
       state: normalizeState(rawState),
       title: clean(track.title),
@@ -133,8 +174,73 @@ export async function getNowPlaying(): Promise<NowPlaying> {
       positionSec: positiveOrNull(track.position),
       volume: typeof volume === 'number' ? volume : 0,
       room: cachedRoom,
+      queuePosition: queueSlotOrNull(track.queuePosition),
+      shuffle,
+      repeat,
     };
   });
+}
+
+/**
+ * Read the speaker's queue, plus which slot is playing right now. A speaker on
+ * a radio stream or a Spotify Connect session has no Sonos queue at all, which
+ * surfaces here as an empty list rather than an error.
+ */
+export async function getQueue(): Promise<MusicQueue> {
+  return withDevice(async (device) => {
+    const [result, track] = await Promise.all([
+      // An empty queue comes back as an empty DIDL document, which the library
+      // parses inconsistently — sometimes throwing rather than yielding no
+      // items. `currentTrack` below is the reachability check, so a queue that
+      // won't parse is reported as empty rather than as a dead speaker.
+      device.getQueue().catch(() => null),
+      device.currentTrack(),
+    ]);
+    const items = result?.items ?? [];
+    return {
+      tracks: items.map((item, index) => ({
+        position: index + 1,
+        title: clean(item.title),
+        artist: clean(item.artist),
+        album: clean(item.album),
+        albumArtUrl: clean(item.albumArtURI ?? undefined),
+        uri: clean(item.uri),
+      })),
+      currentPosition: queueSlotOrNull(track.queuePosition),
+    };
+  });
+}
+
+/** Set shuffle and repeat together (Sonos only exposes them as one setting). */
+export async function setPlayMode(shuffle: boolean, repeat: MusicRepeat): Promise<void> {
+  await withDevice((device) => device.setPlayMode(joinPlayMode(shuffle, repeat)));
+}
+
+/** Jump the speaker to a queue slot (1-based) and play it. */
+export async function playQueuePosition(position: number): Promise<void> {
+  await withDevice(async (device) => {
+    await device.selectTrack(position);
+    await device.play();
+  });
+}
+
+/** Drop a track out of the queue by its 1-based position. */
+export async function removeFromQueue(position: number): Promise<void> {
+  await withDevice((device) => device.removeTracksFromQueue(position, 1));
+}
+
+/**
+ * Move the track at `from` so it ends up at `to` (both 1-based, as displayed).
+ *
+ * Sonos doesn't take a destination — it takes `InsertBefore`, the slot in the
+ * *pre-move* queue that the track should land in front of. Moving a track down
+ * the list therefore has to aim one slot past the target, because removing the
+ * track from above shifts everything below it up by one.
+ */
+export async function reorderQueue(from: number, to: number): Promise<void> {
+  if (from === to) return;
+  const insertBefore = to > from ? to + 1 : to;
+  await withDevice((device) => device.reorderTracksInQueue(from, 1, insertBefore));
 }
 
 export async function play(): Promise<void> {

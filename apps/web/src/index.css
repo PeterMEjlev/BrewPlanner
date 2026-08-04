@@ -165,6 +165,26 @@ html.upside-down body {
   }
 }
 
+/* The kiosk music queue sliding in over the now-playing view. It's mounted only
+   while open (so it doesn't poll the speaker in the background), which rules
+   out a transition between two states — hence a one-shot keyframe on entry. */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.slide-in-right {
+  animation: slide-in-right 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide-in-right {
+    animation: none;
+  }
+}
+
 /* Active nav icon, painted in the app's accent gradient instead of flat white.
    SVG can't take a gradient through `currentColor`, so the icons reference a
    paint server by id — <IconAccentGradient> in components/icons.tsx puts one

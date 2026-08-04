@@ -39,6 +39,8 @@ import type {
   Keg,
   KegContentColors,
   MetricTotal,
+  MusicQueue,
+  MusicRepeat,
   NotificationSettings,
   NowPlaying,
   OutdoorTemperature,
@@ -622,6 +624,20 @@ export const api = {
     request<void>('/music/volume', { method: 'POST', body: JSON.stringify({ volume }) }),
   musicSeek: (positionSec: number) =>
     request<void>('/music/seek', { method: 'POST', body: JSON.stringify({ positionSec }) }),
+  musicSetPlayMode: (shuffle: boolean, repeat: MusicRepeat) =>
+    request<void>('/music/play-mode', {
+      method: 'POST',
+      body: JSON.stringify({ shuffle, repeat }),
+    }),
+  // The queue is empty for sources that bypass it (radio, Spotify Connect).
+  // Positions are the 1-based slots Sonos itself uses.
+  getMusicQueue: () => request<MusicQueue>('/music/queue'),
+  musicQueueReorder: (from: number, to: number) =>
+    request<void>('/music/queue/reorder', { method: 'POST', body: JSON.stringify({ from, to }) }),
+  musicQueuePlay: (position: number) =>
+    request<void>('/music/queue/play', { method: 'POST', body: JSON.stringify({ position }) }),
+  musicQueueRemove: (position: number) =>
+    request<void>('/music/queue/remove', { method: 'POST', body: JSON.stringify({ position }) }),
 
   // Software update (admin-only). triggerUpdate starts a remote deploy (git pull
   // + rebuild + restart) on the Pi and returns immediately; poll getUpdateStatus

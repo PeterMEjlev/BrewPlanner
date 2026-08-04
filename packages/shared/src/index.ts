@@ -3005,6 +3005,40 @@ export interface NowPlaying {
   volume: number;
   /** The zone/room name of the controlled speaker, when known. */
   room: string | null;
+  /** 1-based slot of this track in the Sonos queue; null when not playing the queue. */
+  queuePosition: number | null;
+  /** Play mode, split out of the speaker's single PlayMode string. */
+  shuffle: boolean;
+  repeat: MusicRepeat;
+}
+
+/** How the speaker repeats: nothing, the whole queue, or the current track. */
+export type MusicRepeat = 'off' | 'all' | 'one';
+
+/**
+ * One entry in the speaker's queue (GET /api/music/queue). `position` is the
+ * 1-based slot Sonos itself uses, and is what the reorder/play/remove endpoints
+ * take. Queue entries carry no duration — Sonos only reports that for the track
+ * that's actually loaded.
+ */
+export interface QueueTrack {
+  position: number;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  albumArtUrl: string | null;
+  /** The track's Sonos URI — stable across a reorder, so it makes a good key. */
+  uri: string | null;
+}
+
+/**
+ * The speaker's queue. Empty when the speaker is playing a line-in, a radio
+ * stream, or a Spotify Connect session (those bypass the Sonos queue entirely).
+ */
+export interface MusicQueue {
+  tracks: QueueTrack[];
+  /** 1-based position of the track currently playing, when it comes from the queue. */
+  currentPosition: number | null;
 }
 
 /** Body for POST /api/music/volume — an absolute level, 0–100. */
@@ -3015,6 +3049,26 @@ export const setVolumeSchema = z.object({
 /** Body for POST /api/music/seek — an absolute position within the track, in seconds. */
 export const seekSchema = z.object({
   positionSec: z.coerce.number().int().min(0),
+});
+
+/** Body for POST /api/music/play-mode — shuffle and repeat are set together. */
+export const setPlayModeSchema = z.object({
+  shuffle: z.boolean(),
+  repeat: z.enum(['off', 'all', 'one']),
+});
+
+/**
+ * Body for POST /api/music/queue/reorder — move the track at `from` so it ends
+ * up at `to`. Both are 1-based queue positions, as shown in the UI.
+ */
+export const reorderQueueSchema = z.object({
+  from: z.coerce.number().int().min(1),
+  to: z.coerce.number().int().min(1),
+});
+
+/** Body for POST /api/music/queue/play and /api/music/queue/remove. */
+export const queuePositionSchema = z.object({
+  position: z.coerce.number().int().min(1),
 });
 
 // ---------------------------------------------------------------------------

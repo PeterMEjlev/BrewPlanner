@@ -1,4 +1,10 @@
-import { seekSchema, setVolumeSchema } from '@checklist/shared';
+import {
+  queuePositionSchema,
+  reorderQueueSchema,
+  seekSchema,
+  setPlayModeSchema,
+  setVolumeSchema,
+} from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { z } from 'zod';
 import { requireAdmin, requireAuth } from '../auth/index.js';
@@ -50,6 +56,39 @@ export async function musicRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(seekSchema, req.body, reply);
     if (!body) return;
     return control(() => sonos.seek(body.positionSec), reply);
+  });
+
+  app.post('/play-mode', adminOnly, async (req, reply) => {
+    const body = parse(setPlayModeSchema, req.body, reply);
+    if (!body) return;
+    return control(() => sonos.setPlayMode(body.shuffle, body.repeat), reply);
+  });
+
+  // Queue. Reading it is guest-visible like now-playing; changing it isn't.
+  app.get('/queue', async (_req, reply) => {
+    try {
+      return await sonos.getQueue();
+    } catch (err) {
+      return speakerError(err, reply);
+    }
+  });
+
+  app.post('/queue/reorder', adminOnly, async (req, reply) => {
+    const body = parse(reorderQueueSchema, req.body, reply);
+    if (!body) return;
+    return control(() => sonos.reorderQueue(body.from, body.to), reply);
+  });
+
+  app.post('/queue/play', adminOnly, async (req, reply) => {
+    const body = parse(queuePositionSchema, req.body, reply);
+    if (!body) return;
+    return control(() => sonos.playQueuePosition(body.position), reply);
+  });
+
+  app.post('/queue/remove', adminOnly, async (req, reply) => {
+    const body = parse(queuePositionSchema, req.body, reply);
+    if (!body) return;
+    return control(() => sonos.removeFromQueue(body.position), reply);
   });
 }
 
