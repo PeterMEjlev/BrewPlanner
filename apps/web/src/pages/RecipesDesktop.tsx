@@ -876,7 +876,7 @@ export function RecipesDesktopPage(): JSX.Element {
   return (
     <DashboardShell active="recipes">
       <main className="w-full max-w-[1100px] px-5 py-5">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
           <div className="min-w-0">
             <p className="text-sm text-zinc-500">
               Your BrewPlanner recipe library. Build recipes here, open a full brew sheet, or
@@ -885,55 +885,101 @@ export function RecipesDesktopPage(): JSX.Element {
             {backup && <BackupLine status={backup} />}
           </div>
           {/* Search, sort and refresh; wraps rather than overflowing once the
-              sort picker joins them on a narrow window. */}
-          <div className="flex flex-wrap items-center justify-end gap-2">
+              sort picker joins them on a narrow window.
+
+              A phone doesn't have the width for that wrap: right-aligned, the
+              controls came out as four ragged rows that started in a different
+              place each time. So the toolbar stacks there instead — page
+              actions, then the search box, then the ordering — as three
+              full-width rows. Each row is a wrapper that becomes
+              `display: contents` at `sm`, which dissolves it and hands its
+              children back to this flex row exactly as they sat before. */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             {controllable && (
-              <Link
-                to="/recipes/new"
-                className="rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-3 py-2 text-sm font-semibold text-white shadow transition hover:brightness-110"
-              >
-                + New recipe
-              </Link>
+              <div className="flex gap-2 sm:contents">
+                {/* `flex-auto`, not `flex-1`: these three share the row in
+                    proportion to their labels rather than being forced into
+                    equal thirds a long label would then spill out of. */}
+                <Link
+                  to="/recipes/new"
+                  className="flex-auto whitespace-nowrap rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-3 py-2 text-center text-sm font-semibold text-white shadow transition hover:brightness-110 sm:flex-none"
+                >
+                  + New recipe
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void backupNow()}
+                  disabled={backingUp}
+                  title="Write every recipe to a JSON file on the Pi and upload it to the shared Google Drive folder"
+                  className="flex-auto whitespace-nowrap rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40 sm:flex-none"
+                >
+                  {/* The tail of each label is what a phone can't fit, and is
+                      the part the title already explains. */}
+                  {backingUp ? (
+                    'Backing up…'
+                  ) : (
+                    <>
+                      Back up<span className="hidden sm:inline"> now</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void importLegacyRecipes()}
+                  disabled={importing}
+                  title="One-way import; existing BrewPlanner recipes are never overwritten"
+                  className="flex-auto whitespace-nowrap rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40 sm:flex-none"
+                >
+                  {importing ? (
+                    'Importing…'
+                  ) : (
+                    <>
+                      Import<span className="hidden sm:inline"> from Brewer’s Friend</span>
+                    </>
+                  )}
+                </button>
+              </div>
             )}
-            {controllable && (
-              <button
-                type="button"
-                onClick={() => void backupNow()}
-                disabled={backingUp}
-                title="Write every recipe to a JSON file on the Pi and upload it to the shared Google Drive folder"
-                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
-              >
-                {backingUp ? 'Backing up…' : 'Back up now'}
-              </button>
-            )}
-            {controllable && (
-              <button
-                type="button"
-                onClick={() => void importLegacyRecipes()}
-                disabled={importing}
-                title="One-way import; existing BrewPlanner recipes are never overwritten"
-                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
-              >
-                {importing ? 'Importing…' : 'Import from Brewer’s Friend'}
-              </button>
-            )}
-            {recipes != null && recipes.length > 0 && (
-              <>
+            {/* The search box and the reload share the phone's second row: the
+                box is the one control here that wants every pixel it can get,
+                and the reload is a single glyph. `sm:order-last` puts the
+                reload back at the end of the toolbar, where it has always sat,
+                once the rows dissolve. */}
+            <div className="flex items-center gap-2 sm:contents">
+              {recipes != null && recipes.length > 0 && (
                 <input
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search recipes…"
                   aria-label="Search recipes"
-                  className="w-48 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#f87a68]"
+                  className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#f87a68] sm:w-48 sm:flex-none"
                 />
+              )}
+              {/* Reload the shared app library, including changes from another client. */}
+              <button
+                type="button"
+                onClick={() => {
+                  void load(true);
+                  if (stats) void loadStats(true);
+                }}
+                disabled={refreshing}
+                title="Reload recipe library"
+                aria-label="Reload recipe library"
+                className="shrink-0 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40 sm:order-last"
+              >
+                {refreshing ? '…' : '↻'}
+              </button>
+            </div>
+            {recipes != null && recipes.length > 0 && (
+              <div className="flex items-center gap-2 sm:contents">
                 {/* Sort key + direction. Price is the one that costs an extra
                     round trip, so it's fetched on selection, not on load. */}
                 <Select
                   value={sort}
                   onChange={(key) => setOrder(saveOrder({ key, dir: SORT_DEFAULT_DIRECTION[key] }))}
                   aria-label="Sort recipes by"
-                  className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-[#f87a68]"
+                  className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-[#f87a68] sm:flex-none"
                   options={(Object.keys(SORT_LABELS) as SortKey[]).map((key) => ({
                     value: key,
                     label: `Sort: ${SORT_LABELS[key]}`,
@@ -946,7 +992,7 @@ export function RecipesDesktopPage(): JSX.Element {
                   }
                   title={`Sorted ${SORT_DIRECTION_LABELS[sort][dir]}`}
                   aria-label={`Sorted ${SORT_DIRECTION_LABELS[sort][dir]}. Reverse the order.`}
-                  className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100"
+                  className="shrink-0 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100"
                 >
                   {dir === 'asc' ? '↑' : '↓'}
                 </button>
@@ -958,7 +1004,7 @@ export function RecipesDesktopPage(): JSX.Element {
                   type="button"
                   onClick={() => setShowFilters((open) => !open)}
                   aria-expanded={showFilters}
-                  className={`rounded-lg border px-3 py-2 text-sm transition ${
+                  className={`shrink-0 rounded-lg border px-3 py-2 text-sm transition ${
                     activeFilters > 0
                       ? 'border-[#f87a68] bg-[#f87a68]/15 text-zinc-100'
                       : 'border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
@@ -973,22 +1019,8 @@ export function RecipesDesktopPage(): JSX.Element {
                   {filtered.length !== recipes.length && ` of ${recipes.length}`} recipe
                   {filtered.length === 1 ? '' : 's'}
                 </span>
-              </>
+              </div>
             )}
-            {/* Reload the shared app library, including changes from another client. */}
-            <button
-              type="button"
-              onClick={() => {
-                void load(true);
-                if (stats) void loadStats(true);
-              }}
-              disabled={refreshing}
-              title="Reload recipe library"
-              aria-label="Reload recipe library"
-              className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
-            >
-              {refreshing ? '…' : '↻'}
-            </button>
           </div>
         </div>
 
@@ -1011,7 +1043,12 @@ export function RecipesDesktopPage(): JSX.Element {
             strokeWidth={2.6}
             style={vesselColor ? { color: vesselColor } : undefined}
           />
-          <div className="min-w-0 flex-1">
+          {/* The floor of 10rem is what makes the row wrap on a phone rather
+              than squeeze: with `min-w-0` alone this column shrank to whatever
+              was left beside the Clean/Dirty control, and the sentence came out
+              two or three words wide. It still shrinks below its text — the
+              recipe name truncates the same as before — just not below legible. */}
+          <div className="min-w-[10rem] flex-1">
             <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
               In the fermenter
             </div>

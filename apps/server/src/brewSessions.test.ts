@@ -205,6 +205,34 @@ test('brews of one recipe are numbered by date, and back-dating renumbers them',
   assert.equal(count?.lastBrewedAt, '2026-06-01T09:00:00.000Z');
 });
 
+test('a recipe’s own history lists its batches, numbered as the whole log numbers them', async () => {
+  const { brewSessions, recipes } = await boot();
+  const bitter = recipes.createRecipe(recipe('House Bitter'));
+  const stout = recipes.createRecipe(recipe('Dry Stout'));
+
+  const march = brewSessions.startBrewSession(
+    bitter.id,
+    recipes.getRecipe(bitter.id)!,
+    '2026-03-01T09:00:00.000Z',
+  );
+  const june = brewSessions.startBrewSession(
+    bitter.id,
+    recipes.getRecipe(bitter.id)!,
+    '2026-06-01T09:00:00.000Z',
+  );
+  // Another recipe brewed in between, which this history must not pick up.
+  brewSessions.startBrewSession(stout.id, recipes.getRecipe(stout.id)!, '2026-04-01T09:00:00.000Z');
+
+  const history = brewSessions.listRecipeBrewSessions(bitter.id);
+  assert.deepEqual(history.map((brew) => brew.id), [june.id, march.id]);
+  // Numbered from the whole log, so a batch is the "#2" here that it is in the
+  // logbook — not the second row of this list.
+  assert.deepEqual(history.map((brew) => brew.brewNumber), [2, 1]);
+
+  // A recipe nobody has brewed has no history rather than an error.
+  assert.deepEqual(brewSessions.listRecipeBrewSessions('nothing-brewed'), []);
+});
+
 test('an edit writes only what it names, and null clears a measurement', async () => {
   const { brewSessions, recipes } = await boot();
   const saved = recipes.createRecipe(recipe('Saison'));

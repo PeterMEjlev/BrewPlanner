@@ -1,26 +1,81 @@
+import type { GraphColors, NotificationSettings, RecipeDefaults } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getRequestUser, isLocalRequest } from '../auth/index.js';
+import {
+  getGraphColors,
+  getKegContentColors,
+  getNotificationSettings,
+  getRecipeDefaults,
+} from '../repo.js';
 import {
   accountName,
   brewSessionRecipeName,
   checklistName,
   deviceName,
+  deviceSetpointC,
+  recipeSheet,
   recipeSheetName,
   stepText,
   todoText,
 } from './names.js';
+import type { FieldLabel } from './details.js';
+import {
+  asText,
+  changedFields,
+  changedRecipeSections,
+  describeChanges,
+  describeKegWrite,
+  joinSections,
+  onOff,
+  withUnit,
+} from './details.js';
 import { pushChangeToOthers } from '../notify/push.js';
 import { recordAudit } from './repo.js';
+
+/**
+ * How the saved-whole settings objects are spoken about when one of their
+ * fields moves. Only the fields worth naming in a notification are listed; a
+ * change to anything else falls back to the route's general sentence.
+ */
+const NOTIFICATION_FIELDS: readonly FieldLabel<NotificationSettings>[] = [
+  { key: 'kegAlertEnabled', label: 'keg-age alerts', value: onOff },
+  { key: 'kegAlertDays', label: 'the keg-age alert threshold', value: withUnit('days') },
+  { key: 'fermentDoneEnabled', label: 'fermentation-done alerts', value: onOff },
+];
+
+const GRAPH_COLOR_FIELDS: readonly FieldLabel<GraphColors>[] = [
+  { key: 'pressure', label: 'the pressure graph colour', value: asText },
+  { key: 'gravity', label: 'the gravity graph colour', value: asText },
+  { key: 'power', label: 'the power graph colour', value: asText },
+  { key: 'water', label: 'the water graph colour', value: asText },
+  { key: 'beerTemp', label: 'the beer-temperature graph colour', value: asText },
+  { key: 'fridgeTemp', label: 'the fridge-temperature graph colour', value: asText },
+  { key: 'setpoint', label: 'the setpoint graph colour', value: asText },
+];
+
+const RECIPE_DEFAULT_FIELDS: readonly FieldLabel<RecipeDefaults>[] = [
+  { key: 'batchSizeL', label: 'the batch size', value: withUnit('L', 1) },
+  { key: 'batchTarget', label: 'what the batch size measures', value: asText },
+  { key: 'boilTimeMinutes', label: 'the boil time', value: withUnit('min') },
+  { key: 'efficiencyPercent', label: 'the brewhouse efficiency', value: withUnit('%') },
+  { key: 'boilOffLPerHour', label: 'the boil-off rate', value: withUnit('L/h', 1) },
+  { key: 'trubChillerLossL', label: 'the trub/chiller loss', value: withUnit('L', 1) },
+  { key: 'pitchRate', label: 'the pitch rate', value: asText },
+  { key: 'mashThicknessLPerKg', label: 'the mash thickness', value: withUnit('L/kg', 1) },
+];
 
 declare module 'fastify' {
   interface FastifyRequest {
     /**
-     * Pre-handler snapshot of an audited subject's name, captured by the audit
-     * `preHandler` before the route runs. Needed for changes whose name can't be
-     * read afterwards — a delete (the row is gone) or a rename (the old name is
-     * overwritten). Undefined/null when the rule doesn't need it.
+     * Pre-handler snapshot of an audited subject, captured by the audit
+     * `preHandler` before the route runs. Needed for changes that can't be read
+     * afterwards — a delete (the row is gone), a rename (the old name is
+     * overwritten), or a whole-object save where only a diff against the
+     * previous state says what actually changed. Usually the subject's name;
+     * `unknown` because the settings rules snapshot the object itself.
+     * Undefined/null when the rule doesn't need it.
      */
-    auditBefore?: string | null;
+    auditBefore?: unknown;
   }
 }
 
@@ -129,8 +184,11 @@ interface BuildCtx {
   m: RegExpMatchArray;
   /** Parsed request body (unknown shape). */
   body: unknown;
-  /** Pre-handler snapshot of the subject's name, if the rule requested one. */
-  before: string | null;
+  /**
+   * Pre-handler snapshot, if the rule requested one — the subject's name for
+   * most rules, the previous state of the object for the settings diffs.
+   */
+  before: unknown;
 }
 
 /** Safely read a string field from a request body of unknown shape. */
@@ -144,19 +202,20 @@ function str(body: unknown, key: string): string | undefined {
 }
 
 /** `"Brew Session"` when the name is known, else `#<id>` — for naming a subject. */
-function named(name: string | null | undefined, id: string): string {
-  return name ? `"${name}"` : `#${id}`;
+function named(name: unknown, id: string): string {
+  return typeof name === 'string' && name ? `"${name}"` : `#${id}`;
 }
 
 type Rule = {
   method: string;
   re: RegExp;
   /**
-   * Optional: resolve the subject's name BEFORE the handler runs, for changes
-   * whose name can't be read afterwards (deletes/renames). Stashed on the request
-   * and handed back to `build` as `ctx.before`.
+   * Optional: snapshot the subject BEFORE the handler runs, for changes whose
+   * previous state can't be read afterwards — the name for deletes/renames, or
+   * the whole object for a settings save, where only a diff says what moved.
+   * Stashed on the request and handed back to `build` as `ctx.before`.
    */
-  before?: (m: RegExpMatchArray) => string | null;
+  before?: (m: RegExpMatchArray) => unknown;
   build: (ctx: BuildCtx) => Change | null;
   /**
    * Push this change to the *other* accounts' phones (see notify/push.ts), with
@@ -235,7 +294,29 @@ const RULES: Rule[] = [
   // whole draft is the question, and it repeats as the brewer types.
   { method: 'POST', re: /^\/api\/recipes\/price$/, build: () => null },
   { method: 'POST', re: /^\/api\/recipes$/, push: '/recipes', build: ({ body }) => ({ entity: 'Recipe', action: `Created recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
-  { method: 'PUT', re: /^\/api\/recipes\/([^/]+)$/, push: '/recipes', build: ({ body }) => ({ entity: 'Recipe', action: `Edited recipe${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
+  {
+    method: 'PUT',
+    re: /^\/api\/recipes\/([^/]+)$/,
+    push: '/recipes',
+    // The sheet as it read before the save, so the summary can name the parts
+    // that moved — every save is an "edit", but only some are worth opening.
+    before: (m) => recipeSheet(decodeURIComponent(m[1] ?? '')),
+    build: ({ m, body, before }) => {
+      const name = str(body, 'name');
+      const subject = `recipe${name ? ` "${name}"` : ''}`;
+      // Against the sheet as it was *stored*, not against the request body: the
+      // server recalculates a recipe on save (IBU, grain percentages, kettle
+      // gravities), so a raw-body diff reports the targets and the grain bill as
+      // changed on every save, including one that only moved a hop.
+      const sections = joinSections(
+        changedRecipeSections(before, recipeSheet(decodeURIComponent(m[1] ?? ''))),
+      );
+      return {
+        entity: 'Recipe',
+        action: sections ? `Edited ${subject}: ${sections}` : `Edited ${subject}`,
+      };
+    },
+  },
   { method: 'DELETE', re: /^\/api\/recipes\/([^/]+)$/, build: () => ({ entity: 'Recipe', action: 'Deleted a recipe from BrewPlanner' }) },
   { method: 'POST', re: /^\/api\/recipes\/import\/brewersfriend$/, build: () => ({ entity: 'Recipe', action: 'Imported recipes from Brewer\'s Friend' }) },
   // The nightly backup writes no audit row (it isn't a request); a backup
@@ -296,18 +377,97 @@ const RULES: Rule[] = [
   { method: 'DELETE', re: /^\/api\/prices\/override$/, build: () => ({ entity: 'Recipe', action: 'Reset an ingredient to automatic pricing' }) },
 
   // --- Keg inventory (referred to by keg #, per the sheet) ------------------
-  { method: 'PUT', re: /^\/api\/kegs\/([^/]+)$/, push: '/kegs', build: ({ m, body }) => ({ entity: 'Keg', action: `Updated keg #${decodeURIComponent(m[1] ?? '')}${str(body, 'contents') ? ` (${str(body, 'contents')})` : ''}` }) },
+  {
+    method: 'PUT',
+    re: /^\/api\/kegs\/([^/]+)$/,
+    push: '/kegs',
+    build: ({ m, body }) => ({
+      entity: 'Keg',
+      action: describeKegWrite(decodeURIComponent(m[1] ?? ''), {
+        contents: str(body, 'contents'),
+        abv: str(body, 'abv'),
+        date: str(body, 'date'),
+        note: str(body, 'note'),
+      }),
+    }),
+  },
 
   // --- Settings family ------------------------------------------------------
-  { method: 'PUT', re: /^\/api\/notifications\/settings$/, push: '/settings', build: () => ({ entity: 'Settings', action: 'Updated notification settings' }) },
+  // These routes all save the whole object, so what moved only exists as a diff
+  // against the state before the handler ran. Each falls back to its old general
+  // sentence when the snapshot is unreadable or nothing recognisable changed.
+  {
+    method: 'PUT',
+    re: /^\/api\/notifications\/settings$/,
+    push: '/settings',
+    before: () => getNotificationSettings(),
+    build: ({ before }) => {
+      // Read back what was stored rather than trusting the body: the value that
+      // matters is the one the brewery is now running on.
+      const after = getNotificationSettings();
+      const detail = describeChanges(changedFields(before, after, NOTIFICATION_FIELDS), after);
+      return {
+        entity: 'Settings',
+        action: detail ? `Changed ${detail}` : 'Updated notification settings',
+      };
+    },
+  },
   // A test notification sends a message but changes nothing on the server.
   { method: 'POST', re: /^\/api\/notifications\/test$/, build: () => null },
   // A phone handing over its push token on launch (and back on sign-out) is
   // bookkeeping between the app and the hub, not a change to the brewery.
   { method: 'POST', re: /^\/api\/push\/(register|unregister)$/, build: () => null },
-  { method: 'PUT', re: /^\/api\/recipe-defaults$/, push: '/settings', build: () => ({ entity: 'Settings', action: 'Changed what a new recipe starts from' }) },
-  { method: 'PUT', re: /^\/api\/graph-colors$/, push: '/settings', build: () => ({ entity: 'Settings', action: 'Updated graph colours' }) },
-  { method: 'PUT', re: /^\/api\/keg-content-colors$/, push: '/settings', build: () => ({ entity: 'Settings', action: 'Updated keg colours' }) },
+  {
+    method: 'PUT',
+    re: /^\/api\/recipe-defaults$/,
+    push: '/settings',
+    before: () => getRecipeDefaults(),
+    build: ({ before }) => {
+      const after = getRecipeDefaults();
+      const detail = describeChanges(changedFields(before, after, RECIPE_DEFAULT_FIELDS), after);
+      return {
+        entity: 'Settings',
+        action: detail
+          ? `Changed what a new recipe starts from: ${detail}`
+          : 'Changed what a new recipe starts from',
+      };
+    },
+  },
+  {
+    method: 'PUT',
+    re: /^\/api\/graph-colors$/,
+    push: '/settings',
+    before: () => getGraphColors(),
+    build: ({ before }) => {
+      const after = getGraphColors();
+      const detail = describeChanges(changedFields(before, after, GRAPH_COLOR_FIELDS), after);
+      return {
+        entity: 'Settings',
+        action: detail ? `Changed ${detail}` : 'Updated graph colours',
+      };
+    },
+  },
+  {
+    // The keg palette is keyed by beer, so its "fields" are whatever the sheet
+    // currently pours — built from the saved body rather than a fixed list.
+    method: 'PUT',
+    re: /^\/api\/keg-content-colors$/,
+    push: '/settings',
+    before: () => getKegContentColors(),
+    build: ({ before }) => {
+      const after = getKegContentColors();
+      const fields: FieldLabel<Record<string, string>>[] = Object.keys(after).map((key) => ({
+        key,
+        label: `the "${key}" keg colour`,
+        value: asText,
+      }));
+      const detail = describeChanges(changedFields(before, after, fields), after, 2);
+      return {
+        entity: 'Settings',
+        action: detail ? `Changed ${detail}` : 'Updated keg colours',
+      };
+    },
+  },
 
   // --- System ---------------------------------------------------------------
   { method: 'POST', re: /^\/api\/system\/update$/, build: () => ({ entity: 'System', action: 'Triggered a software update' }) },
@@ -317,11 +477,19 @@ const RULES: Rule[] = [
     method: 'POST',
     re: /^\/api\/devices\/(\d+)\/setpoint$/,
     push: '/devices',
-    build: ({ m, body }) => {
+    // The temperature it was holding before. Read ahead of the handler because
+    // queueing the change is what makes it stale, and "20°C" alone doesn't say
+    // whether someone nudged the fermenter or crashed it.
+    before: (m) => deviceSetpointC(m[1] ?? ''),
+    build: ({ m, body, before }) => {
       const dn = deviceName(m[1] ?? '');
       const ref = dn ? `"${dn}"` : `device #${m[1]}`;
       const value = str(body, 'value');
-      return { entity: 'Device', action: `Set ${ref} setpoint${value ? ` to ${value}°C` : ''}` };
+      const was = typeof before === 'number' ? ` (was ${before}°C)` : '';
+      return {
+        entity: 'Device',
+        action: value ? `Set ${ref} to ${value}°C${was}` : `Changed ${ref}'s setpoint`,
+      };
     },
   },
   {
@@ -413,7 +581,7 @@ function describeChange(
   method: string,
   path: string,
   body: unknown,
-  before: string | null,
+  before: unknown,
 ): Change | null {
   const rule = matchRule(method, path);
   if (!rule) return { entity: 'Other', action: `${method} ${path}` };

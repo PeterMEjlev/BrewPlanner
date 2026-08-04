@@ -36,7 +36,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { dismissAlert, dismissAllAlerts, listAlerts } from '../alerts/repo.js';
-import { listAudit } from '../audit/repo.js';
+import { auditFilters, listAudit } from '../audit/repo.js';
 import * as brewSessions from '../brewSessions/repo.js';
 import { registerAuditHook } from '../audit/hook.js';
 import { getRequestUser, requireAdmin, requireAuth } from '../auth/index.js';
@@ -303,8 +303,13 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   app.get('/history', adminOnly, async (req, reply) => {
     const query = parse(auditQuerySchema, req.query, reply);
     if (!query) return;
-    return listAudit(query.limit);
+    return listAudit(query);
   });
+
+  // The accounts and categories the log contains, for the page's filter
+  // dropdowns. Its own read so narrowing the list never narrows the options
+  // you'd need to widen it again.
+  app.get('/history/filters', adminOnly, async () => auditFilters());
 
   // --- App-owned recipe library -------------------------------------------
   // The first read after upgrading performs a one-way legacy import. A failed
@@ -488,6 +493,14 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   // How often each recipe has been brewed, for the badges on the recipe grid.
   app.get('/brew-sessions/counts', async () => brewSessions.recipeBrewCounts());
+
+  // The batches brewed from one recipe — the brew history on its sheet. Its own
+  // route rather than filtering the whole log in the browser: a sheet wants the
+  // handful of rows that belong to it, not every batch the brewery has logged.
+  app.get('/recipes/:id/brew-sessions', async (req) => {
+    const { id } = req.params as { id: string };
+    return brewSessions.listRecipeBrewSessions(id);
+  });
 
   /**
    * Start a brew session. The recipe is snapshotted onto the row as it reads today

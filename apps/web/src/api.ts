@@ -3,6 +3,8 @@ import type {
   ActiveState,
   Alert,
   AuditEntry,
+  AuditFilters,
+  AuditQuery,
   AuthState,
   BrewSession,
   BrewSessionDetail,
@@ -451,6 +453,9 @@ export const api = {
   getBrewSession: (id: number) => request<BrewSessionDetail>(`/brew-sessions/${id}`),
   // How many times each recipe has been brewed, for the badges on the grid.
   listRecipeBrewCounts: () => request<RecipeBrewCount[]>('/brew-sessions/counts'),
+  // The batches brewed from one recipe, newest first — its sheet's brew history.
+  listRecipeBrewSessions: (recipeId: string) =>
+    request<BrewSession[]>(`/recipes/${encodeURIComponent(recipeId)}/brew-sessions`),
   // `brewedAt` back-dates a brew that already happened; omit it for "brewing now".
   startBrewSession: (recipeId: string, brewedAt?: string) =>
     request<BrewSession>('/brew-sessions', {
@@ -539,8 +544,19 @@ export const api = {
   clearAlerts: () => request<{ dismissed: number }>('/alerts/clear', { method: 'POST' }),
 
   // Change history: the audit log of admin changes, newest first (admin-only).
-  listAudit: (limit?: number) =>
-    request<AuditEntry[]>(`/history${limit ? `?limit=${limit}` : ''}`),
+  // Filters are applied server-side so the cap counts *matching* rows — see
+  // auditQuerySchema for why narrowing in the browser wouldn't do.
+  listAudit: (query: AuditQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.limit != null) params.set('limit', String(query.limit));
+    if (query.since) params.set('since', query.since);
+    if (query.username) params.set('username', query.username);
+    if (query.entity) params.set('entity', query.entity);
+    const qs = params.toString();
+    return request<AuditEntry[]>(`/history${qs ? `?${qs}` : ''}`);
+  },
+  /** The accounts and categories present in the log, for the filter dropdowns. */
+  listAuditFilters: () => request<AuditFilters>('/history/filters'),
 
   // Shared chart colour palette (edited on the desktop Settings page, read by
   // every screen including the kiosk).

@@ -185,34 +185,44 @@ export function KegsDesktopPage(): JSX.Element {
         )}
 
         {/* Sort bar — the active key gets the coral pill, with a direction arrow.
-            The page actions share the row, pushed to the right. */}
-        <div className="mb-5 flex flex-wrap items-center gap-2">
-          {SORT_OPTIONS.map(({ key, label }) => {
-            const active = key === sortKey;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => handleSort(key)}
-                disabled={loading}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:opacity-50 ${
-                  active
-                    ? 'border-transparent bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
-                    : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800'
-                }`}
-              >
-                {label}
-                {active && <span aria-hidden>{sortAsc ? '▲' : '▼'}</span>}
-              </button>
-            );
-          })}
+            The page actions share the row, pushed to the right.
+
+            On a phone that single row wrapped badly: five keys fitted, the
+            sixth dropped to a line of its own, and the actions — still pushed
+            right — ended up marooned beside it with a hole in between. So the
+            keys become an even three-column grid there (six keys, two tidy
+            rows, nothing hanging), with the actions on their own row under it.
+            Both wrappers turn into `display: contents` at `sm`, which hands
+            every control back to this row exactly as it sat before. */}
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="grid grid-cols-3 gap-2 sm:contents">
+            {SORT_OPTIONS.map(({ key, label }) => {
+              const active = key === sortKey;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleSort(key)}
+                  disabled={loading}
+                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:opacity-50 ${
+                    active
+                      ? 'border-transparent bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
+                      : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800'
+                  }`}
+                >
+                  {label}
+                  {active && <span aria-hidden>{sortAsc ? '▲' : '▼'}</span>}
+                </button>
+              );
+            })}
+          </div>
           {controllable && (
-            <div className="ml-auto flex shrink-0 items-center gap-2">
+            <div className="flex items-center gap-2 sm:ml-auto sm:shrink-0">
               {selecting ? (
                 <button
                   type="button"
                   onClick={exitSelect}
-                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
+                  className="flex-1 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 sm:flex-none"
                 >
                   Cancel
                 </button>
@@ -221,7 +231,7 @@ export function KegsDesktopPage(): JSX.Element {
                   type="button"
                   onClick={() => setSelectMode(true)}
                   disabled={loading || kegs.length === 0}
-                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50"
+                  className="flex-1 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50 sm:flex-none"
                 >
                   Select
                 </button>
@@ -230,7 +240,7 @@ export function KegsDesktopPage(): JSX.Element {
                 href={SHEETS_VIEW_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-lg border border-zinc-800 px-3 py-1.5 text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+                className="flex-1 rounded-lg border border-zinc-800 px-3 py-1.5 text-center text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100 sm:flex-none"
               >
                 Inventory sheet ↗
               </a>

@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { brewSessionName } from '../brewSessions/repo.js';
 import { db } from '../db/index.js';
 import { checklists, recipes, steps, todos, users } from '../db/schema.js';
-import { getDevice } from '../devices/repo.js';
+import { getDevice, getDeviceStatus } from '../devices/repo.js';
 
 /**
  * Resolve the human-readable name of an audited subject from its id, so the
@@ -48,6 +48,32 @@ export function recipeSheetName(id: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A library recipe's stored sheet, parsed — what an edit is diffed against so
+ * the summary can name the sections that moved. Null when the recipe is gone or
+ * its JSON no longer parses, which downgrades the summary rather than failing.
+ */
+export function recipeSheet(id: string): Record<string, unknown> | null {
+  const row = db.select({ recipe: recipes.recipe }).from(recipes).where(eq(recipes.id, id)).get();
+  if (!row) return null;
+  try {
+    const parsed: unknown = JSON.parse(row.recipe);
+    return parsed != null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A device's current target temperature, as its own agent last reported it — the
+ * "was" in a setpoint change. Null when the device has never reported one.
+ */
+export function deviceSetpointC(id: string): number | null {
+  const latest = getDeviceStatus(num(id))?.latest ?? [];
+  const reading = latest.find((r) => r.metric === 'setpoint_c');
+  return typeof reading?.value === 'number' ? reading.value : null;
 }
 
 /** The recipe a brew session was logged for, or null if the entry is gone. */

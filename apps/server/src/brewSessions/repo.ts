@@ -180,6 +180,25 @@ export function listBrewSessions(): BrewSession[] {
     .map((row) => rowToBrewSession(row, numbers.get(row.id) ?? 1));
 }
 
+/**
+ * One recipe's own batches, newest first — the brew history on its sheet.
+ *
+ * Numbered from the whole log rather than from this subset, so a batch is the
+ * "#3" here that it is everywhere else. Rows whose recipe was deleted are not
+ * reachable from any sheet, which is the point: their `recipeId` is null and
+ * they belong to no recipe any more.
+ */
+export function listRecipeBrewSessions(recipeId: string): BrewSession[] {
+  const numbers = brewNumbers();
+  return db
+    .select()
+    .from(brewSessions)
+    .where(eq(brewSessions.recipeId, recipeId))
+    .orderBy(desc(brewSessions.brewedAt), desc(brewSessions.id))
+    .all()
+    .map((row) => rowToBrewSession(row, numbers.get(row.id) ?? 1));
+}
+
 /** One brew session with its logged rig temperatures and derived fermentation figures. */
 export function getBrewSession(id: number): BrewSessionDetail | null {
   const row = db.select().from(brewSessions).where(eq(brewSessions.id, id)).get();

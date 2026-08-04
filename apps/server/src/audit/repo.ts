@@ -1,5 +1,5 @@
-import type { AuditEntry } from '@checklist/shared';
-import { desc } from 'drizzle-orm';
+import type { AuditEntry, AuditFilters, AuditQuery } from '@checklist/shared';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { auditLog } from '../db/schema.js';
 
@@ -47,13 +47,49 @@ export function recordAudit(input: {
   return toPublic(row);
 }
 
-/** The most recent changes, newest first (capped; default 200). */
-export function listAudit(limit = 200): AuditEntry[] {
+/**
+ * The most recent changes, newest first (capped; default 200), narrowed by any
+ * of the History page's filters.
+ *
+ * The filters are applied in SQL rather than after the fact so the cap counts
+ * matching rows: asking for one account's keg changes returns the newest 200 of
+ * *those*, not however many of them happen to be in the newest 200 overall.
+ */
+export function listAudit(query: AuditQuery = {}): AuditEntry[] {
+  const where = [
+    query.since ? gte(auditLog.createdAt, query.since) : undefined,
+    query.username ? eq(auditLog.username, query.username) : undefined,
+    query.entity ? eq(auditLog.entity, query.entity) : undefined,
+  ].filter((clause) => clause != null);
+
   return db
     .select()
     .from(auditLog)
+    .where(where.length > 0 ? and(...where) : undefined)
     .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
-    .limit(limit)
+    .limit(query.limit ?? 200)
     .all()
     .map(toPublic);
+}
+
+/**
+ * The accounts and categories the log actually contains, each sorted for a
+ * stable dropdown. Deliberately unfiltered by the current selection: options
+ * that disappear as you narrow make a filter bar impossible to back out of.
+ */
+export function auditFilters(): AuditFilters {
+  const rows = db
+    .selectDistinct({ username: auditLog.username, entity: auditLog.entity })
+    .from(auditLog)
+    .all();
+  const usernames = new Set<string>();
+  const entities = new Set<string>();
+  for (const row of rows) {
+    if (row.username) usernames.add(row.username);
+    if (row.entity) entities.add(row.entity);
+  }
+  return {
+    usernames: [...usernames].sort((a, b) => a.localeCompare(b)),
+    entities: [...entities].sort((a, b) => a.localeCompare(b)),
+  };
 }

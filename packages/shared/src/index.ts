@@ -1607,11 +1607,36 @@ export interface AuditEntry {
   createdAt: string;
 }
 
-/** Query for `GET /api/history`: how many of the most recent entries to return. */
+/**
+ * Query for `GET /api/history`: how many of the most recent entries to return,
+ * and which of them.
+ *
+ * Filtering is the server's job rather than the browser's because the log is
+ * read newest-first under a cap — filtering a page of 200 in the browser would
+ * search only the newest 200 changes, so "everything Peter did to the kegs" would
+ * silently stop at whatever the last fortnight happened to contain.
+ */
 export const auditQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(1000).optional(),
+  /** Only changes at or after this instant (ISO 8601). */
+  since: z.string().datetime().optional(),
+  /** Only changes made by this account, matched exactly. */
+  username: z.string().trim().min(1).max(100).optional(),
+  /** Only changes in this category — the entity the audit rules tag rows with. */
+  entity: z.string().trim().min(1).max(50).optional(),
 });
 export type AuditQuery = z.infer<typeof auditQuerySchema>;
+
+/**
+ * The values actually present in the change log, for the History page's filter
+ * dropdowns. Drawn from the log itself rather than from a fixed list so the
+ * options are always ones that would return something — an account that never
+ * made a change, or a category nothing has been logged under, isn't offered.
+ */
+export interface AuditFilters {
+  usernames: string[];
+  entities: string[];
+}
 
 // ---------------------------------------------------------------------------
 // Keg inventory (shared Google Sheet)

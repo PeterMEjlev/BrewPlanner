@@ -1,4 +1,5 @@
 import type {
+  BrewSession,
   CostTotal,
   HopStage,
   Recipe,
@@ -13,7 +14,9 @@ import type {
   UnpricedIngredient,
 } from '@checklist/shared';
 import {
+  BREW_SESSION_STATUS_LABELS,
   HOP_STAGE_ORDER,
+  abvFromGravities,
   aromaHopRate,
   ebcColor,
   estimateFermentationDays,
@@ -27,6 +30,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
+import { STATUS_CHIP, brewDate, formatDuration } from '../brewSessions';
 import { DashboardShell } from '../components/DashboardShell';
 import { IngredientName, PriceCell } from '../components/PricePicker';
 import type { PricedLine } from '../components/PricePicker';
@@ -50,7 +54,7 @@ import { asCleanMessage } from '../util';
  */
 
 /** Which sections are folded away. Persisted so a preference survives reloads. */
-type SectionKey = 'fermentables' | 'hops' | 'other' | 'yeast' | 'mash' | 'water';
+type SectionKey = 'fermentables' | 'hops' | 'other' | 'yeast' | 'mash' | 'water' | 'brews';
 
 const COLLAPSE_KEY = 'brewplanner.recipeSections';
 
@@ -62,6 +66,7 @@ const ALL_OPEN: Record<SectionKey, boolean> = {
   yeast: false,
   mash: false,
   water: false,
+  brews: false,
 };
 
 function loadCollapsed(): Record<SectionKey, boolean> {
@@ -145,6 +150,8 @@ export function RecipeDetailPage(): JSX.Element {
 
   const [recipe, setRecipe] = useState<RecipeDetail | null>(null);
   const [active, setActive] = useState<Recipe | null>(null);
+  /** Every batch brewed from this recipe, newest first. Empty until it's fetched. */
+  const [brews, setBrews] = useState<BrewSession[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -167,20 +174,24 @@ export function RecipeDetailPage(): JSX.Element {
   useEffect(() => {
     let cancelled = false;
     setRecipe(null);
+    setBrews([]);
     setError(null);
     void (async () => {
       try {
-        // The active-recipe read is what decides whether this recipe shows as
-        // "in the fermenter"; a failure there shouldn't hide the brew sheet.
-        const [detail, current] = await Promise.all([
+        // The active-recipe and brew-history reads decide whether this recipe
+        // shows as "in the fermenter" and how often it has been made; neither
+        // failing should hide the brew sheet, so both swallow their errors.
+        const [detail, current, history] = await Promise.all([
           // From the session cache when this recipe has been opened before —
           // reopening a brew sheet mid-brew shouldn't wait on Brewer's Friend.
           loadRecipeDetail(id),
           api.getActiveRecipe().catch(() => null),
+          api.listRecipeBrewSessions(id).catch(() => []),
         ]);
         if (cancelled) return;
         setRecipe(detail);
         setActive(current);
+        setBrews(history);
       } catch (e) {
         if (!cancelled) setError(asCleanMessage(e));
       }
@@ -191,6 +202,9 @@ export function RecipeDetailPage(): JSX.Element {
   }, [id]);
 
   const isActive = recipe != null && active?.id === recipe.id;
+  // The history comes back newest first, so the head of it is the last time this
+  // beer was made — and doubles as "has this ever been brewed?".
+  const latestBrew = brews[0] ?? null;
 
   /**
    * Re-read the brew sheet after a price decision. A decision is stored against
@@ -392,6 +406,20 @@ export function RecipeDetailPage(): JSX.Element {
             <p className="mt-1 pl-[26px] text-sm text-zinc-400">
               {recipe.style || 'No style set'}
               {recipe.batchSizeL != null && ` · ${recipe.batchSizeL} L batch`}
+              {/* How often this one has actually been made — the fact the sheet
+                  itself can't tell you. Anchors to the log below rather than
+                  repeating it here. */}
+              {brews.length > 0 && (
+                <>
+                  {' · '}
+                  <a
+                    href="#brew-history"
+                    className="font-medium text-zinc-300 underline decoration-zinc-600 underline-offset-4 transition hover:text-zinc-100"
+                  >
+                    brewed {brews.length} time{brews.length === 1 ? '' : 's'}
+                  </a>
+                </>
+              )}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -669,6 +697,27 @@ export function RecipeDetailPage(): JSX.Element {
               onToggle={() => toggle('water')}
             >
               <WaterSection profile={recipe.waterProfile} recipe={recipe} />
+            </SheetSection>
+          )}
+
+          {/* Last, because it isn't part of the sheet you brew from: the rest of
+              this page is the recipe, this is what happened when it was made.
+              Absent until there's a first batch, the way the grid's badge is. */}
+          {latestBrew && (
+            <SheetSection
+              id="brew-history"
+              title="Brew history"
+              icon="📖"
+              meta={`${brews.length} batch${brews.length === 1 ? '' : 'es'} · last on ${brewDate(latestBrew.brewedAt)}`}
+              metaTitle="Every brew session logged against this recipe"
+              open={!collapsed.brews}
+              onToggle={() => toggle('brews')}
+            >
+              <ul className="divide-y divide-zinc-800">
+                {brews.map((brew) => (
+                  <BrewHistoryRow key={brew.id} brew={brew} />
+                ))}
+              </ul>
             </SheetSection>
           )}
         </div>
@@ -1193,6 +1242,78 @@ function YeastRow({
       )}
     </li>
   );
+}
+
+/**
+ * One past batch of this recipe, linking to its entry in the logbook. Says what
+ * the beer actually came out at rather than what the sheet above targets — the
+ * whole reason to look at the history from the recipe — and falls back to the
+ * batch's own snapshot for anything the brewer never measured.
+ *
+ * The recipe's name is deliberately absent: on its own sheet, every row is it.
+ */
+function BrewHistoryRow({ brew }: { brew: BrewSession }): JSX.Element {
+  const og = brew.measured.og || brew.recipe.og;
+  const fg = brew.measured.fg || brew.recipe.fg;
+  const abv = abvFromGravities(brew.measured.og, brew.measured.fg);
+  const facts: string[] = [];
+  if (og) facts.push(fg ? `${og} → ${fg}` : `OG ${og}`);
+  if (abv != null) facts.push(`${abv.toFixed(1)}%`);
+  if (brew.measured.volumeL != null) facts.push(`${brew.measured.volumeL} L`);
+  if (brew.measured.efficiencyPct != null) facts.push(`${brew.measured.efficiencyPct}% eff.`);
+  if (brew.durationMinutes != null) facts.push(formatDuration(brew.durationMinutes));
+
+  return (
+    <li>
+      <Link
+        to={`/brew-sessions/${brew.id}`}
+        className="block px-4 py-2.5 transition hover:bg-zinc-800/50"
+      >
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <span className="shrink-0 text-sm font-semibold text-zinc-100" title={brew.brewedAt}>
+            {brewDate(brew.brewedAt)}
+          </span>
+          <span
+            className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-400"
+            title={`The ${brew.brewNumber}${ordinal(brew.brewNumber)} batch of this recipe`}
+          >
+            #{brew.brewNumber}
+          </span>
+          <span
+            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+              STATUS_CHIP[brew.status]
+            }`}
+          >
+            {BREW_SESSION_STATUS_LABELS[brew.status]}
+          </span>
+          {brew.rating != null && (
+            <span className="shrink-0 text-xs text-amber-300" title={`Rated ${brew.rating} of 5`}>
+              {'★'.repeat(brew.rating)}
+              <span className="text-zinc-700">{'★'.repeat(5 - brew.rating)}</span>
+            </span>
+          )}
+          {/* Its own line in portrait, where the date, the chips and the stars
+              have already taken the row — truncating there ellipsises the
+              figures away to nothing. From `sm` it sits back on the one line,
+              right-aligned against the section's edge. */}
+          {facts.length > 0 && (
+            <span className="min-w-0 basis-full text-xs text-zinc-500 sm:flex-1 sm:basis-auto sm:truncate sm:text-right">
+              {facts.join(' · ')}
+            </span>
+          )}
+        </div>
+        {brew.tastingNotes.trim() && (
+          <p className="mt-1 truncate text-xs text-zinc-600">{brew.tastingNotes.trim()}</p>
+        )}
+      </Link>
+    </li>
+  );
+}
+
+/** "st" for 1, "nd" for 2 — the suffix for a batch's number in its series. */
+function ordinal(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return 'th';
+  return ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th';
 }
 
 /** The six brewing ions, in the order the water calculator lists them. */
