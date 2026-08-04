@@ -228,7 +228,9 @@
    sliders spanning underneath. Nothing is hidden and no markup changes: the
    card still renders exactly what the kiosk renders.
 
-   Columns: name | reading | watts | ON+REG. */
+   Columns: name | reading | watts | ON | REG. The two buttons get a track each
+   rather than sharing one, because that boundary is also where the slider row
+   splits when REG is on (see .control below). */
 @media (max-width: 640px) {
   .potCard {
     /* The 300px floor is what pushes the card past a narrow viewport: as a grid
@@ -236,7 +238,7 @@
        overflows rather than the card shrinking. */
     min-width: 0;
     display: grid;
-    grid-template-columns: auto auto 1fr auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
     align-items: center;
     column-gap: 10px;
     row-gap: 6px;
@@ -247,7 +249,7 @@
   .header,
   .tempDisplay,
   .pvSection,
-  .wattsRow {
+  .headerControls {
     display: contents;
   }
 
@@ -272,14 +274,22 @@
     letter-spacing: 0;
   }
 
-  /* Watts, and the "limited" tag when the shared power cap is biting, stacked
-     small between the reading and the buttons. */
-  .wattsValue {
+  /* Watts sits between the reading and the buttons, with the "limited" tag
+     stacked under it when the shared power cap is biting — the two together are
+     still shorter than the buttons beside them, so the row doesn't grow, and
+     neither can land on top of the other in a narrow column. */
+  .wattsRow {
     grid-column: 3;
     grid-row: 1;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .wattsValue {
     font-size: var(--font-size-sm);
-    justify-self: start;
-    align-self: center;
     /* "2,250 W" broken over two lines would set the height of the whole row on a
        narrow phone; the column may clip before the reading is allowed to wrap. */
     white-space: nowrap;
@@ -287,33 +297,48 @@
   }
 
   .throttleTag {
-    grid-column: 3;
-    grid-row: 1;
-    justify-self: end;
-    align-self: center;
-  }
-
-  .headerControls {
-    grid-column: 4;
-    grid-row: 1;
-    gap: 8px;
+    font-size: 9px;
+    padding: 0 4px;
   }
 
   .toggleBtn {
+    grid-column: 4;
+    grid-row: 1;
     min-width: 0;
     /* Horizontal padding gives way, vertical does not — 12px + 16px text + 12px
        keeps the button at ~44px, the smallest reliable touch target. */
     padding: 12px 16px;
   }
 
-  /* Sliders run the full width of the card, one per line under the reading. */
+  /* Later than the rule above, so REG takes the fifth track. */
+  .regBtn {
+    grid-column: 5;
+  }
+
+  /* One slider, spanning the card: this is the REG-off case, where Efficiency is
+     the only control and is set by hand, so it gets the longest possible throw. */
   .control {
     grid-column: 1 / -1;
     /* The caption sits *on* the slider rather than above it — a labelled track
-       is one 46px row instead of two, which is what buys the whole panel its
+       is one 44px row instead of two, which is what buys the whole panel its
        one-screen fit. */
     position: relative;
     gap: 0;
+  }
+
+  /* Turning REG on adds the Set Temperature slider — and a card that grows by a
+     row when a button is pressed is what pushes the panel off the screen. So the
+     two sliders share the one row instead of stacking: the card is exactly as
+     tall regulating as not, and the panel's height never depends on the rig's
+     state. Set Temperature takes the wider half (it's the one being aimed);
+     Efficiency takes the half under the buttons — which is also the control the
+     rig drives itself, and disables here, whenever auto-efficiency is on. */
+  .control:has(+ .control) {
+    grid-column: 1 / 4;
+  }
+
+  .control + .control {
+    grid-column: 4 / -1;
   }
 
   .controlLabel {
