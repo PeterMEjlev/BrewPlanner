@@ -195,6 +195,14 @@
    once (they inherit these custom properties from this root), so the phone
    layout stays one set of numbers rather than a parallel stylesheet.
 
+   The order changes too. The kiosk's arrangement — three pot cards across the
+   top, then Pump 1 / timer / Pump 2 — is a shape for a landscape screen; poured
+   into one narrow column it runs about two and a half screens, with the total
+   power (the number that says whether the rig is throttling) last of all. On a
+   phone the panel reads top to bottom instead: the power total as a strip, the
+   three vessels, both pumps, then the timer. The cards themselves become single
+   rows in their own modules.
+
    Sizes are floored at what a wet-handed brewer can still hit: controls stay
    >=44px tall, which is why the paddings shrink less than the fonts do. */
 @media (max-width: 640px) {
@@ -206,17 +214,39 @@
     --font-size-xl: 20px;
     --font-size-2xl: 22px;
     --font-size-3xl: 34px;
-    --font-size-4xl: 34px;
-    gap: 12px;
+    --font-size-4xl: 30px;
+    gap: 8px;
   }
 
   .panelBody {
-    gap: 12px;
+    gap: 8px;
   }
 
   .potRow,
   .pumpRow {
-    gap: 12px;
+    gap: 8px;
+  }
+
+  /* The pumps and the timer share one wrapper on the kiosk (pump | timer |
+     pump). Stacked, the timer would come between the two pumps, so it is sent
+     to the end — the two pumps read as a pair, and the timer closes the page. */
+  .pumpRow {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pumpRow > :nth-child(2) {
+    order: 1;
+  }
+
+  /* Up top as a strip rather than a footnote: it's the one figure that explains
+     a pot quietly refusing to draw the power it was asked for. */
+  .powerText {
+    order: -1;
+    background: var(--color-bg-secondary);
+    border-radius: var(--radius-md);
+    padding: 5px 12px;
+    font-size: var(--font-size-sm);
   }
 
   .connectionBanner {

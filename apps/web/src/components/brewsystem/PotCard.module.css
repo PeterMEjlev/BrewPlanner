@@ -218,17 +218,84 @@
   cursor: not-allowed;
 }
 
+/* Phone: the card becomes an instrument row.
+
+   The kiosk stacks a card as title → dark reading box → sliders, which on a
+   phone is ~330px of screen for one pot and puts the third vessel, both pumps
+   and the timer below the fold. Here the same DOM is re-laid as a grid and its
+   wrappers are dissolved with `display: contents`, so the parts that were
+   stacked — name, reading, watts, ON/REG — sit on one 44px line, with the
+   sliders spanning underneath. Nothing is hidden and no markup changes: the
+   card still renders exactly what the kiosk renders.
+
+   Columns: name | reading | watts | ON+REG. */
 @media (max-width: 640px) {
   .potCard {
     /* The 300px floor is what pushes the card past a narrow viewport: as a grid
        item in the single-column phone layout it sets the track width, so the row
        overflows rather than the card shrinking. */
     min-width: 0;
-    padding: 16px;
-    gap: 14px;
+    display: grid;
+    grid-template-columns: auto auto 1fr auto;
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 6px;
+    padding: 8px 12px;
+  }
+
+  /* Dissolved so their children join the card's grid directly. */
+  .header,
+  .tempDisplay,
+  .pvSection,
+  .wattsRow {
+    display: contents;
+  }
+
+  .title {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: var(--font-size-xl);
+  }
+
+  /* "Current" — on a row where the reading is the only large number, the word
+     is noise. Same for the separate Target line: with REG on, the target is on
+     the Set Temperature slider right below, which is also where it's changed. */
+  .pvLabel,
+  .svSection {
+    display: none;
+  }
+
+  .pvValue {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 30px;
+    letter-spacing: 0;
+  }
+
+  /* Watts, and the "limited" tag when the shared power cap is biting, stacked
+     small between the reading and the buttons. */
+  .wattsValue {
+    grid-column: 3;
+    grid-row: 1;
+    font-size: var(--font-size-sm);
+    justify-self: start;
+    align-self: center;
+    /* "2,250 W" broken over two lines would set the height of the whole row on a
+       narrow phone; the column may clip before the reading is allowed to wrap. */
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .throttleTag {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    align-self: center;
   }
 
   .headerControls {
+    grid-column: 4;
+    grid-row: 1;
     gap: 8px;
   }
 
@@ -239,23 +306,75 @@
     padding: 12px 16px;
   }
 
-  .tempDisplay {
-    padding: 12px;
-    gap: 10px;
+  /* Sliders run the full width of the card, one per line under the reading. */
+  .control {
+    grid-column: 1 / -1;
+    /* The caption sits *on* the slider rather than above it — a labelled track
+       is one 46px row instead of two, which is what buys the whole panel its
+       one-screen fit. */
+    position: relative;
+    gap: 0;
   }
 
-  /* The MLT reading needs no phone-specific size: it tracks the card's own
-     width (see .tempDisplay), which is already the narrow single-column one. */
-
-  .pvValue {
-    letter-spacing: 0;
+  .controlLabel {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    padding: 0 12px;
+    /* The track is a live control; the caption must not swallow a drag. */
+    pointer-events: none;
+    font-size: var(--font-size-xs);
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   }
 
+  .controlValue {
+    font-size: var(--font-size-sm);
+    color: inherit !important;
+    text-shadow: inherit;
+  }
+
+  /* 44px is the floor for a wet finger, and the panel needs every pixel back
+     that it can take from elsewhere to stay on one screen. */
   .slider {
     height: 44px;
   }
 
   .slider::-webkit-slider-thumb {
     height: 52px;
+  }
+
+  /* MLT is read-only, so its row is just the name and the reading — the biggest
+     number on the panel, since a mash is watched by that one figure. Its size is
+     set here rather than left to the kiosk's container query: `display: contents`
+     above removes the box that query measured. */
+  .potCard.mlt {
+    grid-template-columns: auto 1fr;
+    padding: 6px 12px;
+  }
+
+  .mlt .pvSection.mltTemp {
+    display: contents;
+  }
+
+  .mlt .pvSection.mltTemp .pvValue {
+    grid-column: 2;
+    font-size: 34px;
+    justify-self: end;
+  }
+}
+
+/* The narrow half of the phone range (a 360px Android, and anything smaller).
+   Measured on the HLT row — the worst case, since its name is a character
+   longer than the others — the watts reading ends about a pixel from the ON
+   button. The two toggles give back the horizontal padding, which is the only
+   slack on that line that isn't a reading or a touch target's height. */
+@media (max-width: 380px) {
+  .potCard {
+    column-gap: 8px;
+  }
+
+  .toggleBtn {
+    padding: 12px;
   }
 }
