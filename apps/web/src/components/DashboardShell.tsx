@@ -1,3 +1,13 @@
+import {
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
@@ -5,7 +15,9 @@ import { canControl, useAuth } from '../auth';
 import { useBrucePhase } from '../bruceActivity';
 import { isUnknownContents } from '../kegs';
 import { isNative } from '../native';
+import { applyNavOrder, moveNavKey } from '../navOrder';
 import { unregisterPush } from '../push';
+import { setSetting, useSettings } from '../settings';
 import { useReopenSetup } from '../setupContext';
 import { SHARED, useShared } from '../sharedPoll';
 import { usePoll } from '../usePoll';
@@ -13,15 +25,16 @@ import {
   BellIcon,
   BookIcon,
   BrewKettleIcon,
-  ChatIcon,
   ChecklistIcon,
+  ChipIcon,
   ClockIcon,
   CloseIcon,
+  GripIcon,
   HistoryIcon,
   HomeIcon,
   IconAccentGradient,
   KegIcon,
-  MonitorIcon,
+  RobotIcon,
   SettingsIcon,
   SlidersIcon,
   ThinkingDots,
@@ -68,8 +81,8 @@ const NAV: NavItem[] = [
   { key: 'brewSystem', label: 'Brew System', Icon: SlidersIcon, to: '/brew-system', page: 'brewSystem' },
   { key: 'recipes', label: 'Recipes', Icon: BookIcon, to: '/recipes', page: 'recipes' },
   { key: 'kegs', label: 'Kegs', Icon: KegIcon, to: '/kegs', page: 'kegs' },
-  { key: 'devices', label: 'Devices', Icon: MonitorIcon, to: '/devices', page: 'devices' },
-  { key: 'bruce', label: 'Bruce', Icon: ChatIcon, to: '/bruce', page: 'bruce' },
+  { key: 'devices', label: 'Devices', Icon: ChipIcon, to: '/devices', page: 'devices' },
+  { key: 'bruce', label: 'Bruce', Icon: RobotIcon, to: '/bruce', page: 'bruce' },
   { key: 'brewSessions', label: 'Brew Sessions', Icon: BrewKettleIcon, to: '/brew-sessions', page: 'brewSessions' },
   { key: 'tools', label: 'Tools', Icon: WrenchIcon, to: '/tools', page: 'tools' },
   { key: 'todos', label: 'To-Do', Icon: TodoIcon, to: '/todos', page: 'todos' },
@@ -89,6 +102,18 @@ const BOTTOM_BAR_PAGES: ShellPage[] = ['overview', 'brewSystem', 'recipes', 'keg
 
 /** How often the nav re-checks the fleet's online/total counts. */
 const FLEET_POLL_MS = 15_000;
+
+/**
+ * Hold a sidebar rail this long to put the rail into reorder mode. Longer than
+ * the kiosk's 220ms drag delay (see touch.tsx) on purpose: there a hold and a
+ * tap do comparable jobs, whereas every press here is a click meant to navigate
+ * until proven otherwise, and arriving somewhere you didn't ask for is worse
+ * than a hold that needs a moment.
+ */
+const NAV_HOLD_MS = 500;
+
+/** Slide further than this during the hold and it was a scroll, not a press. */
+const NAV_HOLD_SLOP_PX = 8;
 
 interface FleetStatus {
   online: number;
@@ -308,8 +333,7 @@ function useEscapeToOverview(active: ShellPage): void {
  */
 function useArrowPageNav(active: ShellPage): void {
   const navigate = useNavigate();
-  const { auth } = useAuth();
-  const items = visibleNav(canControl(auth));
+  const items = useNavItems();
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || keyShortcutBlocked(e)) return;
@@ -352,6 +376,20 @@ function visibleNav(controllable: boolean): NavItem[] {
       item.page !== 'settings' &&
       item.page !== 'history',
   );
+}
+
+/**
+ * The rails this session may open, in the order the brewer arranged them. One
+ * hook for all three navs — the sidebar, the phone strip and the arrow-key
+ * shortcut — so they can't disagree about what the nav holds or what order it's
+ * in; the arrow keys stepping through a different order than the rail shows was
+ * exactly the kind of thing that would go unnoticed.
+ */
+function useNavItems(): NavItem[] {
+  const { auth } = useAuth();
+  const { navOrder } = useSettings();
+  const controllable = canControl(auth);
+  return useMemo(() => applyNavOrder(visibleNav(controllable), navOrder), [controllable, navOrder]);
 }
 
 /**
@@ -445,14 +483,104 @@ function Sidebar({
   const { auth } = useAuth();
   const brucePhase = useBrucePhase();
   const signOut = useSignOut();
+  const asideRef = useRef<HTMLElement>(null);
 
   // Guests are read-only and can't open the Brew System, Bruce, Settings or
   // History pages (History reveals who changed what, so it stays admin-only),
-  // so drop those rails entirely; the kiosk/LAN and admins see the full nav.
-  const navItems = visibleNav(canControl(auth));
+  // so those rails are dropped entirely; the kiosk/LAN and admins see the full
+  // nav. Either way, in the order this browser last dragged them into.
+  const navItems = useNavItems();
+  const { navOrder } = useSettings();
+  const [reordering, setReordering] = useState(false);
+  const hold = useHoldToReorder(() => setReordering(true));
+
+  // Leaving the mode: Escape, or a press anywhere outside the rail. Escape
+  // claims the key so the shell's Escape-to-Overview doesn't also fire and
+  // navigate out from under the rearranging (same trick as the account sheet).
+  useEffect(() => {
+    if (!reordering) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setReordering(false);
+    };
+    const onDown = (e: PointerEvent): void => {
+      if (!asideRef.current?.contains(e.target as Node)) setReordering(false);
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown);
+    };
+  }, [reordering]);
+
+  // A nudge past a few pixels starts the drag, so a press that only meant to
+  // leave the mode (or a twitch on the way to "Done") doesn't shuffle the rail.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  function onDragEnd(e: DragEndEvent): void {
+    const from = String(e.active.id);
+    const over = e.over ? String(e.over.id) : null;
+    if (!over || over === from) return;
+    // Rearrange the *whole* rail, not the visible subset: the saved order has
+    // to keep carrying the rails a guest can't see (see navOrder.ts).
+    setSetting('navOrder', moveNavKey(applyNavOrder(NAV, navOrder).map((i) => i.key), from, over));
+  }
+
+  const rows = navItems.map((item) => {
+    const isActive = item.page === active;
+    const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
+    let accessory: React.ReactNode = undefined;
+    if (item.key === 'devices' && fleet)
+      accessory = <FleetBadge online={fleet.online} total={fleet.total} />;
+    else if (item.key === 'kegs' && kegs)
+      accessory = <KegBadge filled={kegs.filled} total={kegs.total} />;
+    else if (item.key === 'todos' && openTodos != null && openTodos > 0)
+      accessory = <CountBadge count={openTodos} />;
+    // Bruce is off working on an answer. Shown on the tab so you can ask
+    // him something and go and look at the fermenter without wondering
+    // whether he's still at it — the phase's colour says whether he's in
+    // the library or out on the web (see bruceActivity.ts).
+    else if (item.key === 'bruce' && brucePhase)
+      accessory = (
+        <ThinkingDots className={brucePhase.phase === 'web' ? 'text-sky-400' : 'text-zinc-400'} />
+      );
+    // Say so only once a rig URL is configured — an install with no brewing
+    // rig shows nothing rather than a permanent red "Offline".
+    else if (item.key === 'brewSystem' && brewSystem?.configured)
+      accessory = <BrewSystemBadge {...brewSystem} />;
+    // Reordering, the live badges give way to a grip: the row is a handle now,
+    // and a fleet count on something you're dragging only reads as clutter.
+    const row = (
+      <NavRow
+        Icon={item.Icon}
+        label={item.label}
+        active={isActive}
+        badge={reordering ? undefined : badge}
+        accessory={reordering ? <GripIcon className="h-4 w-4 text-zinc-500" /> : accessory}
+      />
+    );
+    // The link is deliberately gone in reorder mode rather than merely ignored.
+    // A drag that ends over an <a> still lets the browser follow the href —
+    // suppressing the click doesn't cancel that — so the rail would navigate on
+    // every drop. No anchor, no navigation to suppress.
+    return reordering ? (
+      <SortableNavRow key={item.key} id={item.key}>
+        {row}
+      </SortableNavRow>
+    ) : (
+      <Link key={item.key} to={item.to} draggable={false} className="block" {...hold}>
+        {row}
+      </Link>
+    );
+  });
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/95 md:flex">
+    <aside
+      ref={asideRef}
+      className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/95 md:flex"
+    >
       <div className="flex items-center gap-2.5 px-5 py-5">
         <Link
           to="/"
@@ -462,43 +590,30 @@ function Sidebar({
         </Link>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3">
-        {navItems.map((item) => {
-          const isActive = item.page === active;
-          const badge = item.key === 'alerts' && alertCount > 0 ? alertCount : undefined;
-          let accessory: React.ReactNode = undefined;
-          if (item.key === 'devices' && fleet)
-            accessory = <FleetBadge online={fleet.online} total={fleet.total} />;
-          else if (item.key === 'kegs' && kegs)
-            accessory = <KegBadge filled={kegs.filled} total={kegs.total} />;
-          else if (item.key === 'todos' && openTodos != null && openTodos > 0)
-            accessory = <CountBadge count={openTodos} />;
-          // Bruce is off working on an answer. Shown on the tab so you can ask
-          // him something and go and look at the fermenter without wondering
-          // whether he's still at it — the phase's colour says whether he's in
-          // the library or out on the web (see bruceActivity.ts).
-          else if (item.key === 'bruce' && brucePhase)
-            accessory = (
-              <ThinkingDots
-                className={brucePhase.phase === 'web' ? 'text-sky-400' : 'text-zinc-400'}
-              />
-            );
-          // Say so only once a rig URL is configured — an install with no brewing
-          // rig shows nothing rather than a permanent red "Offline".
-          else if (item.key === 'brewSystem' && brewSystem?.configured)
-            accessory = <BrewSystemBadge {...brewSystem} />;
-          return (
-            <Link key={item.key} to={item.to} className="block">
-              <NavRow
-                Icon={item.Icon}
-                label={item.label}
-                active={isActive}
-                badge={badge}
-                accessory={accessory}
-              />
-            </Link>
-          );
-        })}
+      {/* `select-none`: holding a row on a desktop otherwise starts selecting
+          the labels, which flickers blue for the half-second before the mode
+          arms. `touch-none` only once reordering — before that a finger on the
+          rail should still be able to scroll the page. */}
+      <nav className={`flex-1 space-y-1 px-3 select-none ${reordering ? 'touch-none' : ''}`}>
+        {reordering && (
+          <ReorderBar
+            rearranged={navOrder.length > 0}
+            onReset={() => setSetting('navOrder', [])}
+            onDone={() => setReordering(false)}
+          />
+        )}
+        {reordering ? (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+            <SortableContext
+              items={navItems.map((item) => item.key)}
+              strategy={verticalListSortingStrategy}
+            >
+              {rows}
+            </SortableContext>
+          </DndContext>
+        ) : (
+          rows
+        )}
       </nav>
 
       <div className="space-y-3 border-t border-zinc-800 px-5 py-4 text-sm">
@@ -527,6 +642,127 @@ function Sidebar({
 }
 
 /**
+ * Press and hold a rail to put the sidebar into reorder mode. Handlers to spread
+ * on each nav link.
+ *
+ * Hand-rolled rather than handed to dnd-kit's delay sensor (the way the kiosk
+ * queue does it) because these rows are links, and a drag that ends over a live
+ * `<a>` navigates: the click can be swallowed, but swallowing a click doesn't
+ * cancel the browser following an href. Arming a mode first, and only then
+ * swapping the links for drag handles, means there's never an anchor under the
+ * finger when a drag ends.
+ *
+ * The hold is abandoned as soon as the pointer slides {@link NAV_HOLD_SLOP_PX},
+ * so a press that turns into a page scroll stays a scroll.
+ */
+function useHoldToReorder(onHold: () => void): {
+  onPointerDown: (e: React.PointerEvent) => void;
+  onPointerMove: (e: React.PointerEvent) => void;
+  onPointerUp: () => void;
+  onPointerCancel: () => void;
+  onPointerLeave: () => void;
+} {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const from = useRef<{ x: number; y: number } | null>(null);
+
+  const cancel = useCallback((): void => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    from.current = null;
+  }, []);
+
+  // A hold in flight when the rail unmounts (a navigation, a sign-out) would
+  // otherwise arm the mode on a sidebar that's no longer there.
+  useEffect(() => cancel, [cancel]);
+
+  return {
+    onPointerDown: (e) => {
+      // Left button / one finger only: a right-click wants the context menu and
+      // a second finger is a pinch, neither of which is a hold.
+      if (!e.isPrimary || e.button !== 0) return;
+      cancel();
+      from.current = { x: e.clientX, y: e.clientY };
+      timer.current = setTimeout(() => {
+        cancel();
+        onHold();
+      }, NAV_HOLD_MS);
+    },
+    onPointerMove: (e) => {
+      const start = from.current;
+      if (!start) return;
+      if (
+        Math.abs(e.clientX - start.x) > NAV_HOLD_SLOP_PX ||
+        Math.abs(e.clientY - start.y) > NAV_HOLD_SLOP_PX
+      )
+        cancel();
+    },
+    onPointerUp: cancel,
+    onPointerCancel: cancel,
+    onPointerLeave: cancel,
+  };
+}
+
+/**
+ * A nav row while the rail is being rearranged: same row, wrapped in a drag
+ * handle. Lifted out of the sidebar because `useSortable` is a hook and so has
+ * to live in the component that gets reordered, not the one doing the mapping.
+ */
+function SortableNavRow({ id, children }: { id: string; children: React.ReactNode }): JSX.Element {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...attributes}
+      {...listeners}
+      className={`cursor-grab rounded-lg ${
+        isDragging ? 'z-10 cursor-grabbing opacity-90 shadow-xl ring-1 ring-white/25' : ''
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The rail's reorder-mode header: what's happening, and the two ways out. */
+function ReorderBar({
+  rearranged,
+  onReset,
+  onDone,
+}: {
+  /** Whether there's a custom order to reset — nothing to offer otherwise. */
+  rearranged: boolean;
+  onReset: () => void;
+  onDone: () => void;
+}): JSX.Element {
+  return (
+    <div className="mb-2 rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 py-2">
+      <p className="text-xs font-medium text-zinc-400">Drag the rails into order</p>
+      <div className="mt-1.5 flex gap-2">
+        {rearranged && (
+          <button
+            type="button"
+            onClick={onReset}
+            className="rounded-md px-2 py-1 text-xs font-semibold text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            Reset
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onDone}
+          className="ml-auto rounded-md bg-zinc-800 px-2.5 py-1 text-xs font-semibold text-zinc-100 transition hover:bg-zinc-700"
+        >
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The phone-only navigation: a fixed bottom tab bar (hidden at `md`+, where the
  * sidebar takes over). The four primary destinations lead a strip holding every
  * page, which swipes sideways for the rest. Pinned to its right, outside that
@@ -545,7 +781,10 @@ function BottomNav({
   lastUpdate?: string | null;
 }): JSX.Element {
   const { auth } = useAuth();
-  const nav = visibleNav(canControl(auth));
+  // The rail's arrangement carries over to the strip's tail; the primary four
+  // stay pinned to the front regardless, since that's this bar's own rule about
+  // what's reachable without swiping.
+  const nav = useNavItems();
   const brucePhase = useBrucePhase();
   const scrollRef = useRef<HTMLElement>(null);
   const [accountOpen, setAccountOpen] = useState(false);

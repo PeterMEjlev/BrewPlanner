@@ -58,6 +58,17 @@ export interface Settings {
    * with it instead of leaving the second dropdown empty.
    */
   recipeHiddenSubstyles: string[];
+  /**
+   * The sidebar's rails, by nav key, in the order the brewer dragged them into
+   * (long-press a rail to rearrange). Empty means the built-in order, which is
+   * also what "Reset" writes back.
+   *
+   * Local like the rest of these: the kiosk by the fermenter wants Brew System
+   * at the top, a laptop browsing the same dashboard probably doesn't. The list
+   * names every rail, including the ones a guest's sidebar hides, so signing in
+   * as a guest and rearranging can't lose the admin-only pages — see navOrder.ts.
+   */
+  navOrder: string[];
 }
 
 /**
@@ -78,6 +89,7 @@ export const DEFAULT_SETTINGS: Settings = {
   kegOldDays: 180,
   recipeStyleCategories: DEFAULT_STYLE_CATEGORIES,
   recipeHiddenSubstyles: [],
+  navOrder: [],
 };
 
 // Tuning bounds + step sizes, shared by the steppers so clamping and the UI
@@ -119,11 +131,13 @@ function load(): Settings {
     // Merge over defaults so a partial/older stored blob still yields every key.
     const stored = { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
     // Every other setting is a scalar the UI clamps on the way in; the style
-    // lists are the ones that could arrive as something other than they claim.
+    // lists and the nav order are the ones that could arrive as something other
+    // than they claim.
     return {
       ...stored,
       recipeStyleCategories: stringList(stored.recipeStyleCategories, DEFAULT_SETTINGS.recipeStyleCategories),
       recipeHiddenSubstyles: stringList(stored.recipeHiddenSubstyles, DEFAULT_SETTINGS.recipeHiddenSubstyles),
+      navOrder: stringList(stored.navOrder, DEFAULT_SETTINGS.navOrder),
     };
   } catch {
     return DEFAULT_SETTINGS;

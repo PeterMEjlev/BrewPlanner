@@ -1,6 +1,6 @@
 import type { Reading } from '@checklist/shared';
 import { describe, expect, it } from 'vitest';
-import { fermentationDone } from './ferment';
+import { fermentAbv, fermentationDone } from './ferment';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -70,5 +70,26 @@ describe('fermentationDone', () => {
   it('says no with too little data', () => {
     expect(fermentationDone([], WINDOW, THRESHOLD)).toBe(false);
     expect(fermentationDone(series(0, HOUR, () => 1.012), WINDOW, THRESHOLD)).toBe(false);
+  });
+});
+
+describe('fermentAbv', () => {
+  it('reports the ABV made so far against the OG', () => {
+    // 1.060 → 1.015: 45 gravity points × 131.25 = 5.9 % ABV.
+    expect(fermentAbv(1.06, 1.015)).toBeCloseTo(5.906, 3);
+  });
+
+  it('floors a reading above the OG at zero rather than going negative', () => {
+    // A Tilt a couple of points off calibration, hours after pitching.
+    expect(fermentAbv(1.06, 1.062)).toBe(0);
+  });
+
+  it('is null for an OG that is not a gravity', () => {
+    expect(fermentAbv(Number.NaN, 1.015)).toBeNull();
+    expect(fermentAbv(1, 1.015)).toBeNull();
+  });
+
+  it('is null for a reading that is not a gravity', () => {
+    expect(fermentAbv(1.06, Number.NaN)).toBeNull();
   });
 });

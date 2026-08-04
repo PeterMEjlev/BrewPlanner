@@ -1,4 +1,4 @@
-import type { Reading } from '@checklist/shared';
+import { abvFromGravities, type Reading } from '@checklist/shared';
 
 /**
  * Has fermentation finished? True when the gravity readings inside the trailing
@@ -28,4 +28,20 @@ export function fermentationDone(
   if (Math.max(...times) - Math.min(...times) < windowMs * 0.8) return false;
   const values = recent.map((r) => r.value);
   return Math.max(...values) - Math.min(...values) <= thresholdSg;
+}
+
+/**
+ * How much alcohol the beer in the tank has made so far, %: the batch's OG
+ * against the Tilt's current reading.
+ *
+ * Floored at zero. A Tilt sits a point or two off a hydrometer, so a batch that
+ * has barely started can read *above* its OG, and "−0.2 % ABV" reads as a broken
+ * card rather than as calibration drift. Null when the OG isn't a gravity the
+ * arithmetic can use — the caller's fallbacks for a missing OG end in a target
+ * typed by hand, so this can't assume it got a real one.
+ */
+export function fermentAbv(og: number, currentSg: number): number | null {
+  if (!Number.isFinite(og) || og <= 1) return null;
+  const abv = abvFromGravities(og, currentSg);
+  return abv == null ? null : Math.max(0, abv);
 }

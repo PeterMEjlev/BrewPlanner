@@ -87,6 +87,29 @@ export function ChatIcon(props: IconProps): JSX.Element {
   );
 }
 
+/**
+ * Robot head, for the Bruce nav item — Bruce is the assistant himself, so the
+ * rail shows who you're talking to rather than the medium he answers in.
+ * ChatIcon still stands for a message (the chat's "writing the answer" phase).
+ *
+ * The ear stubs run into the head rather than floating beside it, and the eyes
+ * are short strokes rather than dots: at the 20px the sidebar draws this, a
+ * detail thinner than the 1.8 stroke turns to mush.
+ */
+export function RobotIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      {/* Antenna above, head between the two ear stubs, then eyes and mouth. */}
+      <circle cx="12" cy="3" r="1.2" />
+      <path d="M12 4.4v2.6" />
+      <rect x="4" y="7" width="16" height="12" rx="3" />
+      <path d="M2 13h2M20 13h2" />
+      <path d="M9 11.5v2M15 11.5v2" />
+      <path d="M9.5 16h5" />
+    </Svg>
+  );
+}
+
 /** Microphone, for the Bruce voice-assistant nav item. */
 export function MicIcon(props: IconProps): JSX.Element {
   return (
@@ -213,7 +236,11 @@ export function MonitorIcon(props: IconProps): JSX.Element {
   );
 }
 
-/** A board's SoC — for the Raspberry Pis themselves, as opposed to the sensors on them. */
+/**
+ * A board's SoC. Stands for hardware in general: the Devices nav item (the fleet
+ * is sensors and Raspberry Pis, none of which have a screen), and the Pis
+ * themselves as opposed to the sensors hanging off them.
+ */
 export function ChipIcon(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>

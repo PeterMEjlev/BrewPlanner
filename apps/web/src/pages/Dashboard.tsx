@@ -55,7 +55,8 @@ import {
 import { SetpointControl } from '../SetpointControl';
 import { formatPressure, useSettings } from '../settings';
 import { ChartRangeProvider, useChartRange } from '../chartRange';
-import { fermentationDone } from '../ferment';
+import { fermentAbv, fermentationDone } from '../ferment';
+import { type OriginalGravity, useOriginalGravity } from '../originalGravity';
 import { SHARED, useShared } from '../sharedPoll';
 import {
   RANGES,
@@ -604,7 +605,9 @@ function EmptyPanel({ title, body }: { title: string; body: string }): JSX.Eleme
 function BeerStyleDot({ color, label }: { color: string | null; label: string | null }): JSX.Element {
   return (
     <span
-      className={`h-3 w-3 shrink-0 rounded-full ${color ? '' : 'border border-zinc-600'}`}
+      className={`h-3 w-3 shrink-0 rounded-full ${
+        color ? 'ring-1 ring-white/70' : 'border border-zinc-600'
+      }`}
       style={color ? { backgroundColor: color } : undefined}
       title={label ? `Fermenting: ${label}` : 'No recipe linked'}
       aria-hidden
@@ -712,6 +715,19 @@ function FermenterCommandCenter({
       gravityFit ? estimateDoneTime(gravityFit, fermentStableDays, fermentThresholdSg, gravityNow) : null,
     [gravityFit, fermentStableDays, fermentThresholdSg, gravityNow],
   );
+  // How much alcohol the batch has made so far: its OG against the Tilt's latest
+  // reading. The OG comes off the batch in the log, so it's the gravity that was
+  // actually taken where there is one — see {@link useOriginalGravity}.
+  const originalGravity = useOriginalGravity(recipe?.id ?? null);
+  const gravityValue = gravity?.reading.value ?? null;
+  const abvPct = useMemo(
+    () =>
+      originalGravity && gravityValue != null
+        ? fermentAbv(originalGravity.value, gravityValue)
+        : null,
+    [originalGravity, gravityValue],
+  );
+
   // The forecast chart shows one continuous, now-centred window: the recent
   // history matching the forecast's span. Range labels track that visible
   // window, not the full fetched history behind the fit.
@@ -1003,7 +1019,14 @@ function FermenterCommandCenter({
               ) : gravity ? (
                 <>
                   <div className="flex items-start justify-between gap-3">
-                    <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
+                    {/* Stacked under the reading rather than beside it: the
+                        status pill and finish estimate own the row's right. */}
+                    <div>
+                      <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
+                      {abvPct != null && originalGravity && (
+                        <AbvEstimate abvPct={abvPct} og={originalGravity} />
+                      )}
+                    </div>
                     <div className="flex flex-col items-end gap-1">
                       <span
                         className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${status.shellClass}`}
@@ -1289,8 +1312,11 @@ function FermenterCommandCenter({
             <NotConnected label="Tilt hydrometer not connected" />
           ) : gravity ? (
             <>
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
                 <BigValue value={gravity.reading.value.toFixed(3)} unit="SG" />
+                {abvPct != null && originalGravity && (
+                  <AbvEstimate abvPct={abvPct} og={originalGravity} />
+                )}
               </div>
               <div className="mt-3 flex-1 min-h-[12rem]">
                 {gravityValues.length > 1 ? (
@@ -1438,6 +1464,29 @@ function BigValue({ value, unit }: { value: string; unit: string }): JSX.Element
     <div className="flex items-baseline gap-2">
       <span className="text-3xl font-semibold tracking-tight tabular-nums text-zinc-50">{value}</span>
       <span className="text-sm font-medium uppercase tracking-wide text-zinc-500">{unit}</span>
+    </div>
+  );
+}
+
+/**
+ * How much alcohol the beer in the tank has made so far, beside its gravity.
+ *
+ * The OG it's worked out from stays in the tooltip rather than on the card: it
+ * can be either the gravity the brewer took on brew day or the recipe's target
+ * standing in for one, and that difference is worth being able to check without
+ * being worth a line of its own.
+ */
+function AbvEstimate({ abvPct, og }: { abvPct: number; og: OriginalGravity }): JSX.Element {
+  return (
+    <div
+      title={
+        og.measured
+          ? `From the OG measured on brew day, ${og.value.toFixed(3)}`
+          : `From the recipe's target OG, ${og.value.toFixed(3)} — no measured OG has been logged for this batch`
+      }
+    >
+      <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Est. ABV</p>
+      <p className="text-base font-semibold tabular-nums text-zinc-100">{abvPct.toFixed(1)} %</p>
     </div>
   );
 }
@@ -2107,7 +2156,7 @@ function KegInventoryPanel({
               return (
                 <li key={c.contents} className="flex items-center gap-2 text-sm">
                   <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/70"
                     style={{ backgroundColor: color }}
                     aria-hidden
                   />
