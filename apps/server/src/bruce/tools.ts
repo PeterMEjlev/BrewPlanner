@@ -37,6 +37,10 @@ import {
   type GraphColors,
   type Keg,
   type KegContentColors,
+  type MusicQueue,
+  type MusicRepeat,
+  type NowPlaying,
+  type QueueTrack,
   type Reading,
   type RecipeDefaults,
   type Todo,
@@ -50,6 +54,7 @@ import { setReportingInterval } from '../devices/repo.js';
 import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
 import * as repo from '../repo.js';
 import * as recipeRepo from '../recipeRepo.js';
+import * as sonos from '../sonos.js';
 import { RECIPE_TOOL, matchRecipe, runRecipeTool } from './recipes.js';
 
 /** Who is asking. Recorded against every change Bruce makes on their behalf. */
@@ -922,6 +927,191 @@ async function rigSection(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// The brewery speaker
+// ---------------------------------------------------------------------------
+//
+// The Sonos in the brewery, driven over the LAN by sonos.ts — the same module
+// the kiosk's music screen goes through. Two things set it apart from the tools
+// above:
+//
+//   - Nothing here is audited. Skipping a track is not a change to the brewery,
+//     and a history page that records every song is one nobody reads. The music
+//     routes make the same call: routes/music.ts is registered outside the audit
+//     hook, so clicking skip on the kiosk records nothing either.
+//   - Sonos folds shuffle and repeat into a single play mode, so changing one
+//     means reading the other first — otherwise turning shuffle on would quietly
+//     cancel the repeat that was already set.
+
+/** What to say when the speaker doesn't answer. */
+function speakerDown(changed: boolean): string {
+  return `The brewery speaker did not answer — it is powered down, off the network, or not configured on this hub${
+    changed ? ', so nothing changed' : ''
+  }.`;
+}
+
+/** m:ss, for a position or a duration. */
+function trackClock(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** One track as a person names it. Markdown off for answers that get spoken. */
+function trackLabel(track: { title: string | null; artist: string | null }, markdown = true): string {
+  const title = track.title ? (markdown ? `**${track.title}**` : track.title) : 'an untitled track';
+  return track.artist ? `${title} by ${track.artist}` : title;
+}
+
+function repeatText(repeat: MusicRepeat): string {
+  if (repeat === 'one') return 'the current track repeats';
+  if (repeat === 'all') return 'the whole queue repeats';
+  return 'repeat is off';
+}
+
+/** Both toggles in one sentence — they are one setting on the speaker. */
+function modeText(shuffle: boolean, repeat: MusicRepeat): string {
+  return `Shuffle is ${shuffle ? 'on' : 'off'} and ${repeatText(repeat)}`;
+}
+
+function nowPlayingText(now: NowPlaying, brief: boolean): string {
+  const speaker = now.room ? `The ${now.room} speaker` : 'The brewery speaker';
+
+  if (!now.title || now.state === 'no_media' || now.state === 'stopped') {
+    const line = `${speaker} is not playing anything. ${modeText(now.shuffle, now.repeat)}.`;
+    return brief ? line : `## Music\n${line}`;
+  }
+
+  const state =
+    now.state === 'paused' ? 'is paused on' : now.state === 'transitioning' ? 'is changing track, onto' : 'is playing';
+
+  if (brief) {
+    return `${speaker} ${state} ${trackLabel(now, false)}. ${modeText(now.shuffle, now.repeat)}, volume ${now.volume}.`;
+  }
+
+  return `## Music\n${speaker} ${state} ${trackLabel(now)}.\n${bullets(
+    [
+      now.album ? `Album: ${now.album}` : null,
+      now.durationSec ? `${trackClock(now.positionSec ?? 0)} of ${trackClock(now.durationSec)}` : null,
+      now.queuePosition ? `Track ${now.queuePosition} in the queue` : null,
+      modeText(now.shuffle, now.repeat),
+      `Volume ${now.volume}`,
+    ].filter((line): line is string => line != null),
+  )}`;
+}
+
+/** How much of the queue a written answer prints before it starts counting. */
+const QUEUE_TABLE_MAX = 100;
+
+function queueText(queue: MusicQueue, brief: boolean): string {
+  if (queue.tracks.length === 0) {
+    const line =
+      'There is no queue on the speaker — it is playing a radio stream, a line-in or a Spotify Connect session, or nothing at all.';
+    return brief ? line : `## Queue\n${line}`;
+  }
+
+  const total = queue.tracks.length;
+  const at = queue.currentPosition;
+
+  if (brief) {
+    // A queue read aloud is unusable past a few tracks: say how long it is and
+    // what comes next, and let them ask for the rest.
+    const upcoming = queue.tracks.filter((t) => at == null || t.position > at);
+    const next = spokenList(upcoming.map((t) => trackLabel(t, false)));
+    return [
+      `${total} track${total === 1 ? '' : 's'} in the queue${at != null ? `, on number ${at}` : ''}.`,
+      next ? `Coming up: ${next}.` : 'Nothing after the current track.',
+    ].join(' ');
+  }
+
+  const shown = queue.tracks.slice(0, QUEUE_TABLE_MAX);
+  const rows = shown.map(
+    (t) =>
+      `| ${t.position}${t.position === at ? ' ▶' : ''} | ${t.title ?? '—'} | ${t.artist ?? '—'} |`,
+  );
+  return [
+    `## Queue\n${total} track${total === 1 ? '' : 's'}${at != null ? `, playing number ${at}` : ''}.${
+      total > shown.length ? ` Showing the first ${shown.length}.` : ''
+    }`,
+    '',
+    '| # | Track | Artist |',
+    '| --- | --- | --- |',
+    ...rows,
+  ].join('\n');
+}
+
+/**
+ * Queue entries a phrase could mean, best tier only.
+ *
+ * The tiering mirrors {@link matchTodos} — exact, then substring, then shared
+ * words — but over the title *and* the artist, because "play the Springsteen
+ * one" and "play Thunder Road" are the same request said two ways. Every
+ * candidate at the tier reached comes back, so the caller can ask which was
+ * meant instead of playing a guess.
+ */
+function matchQueueTracks(tracks: QueueTrack[], wanted: string): QueueTrack[] {
+  const normalize = (value: string): string =>
+    value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const target = normalize(wanted);
+  if (!target) return [];
+
+  const title = (t: QueueTrack): string => normalize(t.title ?? '');
+  const artist = (t: QueueTrack): string => normalize(t.artist ?? '');
+
+  const exact = tracks.filter((t) => title(t) === target || artist(t) === target);
+  if (exact.length > 0) return firstOfEach(exact);
+
+  const contains = tracks.filter((t) => {
+    if (title(t) && (title(t).includes(target) || target.includes(title(t)))) return true;
+    return artist(t) !== '' && artist(t).includes(target);
+  });
+  if (contains.length > 0) return firstOfEach(contains);
+
+  const words = new Set(target.split(' '));
+  const scored = tracks
+    .map((track) => ({
+      track,
+      score: `${title(track)} ${artist(track)}`.split(' ').filter((w) => w && words.has(w)).length,
+    }))
+    .filter((entry) => entry.score > 0);
+  if (scored.length === 0) return [];
+  const best = Math.max(...scored.map((entry) => entry.score));
+  return firstOfEach(scored.filter((entry) => entry.score === best).map((entry) => entry.track));
+}
+
+/**
+ * Collapse repeats of the same song to their first slot. A queue holding one
+ * track three times is not an ambiguity to put back to the brewer — they asked
+ * for that song, and any copy of it plays the same music.
+ */
+function firstOfEach(tracks: QueueTrack[]): QueueTrack[] {
+  const seen = new Set<string>();
+  return tracks.filter((track) => {
+    const key = `${track.title ?? ''}|${track.artist ?? ''}`.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * What the speaker moved on to, appended to a skip.
+ *
+ * Sonos loads the next track as it answers the command, so reading straight
+ * back usually names it — and a spoken "skipped" that doesn't say what is
+ * playing now is half an answer. Usually, not always: a queue that has run out
+ * or a track still transitioning reports no title, and the read is best-effort,
+ * so a skip that worked is never reported as a failure because the follow-up
+ * read didn't.
+ */
+async function landedOn(markdown: boolean): Promise<string> {
+  try {
+    const now = await sonos.getNowPlaying();
+    return now.title ? ` Now playing ${trackLabel(now, markdown)}.` : '';
+  } catch {
+    return '';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Audit
 // ---------------------------------------------------------------------------
 
@@ -1156,6 +1346,34 @@ const TOOLS: Record<string, ToolSpec> = {
     ),
     phase: () => ({ phase: 'brewery', detail: 'the brewing rig' }),
     run: () => rigSection(),
+  },
+
+  get_music: {
+    definition: tool(
+      'get_music',
+      'Read the brewery speaker: what is playing right now — title, artist, album, how far in, the volume, and whether shuffle or repeat is on — or the queue, every track with its title and artist. Call this for any question about the music, and before control_music when you need to know what is in the queue to pick from.',
+      {
+        section: enumOf(
+          ['now_playing', 'queue'],
+          '"now_playing" (default) is the current track and the play mode; "queue" is the track list.',
+        ),
+        detail: DETAIL_ARG,
+      },
+    ),
+    phase: (args) => ({
+      phase: 'music',
+      detail: text(args, 'section') === 'queue' ? 'the queue' : 'what is playing',
+    }),
+    run: async (args, _actor, brief) => {
+      try {
+        return text(args, 'section') === 'queue'
+          ? queueText(await sonos.getQueue(), brief)
+          : nowPlayingText(await sonos.getNowPlaying(), brief);
+      } catch (err) {
+        if (err instanceof sonos.SonosUnavailableError) return speakerDown(false);
+        throw err;
+      }
+    },
   },
 
   brewing_calculator: {
@@ -1713,6 +1931,115 @@ const TOOLS: Record<string, ToolSpec> = {
       return `${device.name}: ${done.join('; ')}.`;
     },
   },
+
+  control_music: {
+    definition: tool(
+      'control_music',
+      'Drive the brewery speaker: play, pause, skip forward or back, turn shuffle on or off, repeat the current track / the whole queue / nothing, or jump to a track already in the queue by its title or artist. It only controls what the speaker already has — it cannot search for or add music that is not in the queue. Shuffle and repeat are one setting on Sonos, so changing either leaves the other as it was. Say back what the result reports: a skip names the track it landed on, and picking a track by name can match the wrong song.',
+      {
+        action: enumOf(
+          [
+            'play',
+            'pause',
+            'next',
+            'previous',
+            'shuffle_on',
+            'shuffle_off',
+            'repeat_one',
+            'repeat_all',
+            'repeat_off',
+            'play_track',
+          ],
+          '"next"/"previous" skip a track. "repeat_one" keeps the track that is playing on a loop, "repeat_all" loops the queue, "repeat_off" stops repeating. "play_track" needs `track`.',
+        ),
+        track: {
+          type: 'string',
+          description:
+            'For "play_track": the title or the artist of a track in the queue, as the brewer said it. Matched loosely against both; if several tracks match, nothing plays and the candidates come back so you can ask which one.',
+        },
+      },
+      ['action'],
+    ),
+    phase: (args) => ({ phase: 'music', detail: (text(args, 'action') ?? 'the speaker').replace(/_/g, ' ') }),
+    run: async (args, _actor, brief) => {
+      const action = text(args, 'action');
+      // Track names are the one thing here that gets said back verbatim, so they
+      // carry markdown for the dashboard and none for an answer being spoken.
+      const md = !brief;
+      try {
+        switch (action) {
+          case 'play':
+            await sonos.play();
+            return `Playing.${await landedOn(md)}`;
+          case 'pause':
+            await sonos.pause();
+            return 'Paused.';
+          case 'next':
+            await sonos.next();
+            return `Skipped to the next track.${await landedOn(md)}`;
+          case 'previous':
+            await sonos.previous();
+            return `Went back a track.${await landedOn(md)}`;
+
+          // Both toggles read before they write: the speaker holds shuffle and
+          // repeat as one combined mode, so setting shuffle without carrying the
+          // current repeat across would cancel it as a side effect nobody asked
+          // for. It also lets the answer say where both ended up.
+          case 'shuffle_on':
+          case 'shuffle_off': {
+            const shuffle = action === 'shuffle_on';
+            const now = await sonos.getNowPlaying();
+            if (now.shuffle === shuffle) return `Shuffle was already ${shuffle ? 'on' : 'off'}, and ${repeatText(now.repeat)}.`;
+            await sonos.setPlayMode(shuffle, now.repeat);
+            return `${modeText(shuffle, now.repeat)}.`;
+          }
+
+          case 'repeat_one':
+          case 'repeat_all':
+          case 'repeat_off': {
+            const repeat: MusicRepeat = action === 'repeat_one' ? 'one' : action === 'repeat_all' ? 'all' : 'off';
+            const now = await sonos.getNowPlaying();
+            if (now.repeat === repeat) return `That was already the setting — ${modeText(now.shuffle, repeat).toLowerCase()}.`;
+            await sonos.setPlayMode(now.shuffle, repeat);
+            // Name the track when it is the one being looped: "repeat one" said
+            // out loud is only checkable if the brewer hears which song it stuck on.
+            const looped = repeat === 'one' && now.title ? ` ${trackLabel(now, md)} will keep playing.` : '';
+            return `${modeText(now.shuffle, repeat)}.${looped}`;
+          }
+
+          case 'play_track': {
+            const wanted = text(args, 'track');
+            if (!wanted) return 'Which track? Call control_music again with its title or artist.';
+
+            const queue = await sonos.getQueue();
+            if (queue.tracks.length === 0) {
+              return 'The speaker has no queue to pick from — it is on a radio stream, a line-in or a Spotify Connect session. Nothing changed.';
+            }
+            const matches = matchQueueTracks(queue.tracks, wanted);
+            if (matches.length === 0) {
+              return `Nothing in the queue matches "${wanted}", so nothing changed. There are ${queue.tracks.length} tracks in it — read them with get_music if you need the list.`;
+            }
+            if (matches.length > 1) {
+              return `Several tracks match "${wanted}": ${matches
+                .slice(0, 6)
+                .map((t) => trackLabel(t, md))
+                .join('; ')}${matches.length > 6 ? `, and ${matches.length - 6} more` : ''}. Nothing changed — ask which one is meant.`;
+            }
+
+            const track = matches[0] as QueueTrack;
+            await sonos.playQueuePosition(track.position);
+            return `Playing ${trackLabel(track, md)} — track ${track.position} in the queue.`;
+          }
+
+          default:
+            return `"${action ?? 'nothing'}" is not something control_music does. It plays, pauses, skips forward or back, sets shuffle and repeat, or jumps to a track in the queue.`;
+        }
+      } catch (err) {
+        if (err instanceof sonos.SonosUnavailableError) return speakerDown(true);
+        throw err;
+      }
+    },
+  },
 };
 
 /**
@@ -1800,6 +2127,14 @@ function wantsBrief(args: ToolArgs, fallback: boolean): boolean {
 }
 
 export { matchTodos };
+
+/**
+ * The speaker's three pure parts, exported for their test. Everything else in
+ * that tool needs a Sonos on the network, which a test cannot have; these are
+ * the parts worth pinning anyway — which track a spoken phrase picks out of the
+ * queue, and that a spoken answer is a sentence while a written one is a table.
+ */
+export { matchQueueTracks, nowPlayingText, queueText };
 
 /**
  * The spoken keg summary, exported for its test. The tool itself has to read

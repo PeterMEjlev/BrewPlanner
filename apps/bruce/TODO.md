@@ -61,11 +61,21 @@ critical ones (fermentation done, sensor offline) by polling `/api/alerts`
 for unseen IDs and `speak()`-ing them. Needs a mute window / quiet hours and
 an env kill-switch — an unprompted voice at 3 a.m. is a bug, not a feature.
 
-### 20. (P3) Sonos control by voice
-`/api/music/*` (play, pause, next, previous, volume, now-playing) already
-control the brewery SYMFONISK. "Bruce, pause the music" / "what's playing?"
-— trivial functions, high fun-per-line-of-code. Bonus: duck or pause music
-while Bruce listens/speaks, via the same endpoints.
+### 20. (P3) Sonos: the two pieces left
+Control itself is done — `get_music` and `control_music` in
+apps/server/src/bruce/tools.ts cover now-playing, the queue, play/pause,
+skipping either way, shuffle, repeat and playing a queued track by title or
+artist, so the speaker, the written chat and the phone all have it. What is
+still open:
+
+- **Volume.** Deliberately left out: Bruce's own `set_volume` is how loudly he
+  speaks, and one spoken "turn it down" would have to choose between the two.
+  Worth doing with a distinct name (`set_music_volume`) and a prompt line that
+  says which is which.
+- **Ducking.** Drop the music while he listens/speaks and restore it after —
+  the original bonus on this item, and the thing that would make him usable
+  with music actually on. Needs the pre-duck volume remembered somewhere that
+  survives a crash mid-conversation, or the brewery is left at 10 % forever.
 
 ### 22. (P3) Mute / sleep function
 "Bruce, go to sleep for an hour" → disable wake-word handling for a duration

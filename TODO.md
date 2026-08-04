@@ -1,4 +1,4 @@
-- Bruce: add ability for him to control sonos
+
 
 - ## Add support for
   - Electricity (Watt) usage

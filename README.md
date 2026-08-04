@@ -218,10 +218,19 @@ colours, the mock/real switch per sensor, and a device's logging interval or
 setpoint. Recipes are deliberately read-only to him — a brew sheet is written in
 the recipe editor.
 
-These tools read the database directly (chat runs *inside* the server), so the
-request-level audit hook can't see them — this route also answers as a hijacked
-stream, so `onResponse` never fires. Each change therefore records its own
-History entry, against the account that asked, prefixed `Bruce:`.
+He also drives the brewery speaker: what is playing, the whole queue, play,
+pause, skip either way, shuffle, repeat, and jumping to a track already queued
+by its title or artist ("play the Springsteen one"). He can't add music the
+queue doesn't hold or change its volume — that's the Sonos app or the music
+screen. Music is the one thing he changes without a History entry, matching the
+music routes, which aren't audited either: a skipped track is not a change to
+the brewery.
+
+The rest of these tools read the database directly (chat runs *inside* the
+server), so the request-level audit hook can't see them — this route also
+answers as a hijacked stream, so `onResponse` never fires. Each change
+therefore records its own History entry, against the account that asked,
+prefixed `Bruce:`.
 
 Needs `OPENAI_API_KEY` on the server — the same key the voice assistant uses.
 Without it the page says so rather than failing when you type. Asking is

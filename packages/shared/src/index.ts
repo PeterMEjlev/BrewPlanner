@@ -3464,7 +3464,14 @@ export interface BruceChatReply {
  * rather than six because they are the same kind of work from the reader's
  * side: he has stopped reading books and gone to look at the brewery.
  */
-export type BrucePhaseName = 'library' | 'thinking' | 'web' | 'recipes' | 'brewery' | 'writing';
+export type BrucePhaseName =
+  | 'library'
+  | 'thinking'
+  | 'web'
+  | 'recipes'
+  | 'brewery'
+  | 'music'
+  | 'writing';
 
 /** One progress event on the chat stream. */
 export interface BrucePhase {

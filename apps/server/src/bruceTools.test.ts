@@ -641,4 +641,99 @@ describe('Bruce chat tools', () => {
       if (previous != null) process.env.KEG_SHEET_WRITE_URL = previous;
     }
   });
+
+  // --- The brewery speaker --------------------------------------------------
+  //
+  // Everything that reaches the speaker needs one on the network, so what is
+  // pinned here is the half that doesn't: which track a spoken phrase picks out
+  // of the queue, and the refusals that happen before any command is sent.
+
+  const QUEUE = [
+    { position: 1, title: 'Thunder Road', artist: 'Bruce Springsteen', album: null, albumArtUrl: null, uri: 'x:1' },
+    { position: 2, title: 'Born to Run', artist: 'Bruce Springsteen', album: null, albumArtUrl: null, uri: 'x:2' },
+    { position: 3, title: 'Thunder Road (Live)', artist: 'Bruce Springsteen', album: null, albumArtUrl: null, uri: 'x:3' },
+    { position: 4, title: 'Hoppy Days', artist: 'The Brewers', album: null, albumArtUrl: null, uri: 'x:4' },
+    // The same song queued twice — a duplicate, not an ambiguity.
+    { position: 5, title: 'Born to Run', artist: 'Bruce Springsteen', album: null, albumArtUrl: null, uri: 'x:2' },
+  ];
+
+  it('picks a queued track by title or artist, and refuses to choose between several', () => {
+    const byTitle = tools.matchQueueTracks(QUEUE, 'thunder road');
+    assert.deepEqual(byTitle.map((t) => t.position), [1], 'the exact title beats the live version');
+
+    const byArtist = tools.matchQueueTracks(QUEUE, 'The Brewers');
+    assert.deepEqual(byArtist.map((t) => t.position), [4]);
+
+    // "play the Springsteen one" is three songs — a question, not a coin flip.
+    const ambiguous = tools.matchQueueTracks(QUEUE, 'Springsteen');
+    assert.deepEqual(ambiguous.map((t) => t.position), [1, 2, 3]);
+
+    // Both copies of one song are the same request; play the first.
+    assert.deepEqual(tools.matchQueueTracks(QUEUE, 'Born to Run').map((t) => t.position), [2]);
+
+    assert.deepEqual(tools.matchQueueTracks(QUEUE, 'Fermentation Blues'), []);
+    assert.deepEqual(tools.matchQueueTracks(QUEUE, '   '), []);
+  });
+
+  it('says what is playing as a sentence out loud and a list on screen', () => {
+    const now = {
+      state: 'playing' as const,
+      title: 'Thunder Road',
+      artist: 'Bruce Springsteen',
+      album: 'Born to Run',
+      albumArtUrl: null,
+      durationSec: 289,
+      positionSec: 65,
+      volume: 22,
+      room: 'Brewery',
+      queuePosition: 1,
+      shuffle: true,
+      repeat: 'one' as const,
+    };
+
+    const spoken = tools.nowPlayingText(now, true);
+    assert.match(spoken, /Thunder Road by Bruce Springsteen/);
+    assert.match(spoken, /Shuffle is on and the current track repeats/);
+    assert.doesNotMatch(spoken, /[*|#]/, 'nothing to read aloud as "asterisk"');
+
+    const written = tools.nowPlayingText(now, false);
+    assert.match(written, /\*\*Thunder Road\*\* by Bruce Springsteen/);
+    assert.match(written, /1:05 of 4:49/);
+    assert.match(written, /Volume 22/);
+
+    // A speaker with nothing loaded still answers the play mode, since "is
+    // shuffle on?" is a fair question with the music stopped.
+    const idle = tools.nowPlayingText(
+      { ...now, state: 'no_media' as const, title: null, artist: null, shuffle: false, repeat: 'off' as const },
+      true,
+    );
+    assert.match(idle, /not playing anything/);
+    assert.match(idle, /Shuffle is off and repeat is off/);
+  });
+
+  it('reads the queue as a count and what is next out loud, and in full on screen', () => {
+    const queue = { tracks: QUEUE, currentPosition: 2 };
+
+    const spoken = tools.queueText(queue, true);
+    assert.match(spoken, /^5 tracks in the queue, on number 2\./);
+    // Three named, then counted — a queue read out track by track is unusable.
+    assert.match(spoken, /Coming up: Thunder Road \(Live\) by Bruce Springsteen, Hoppy Days by The Brewers and Born to Run by Bruce Springsteen\./);
+
+    const written = tools.queueText(queue, false);
+    assert.match(written, /\| # \| Track \| Artist \|/);
+    assert.match(written, /\| 2 ▶ \| Born to Run \| Bruce Springsteen \|/);
+    assert.equal(written.split('\n').filter((line) => /^\| \d/.test(line)).length, QUEUE.length);
+
+    const empty = tools.queueText({ tracks: [], currentPosition: null }, true);
+    assert.match(empty, /no queue on the speaker/);
+  });
+
+  it('answers a half-formed music command without reaching for the speaker', async () => {
+    // Both of these are refused before any Sonos call, so they run offline.
+    const trackless = await tools.runBruceTool('control_music', { action: 'play_track' }, ASKER);
+    assert.match(trackless, /Which track\?/);
+
+    const nonsense = await tools.runBruceTool('control_music', { action: 'crank_it' }, ASKER);
+    assert.match(nonsense, /not something control_music does/);
+  });
 });

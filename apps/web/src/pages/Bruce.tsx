@@ -33,6 +33,7 @@ import {
   KegIcon,
   MicIcon,
   MicOffIcon,
+  MusicIcon,
   ThinkingDots,
 } from '../components/icons';
 import { usePoll } from '../usePoll';
@@ -81,6 +82,9 @@ const PHASE_LOOK: Record<
   // He has put the books down and gone to look at the brewery itself — the
   // `detail` says which part (sensors, kegs, the to-do list, settings).
   brewery: { label: 'Checking the brewery', Icon: GaugeIcon, tint: 'text-emerald-400' },
+  // The speaker is its own step rather than part of the brewery: "checking the
+  // brewery" while he skips a track reads as though he were looking at sensors.
+  music: { label: 'At the speaker', Icon: MusicIcon, tint: 'text-violet-400' },
   writing: { label: 'Writing the answer', Icon: ChatIcon, tint: 'text-zinc-400' },
 };
 
