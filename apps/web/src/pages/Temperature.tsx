@@ -14,11 +14,19 @@ import { api } from '../api';
 import { useGraphColors } from '../graphColors';
 import { SetpointControl } from '../SetpointControl';
 import { timeAxis } from '../components/timeAxis';
-import { RANGES } from '../useDeviceData';
+import { RANGES, historyWindowQuery } from '../useDeviceData';
 import { dateTime } from '../util';
 import { usePoll } from '../usePoll';
 
 const POLL_MS = 10000;
+
+/**
+ * Poll floor for a window wide enough to come back averaged (see
+ * {@link historyWindowQuery}): those are re-read whole, once per source, and
+ * their points are tens of minutes wide — {@link POLL_MS} would re-download a
+ * month every ten seconds to redraw the same curve.
+ */
+const LONG_RANGE_POLL_MS = 60_000;
 const DEFAULT_RANGE_MS = RANGES[2].ms; // 24h
 
 type SeriesKey = 'beer' | 'fridge';
@@ -128,7 +136,7 @@ export function TemperaturePage(): JSX.Element {
           history: await api.getDeviceHistory(s.deviceId, {
             metric: 'temp_c',
             since,
-            limit: 5000,
+            ...historyWindowQuery(rangeMs),
           }),
         })),
       );
@@ -140,7 +148,10 @@ export function TemperaturePage(): JSX.Element {
     }
   }, [sources, rangeMs]);
 
-  usePoll(load, POLL_MS, [load]);
+  const pollMs =
+    historyWindowQuery(rangeMs).buckets != null ? Math.max(POLL_MS, LONG_RANGE_POLL_MS) : POLL_MS;
+
+  usePoll(load, pollMs, [load]);
 
   // Merge the per-device histories onto a shared time axis. The Tilt and Inkbird
   // report on their own schedules, so most rows carry just one value; the lines

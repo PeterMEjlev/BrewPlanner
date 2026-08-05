@@ -7,7 +7,9 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import arduinoIcon from '../assets/arduino.png';
 import inkbirdIcon from '../assets/inkbird.png';
+import pressureSensorIcon from '../assets/pressure-sensor.png';
 import rpiIcon from '../assets/rpi.png';
 import tiltIcon from '../assets/tilt.png';
 import { canControl, useAuth } from '../auth';
@@ -51,6 +53,49 @@ const TYPE_ICON: Record<DeviceType, string> = {
 const TYPE_IMAGE: Partial<Record<DeviceType, string>> = {
   brew_controller: inkbirdIcon,
   hydrometer: tiltIcon,
+  pressure_sensor: pressureSensorIcon,
+};
+
+/**
+ * The board that fronts a device which can't reach the hub by itself.
+ *
+ * The fermentation pressure transducer is an analog part: it answers with a
+ * voltage and speaks no protocol, so an Arduino Uno R3 digitises it and streams
+ * the value over USB to the Pi running this server, where the pressure agent
+ * pushes it on. That board is as load-bearing as the Pis on the Systems row —
+ * a dead Arduino is a silent sensor — so a device fronted by one shows the
+ * board's specs on its card, and its photo beside the sensor's.
+ *
+ * The fields here are fixed hardware facts rather than telemetry: an Uno has no
+ * OS to report an uptime, a load average or a service from, so unlike
+ * {@link HostCard} there is nothing to poll. Whether the board is actually
+ * feeding the hub is the one live thing about it, and the card reads that off
+ * the device's own online state — a quiet sensor and a dead Arduino look the
+ * same from here, which is exactly why the two share one status.
+ */
+interface BridgeBoard {
+  /** Board name, shown as the block's heading. */
+  name: string;
+  image: string;
+  mcu: string;
+  /**
+   * What the sensor plugs into, and at what resolution — the reason the board is
+   * in the chain at all, and the ceiling on how finely the sensor can be read.
+   */
+  inputs: string;
+  /** How the board reaches the hub, ending at the host that reads it. */
+  link: string;
+}
+
+const TYPE_BRIDGE: Partial<Record<DeviceType, BridgeBoard>> = {
+  pressure_sensor: {
+    name: 'Arduino Uno R3',
+    image: arduinoIcon,
+    mcu: 'ATmega328P · 16 MHz',
+    inputs: '6 analog · 10-bit ADC',
+    // The hub's own name, as readLocalHost() reports it (apps/server/src/system/hosts.ts).
+    link: 'USB serial → BrewPlanner Pi',
+  },
 };
 
 /** Generic kind shown as a secondary subtitle next to the location name. */
@@ -79,7 +124,12 @@ interface DeviceModel {
 const DEVICE_MODEL: Record<DeviceType, DeviceModel> = {
   brew_controller: { brand: 'Inkbird', model: 'ITC-308-WIFI', connectivity: 'Wi-Fi · Tuya' },
   hydrometer: { brand: 'Tilt', model: 'Hydrometer', connectivity: 'Bluetooth LE' },
-  pressure_sensor: { brand: null, model: 'Fermentation pressure sensor', connectivity: 'Wired' },
+  // Analog in, so it reaches the hub via the Arduino in TYPE_BRIDGE, not by itself.
+  pressure_sensor: {
+    brand: null,
+    model: 'Fermentation pressure sensor',
+    connectivity: 'Analog → USB serial',
+  },
   power_meter: { brand: null, model: 'Mains energy meter', connectivity: 'Wired' },
   water_meter: { brand: null, model: 'Water flow meter', connectivity: 'Wired' },
   other: { brand: null, model: 'Generic sensor', connectivity: '—' },
@@ -348,7 +398,11 @@ function HostCard({ host }: { host: HostStatus }): JSX.Element {
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
-          <img src={rpiIcon} alt="" aria-hidden className="h-9 w-9 shrink-0 object-contain" />
+          {/* Same height as the boards on the sensor cards below (see
+              {@link DeviceGlyph}), width following the photo's own aspect — every
+              hardware photo is cropped to its subject, so one height class puts
+              them all at one visual size. */}
+          <img src={rpiIcon} alt="" aria-hidden className="h-9 w-auto shrink-0 object-contain" />
           <div className="min-w-0">
             <h3 className="truncate font-semibold text-zinc-100" title={host.name}>
               {host.name}
@@ -463,6 +517,7 @@ function DeviceCard({
   onSetInterval: (id: number, seconds: number) => void;
 }): JSX.Element {
   const model = DEVICE_MODEL[device.type];
+  const bridge = TYPE_BRIDGE[device.type];
   // A meter's running-total counter isn't a separate data type — hide it here.
   const metrics = device.latest.filter((r) => !HIDDEN_METRICS.has(r.metric));
 
@@ -475,18 +530,7 @@ function DeviceCard({
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
-          {TYPE_IMAGE[device.type] ? (
-            <img
-              src={TYPE_IMAGE[device.type]}
-              alt=""
-              aria-hidden
-              className="h-11 w-11 shrink-0 object-contain"
-            />
-          ) : (
-            <span className="text-2xl" aria-hidden>
-              {TYPE_ICON[device.type]}
-            </span>
-          )}
+          <DeviceGlyph type={device.type} bridge={bridge} />
           <div className="min-w-0">
             {/* Lead with the human-friendly name the device was registered under
                 (e.g. "Brewery Ambient") so the several Inkbird controllers, which
@@ -531,6 +575,27 @@ function DeviceCard({
           label="Reporting"
           value={metrics.length > 0 ? `${metrics.length} metric${metrics.length === 1 ? '' : 's'}` : 'None'}
         />
+        {/* The board that fronts this device, in the same grid as the device's
+            own rows: sensor and board are one unit here — you can't have one
+            without the other — so they read as one spec list, not two. Four
+            half-width rows keep the two-column rhythm unbroken; only the link,
+            which names both ends of the chain, needs the full width. */}
+        {bridge && (
+          <>
+            <InfoRow label="Board" value={bridge.name} />
+            <InfoRow label="MCU" value={bridge.mcu} />
+            <InfoRow label="Sensor in" value={bridge.inputs} />
+            {/* The one live fact about the board: an Uno reports no vitals of its
+                own, but readings arriving at all means it is powered, running its
+                sketch and holding the serial line. */}
+            <InfoRow
+              label="Serial feed"
+              value={device.online ? 'Streaming' : 'Silent'}
+              tone={device.online ? undefined : 'text-amber-400'}
+            />
+            <InfoRow label="Link" value={bridge.link} wide />
+          </>
+        )}
       </dl>
 
       {metrics.length > 0 && (
@@ -546,6 +611,44 @@ function DeviceCard({
         <span>Registered {formatRegistered(device.createdAt)}</span>
       </div>
     </Link>
+  );
+}
+
+/**
+ * A card's artwork: the device's own photo, with the board that fronts it beside
+ * it in signal order (the sensor first, then what reads it). Types we have no
+ * photo for keep the generic {@link TYPE_ICON} emoji.
+ *
+ * Each image gets its own box rather than one shared square, because the two are
+ * different shapes — a stubby upright transducer next to a board seen flat — and
+ * sizing both to the same square would shrink the board to a smudge.
+ */
+function DeviceGlyph({
+  type,
+  bridge,
+}: {
+  type: DeviceType;
+  bridge: BridgeBoard | undefined;
+}): JSX.Element {
+  const image = TYPE_IMAGE[type];
+  if (!image) {
+    return (
+      <span className="text-2xl" aria-hidden>
+        {TYPE_ICON[type]}
+      </span>
+    );
+  }
+  if (!bridge) {
+    return <img src={image} alt="" aria-hidden className="h-11 w-11 shrink-0 object-contain" />;
+  }
+  // Both at one height, widths left to follow each photo's own aspect — a board
+  // seen flat is far wider than an upright transducer, and matching their heights
+  // is what makes the pair read as one unit rather than two pasted-together cutouts.
+  return (
+    <span className="flex shrink-0 items-center gap-1.5" aria-hidden>
+      <img src={image} alt="" className="h-9 w-auto object-contain" />
+      <img src={bridge.image} alt="" className="h-9 w-auto object-contain" />
+    </span>
   );
 }
 

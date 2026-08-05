@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 /**
- * Remembers the selected history window (1h / 6h / 24h / 7d) per device+metric,
+ * Remembers the selected history window (1h / 6h / 24h / 7d / 30d) per device+metric,
  * so the enlarge-on-click chart overlay and the matching dashboard sparkline
  * preview stay in sync: changing the range in an opened graph re-windows just
  * that metric's small preview. Lives in context (rather than prop-drilling)

@@ -60,9 +60,50 @@ export const RANGES = [
   { label: '6h', ms: 6 * 60 * 60 * 1000 },
   { label: '24h', ms: 24 * 60 * 60 * 1000 },
   { label: '7d', ms: 7 * 24 * 60 * 60 * 1000 },
+  // A month, which is about a whole ferment-and-condition cycle. Comfortably
+  // inside the server's 90-day retention (READINGS_RETENTION_DAYS), so the
+  // window is real data rather than a stub that runs out partway back.
+  { label: '30d', ms: 30 * 24 * 60 * 60 * 1000 },
 ] as const;
 
 const DEFAULT_RANGE_MS = RANGES[2].ms; // 24h
+
+/** Row cap on a raw history fetch — the ceiling `historyQuerySchema` allows. */
+const HISTORY_LIMIT = 5000;
+
+/**
+ * Widest window a full-size chart reads as raw rows.
+ *
+ * A raw fetch is capped at {@link HISTORY_LIMIT} and the API answers newest
+ * first, so a window holding more readings than that quietly comes back as only
+ * its most recent slice — a 7-day request at the default 30s cadence is the
+ * newest day and a half, drawn as if it were the week. Past this the window is
+ * averaged server-side instead, which covers all of it at a resolution we pick
+ * (see `buckets` on historyQuerySchema).
+ *
+ * 24h is the widest window that stays raw at every selectable cadence: 2880
+ * readings at the fastest 30s, well inside the cap.
+ */
+const RAW_HISTORY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Points a bucketed window is averaged into — ~13 minutes each across 7 days,
+ * ~54 across 30. Chosen against what the chart can draw rather than what the
+ * axis could hold: it thins to MAX_PLOT_POINTS (see MetricChart) before plotting
+ * anyway, and a month of fermentation has no feature that a sub-hour bucket
+ * would resolve and an hour-wide one would miss.
+ */
+const HISTORY_BUCKETS = 800;
+
+/**
+ * The history query for a window: raw rows when they all fit, a server-side
+ * average when they don't. Exported so every full-size chart windows alike.
+ */
+export function historyWindowQuery(rangeMs: number): { limit: number; buckets?: number } {
+  return rangeMs > RAW_HISTORY_MS
+    ? { limit: HISTORY_LIMIT, buckets: HISTORY_BUCKETS }
+    : { limit: HISTORY_LIMIT };
+}
 
 export interface DeviceDataState {
   device: DeviceStatus | null;
@@ -160,15 +201,21 @@ export function useDeviceData(
     const { anchor, appendable } = cursor.current.key === key
       ? cursor.current
       : { anchor: null, appendable: true };
+    // A window too wide to fetch raw comes back averaged (see
+    // historyWindowQuery), and an average has nothing to append to: every poll
+    // re-buckets the whole window, so its trailing point moves rather than a new
+    // one arriving after it. Those windows always re-read in full.
+    const windowQuery = historyWindowQuery(rangeMs);
+    const bucketed = windowQuery.buckets != null;
     // An anchor that has aged out of the window has nothing left to append to.
     const tailing =
-      appendable && anchor != null && Date.parse(anchor.recordedAt) >= windowStartMs;
+      !bucketed && appendable && anchor != null && Date.parse(anchor.recordedAt) >= windowStartMs;
 
     const fetchSince = (sinceMs: number): Promise<Reading[]> =>
       api.getDeviceHistory(deviceId, {
         metric,
         since: new Date(sinceMs).toISOString(),
-        limit: 5000,
+        ...windowQuery,
       });
 
     try {
@@ -183,8 +230,14 @@ export function useDeviceData(
         }
       }
       if (isStale()) return;
-      // The API answers newest-first, so page[0] is the new high-water mark.
-      cursor.current = { key, anchor: page[0] ?? null, appendable: stillAppendable };
+      // The API answers newest-first, so page[0] is the new high-water mark —
+      // except on a bucketed window, where it's an average that will be
+      // recomputed next poll and so is no anchor at all.
+      cursor.current = {
+        key,
+        anchor: bucketed ? null : page[0] ?? null,
+        appendable: stillAppendable,
+      };
       setHistory((prev) => {
         const kept = append ? prev : [];
         const seen = new Set(kept.map((r) => r.id));
@@ -205,8 +258,15 @@ export function useDeviceData(
     ? device!.reportingIntervalSec * 1000
     : DEFAULT_POLL_MS;
 
+  // A bucketed window is re-read whole every time and its points are tens of
+  // minutes wide, so the device's own cadence would re-download the month every
+  // 30s to redraw the same curve. Slow it to the rate the previews poll at —
+  // still faster than a bucket can visibly move.
+  const historyPollMs =
+    historyWindowQuery(rangeMs).buckets != null ? Math.max(pollMs, SERIES_POLL_MS) : pollMs;
+
   usePoll(loadDevice, pollMs, [loadDevice]);
-  usePoll(loadHistory, pollMs, [loadHistory]);
+  usePoll(loadHistory, historyPollMs, [loadHistory]);
 
   const chartData = useMemo(
     () => [...history].reverse().map((r) => ({ t: Date.parse(r.recordedAt), value: r.value })),
