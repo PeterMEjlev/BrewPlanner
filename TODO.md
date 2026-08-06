@@ -1,12 +1,14 @@
 
 
+
 - ## Add support for
   - Electricity (Watt) usage
   - Water usage 
   - Gravity of beer/wort fermentation (Tilt gravity sensor.) Tilt broadcasts BLE/iBeacon data.
 
 
----
+
+
 
 # Optimization / improvement suggestions (code review)
 

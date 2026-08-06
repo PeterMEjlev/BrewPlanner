@@ -765,9 +765,10 @@ function ReorderBar({
 /**
  * The phone-only navigation: a fixed bottom tab bar (hidden at `md`+, where the
  * sidebar takes over). The four primary destinations lead a strip holding every
- * page, which swipes sideways for the rest. Pinned to its right, outside that
- * strip so it's reachable without swiping, an account tab opens the sheet with
- * the last-update stamp and sign-out that the sidebar keeps in its footer.
+ * page, which swipes sideways for the rest. An account tab sits at the very end
+ * of that strip — reached by swiping rather than pinned, so it costs the visible
+ * bar no width — and opens the sheet with the last-update stamp and sign-out
+ * that the sidebar keeps in its footer.
  */
 function BottomNav({
   active,
@@ -863,20 +864,23 @@ function BottomNav({
               </Link>
             );
           })}
+          {/* Last in the strip, past every destination: it isn't a page, and
+              keeping it here rather than pinned to the bar gives the tabs the
+              full width. Only a logged-in session has anything to sign out of —
+              the kiosk on the LAN is trusted-local with no account, so it gets
+              no tab. */}
+          {auth.user && (
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={accountOpen}
+              onClick={() => setAccountOpen(true)}
+              className="w-[4.5rem] shrink-0 border-l border-zinc-800"
+            >
+              <BottomTab Icon={UserIcon} label="Account" active={accountOpen} />
+            </button>
+          )}
         </nav>
-        {/* Only a logged-in session has anything to sign out of — the kiosk on
-            the LAN is trusted-local with no account, so it gets no tab. */}
-        {auth.user && (
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded={accountOpen}
-            onClick={() => setAccountOpen(true)}
-            className="w-[4.5rem] shrink-0 border-l border-zinc-800"
-          >
-            <BottomTab Icon={UserIcon} label="Account" active={accountOpen} />
-          </button>
-        )}
       </div>
       {accountOpen && (
         <AccountSheet lastUpdate={lastUpdate} onClose={() => setAccountOpen(false)} />
