@@ -66,6 +66,7 @@ class BruceAssistant extends EventEmitter {
       threshold: config.wakeWordThreshold ?? cfg.WAKE_WORD_THRESHOLD,
       refractoryMs: cfg.WAKE_WORD_REFRACTORY_MS,
       debug: cfg.WAKE_WORD_DEBUG,
+      gain: cfg.WAKE_WORD_GAIN,
     });
 
     this._audio = new AudioManager();
@@ -116,7 +117,8 @@ class BruceAssistant extends EventEmitter {
     // Built-in function: Bruce calls this when the user wants to end the conversation
     this._registry.register(
       'end_conversation',
-      'End the current conversation and go back to sleep. You MUST call this whenever the user says goodbye, stop, that\'s it, thank you, no more questions, never mind, or any phrase indicating they are finished.',
+      'End the current conversation and go back to sleep. You MUST call this whenever the user signals they are finished: "goodbye", "stop", "that\'s it", "that\'s all", "nothing", "nothing else", "no thanks", "nope", "I\'m good", "I\'m done", "we\'re done", "forget it", "never mind", "thank you", "no more questions", or anything else meaning the same. ' +
+        'A bare "no", "nothing" or "that\'s all" is one of these: after you have answered, the microphone reopens for a moment, and a short dismissal spoken into that gap means the conversation is over. Treat it as the end — never as a new request, and never answer it with another question.',
       { type: 'object', properties: {}, required: [] },
       async () => {
         this._cancelTimers();

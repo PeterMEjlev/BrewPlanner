@@ -58,8 +58,15 @@ class WakeWordDetector extends EventEmitter {
    * @param {number} [opts.refractoryMs=2000] - Ignore further detections for this
    *   long after one fires, so a single "hey Bruce" triggers exactly once
    * @param {boolean} [opts.debug=false] - Log the highest score each second
+   * @param {number} [opts.gain=1] - Amplify mic samples before scoring them.
+   *   The models see raw PCM16 magnitudes, so speech from across the room
+   *   scores lower simply for being quieter. Raising this is the lever for
+   *   "I have to stand next to the mic" when the phrase is clear but faint —
+   *   it does NOT improve a phrase buried in background noise, since it lifts
+   *   the noise by exactly as much. Affects detection only; the audio sent to
+   *   OpenAI and the silence thresholds are untouched.
    */
-  constructor({ modelPath, featureModelDir, threshold = 0.5, refractoryMs = 2000, debug = false }) {
+  constructor({ modelPath, featureModelDir, threshold = 0.5, refractoryMs = 2000, debug = false, gain = 1 }) {
     super();
     this._modelPath = path.resolve(modelPath);
     this._featureModelDir = featureModelDir
@@ -68,6 +75,7 @@ class WakeWordDetector extends EventEmitter {
     this._threshold = threshold;
     this._refractoryMs = refractoryMs;
     this._debug = debug;
+    this._gain = gain > 0 ? gain : 1;
 
     this._melSession = null;
     this._embedSession = null;
@@ -197,10 +205,20 @@ class WakeWordDetector extends EventEmitter {
 
   /** @private One 80ms step: mel -> embedding -> score. */
   async _processFrame(frameBytes) {
-    // Slide the new samples into the rolling tail.
+    // Slide the new samples into the rolling tail, amplified if configured.
+    // Clipped to the int16 range: a gain high enough to clip is distorting the
+    // phrase and will score worse, which is the signal to turn it back down.
     this._raw.copyWithin(0, FRAME_SAMPLES);
-    for (let i = 0; i < FRAME_SAMPLES; i++) {
-      this._raw[MEL_INPUT_SAMPLES - FRAME_SAMPLES + i] = frameBytes.readInt16LE(i * 2);
+    const base = MEL_INPUT_SAMPLES - FRAME_SAMPLES;
+    if (this._gain === 1) {
+      for (let i = 0; i < FRAME_SAMPLES; i++) {
+        this._raw[base + i] = frameBytes.readInt16LE(i * 2);
+      }
+    } else {
+      for (let i = 0; i < FRAME_SAMPLES; i++) {
+        const amplified = Math.round(frameBytes.readInt16LE(i * 2) * this._gain);
+        this._raw[base + i] = Math.max(-32768, Math.min(32767, amplified));
+      }
     }
     this._rawFilled = Math.min(this._rawFilled + FRAME_SAMPLES, MEL_INPUT_SAMPLES);
 

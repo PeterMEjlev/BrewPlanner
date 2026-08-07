@@ -85,6 +85,19 @@ module.exports = {
   // the phrase, and put the threshold between the two.
   WAKE_WORD_DEBUG: bool('WAKE_WORD_DEBUG', false),
 
+  // Amplify the mic before scoring it, for when the phrase has to be said
+  // right next to the microphone. The models see raw PCM16 magnitudes, so the
+  // same words from across the room score lower purely for being quieter, and
+  // 2–4 here can be worth more than dropping the threshold — which is capped
+  // in practice by "hey brew" scoring 0.480.
+  //
+  // It lifts background noise by the same factor, so it helps a faint phrase
+  // in a quiet room and does nothing for one competing with the fridge. Turn
+  // WAKE_WORD_DEBUG on and watch whether the spoken peak actually separates
+  // from the idle peak. Detection only — the audio OpenAI hears and the
+  // silence thresholds are unaffected.
+  WAKE_WORD_GAIN: num('WAKE_WORD_GAIN', 1),
+
 
   // ── Voice Activity Detection ─────────────────────────────────────────────
 
