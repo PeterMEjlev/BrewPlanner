@@ -159,12 +159,18 @@ Full guide: [deploy/agents/tilt-agent/README.md](deploy/agents/tilt-agent/README
 Apple iBeacon, so the agent **passively scans** for it over BLE — no pairing, no
 wiring, but it needs a Bluetooth adapter on the host. Rough steps:
 
-1. Register: `npm run device -- add "Fermenter Tilt" hydrometer`.
+1. Register: `npm run device -- add "Fermenter" hydrometer` (name it exactly
+   `Fermenter`, or it gets its own station card instead of joining the existing
+   one).
 2. Configure `/etc/tilt-agent.env`, set `TILT_COLOR` to your Tilt's colour, leave
    `BP_SIMULATE=1`.
-3. Smoke-test — a "Fermenter Tilt" tile reports `gravity_sg` (≈1.030) and
-   `temp_c`. To go live: `pip3 install bleak`, ensure Bluetooth is up, set
-   `BP_SIMULATE=0`.
+3. Smoke-test — the Fermenter card's Gravity panel reports `gravity_sg` (≈1.030)
+   and `temp_c`. To go live: install `bleak` (a venv on Debian 12+), ensure
+   Bluetooth is actually powered (`bluetoothctl show` — it can be rfkill
+   soft-blocked), set `BP_SIMULATE=0`.
+4. Calibrate: float it in plain water, wait for the temperature to settle, and
+   put `1.000 − reading` in `TILT_SG_OFFSET`. The Tilt app's own calibration does
+   not reach the dashboard.
 
 > BLE scanning may need privileges — see the agent README's Notes
 > (`setcap`, or run as root) if live reads fail with a permission error.

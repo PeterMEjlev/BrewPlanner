@@ -24,6 +24,11 @@ Configuration (all via environment, see tilt-agent.service):
   TILT_COLOR    Which Tilt to track: red/green/black/purple/orange/blue/
                 yellow/pink (default: black)
   SCAN_SECONDS  How long to listen for a beacon each read (default: 15)
+  TILT_SG_OFFSET     Added to every gravity reading (default: 0). The Tilt app's
+                own calibration never leaves the app — it doesn't touch the
+                beacon — so a Tilt that reads e.g. 0.985 floating in plain water
+                needs its correction applied here instead: TILT_SG_OFFSET=0.015.
+  TILT_TEMP_OFFSET_C Added to every temperature reading in degrees C (default: 0)
   BP_SIMULATE   If "1" (the default until you have a Tilt + BLE adapter), report
                 synthetic values so the whole pipeline can be verified first.
 
@@ -51,6 +56,9 @@ INTERVAL = float(os.environ.get("INTERVAL", "60"))
 SIMULATE = os.environ.get("BP_SIMULATE", "1") == "1"
 TILT_COLOR = os.environ.get("TILT_COLOR", "black").strip().lower()
 SCAN_SECONDS = float(os.environ.get("SCAN_SECONDS", "15"))
+# Calibration trims, applied to the raw beacon values (see the module docstring).
+SG_OFFSET = float(os.environ.get("TILT_SG_OFFSET", "0"))
+TEMP_OFFSET_C = float(os.environ.get("TILT_TEMP_OFFSET_C", "0"))
 
 # Apple iBeacon UUID per Tilt colour (the major/minor carry temp & gravity).
 TILT_UUIDS = {
@@ -144,9 +152,11 @@ def read_tilt() -> dict[str, float]:
             f"no {TILT_COLOR} Tilt beacon seen in {SCAN_SECONDS:.0f}s — check the "
             "Tilt is awake (floating in liquid) and the BLE adapter is up."
         )
+    # Offsets are applied to real reads only — simulate mode stays a clean test of
+    # the agent -> hub -> dashboard path, unskewed by this Tilt's calibration.
     return {
-        "gravity_sg": round(seen["sg_x1000"] / 1000.0, 3),
-        "temp_c": round(f_to_c(seen["temp_f"]), 2),
+        "gravity_sg": round(seen["sg_x1000"] / 1000.0 + SG_OFFSET, 3),
+        "temp_c": round(f_to_c(seen["temp_f"]) + TEMP_OFFSET_C, 2),
     }
 
 

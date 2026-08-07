@@ -59,13 +59,21 @@ cell, and **reseal the cap firmly** so no wort gets in.
 
 A Tilt should read **1.000** in plain water at its calibration temperature.
 
-1. Sanitize the Tilt (see step 4) and float it in **distilled/RO water** at room
-   temperature.
-2. Read the gravity. If it's off (e.g. 1.002), note the offset. You can either
-   apply a calibration offset in the Tilt app, or just remember the offset and
-   correct readings mentally. (BrewPlanner logs the **raw** beacon value — it
-   doesn't apply the app's calibration — so calibrating in the app keeps your
-   notes consistent but the dashboard shows the raw SG.)
+1. Sanitize the Tilt (see step 4) and float it in **plain water** at room
+   temperature — distilled/RO is ideal, but tap water is within ~0.001 and fine
+   for this. Use a vessel tall and wide enough that it bobs upright without
+   leaning on the sides or touching the bottom, or it will read low.
+2. Let the reading **settle**. The Tilt reads high while it's still cooling to
+   the water's temperature; wait until `temp_c` stops moving (a few minutes),
+   then take the gravity.
+3. It should read **1.000**. If it doesn't, set the difference as
+   `TILT_SG_OFFSET` in `/etc/tilt-agent.env` (Part D) — e.g. a Tilt reading
+   0.9835 needs `TILT_SG_OFFSET=0.0165`.
+
+> **Do not calibrate in the Tilt app and expect the dashboard to follow.** The
+> app's offset never leaves the app — it doesn't change what the Tilt
+> broadcasts, and BrewPlanner logs the raw beacon value. `TILT_SG_OFFSET` is the
+> only correction that reaches the dashboard.
 
 ### 3. Note your Tilt's colour
 
@@ -96,18 +104,31 @@ This mints the credential the agent uses to push readings.
 
 ```bash
 cd /home/brewplanner/checklist        # wherever BrewPlanner is checked out
-npm run device -- add "Fermenter Tilt" hydrometer
+DATABASE_PATH=/home/brewplanner/data/checklist.sqlite \
+  npm run device -- add "Fermenter" hydrometer
 ```
+
+> **Set `DATABASE_PATH`.** Without it the CLI writes to the repo's own
+> `apps/server/data/checklist.sqlite` — a *different* database from the one the
+> live server reads — and the agent's pushes come back `HTTP 401`.
+
+> **The name matters.** The dashboard groups sensors into station cards by
+> *exact* device name (`groupByName` in `Dashboard.tsx`), so a hydrometer named
+> `"Fermenter Tilt"` gets its **own second Fermenter card** instead of filling in
+> the Gravity panel on the existing one. Name it exactly `Fermenter`, matching the
+> fridge controller and the mock profile.
 
 This prints a **device key** starting with `bp_…`, **once**. Copy it somewhere
 safe now — it is not recoverable.
 
-- Lost it later? `npm run device -- rotate "Fermenter Tilt"` issues a new one.
+- Lost it later? `npm run device -- rotate "Fermenter"` issues a new one. Note
+  that rotate/delete match on name and take the *first* hit, so with the Inkbird
+  also called `Fermenter` you may need to disambiguate by id in SQL.
 - `npm run device -- list` shows every device and when it was last seen.
 
-> Running multiple Tilts? Register one `hydrometer` device per colour (e.g.
-> `"Fermenter Tilt Black"`, `"Fermenter Tilt Red"`) and run one agent instance
-> each later, with its own `TILT_COLOR` and env file.
+> Running multiple Tilts? They'd share a station card only if they share a name,
+> so give each its own (e.g. `"Fermenter 2"`) and run one agent instance each,
+> with its own `TILT_COLOR` and env file.
 
 ---
 
@@ -146,7 +167,12 @@ INTERVAL=60                                 # Tilts beacon slowly; keep >=60
 TILT_COLOR=black                            # YOUR Tilt's colour (Part A.3)
 SCAN_SECONDS=15                             # how long to listen each cycle
 BP_SIMULATE=1                               # leave 1 for the first smoke-test
+TILT_SG_OFFSET=0                            # calibration trim from Part A.2
+TILT_TEMP_OFFSET_C=0                        # ditto for temperature
 ```
+
+> `HUB_URL` is `http://localhost:3000` when the agent runs on the hub Pi itself,
+> which avoids depending on mDNS resolving.
 
 Save and exit (`Ctrl+O`, Enter, `Ctrl+X`).
 
@@ -241,7 +267,10 @@ Done. The Tilt now reports continuously, and the push doubles as a heartbeat
 | Tile never appears, or stays **Offline** | The push isn't landing. Check `journalctl -u tilt-agent -f`, confirm `HUB_URL` is reachable from the satellite (`curl http://checklist01.local:3000/api/active`). |
 | Logs show **`push rejected: HTTP 401`** | Bad/empty `DEVICE_KEY`. Re-issue with `npm run device -- rotate "Fermenter Tilt"` on the hub and update the env. |
 | **`no <colour> Tilt beacon seen`** | Tilt is dry/asleep (must float in liquid), out of BLE range, wrong `TILT_COLOR`, or Bluetooth isn't up. Move the Pi closer, confirm the colour, check `bluetoothctl show`. |
-| Live read fails with a **permission error** | BLE scanning needs privileges — run the `setcap` command in Part F.3, or run the service as `root`. |
+| Live read fails with a **permission error** | BLE scanning needs privileges — run the `setcap` command in Part F.3, or run the service as `root`. (Not needed when `bleak` scans via BlueZ over D-Bus, which is the normal path.) |
+| **`BleakBluetoothNotAvailableError: No powered Bluetooth adapters found`** | The radio is rfkill **soft-blocked** — `bluetooth.service` can be active with no adapter powered. Check `bluetoothctl show \| grep -E 'Powered\|PowerState'`; if it says `off-blocked`, run `echo 0 \| sudo tee /sys/class/rfkill/rfkill0/soft`, then `bluetoothctl power on`, and set `AutoEnable=true` in `/etc/bluetooth/main.conf` so it survives a reboot. (The `rfkill` CLI isn't installed on a stock Pi image.) |
+| **`error: externally-managed-environment`** from `pip3 install bleak` | Debian 12+/trixie won't install into the system python. Use a venv — `python3 -m venv ~/tilt-venv && ~/tilt-venv/bin/pip install bleak` — and point `ExecStart=` at `~/tilt-venv/bin/python`. |
+| Gravity is stuck at a nonsense value (0.9, 1.3…) | The Tilt isn't floating upright — on the bench or inverted it reads garbage. Only a free-floating Tilt reads true. |
 | Gravity reads slightly off | Check your distilled-water calibration (Part A.2). BrewPlanner logs the **raw** beacon value, not the app's calibrated value. |
 | Readings drop out partway through a batch | Usually a **dying CR123A battery** — swap it. Also confirm the Tilt isn't trapped under krausen or against the wall. |
 | Hub was briefly down | No action needed — readings are buffered in memory (~24h) and flushed on reconnect. |

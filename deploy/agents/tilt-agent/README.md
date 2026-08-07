@@ -22,8 +22,12 @@ whole pipeline before you have a Tilt or a BLE adapter.
 
 1. **Register the device on the hub** and copy the printed key:
    ```bash
-   npm run device -- add "Fermenter Tilt" hydrometer
+   DATABASE_PATH=/home/brewplanner/data/checklist.sqlite \
+     npm run device -- add "Fermenter" hydrometer
    ```
+   Name it exactly `Fermenter` — the dashboard groups sensors into station cards
+   by exact device name, so any other name gets its own second Fermenter card
+   instead of filling in the Gravity panel on the existing one.
 2. **Copy this repo to the satellite Pi** so the agent lives at
    `…/deploy/agents/tilt-agent/`.
 3. **Configure it**: create `/etc/tilt-agent.env` (chmod 600) from
@@ -43,7 +47,17 @@ whole pipeline before you have a Tilt or a BLE adapter.
 - Scanning BLE may need privileges. If reads fail with a permission error, grant
   the Python binary the capability once:
   `sudo setcap 'cap_net_raw,cap_net_admin+eip' $(readlink -f $(which python3))`,
-  or run the service as `root`.
+  or run the service as `root`. Scanning through BlueZ over D-Bus (the normal
+  path) needs neither.
+- `No powered Bluetooth adapters found` means the radio is rfkill **soft-blocked**
+  — `bluetooth.service` can be active with nothing powered. `bluetoothctl show`
+  will say `off-blocked`; clear it with
+  `echo 0 | sudo tee /sys/class/rfkill/rfkill0/soft`, then `bluetoothctl power on`.
+- On Debian 12+/trixie the system python is externally-managed, so `bleak` needs a
+  venv (`python3 -m venv ~/tilt-venv && ~/tilt-venv/bin/pip install bleak`) and
+  `ExecStart=` must point at that interpreter.
+- The Tilt app's calibration never leaves the app — it doesn't change the beacon.
+  Use `TILT_SG_OFFSET` to correct what the dashboard shows.
 - A Tilt only beacons every few seconds and sleeps when dry — keep `INTERVAL`
   gentle (≥60s) and make sure the Tilt is floating in liquid.
 - Running multiple Tilts? Register one hydrometer device per colour and run a
