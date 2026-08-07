@@ -10,6 +10,7 @@
  *   POST /speak {message} → Bruce says the message out loud
  *   POST /volume {percent} → set speech volume (0–200, 100 = native)
  *   POST /wake-ack {mode} → what the wake phrase triggers (speak|plop|none)
+ *   POST /wake-word-gain {gain} → wake-word sensitivity (mic gain before scoring)
  */
 
 const http = require('http');
@@ -64,6 +65,7 @@ function startStatusServer({ bruce, transcript, model, port = 3555 }) {
         model,
         volumePercent: Math.round(bruce.volume * 100),
         wakeAck: bruce.wakeAck,
+        wakeWordGain: bruce.wakeWordGain,
         startedAt,
         transcript,
       });
@@ -97,6 +99,19 @@ function startStatusServer({ bruce, transcript, model, port = 3555 }) {
         }
         bruce.setWakeAck(mode);
         return sendJson(res, 200, { wakeAck: bruce.wakeAck });
+      });
+    }
+
+    if (req.method === 'POST' && url === '/wake-word-gain') {
+      return readJsonBody(req, res, (body) => {
+        const gain = Number(body.gain);
+        if (!Number.isFinite(gain) || gain <= 0) {
+          return sendJson(res, 400, { error: 'gain must be a positive number' });
+        }
+        // The dashboard's range is the authority on what's sensible; this only
+        // guards against a value that would break the detector outright.
+        bruce.setWakeWordGain(Math.min(gain, 16));
+        return sendJson(res, 200, { wakeWordGain: bruce.wakeWordGain });
       });
     }
 

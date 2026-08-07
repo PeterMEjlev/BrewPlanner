@@ -113,6 +113,24 @@ class WakeWordDetector extends EventEmitter {
     return this._lastScore;
   }
 
+  /** Current mic amplification applied before scoring. */
+  get gain() {
+    return this._gain;
+  }
+
+  /**
+   * Change the amplification live. Takes effect on the next 80ms frame; the
+   * rolling history already captured keeps whatever gain it was scored at,
+   * which washes out within a second.
+   * @param {number} gain - Must be greater than 0
+   */
+  setGain(gain) {
+    if (!Number.isFinite(gain) || gain <= 0) {
+      throw new Error(`Wake-word gain must be a positive number, got ${gain}`);
+    }
+    this._gain = gain;
+  }
+
   /**
    * Load the models and prime the feature buffer. Async — ONNX sessions are
    * created off-thread — so callers must await it before feeding audio.

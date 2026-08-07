@@ -23,6 +23,7 @@ import {
   bruceVoiceTurnSchema,
   bruceVolumeSchema,
   bruceWakeAckSchema,
+  bruceWakeWordGainSchema,
   bruceWebSearchSchema,
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -183,6 +184,15 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(bruceWakeAckSchema, req.body, reply);
     if (!body) return;
     return brucePost(reply, '/wake-ack', body);
+  });
+
+  // POST /api/bruce/wake-word-gain — how loudly the wake phrase has to be said.
+  // Amplifies the mic before scoring; same lifetime as /wake-ack (in memory on
+  // the service, back to BRUCE_WAKE_WORD_GAIN on restart).
+  app.post('/wake-word-gain', { preHandler: requireAdmin }, async (req, reply) => {
+    const body = parse(bruceWakeWordGainSchema, req.body, reply);
+    if (!body) return;
+    return brucePost(reply, '/wake-word-gain', body);
   });
 
   // GET /api/bruce/chat — the conversation so far, plus enough about the

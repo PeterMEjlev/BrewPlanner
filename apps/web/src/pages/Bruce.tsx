@@ -15,7 +15,6 @@ import type {
   BruceState,
   BruceToolCall,
   BruceTranscriptEntry,
-  BruceWakeAck,
 } from '@checklist/shared';
 import { MAX_KNOWLEDGE_FILE_CHARS } from '@checklist/shared';
 import { api } from '../api';
@@ -1350,91 +1349,6 @@ function VolumeControl({ serverPercent }: { serverPercent: number }): JSX.Elemen
   );
 }
 
-/** The three things the wake phrase can trigger, in order of how loud they are. */
-const WAKE_ACK_CHOICES: { mode: BruceWakeAck; label: string; hint: string }[] = [
-  { mode: 'speak', label: '“Yes?”', hint: 'Bruce answers out loud' },
-  { mode: 'plop', label: 'Plop', hint: 'A short beep' },
-  { mode: 'none', label: 'Silent', hint: 'Nothing — he just starts listening' },
-];
-
-/**
- * What Bruce does when the wake phrase fires. Follows the polled server value
- * except while a change is in flight, the same trick the volume slider uses:
- * the rail only polls every POLL_MS, so without the local override the buttons
- * would snap back to the old choice for up to a tick.
- */
-function WakeAckControl({ serverMode }: { serverMode: BruceWakeAck }): JSX.Element {
-  const [local, setLocal] = useState<BruceWakeAck | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const giveUp = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const value = local ?? serverMode;
-
-  const follow = (): void => {
-    if (giveUp.current != null) clearTimeout(giveUp.current);
-    giveUp.current = null;
-    setLocal(null);
-  };
-
-  useEffect(
-    () => () => {
-      if (giveUp.current != null) clearTimeout(giveUp.current);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (local != null && local === serverMode) follow();
-  }, [local, serverMode]);
-
-  const choose = async (mode: BruceWakeAck): Promise<void> => {
-    if (mode === value) return;
-    setLocal(mode);
-    setError(null);
-    try {
-      // Trust what the service echoes back, not what we asked for.
-      const { wakeAck } = await api.bruceSetWakeAck(mode);
-      setLocal(wakeAck);
-      if (giveUp.current != null) clearTimeout(giveUp.current);
-      giveUp.current = setTimeout(follow, POLL_MS * 3);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not change it');
-      follow(); // The next poll re-syncs the buttons to the real value.
-    }
-  };
-
-  return (
-    <div>
-      <div className="mb-1 flex items-baseline justify-between text-sm">
-        <span className="text-zinc-400">On “hey Bruce”</span>
-        <span className="text-[11px] text-zinc-600">
-          {WAKE_ACK_CHOICES.find((c) => c.mode === value)?.hint}
-        </span>
-      </div>
-      <div className="flex gap-1" role="group" aria-label="Wake word acknowledgement">
-        {WAKE_ACK_CHOICES.map((choice) => (
-          <button
-            key={choice.mode}
-            type="button"
-            onClick={() => void choose(choice.mode)}
-            aria-pressed={value === choice.mode}
-            title={choice.hint}
-            className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
-              value === choice.mode
-                ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-300'
-                : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
-            }`}
-          >
-            {choice.label}
-          </button>
-        ))}
-      </div>
-      {error != null && <p className="mt-1 text-[11px] text-rose-400">{error}</p>}
-      {/* Not persisted — the service reads BRUCE_WAKE_ACK at boot. */}
-      <p className="mt-0.5 text-[10px] text-zinc-600">Resets when the Bruce service restarts</p>
-    </div>
-  );
-}
-
 /** Text box to make Bruce say something out loud in the brewery. */
 function SpeakBox(): JSX.Element {
   const [message, setMessage] = useState('');
@@ -1569,8 +1483,6 @@ function VoiceRail({ status }: { status: BruceServiceStatus | null }): JSX.Eleme
       </dl>
 
       <VolumeControl serverPercent={status.volumePercent} />
-      {/* A Bruce service older than this setting omits the field entirely. */}
-      <WakeAckControl serverMode={status.wakeAck ?? 'speak'} />
       <SpeakBox />
 
       {status.transcript.length > 0 && (

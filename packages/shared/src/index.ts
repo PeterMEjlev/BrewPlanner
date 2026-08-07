@@ -3273,6 +3273,11 @@ export interface BruceStatus {
    * the setting simply omits it — treat a missing value as `speak`.
    */
   wakeAck?: BruceWakeAck;
+  /**
+   * Mic amplification used when scoring the wake phrase (1 = raw mic). Same
+   * caveat as `wakeAck`: an older Bruce service omits it.
+   */
+  wakeWordGain?: number;
   /** ISO timestamp of when the Bruce service started. */
   startedAt: string;
   transcript: BruceTranscriptEntry[];
@@ -3299,6 +3304,20 @@ export type BruceWakeAck = (typeof BRUCE_WAKE_ACK_MODES)[number];
 /** Body for POST /api/bruce/wake-ack. */
 export const bruceWakeAckSchema = z.object({ mode: z.enum(BRUCE_WAKE_ACK_MODES) });
 export type BruceWakeAckInput = z.infer<typeof bruceWakeAckSchema>;
+
+/**
+ * How much the microphone is amplified before the wake phrase is scored —
+ * the "sensitivity" control. 1 is the raw mic; above that the same words carry
+ * further, below it Bruce needs them louder. Bounded here so the settings UI
+ * and the API agree on the range.
+ */
+export const BRUCE_WAKE_WORD_GAIN = { min: 0.5, max: 6, step: 0.5 } as const;
+
+/** Body for POST /api/bruce/wake-word-gain. */
+export const bruceWakeWordGainSchema = z.object({
+  gain: z.coerce.number().min(BRUCE_WAKE_WORD_GAIN.min).max(BRUCE_WAKE_WORD_GAIN.max),
+});
+export type BruceWakeWordGainInput = z.infer<typeof bruceWakeWordGainSchema>;
 
 // ---------------------------------------------------------------------------
 // Bruce chat (text). Unlike the voice assistant above, this runs *in the

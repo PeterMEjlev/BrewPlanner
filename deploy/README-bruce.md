@@ -156,12 +156,19 @@ Say the wake phrase near the mic — Bruce answers *"Yes?"*, then ask e.g.
 > the follow-up window, where speaking again would talk over the tail of his own
 > reply.
 
-> **Prefer a beep, or nothing at all?** The Bruce page has a three-way toggle —
-> *"Yes?"* / *Plop* / *Silent* — that takes effect on the next wake word. It is
-> not persisted; `BRUCE_WAKE_ACK=speak|plop|none` in `/etc/brewplanner.env` is
-> what he returns to on restart. Worth knowing: the acknowledgement plays while
-> the OpenAI session connects, so on `none` there is nothing masking that wait
-> and the first reply of a conversation can feel a beat slower.
+> **Prefer a beep, or nothing at all?** Settings → Bruce has a three-way toggle
+> — *"Yes?"* / *Plop* / *Silent* — that takes effect on the next wake word. It
+> is not persisted; `BRUCE_WAKE_ACK=speak|plop|none` in `/etc/brewplanner.env`
+> is what he returns to on restart. Worth knowing: the acknowledgement plays
+> while the OpenAI session connects, so on `none` there is nothing masking that
+> wait and the first reply of a conversation can feel a beat slower.
+
+**Settings → Bruce** is where both live settings are: the acknowledgement above
+and **wake word sensitivity**, which amplifies the mic before the phrase is
+scored — the fix for having to stand next to the microphone. Both apply from
+the next wake word and revert to their `BRUCE_*` defaults when the service
+restarts, so once you have found values you like, write them into
+`/etc/brewplanner.env`.
 
 > **The wake phrase is "hey Bruce".** `apps/bruce/wake-words/hey_bruce.onnx`
 > is a custom-trained model and is the default — no env var needed. Say the
@@ -303,7 +310,8 @@ chat. Settings, all optional, in `/etc/brewplanner.env`:
   (idle/listening/thinking/speaking), the OpenAI session, a rolling
   conversation transcript, a volume slider, and a box to make him say
   something in the brewery — handy for testing the speaker before the mic
-  works. It reads Bruce's loopback status API (port 3555,
+  works. How he hears and acknowledges you lives in Settings → Bruce instead;
+  this page is for watching him work. It reads Bruce's loopback status API (port 3555,
   `BRUCE_STATUS_PORT`) through the server; when the service is down the page
   shows an offline card.
 - **Speech model.** Bruce speaks through OpenAI's GA Realtime API

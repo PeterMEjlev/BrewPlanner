@@ -334,6 +334,22 @@ function makeStub(spoken = []) {
     ok('wake acknowledgement validates; "none" plays nothing');
   }
 
+  // ── Engine: wake-word sensitivity ────────────────────────────────────────
+
+  {
+    const bruce = makeBruce();
+    assert.strictEqual(bruce.wakeWordGain, 1, 'defaults to the raw mic');
+    bruce.setWakeWordGain(3);
+    assert.strictEqual(bruce.wakeWordGain, 3);
+    // A zero or negative gain would mute the detector rather than make it less
+    // sensitive, so it is refused instead of silently deafening Bruce.
+    for (const bad of [0, -1, Number.NaN]) {
+      assert.throws(() => bruce.setWakeWordGain(bad), /positive number/);
+    }
+    assert.strictEqual(bruce.wakeWordGain, 3, 'a rejected gain changes nothing');
+    ok('wake-word gain is settable live and refuses to mute the detector');
+  }
+
   // ── Status server: real HTTP round trip ─────────────────────────────────
 
   {
@@ -344,9 +360,11 @@ function makeStub(spoken = []) {
       connected: true,
       volume: 1,
       wakeAck: 'speak',
+      wakeWordGain: 1,
       speak: (t) => spoken.push(t),
       setVolume(g) { this.volume = Math.max(0, Math.min(2, g)); },
       setWakeAck(m) { this.wakeAck = m; },
+      setWakeWordGain(g) { this.wakeWordGain = g; },
     };
     const transcript = [{ type: 'assistant', content: 'hello', timestamp: 1 }];
     const server = startStatusServer({ bruce: fakeBruce, transcript, model: 'gpt-realtime-mini', port: 3556 });
@@ -394,6 +412,23 @@ function makeStub(spoken = []) {
     });
     assert.strictEqual(badAck.status, 400);
     assert.strictEqual(fakeBruce.wakeAck, 'none', 'rejected mode left the setting alone');
+
+    assert.strictEqual(status.wakeWordGain, 1, 'status reports the wake-word gain');
+    const gainRes = await (await fetch('http://127.0.0.1:3556/wake-word-gain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gain: 2.5 }),
+    })).json();
+    assert.strictEqual(gainRes.wakeWordGain, 2.5);
+
+    // Zero would silence the detector outright rather than desensitise it.
+    const badGain = await fetch('http://127.0.0.1:3556/wake-word-gain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gain: 0 }),
+    });
+    assert.strictEqual(badGain.status, 400);
+    assert.strictEqual(fakeBruce.wakeWordGain, 2.5, 'rejected gain left the setting alone');
 
     const bad = await fetch('http://127.0.0.1:3556/speak', {
       method: 'POST',

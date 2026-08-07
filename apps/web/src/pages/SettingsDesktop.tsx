@@ -1,9 +1,12 @@
 import {
+  BRUCE_WAKE_WORD_GAIN,
   DEFAULT_DEVICE_DATA_SOURCES,
   DEFAULT_GRAPH_COLORS,
   DEFAULT_NOTIFICATION_SETTINGS,
   REPORTING_INTERVAL_OPTIONS,
   SENSOR_CATALOG,
+  type BruceServiceStatus,
+  type BruceWakeAck,
   type DeviceDataSource,
   type DeviceDataSources,
   type DeviceStatus,
@@ -64,6 +67,7 @@ type SettingsCategoryId =
   | 'recipes'
   | 'colours'
   | 'notifications'
+  | 'bruce'
   | 'account'
   | 'accounts'
   | 'maintenance';
@@ -97,6 +101,11 @@ const SETTINGS_CATEGORIES: {
     id: 'notifications',
     label: 'Notifications',
     description: 'Server-side Telegram alerts',
+  },
+  {
+    id: 'bruce',
+    label: 'Bruce',
+    description: 'How the voice assistant hears and answers',
   },
   {
     id: 'account',
@@ -224,6 +233,8 @@ function renderSettingsCategory(category: SettingsCategoryId): React.ReactNode {
       );
     case 'notifications':
       return <NotificationsSection />;
+    case 'bruce':
+      return <BruceVoiceSection />;
     case 'account':
       return <AccountSection />;
     case 'accounts':
@@ -403,6 +414,131 @@ function DisplaySection(): JSX.Element {
     </Card>
   );
 }
+
+/** What the wake phrase triggers, in order of how loud it is. */
+const WAKE_ACK_OPTIONS: { value: BruceWakeAck; label: string }[] = [
+  { value: 'speak', label: '“Yes?”' },
+  { value: 'plop', label: 'Plop' },
+  { value: 'none', label: 'Silent' },
+];
+
+/**
+ * Bruce's voice settings.
+ *
+ * Unlike everything else on this page, these live in the Bruce service's
+ * memory rather than in localStorage or the database: they apply from the next
+ * wake word and fall back to the BRUCE_* values in /etc/brewplanner.env when
+ * bruce.service restarts. Read once on mount rather than polled — a settings
+ * panel that is mounted even while another category is showing has no business
+ * making a request every couple of seconds.
+ */
+function BruceVoiceSection(): JSX.Element {
+  const [status, setStatus] = useState<BruceServiceStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const next = await api.getBruceStatus();
+        if (!cancelled) setStatus(next);
+      } catch {
+        // The status route answers `{ online: false }` for a stopped service,
+        // so a thrown error here means the server itself is unreachable.
+        if (!cancelled) setStatus({ online: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Send one change and fold whatever the service echoes back into state. */
+  const apply = async <T,>(send: () => Promise<T>, merge: (result: T) => Partial<BruceStatusFields>) => {
+    if (status == null || !status.online) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus({ ...status, ...merge(await send()) });
+    } catch (err) {
+      setError(asMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (status == null) {
+    return (
+      <Card title="Voice assistant">
+        <p className="text-sm text-zinc-500">Checking whether Bruce is running…</p>
+      </Card>
+    );
+  }
+
+  if (!status.online) {
+    return (
+      <Card
+        title="Voice assistant"
+        hint="These settings live on the Bruce service, so they can only be changed while it is running."
+      >
+        <p className="text-sm text-zinc-400">
+          Bruce is not answering. If he should be running, check{' '}
+          <code className="rounded bg-zinc-950 px-1 py-0.5 text-xs">bruce.service</code> on the Pi.
+        </p>
+      </Card>
+    );
+  }
+
+  const gain = status.wakeWordGain ?? 1;
+
+  return (
+    <Card
+      title="Voice assistant"
+      hint="Applies from the next “hey Bruce”. Not saved: the Bruce service returns to its configured defaults when it restarts."
+    >
+      <div className="divide-y divide-zinc-800">
+        <Row
+          label="Wake word sensitivity"
+          hint="Amplifies the microphone before the wake phrase is scored, so “hey Bruce” carries from further away. Raising it lifts room noise by the same amount, so go up in steps — too high and other talk starts waking him."
+        >
+          <Stepper
+            value={gain}
+            format={(v) => `×${v.toFixed(1)}`}
+            bounds={BRUCE_WAKE_WORD_GAIN}
+            onChange={(v) =>
+              void apply(
+                () => api.bruceSetWakeWordGain(v),
+                ({ wakeWordGain }) => ({ wakeWordGain }),
+              )
+            }
+            ariaLabel="Wake word sensitivity"
+          />
+        </Row>
+        <Row
+          label="On “hey Bruce”"
+          hint="What he does the moment the wake word fires, before he starts listening."
+        >
+          <Segmented
+            value={status.wakeAck ?? 'speak'}
+            options={WAKE_ACK_OPTIONS}
+            onChange={(mode) =>
+              void apply(
+                () => api.bruceSetWakeAck(mode),
+                ({ wakeAck }) => ({ wakeAck }),
+              )
+            }
+          />
+        </Row>
+      </div>
+      {busy && <p className="mt-3 text-xs text-zinc-500">Saving…</p>}
+      {error != null && <p className="mt-3 text-sm text-rose-400">{error}</p>}
+    </Card>
+  );
+}
+
+/** The fields of BruceStatus this panel edits. */
+type BruceStatusFields = { wakeWordGain: number; wakeAck: BruceWakeAck };
 
 /** Compact −/value/+ stepper for a clamped numeric setting (mouse-friendly). */
 function Stepper({

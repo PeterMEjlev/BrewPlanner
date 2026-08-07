@@ -708,6 +708,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mode }),
     }),
+  // Wake-word sensitivity: mic gain applied before the phrase is scored.
+  bruceSetWakeWordGain: (gain: number) =>
+    request<{ wakeWordGain: number }>('/bruce/wake-word-gain', {
+      method: 'POST',
+      body: JSON.stringify({ gain }),
+    }),
 
   // Talking to Bruce from this browser. The audio does not come through the
   // server: `startBruceVoice` returns a credential the page uses to open its

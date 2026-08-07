@@ -260,6 +260,20 @@ class BruceAssistant extends EventEmitter {
     this._wakeAck = mode;
   }
 
+  /** How much the mic is amplified before the wake phrase is scored. */
+  get wakeWordGain() {
+    return this._wakeWord.gain;
+  }
+
+  /**
+   * Make the wake word easier (>1) or harder (<1) to trigger by scaling the
+   * mic before scoring. Not persisted — a restart returns to BRUCE_WAKE_WORD_GAIN.
+   * @param {number} gain
+   */
+  setWakeWordGain(gain) {
+    this._wakeWord.setGain(gain);
+  }
+
   /** True while the OpenAI session is connected and configured. */
   get connected() {
     return this._realtime.isReady;
