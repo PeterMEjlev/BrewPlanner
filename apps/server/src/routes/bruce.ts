@@ -22,6 +22,7 @@ import {
   bruceVoiceToolSchema,
   bruceVoiceTurnSchema,
   bruceVolumeSchema,
+  bruceWakeAckSchema,
   bruceWebSearchSchema,
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -69,7 +70,7 @@ import { isOpenAIConfigured } from '../openai.js';
 /**
  * The Bruce page's two halves.
  *
- * `/status`, `/speak` and `/volume` proxy the voice assistant (apps/bruce),
+ * `/status`, `/speak`, `/volume` and `/wake-ack` proxy the voice assistant (apps/bruce),
  * which runs as its own service on this Pi behind a loopback-only API. Same
  * shape as the brew-rig proxy: reads need a session (or trusted-local),
  * controls need admin, and only the endpoints named here are forwarded. Bruce
@@ -173,6 +174,15 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(bruceVolumeSchema, req.body, reply);
     if (!body) return;
     return brucePost(reply, '/volume', body);
+  });
+
+  // POST /api/bruce/wake-ack — what the wake phrase triggers: "Yes?", the
+  // plop, or nothing. Lives on the service, not in the database: it follows
+  // BRUCE_WAKE_ACK again after a restart.
+  app.post('/wake-ack', { preHandler: requireAdmin }, async (req, reply) => {
+    const body = parse(bruceWakeAckSchema, req.body, reply);
+    if (!body) return;
+    return brucePost(reply, '/wake-ack', body);
   });
 
   // GET /api/bruce/chat — the conversation so far, plus enough about the

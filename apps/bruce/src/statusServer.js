@@ -9,9 +9,11 @@
  *   GET  /status         → state, session, model, volume, transcript ring
  *   POST /speak {message} → Bruce says the message out loud
  *   POST /volume {percent} → set speech volume (0–200, 100 = native)
+ *   POST /wake-ack {mode} → what the wake phrase triggers (speak|plop|none)
  */
 
 const http = require('http');
+const { WAKE_ACK_MODES } = require('../config');
 
 const MAX_BODY_BYTES = 4096;
 
@@ -61,6 +63,7 @@ function startStatusServer({ bruce, transcript, model, port = 3555 }) {
         connected: bruce.connected,
         model,
         volumePercent: Math.round(bruce.volume * 100),
+        wakeAck: bruce.wakeAck,
         startedAt,
         transcript,
       });
@@ -83,6 +86,17 @@ function startStatusServer({ bruce, transcript, model, port = 3555 }) {
         const clamped = Math.max(0, Math.min(200, percent));
         bruce.setVolume(clamped / 100);
         return sendJson(res, 200, { volumePercent: Math.round(bruce.volume * 100) });
+      });
+    }
+
+    if (req.method === 'POST' && url === '/wake-ack') {
+      return readJsonBody(req, res, (body) => {
+        const mode = typeof body.mode === 'string' ? body.mode.trim().toLowerCase() : '';
+        if (!WAKE_ACK_MODES.includes(mode)) {
+          return sendJson(res, 400, { error: `mode must be one of: ${WAKE_ACK_MODES.join(', ')}` });
+        }
+        bruce.setWakeAck(mode);
+        return sendJson(res, 200, { wakeAck: bruce.wakeAck });
       });
     }
 

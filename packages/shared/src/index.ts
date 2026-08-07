@@ -3268,6 +3268,11 @@ export interface BruceStatus {
   model: string;
   /** Speech volume, 0–200 (100 = native). */
   volumePercent: number;
+  /**
+   * What the wake phrase triggers. Optional because a Bruce service older than
+   * the setting simply omits it — treat a missing value as `speak`.
+   */
+  wakeAck?: BruceWakeAck;
   /** ISO timestamp of when the Bruce service started. */
   startedAt: string;
   transcript: BruceTranscriptEntry[];
@@ -3283,6 +3288,17 @@ export type BruceSpeakInput = z.infer<typeof bruceSpeakSchema>;
 /** Body for POST /api/bruce/volume — 0–200 %, 100 = native. */
 export const bruceVolumeSchema = z.object({ percent: z.coerce.number().min(0).max(200) });
 export type BruceVolumeInput = z.infer<typeof bruceVolumeSchema>;
+
+/**
+ * What Bruce does the moment the wake phrase fires, before he starts listening:
+ * `speak` says "Yes?", `plop` is the short beep, `none` is silence.
+ */
+export const BRUCE_WAKE_ACK_MODES = ['speak', 'plop', 'none'] as const;
+export type BruceWakeAck = (typeof BRUCE_WAKE_ACK_MODES)[number];
+
+/** Body for POST /api/bruce/wake-ack. */
+export const bruceWakeAckSchema = z.object({ mode: z.enum(BRUCE_WAKE_ACK_MODES) });
+export type BruceWakeAckInput = z.infer<typeof bruceWakeAckSchema>;
 
 // ---------------------------------------------------------------------------
 // Bruce chat (text). Unlike the voice assistant above, this runs *in the

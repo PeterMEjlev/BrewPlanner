@@ -22,7 +22,41 @@ function bool(name, fallback) {
   return v === '1' || v.toLowerCase() === 'true';
 }
 
+/**
+ * One-of tunable with a BRUCE_<name> env override. An unrecognised value falls
+ * back and says so — a typo in /etc/brewplanner.env should be visible in the
+ * journal, not silently change behaviour.
+ */
+function oneOf(name, allowed, fallback) {
+  const v = process.env[`BRUCE_${name}`];
+  if (v == null || v === '') return fallback;
+  const value = v.trim().toLowerCase();
+  if (allowed.includes(value)) return value;
+  console.warn(`[Bruce] Ignoring BRUCE_${name}="${v}" — expected one of: ${allowed.join(', ')}`);
+  return fallback;
+}
+
+/** Accepted values for WAKE_ACK, shared with the engine and the status API. */
+const WAKE_ACK_MODES = ['speak', 'plop', 'none'];
+
 module.exports = {
+
+  // ── Wake acknowledgement ─────────────────────────────────────────────────
+
+  // What Bruce does the instant the wake phrase fires, before he starts
+  // listening:
+  //   'speak' — says "Yes?" (assets/wake-ack.wav; `npm run make-wake-ack`)
+  //   'plop'  — the short beep
+  //   'none'  — nothing at all; he goes straight to listening
+  //
+  // This is the boot default; the dashboard's Bruce page toggles it live (the
+  // toggle does not survive a restart — set this to make a choice stick).
+  //
+  // Note that the acknowledgement also masks the OpenAI connect time, which
+  // happens in parallel with it. On 'none' there is nothing to hide behind, so
+  // the first reply of a conversation can feel a beat slower.
+  WAKE_ACK: oneOf('WAKE_ACK', WAKE_ACK_MODES, 'speak'),
+  WAKE_ACK_MODES,
 
   // ── OpenAI models ────────────────────────────────────────────────────────
 

@@ -25,6 +25,7 @@ import type {
   BruceToolCall,
   BruceVoiceSession,
   BruceVoiceToolResult,
+  BruceWakeAck,
   ChecklistSummary,
   ChecklistWithSteps,
   DeviceDataSources,
@@ -699,6 +700,13 @@ export const api = {
     request<{ volumePercent: number }>('/bruce/volume', {
       method: 'POST',
       body: JSON.stringify({ percent }),
+    }),
+  // What the wake phrase triggers. Lives on the Bruce service, so it reverts
+  // to BRUCE_WAKE_ACK when bruce.service restarts.
+  bruceSetWakeAck: (mode: BruceWakeAck) =>
+    request<{ wakeAck: BruceWakeAck }>('/bruce/wake-ack', {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
     }),
 
   // Talking to Bruce from this browser. The audio does not come through the

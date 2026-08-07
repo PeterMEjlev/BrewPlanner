@@ -94,6 +94,9 @@ class BruceAssistant extends EventEmitter {
     this._skipFollowUp = false;
     this._peakEnergy = 0;
     this._audioPlayedThisTurn = false;
+    // What the wake phrase triggers ('speak' | 'plop' | 'none'). Starts from
+    // the configured default and is toggled live from the dashboard.
+    this._wakeAck = cfg.WAKE_ACK;
 
     // Session lifecycle: the OpenAI connection is opened on demand and closed
     // after idling, so a dropped WS never leaves Bruce permanently deaf.
@@ -125,7 +128,21 @@ class BruceAssistant extends EventEmitter {
       }
     );
 
-    this._audio.loadNotificationSound(path.join(__dirname, '..', '..', 'assets', 'plop.wav'));
+    const assets = path.join(__dirname, '..', '..', 'assets');
+
+    // Sounds are keyed by the WAKE_ACK mode that selects them, so playing the
+    // acknowledgement is just playSound(mode). The plop is quiet and needs a
+    // boost; the spoken ack is already at speech level, so it plays at unity.
+    this._audio.loadSound('plop', path.join(assets, 'plop.wav'), 3.0);
+    try {
+      this._audio.loadSound('speak', path.join(assets, 'wake-ack.wav'));
+    } catch (err) {
+      // Not generated yet (see `npm run make-wake-ack`), or the wrong format.
+      // Falling back to the plop keeps Bruce usable instead of crash-looping
+      // the service over a missing sound effect.
+      console.log(`[Bruce] No spoken wake acknowledgement (${err.message}) — using the plop`);
+      this._audio.loadSound('speak', path.join(assets, 'plop.wav'), 3.0);
+    }
     // Loads three ONNX models and primes the feature buffer — must finish
     // before the mic starts feeding it audio.
     await this._wakeWord.start();
@@ -222,6 +239,23 @@ class BruceAssistant extends EventEmitter {
   /** Current speech volume gain (0.0–2.0). */
   get volume() {
     return this._audio.volume;
+  }
+
+  /** What the wake phrase triggers: 'speak' | 'plop' | 'none'. */
+  get wakeAck() {
+    return this._wakeAck;
+  }
+
+  /**
+   * Choose what Bruce does when the wake phrase fires. Takes effect on the
+   * next wake word; it is not persisted, so a restart returns to BRUCE_WAKE_ACK.
+   * @param {string} mode - One of cfg.WAKE_ACK_MODES
+   */
+  setWakeAck(mode) {
+    if (!cfg.WAKE_ACK_MODES.includes(mode)) {
+      throw new Error(`Unknown wake acknowledgement "${mode}"`);
+    }
+    this._wakeAck = mode;
   }
 
   /** True while the OpenAI session is connected and configured. */
@@ -390,14 +424,20 @@ class BruceAssistant extends EventEmitter {
   async _onWakeWordDetected() {
     this.emit('wake');
 
-    // (Re)connect the OpenAI session while the beep plays — the session is
-    // opened on demand, and the beep's ~0.5s masks most of the connect time.
+    // (Re)connect the OpenAI session while the acknowledgement plays — the
+    // session is opened on demand, and the acknowledgement masks the connect
+    // time. The spoken one is a pre-rendered clip, not a model response, so it
+    // starts instantly and costs nothing; routing it through the Realtime API
+    // would put a second of dead air exactly where the user needs feedback.
     const connecting = this._ensureConnected();
     connecting.catch(() => { /* handled below — avoid an unhandled rejection */ });
 
-    // Play a short beep so the user knows Bruce is listening,
-    // then start streaming — this way the mic won't send the beep to OpenAI.
-    await this._audio.playNotification();
+    // Acknowledge first, and only then start streaming — this way the mic
+    // doesn't send Bruce's own acknowledgement to OpenAI. On 'none' there is
+    // nothing to play and listening starts immediately.
+    if (this._wakeAck !== 'none') {
+      await this._audio.playSound(this._wakeAck);
+    }
 
     try {
       await connecting;
@@ -460,7 +500,8 @@ class BruceAssistant extends EventEmitter {
     } else {
       // Voice energy detected — reset silence timer
       this._hasHeardVoice = true;
-      // Ignore energy for 300ms after listening starts to avoid plop bleed-through
+      // Ignore energy for 300ms after listening starts, so the tail of Bruce's
+      // own acknowledgement bleeding back in can't be mistaken for the user
       if (rms > this._peakEnergy && Date.now() - this._listeningStartedAt > 300) {
         this._peakEnergy = rms;
       }
@@ -510,7 +551,10 @@ class BruceAssistant extends EventEmitter {
   }
 
   async _startFollowUp() {
-    await this._audio.playNotification();
+    // Always the plop, whatever WAKE_ACK says: the follow-up window opens the
+    // moment Bruce stops talking, where speaking again would tread on the tail
+    // of his own reply.
+    await this._audio.playSound('plop');
 
     this._setState('listening');
     this.emit('listening');

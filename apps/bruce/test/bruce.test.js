@@ -304,6 +304,36 @@ function makeStub(spoken = []) {
     ok('volume clamps, boosts, and has a voice function');
   }
 
+  // ── Engine: wake acknowledgement ─────────────────────────────────────────
+
+  {
+    const bruce = makeBruce();
+    assert.strictEqual(bruce.wakeAck, 'speak', 'defaults to speaking');
+    assert.throws(() => bruce.setWakeAck('trumpet'), /Unknown wake acknowledgement/);
+    assert.strictEqual(bruce.wakeAck, 'speak', 'a rejected mode changes nothing');
+
+    const played = [];
+    bruce._audio.playSound = (name) => { played.push(name); return Promise.resolve(); };
+    bruce._ensureConnected = () => Promise.resolve();
+    bruce._realtime.startStreaming = () => {};
+
+    // 'none' must go straight to listening without playing anything.
+    bruce.setWakeAck('none');
+    await bruce._onWakeWordDetected();
+    assert.deepStrictEqual(played, [], 'silent mode played nothing');
+    assert.strictEqual(bruce.state, 'listening');
+
+    // The mode doubles as the cached sound's key.
+    bruce._setState('idle');
+    bruce.setWakeAck('plop');
+    await bruce._onWakeWordDetected();
+    assert.deepStrictEqual(played, ['plop']);
+
+    bruce._cancelTimers();
+    bruce._setState('idle');
+    ok('wake acknowledgement validates; "none" plays nothing');
+  }
+
   // ── Status server: real HTTP round trip ─────────────────────────────────
 
   {
@@ -313,8 +343,10 @@ function makeStub(spoken = []) {
       state: 'idle',
       connected: true,
       volume: 1,
+      wakeAck: 'speak',
       speak: (t) => spoken.push(t),
       setVolume(g) { this.volume = Math.max(0, Math.min(2, g)); },
+      setWakeAck(m) { this.wakeAck = m; },
     };
     const transcript = [{ type: 'assistant', content: 'hello', timestamp: 1 }];
     const server = startStatusServer({ bruce: fakeBruce, transcript, model: 'gpt-realtime-mini', port: 3556 });
@@ -344,6 +376,25 @@ function makeStub(spoken = []) {
     })).json();
     assert.strictEqual(volRes.volumePercent, 150);
 
+    assert.strictEqual(status.wakeAck, 'speak', 'status reports the wake acknowledgement');
+    const ackRes = await (await fetch('http://127.0.0.1:3556/wake-ack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'none' }),
+    })).json();
+    assert.strictEqual(ackRes.wakeAck, 'none');
+    assert.strictEqual(fakeBruce.wakeAck, 'none');
+
+    // An unknown mode is rejected rather than leaving Bruce with a sound key
+    // that resolves to nothing (which would be a silent, confusing wake).
+    const badAck = await fetch('http://127.0.0.1:3556/wake-ack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'trumpet' }),
+    });
+    assert.strictEqual(badAck.status, 400);
+    assert.strictEqual(fakeBruce.wakeAck, 'none', 'rejected mode left the setting alone');
+
     const bad = await fetch('http://127.0.0.1:3556/speak', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -352,7 +403,7 @@ function makeStub(spoken = []) {
     assert.strictEqual(bad.status, 400);
 
     server.close();
-    ok('status server serves state and forwards speak/volume');
+    ok('status server serves state and forwards speak/volume/wake-ack');
   }
 
 

@@ -24,6 +24,7 @@ class AudioManager extends EventEmitter {
     this._speakerQueue = [];
     this._speakerDraining = false;
     this._gain = 1.0; // 0.0–1.0 speech volume
+    this._sounds = new Map(); // name → cached PCM16 Buffer (see loadSound)
 
     // Mic auto-restart state (see _handleMicFailure)
     this._micOpts = {};
@@ -185,43 +186,95 @@ class AudioManager extends EventEmitter {
   }
 
   /**
-   * Load a .wav file and cache its raw PCM data for instant playback.
-   * Call once at startup; playNotification() will use the cached buffer.
+   * Load a .wav file and cache its raw PCM under a name for instant playback.
+   * Call once at startup; playSound(name) then uses the cached buffer.
+   *
+   * The file must match the playback format (24kHz mono PCM16 LE) — there is
+   * no resampler here, so a 44.1kHz file would simply play fast and chipmunky.
+   * @param {string} name - Key to play it back by
    * @param {string} filePath - Path to a PCM16 LE mono .wav file
+   * @param {number} [gain=1.0] - Amplification baked into the cached samples
+   *   (1.0 = original). Speech recorded at normal level wants 1.0; a quiet
+   *   effect like plop.wav needs a boost. Boosted samples are hard-clipped.
    */
-  loadNotificationSound(filePath) {
+  loadSound(name, filePath, gain = 1.0) {
     const fs = require('fs');
     const buf = fs.readFileSync(require('path').resolve(filePath));
 
-    // Parse WAV header to find the 'data' chunk
+    // Parse WAV chunks for 'fmt ' (to verify the format) and 'data'
+    let format = null;
     let offset = 12; // skip RIFF header
     while (offset < buf.length - 8) {
       const chunkId = buf.toString('ascii', offset, offset + 4);
       const chunkSize = buf.readUInt32LE(offset + 4);
+
+      if (chunkId === 'fmt ') {
+        format = {
+          channels: buf.readUInt16LE(offset + 10),
+          sampleRate: buf.readUInt32LE(offset + 12),
+          bitDepth: buf.readUInt16LE(offset + 22),
+        };
+      }
+
       if (chunkId === 'data') {
-        const raw = buf.slice(offset + 8, offset + 8 + chunkSize);
-        // Amplify notification sound (1.0 = original, 2.0 = 2× louder, etc.)
-        const gain = 3.0;
+        // Sample rate and bit depth must match — there is no resampler here,
+        // and a mismatch plays at the wrong speed rather than failing loudly.
+        if (
+          format &&
+          (format.sampleRate !== PLAYBACK_SAMPLE_RATE || format.bitDepth !== BIT_DEPTH)
+        ) {
+          throw new Error(
+            `${filePath}: expected ${PLAYBACK_SAMPLE_RATE}Hz ${BIT_DEPTH}-bit, ` +
+              `got ${format.sampleRate}Hz ${format.bitDepth}-bit`
+          );
+        }
+
+        let raw = buf.slice(offset + 8, offset + 8 + chunkSize);
+        // Channel count we can fix: the speaker is mono, so a stereo file has
+        // to be downmixed. Handing interleaved stereo straight to a mono sink
+        // plays it at half speed an octave down — which is what happened to
+        // plop.wav (a stereo file) before this check existed.
+        if (format && format.channels === 2) {
+          const frames = Math.floor(raw.length / 4);
+          const mono = Buffer.alloc(frames * 2);
+          for (let f = 0; f < frames; f++) {
+            const l = raw.readInt16LE(f * 4);
+            const r = raw.readInt16LE(f * 4 + 2);
+            mono.writeInt16LE(Math.round((l + r) / 2), f * 2);
+          }
+          raw = mono;
+        } else if (format && format.channels !== CHANNELS) {
+          throw new Error(`${filePath}: ${format.channels} channels is not supported (want mono or stereo)`);
+        }
+        if (gain === 1.0) {
+          this._sounds.set(name, raw);
+          return;
+        }
         const amplified = Buffer.alloc(raw.length);
         for (let i = 0; i < raw.length - 1; i += 2) {
           const sample = Math.max(-32768, Math.min(32767, Math.round(raw.readInt16LE(i) * gain)));
           amplified.writeInt16LE(sample, i);
         }
-        this._notificationPCM = amplified;
+        this._sounds.set(name, amplified);
         return;
       }
-      offset += 8 + chunkSize;
+
+      // Chunks are word-aligned: an odd size is followed by a pad byte.
+      offset += 8 + chunkSize + (chunkSize % 2);
     }
-    throw new Error('Could not find data chunk in WAV file');
+    throw new Error(`Could not find data chunk in WAV file: ${filePath}`);
   }
 
   /**
-   * Play the pre-loaded notification sound through Speaker.
-   * Includes a silent preroll to avoid warmup clipping.
-   * @returns {Promise<void>}
+   * Play a sound cached by loadSound through Speaker. Includes a silent
+   * preroll to avoid warmup clipping. Unknown/unloaded names are a no-op, so
+   * callers never have to guard.
+   * @param {string} name
+   * @returns {Promise<void>} Resolves when playback has finished
    */
-  playNotification() {
-    if (!this._notificationPCM) return Promise.resolve();
+  playSound(name) {
+    const pcm = this._sounds.get(name);
+    if (!pcm) return Promise.resolve();
 
     return new Promise((resolve) => {
       const prerollMs = 150;
@@ -250,7 +303,10 @@ class AudioManager extends EventEmitter {
       });
 
       spk.write(Buffer.alloc(prerollBytes)); // silent preroll
-      spk.write(this._notificationPCM);
+      // The wake acknowledgement is Bruce speaking, so it follows the same
+      // volume setting as the rest of his voice rather than sitting at a
+      // fixed level the user can't turn down.
+      spk.write(this._applyGain(pcm));
       const postrollMs = 150;
       const postrollBytes2 = Math.floor(PLAYBACK_SAMPLE_RATE * (postrollMs / 1000)) * (BIT_DEPTH / 8) * CHANNELS;
       spk.end(Buffer.alloc(postrollBytes2)); // silent postroll
@@ -262,6 +318,17 @@ class AudioManager extends EventEmitter {
   }
 
   // ─── Private ──────────────────────────────────────────────────────────────
+
+  /** @private Scale PCM16 samples by the current volume gain (boost clips). */
+  _applyGain(chunk) {
+    if (this._gain === 1.0) return chunk;
+    const out = Buffer.alloc(chunk.length);
+    for (let i = 0; i < chunk.length - 1; i += 2) {
+      const sample = Math.max(-32768, Math.min(32767, Math.round(chunk.readInt16LE(i) * this._gain)));
+      out.writeInt16LE(sample, i);
+    }
+    return out;
+  }
 
   _ensureSpeaker() {
     if (this._speaker) return;
@@ -335,15 +402,7 @@ class AudioManager extends EventEmitter {
         return;
       }
 
-      // Apply volume gain to PCM16 samples (attenuate or boost; boost clips)
-      let output = chunk;
-      if (this._gain !== 1.0) {
-        output = Buffer.alloc(chunk.length);
-        for (let i = 0; i < chunk.length - 1; i += 2) {
-          const sample = Math.max(-32768, Math.min(32767, Math.round(chunk.readInt16LE(i) * this._gain)));
-          output.writeInt16LE(sample, i);
-        }
-      }
+      const output = this._applyGain(chunk);
 
       // Respect back-pressure: if write() returns false, wait for 'drain'
       const canContinue = this._speaker.write(output);

@@ -136,8 +136,32 @@ sudo systemctl enable --now bruce.service
 journalctl -u bruce.service -f     # expect: "[Bruce] Ready — listening for wake word"
 ```
 
-Say the wake phrase near the mic — you should hear the plop, then ask e.g.
+Say the wake phrase near the mic — Bruce answers *"Yes?"*, then ask e.g.
 *"how are the kegs?"* or *"what's fermenting?"*.
+
+> **The "Yes?" is a pre-rendered clip**, `apps/bruce/assets/wake-ack.wav`, not a
+> model response — it plays instantly while the OpenAI session is still
+> connecting, where waiting for the model would leave a second of dead air.
+> Regenerate it in Bruce's current voice (or change the wording) with:
+>
+> ```bash
+> npm run make-wake-ack --workspace @checklist/bruce
+> npm run make-wake-ack --workspace @checklist/bruce -- "At your service?"
+> sudo systemctl restart bruce.service
+> ```
+>
+> It needs `OPENAI_API_KEY`, uses `BRUCE_VOICE`, and costs a few characters of
+> TTS. If the file is missing Bruce falls back to the old plop and logs it, so a
+> failed render can't take the service down. The shorter plop is still used for
+> the follow-up window, where speaking again would talk over the tail of his own
+> reply.
+
+> **Prefer a beep, or nothing at all?** The Bruce page has a three-way toggle —
+> *"Yes?"* / *Plop* / *Silent* — that takes effect on the next wake word. It is
+> not persisted; `BRUCE_WAKE_ACK=speak|plop|none` in `/etc/brewplanner.env` is
+> what he returns to on restart. Worth knowing: the acknowledgement plays while
+> the OpenAI session connects, so on `none` there is nothing masking that wait
+> and the first reply of a conversation can feel a beat slower.
 
 > **The wake phrase is "hey Bruce".** `apps/bruce/wake-words/hey_bruce.onnx`
 > is a custom-trained model and is the default — no env var needed. Say the

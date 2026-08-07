@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/main.js",
     "dev": "node --watch src/main.js",
+    "make-wake-ack": "node scripts/make-wake-ack.js",
     "test": "node test/bruce.test.js"
   },
   "engines": {
