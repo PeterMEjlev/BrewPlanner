@@ -135,6 +135,7 @@ class WakeWordDetector extends EventEmitter {
     this._lastDetection = 0;
     this._lastScore = 0;
     this._debugPeak = 0;
+    this._debugRms = 0;
     this._debugAt = 0;
     this._droppedWarnedAt = 0;
   }
@@ -346,20 +347,24 @@ class WakeWordDetector extends EventEmitter {
     this.emit('score', score);
 
     if (this._debug) {
+      // Peaks, not the latest frame, for both. A phrase is over in well under
+      // a second, so by the time the line prints the instantaneous level has
+      // already fallen back to the empty room — the first version of this log
+      // reported "mic 174 rms" for an utterance that had peaked at ten times
+      // that, which is worse than not logging it.
       this._debugPeak = Math.max(this._debugPeak, score);
+      this._debugRms = Math.max(this._debugRms, this._frameRms);
       const now = Date.now();
       if (now - this._debugAt >= 1000) {
         this._debugAt = now;
-        // The levels belong beside the score: a peak stuck at 0.001 means
-        // something different when the room reads 20 RMS than when it reads
-        // 2000, and reading them apart is how tuning goes wrong.
-        const { rms, noiseFloor, gain } = this.level;
+        const { noiseFloor, gain } = this.level;
         console.log(
           `[Bruce] Wake-word peak score: ${this._debugPeak.toFixed(3)} (threshold ${this._threshold}) ` +
-            `— mic ${Math.round(rms)} rms, floor ${Math.round(noiseFloor)}, ` +
+            `— mic peak ${Math.round(this._debugRms)} rms, floor ${Math.round(noiseFloor)}, ` +
             `gain ×${gain.toFixed(1)}${this.gain === 'auto' ? ' (auto)' : ''}`
         );
         this._debugPeak = 0;
+        this._debugRms = 0;
       }
     }
 

@@ -280,6 +280,62 @@ function makeStub(spoken = []) {
     ok('GA session config + refreshTools');
   }
 
+  // ── RealtimeClient: a turn that called nothing reports nothing ───────────
+  //
+  // Every spoken turn runs announce → execute → results. The results phase
+  // hands the model the function output and orders it to read all of it out
+  // loud, which is right when functions ran and catastrophic when none did:
+  // told to speak data that does not exist, the model makes some up. In the
+  // brewery that surfaced as a second, unprompted reply after a plain "hey
+  // Bruce" — "Understood. The current temperature readings are: the BK is at
+  // 98 degrees Celsius…" — invented, with no sensor ever read.
+
+  {
+    const client = new RealtimeClient({ apiKey: 'x', registry: { getToolDefinitions: () => [] } });
+    client._sessionReady = true;
+    let sends = [];
+    client._send = (e) => sends.push(e);
+
+    /** One turn: commit, then N response.done events with no function calls. */
+    const turn = async (dones) => {
+      sends = [];
+      const finished = [];
+      client.on('responseDone', () => finished.push(true));
+      client.commitAndRespond();
+      for (let i = 0; i < dones; i++) await client._handleServerEvent({ type: 'response.done' });
+      client.removeAllListeners('responseDone');
+      return { sends, finished };
+    };
+
+    // Announce, then the execute phase finds nothing to call — and that is the
+    // whole turn. Nothing further is asked of the model.
+    const conversational = await turn(2);
+    assert.strictEqual(conversational.finished.length, 1, 'the turn ends');
+    assert.strictEqual(client.responsePhase, null, 'and leaves no phase behind');
+    const injected = conversational.sends.filter(
+      (e) => e.type === 'conversation.item.create' &&
+        String(e.item?.content?.[0]?.text).includes('you MUST speak ALL of this data'),
+    );
+    assert.strictEqual(injected.length, 0, 'the model is never told to read absent data aloud');
+
+    // A turn that *did* call something still reports it — the phase exists for
+    // a reason, and this is that reason.
+    sends = [];
+    client._registry.execute = async () => 'HLT is 72 °C';
+    client.commitAndRespond();
+    await client._handleServerEvent({ type: 'response.done' });      // announce
+    client._completedCalls.push({ call_id: 'c1', fnName: 'get_temps', args: {} });
+    await client._handleServerEvent({ type: 'response.done' });      // execute, with a call
+    await client._handleServerEvent({ type: 'response.done' });      // execute, nothing more
+    const spoken = sends.find(
+      (e) => e.type === 'conversation.item.create' &&
+        String(e.item?.content?.[0]?.text).includes('you MUST speak ALL of this data'),
+    );
+    assert.ok(spoken, 'results are handed to the model');
+    assert.match(spoken.item.content[0].text, /HLT is 72 °C/, 'and they are the real ones');
+    ok('a turn with no function calls ends instead of inventing results to read');
+  }
+
   // ── Engine: volume ────────────────────────────────────────────────────────
 
   {
@@ -435,12 +491,46 @@ function makeStub(spoken = []) {
     run(during, { rms: 3000, peak: 12000 }, 0.8);
     assert.ok(during.gain / before > 0.75, 'a phrase is scored at essentially one gain');
 
-    // A noisy room caps the gain: amplification lifts the room as much as the
-    // phrase, so past this point it only feeds the model louder noise.
+    // A genuinely noisy room caps the gain: amplification lifts the room as
+    // much as the phrase, so past this point it only feeds the model noise.
     const noisy = new GainControl({ maxNoise: 600 });
-    const noisyGain = run(noisy, { rms: 300, peak: 900 }, 60);
+    const noisyGain = run(noisy, { rms: 300, peak: 900 }, 600);
     assert.ok(noisyGain <= 2.1, `noise caps the gain (got ×${noisyGain.toFixed(2)})`);
     assert.ok(noisy.noiseFloor > 200, 'and the room level is tracked for the meter');
+
+    // ...but somebody standing there saying "hey Bruce" over and over must not
+    // *become* the noise floor. This is what shipped broken: in the brewery a
+    // fifteen-second run of attempts walked the floor from its true 117 to 325,
+    // the cap read the room as four times louder than it was, and the gain was
+    // throttled to ×1.8 — worse than the fixed gain it replaced — precisely
+    // while someone was trying to be heard from across the room.
+    const talking = new GainControl();
+    run(talking, { rms: 117, peak: 350 }, 30);       // the room, settling
+    const quietFloor = talking.noiseFloor;
+    assert.ok(Math.abs(quietFloor - 117) < 2, `the floor finds the room (${quietFloor.toFixed(0)})`);
+    for (let attempt = 0; attempt < 6; attempt++) {  // six goes at the phrase
+      run(talking, { rms: 900, peak: 2600 }, 1);
+      run(talking, { rms: 117, peak: 350 }, 1.5);
+    }
+    assert.ok(
+      talking.noiseFloor < quietFloor * 1.25,
+      `speech does not become the floor (${quietFloor.toFixed(0)} → ${talking.noiseFloor.toFixed(0)})`,
+    );
+    // What that buys, stated as the thing that actually matters: the phrase is
+    // still handed to the models at the level they want it. The shipped cap
+    // was leaving it at ×1.8 — about 4700, well under target — by the sixth go.
+    const presented = talking.gain * 2600;
+    assert.ok(
+      presented >= 8000,
+      `the phrase still reaches the models at full level (×${talking.gain.toFixed(1)} → ${Math.round(presented)})`,
+    );
+
+    // The floor is seeded from the first frame instead of crawling up from
+    // zero, or it — and the mic meter reading it — would be wrong for minutes
+    // after every restart.
+    const fresh = new GainControl();
+    fresh.update(140, 400);
+    assert.strictEqual(fresh.noiseFloor, 140, 'the floor starts where the room is');
 
     // The gain moves over seconds, so the first loud words after a quiet spell
     // arrive while it is still up where the quiet room left it. That frame has

@@ -261,6 +261,17 @@ Two stages sit in front of the scorer, both on by default:
   single one is right both up close and from the far corner, which is what
   `BRUCE_WAKE_WORD_GAIN=6` was trying and failing to be.
 
+  > **Watch the noise cap.** `BRUCE_WAKE_WORD_AGC_MAX_NOISE ÷ the tracked floor`
+  > is a hard ceiling on the gain, and it is the one that bites. It shipped at
+  > 600 against a brewery floor of 117 — a ×5 ceiling, below the fixed ×6 it
+  > replaced — and worse, the floor tracker was quick enough that fifteen
+  > seconds of someone repeating "hey Bruce" walked it to 325 and the ceiling
+  > down to ×1.8, throttling the gain precisely while it was needed. It is now
+  > 3000, with a floor that takes minutes rather than seconds to move. If you
+  > tighten it, check the idle wake score first: in this brewery an amplified
+  > floor of ~1900 leaves it at 0.001 against a 0.5 threshold, so there is no
+  > false-fire pressure here to trade recall against.
+
   The tunables (`BRUCE_WAKE_WORD_AGC_*`) are documented in
   `apps/bruce/config.js`; the arithmetic and the reasoning are in
   `apps/bruce/src/engine/GainControl.js`.
@@ -423,6 +434,17 @@ chat. Settings, all optional, in `/etc/brewplanner.env`:
   with the mic reading nothing means no usable audio is reaching the detector.
 - **Wake word triggers, but only from up close** — step 7. Turn on the mic
   meter and read whether the microphone missed the phrase or the model did.
+  With `BRUCE_WAKE_WORD_DEBUG=1` the journal also prints the gain and the room
+  level beside each score; a gain stuck low while you are talking means the
+  noise cap is binding, so check the floor it is reading against
+  (`BRUCE_WAKE_WORD_AGC_MAX_NOISE ÷ floor` is the cap it applies).
+- **Bruce answers a question nobody asked** — typically a second reply straight
+  after the first, reading out data that was never looked up ("the BK is at 98
+  degrees Celsius") with no function call in the journal. A spoken turn runs
+  announce → execute → results, and the results phase tells the model to read
+  the function output aloud; when no function ran, it used to run anyway with
+  nothing to read, and the model filled the gap. Fixed in `RealtimeClient`:
+  a turn that called nothing now ends after the announcement.
 - **Bruce wakes up on his own** — raise `BRUCE_WAKE_WORD_THRESHOLD` (step 6).
   Expect this to need attention if you train a single-word "Bruce" model.
 - **Bruce listens for the full 10 s after every question** — the room's noise

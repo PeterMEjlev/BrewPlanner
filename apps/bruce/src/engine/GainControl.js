@@ -37,13 +37,21 @@
  */
 
 /**
- * How fast the tracked noise floor follows the frame level. Down quickly (a
- * quieter room is a fact the moment it happens), up slowly (so a sentence isn't
- * mistaken for the room getting louder — the floor has to stay *under* speech,
- * which is the whole point of tracking it).
+ * How fast the tracked noise floor follows the frame level, per 80ms frame.
+ * Down quickly — a quieter room is a fact the moment it happens. Up *very*
+ * slowly, because the floor's whole job is to sit under speech and it is
+ * measured from audio that contains speech.
+ *
+ * The rise was 0.005 (a ~16 s time constant) and that was far too eager: in
+ * the brewery, someone standing there repeating "hey Bruce" for fifteen
+ * seconds walked the floor from its true 117 up to 325, the noise cap below
+ * read the room as four times louder than it was, and the gain was throttled
+ * to ×1.8 — less than the fixed ×6 this replaced — at the exact moment the
+ * phrase needed lifting. At 0.0004 (~3 min) a burst of talking moves it by
+ * well under a percent, and a room that genuinely gets louder still registers.
  */
 const FLOOR_FALL = 0.3;
-const FLOOR_RISE = 0.005;
+const FLOOR_RISE = 0.0004;
 
 /**
  * Hard ceiling on the amplified peak, just under full scale.
@@ -60,8 +68,18 @@ const PEAK_CEILING = 32000;
 const DEFAULTS = {
   /** Peak level (0–32768) to aim speech at: ~−12 dBFS, clear of the mic's own noise with headroom left. */
   targetPeak: 8000,
-  /** Ceiling on the amplified noise floor, RMS. */
-  maxNoise: 600,
+  /**
+   * Ceiling on the amplified noise floor, RMS — a backstop against winding a
+   * dead-quiet room's hiss up into something the model has to look at.
+   *
+   * Deliberately generous. It was 600, which sounds cautious until you measure:
+   * the brewery's floor is ~117, so it capped the gain at ×5 — below the fixed
+   * ×6 it replaced — and the fear it was guarding against turned out not to
+   * exist. At ×16 in that room, with the noise amplified to ~1900, the idle
+   * wake score sits at 0.001 against a threshold of 0.5. There is no
+   * false-fire pressure to trade recall against, so don't trade any.
+   */
+  maxNoise: 3000,
   /** Below 1 so loud, close speech is turned down rather than clipped. */
   minGain: 0.5,
   maxGain: 16,
@@ -83,6 +101,7 @@ class GainControl {
   constructor({ gain = 'auto', ...opts } = {}) {
     this._opts = { ...DEFAULTS, ...opts };
     this._noiseFloor = 0;
+    this._floorSeeded = false;
     this._peakEnvelope = 0;
     this.setGain(gain);
 
@@ -146,6 +165,13 @@ class GainControl {
    * @returns {number} gain for this frame
    */
   update(rms, peak) {
+    // Seeded from the first frame rather than crept up to from zero: with the
+    // rise as slow as it now is, starting at 0 would leave the floor wrong —
+    // and the meter reading wrong — for minutes after every restart.
+    if (!this._floorSeeded) {
+      this._floorSeeded = true;
+      this._noiseFloor = rms;
+    }
     const towardsFloor = rms < this._noiseFloor ? FLOOR_FALL : FLOOR_RISE;
     this._noiseFloor += (rms - this._noiseFloor) * towardsFloor;
     this._peakEnvelope = Math.max(peak, this._peakEnvelope * this._peakDecay);

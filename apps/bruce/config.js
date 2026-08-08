@@ -135,11 +135,13 @@ module.exports = {
   // sudden louder syllable still has headroom before it clips.
   WAKE_WORD_AGC_TARGET_PEAK: num('WAKE_WORD_AGC_TARGET_PEAK', 8000),
 
-  // Ceiling on the amplified *noise floor* (RMS). Gain is capped so the room's
-  // own hiss never gets louder than this, however quiet the room is — past
-  // this point more gain only feeds the model noise, since amplification
-  // cannot change the ratio between the phrase and the room.
-  WAKE_WORD_AGC_MAX_NOISE: num('WAKE_WORD_AGC_MAX_NOISE', 600),
+  // Ceiling on the amplified *noise floor* (RMS): a backstop against winding a
+  // dead-quiet room's hiss up into something the model has to look at. Keep it
+  // generous. Measured in the brewery, an amplified floor of ~1900 leaves the
+  // idle wake score at 0.001 against a 0.5 threshold — there is no false-fire
+  // pressure here to trade recall against, and a tight cap here throttles the
+  // gain exactly when someone is trying to be heard from across the room.
+  WAKE_WORD_AGC_MAX_NOISE: num('WAKE_WORD_AGC_MAX_NOISE', 3000),
 
   // Bounds on the gain itself. The floor is below 1 so genuinely loud, close
   // speech is turned *down* rather than clipped.

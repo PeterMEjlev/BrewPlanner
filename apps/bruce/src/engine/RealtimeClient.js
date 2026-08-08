@@ -160,8 +160,11 @@ class RealtimeClient extends EventEmitter {
     if (!this._sessionReady) return;
     this._streaming = false;
     this._send({ type: 'input_audio_buffer.commit' });
-    // Phase 1: force speech-only so Bruce announces before calling functions
+    // Phase 1: force speech-only so Bruce announces before calling functions.
+    // Results are cleared with it: a turn must never be able to speak what the
+    // turn before it looked up.
     this._responsePhase = 'announce';
+    this._lastFunctionResults = '';
     this._send({
       type: 'response.create',
       response: {
@@ -188,6 +191,7 @@ class RealtimeClient extends EventEmitter {
       },
     });
     this._responsePhase = null;
+    this._lastFunctionResults = '';
     this._send({ type: 'response.create' });
     this.emit('thinking');
   }
@@ -420,10 +424,20 @@ class RealtimeClient extends EventEmitter {
           } else {
             this._responsePhase = null;
           }
+        } else if (this._responsePhase === 'execute' && !this._lastFunctionResults) {
+          // Nothing was called, so there is nothing to report: the turn was
+          // conversation, not action, and the announcement was the whole
+          // answer. Ending here matters — the results phase below orders the
+          // model to read data out loud, and with no data to read it invents
+          // some. That is where "Understood. The current temperature readings
+          // are: the BK is at 98 degrees…" came from, spoken unprompted after
+          // a plain "hey Bruce", with no sensor ever consulted.
+          this._responsePhase = null;
+          this.emit('responseDone');
         } else if (this._responsePhase === 'execute') {
-          // No more functions to call — Phase 3: let model share results with audio
+          // Functions ran — Phase 3: let the model speak what they returned.
           this._responsePhase = 'results';
-          const fnResults = this._lastFunctionResults || '';
+          const fnResults = this._lastFunctionResults;
           this._lastFunctionResults = '';
 
           // Inject the function results as a system message so they're in the
