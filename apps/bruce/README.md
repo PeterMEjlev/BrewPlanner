@@ -14,7 +14,12 @@ BrewPlanner server over loopback, which passes as trusted-local — no tokens.
   repo: wake word, mic capture (sox/ALSA), OpenAI Realtime WebSocket, speaker
   playback, function-calling registry. Only the paths and `WakeWordDetector`
   differ from the original — that one was rewritten around openWakeWord when
-  the Picovoice key died.
+  the Picovoice key died. Four files there are about hearing the phrase from
+  across the room rather than only next to the mic: `HighPassFilter.js` and
+  `GainControl.js` prepare the audio the wake models are scored on, and
+  `MicLevelMeter.js` is what the dashboard's mic meter draws, so which of the
+  mic, the room or the model fell short is something you read rather than guess
+  (see `deploy/README-bruce.md` step 7).
 - `src/functions/` — what Bruce can *do*:
   - `hub.js` — **everything about BrewPlanner**, fetched from the server rather
     than written here. It reads the tool definitions from
@@ -37,9 +42,11 @@ BrewPlanner server over loopback, which passes as trusted-local — no tokens.
   Bruces (this speaker, the written chat, and the phone), so a tool added to
   `apps/server/src/bruce/tools.ts` appears in all of them at once.
 - `src/main.js` — entry point: wires functions, env, and journald-friendly logs
-- `src/statusServer.js` — loopback HTTP API (state, transcript, speak, volume)
-  that the BrewPlanner server proxies as `/api/bruce/*` for the dashboard page
-- `config.js` — voice-detection tunables (silence thresholds, timeouts)
+- `src/statusServer.js` — loopback HTTP API (state, transcript, mic levels,
+  speak, volume) that the BrewPlanner server proxies as `/api/bruce/*` for the
+  dashboard page
+- `config.js` — voice-detection tunables (silence thresholds, timeouts, and
+  the wake-word gain control)
 - `system-prompt.txt` — Bruce's spoken-persona instructions
 - `wake-words/` — the openWakeWord ONNX models, one of which *is* the wake
   phrase; see the README in there

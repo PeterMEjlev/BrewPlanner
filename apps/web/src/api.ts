@@ -20,12 +20,14 @@ import type {
   BruceConversation,
   BruceInstructions,
   BruceKnowledgeState,
+  BruceMicLevelsResponse,
   BrucePhase,
   BruceServiceStatus,
   BruceToolCall,
   BruceVoiceSession,
   BruceVoiceToolResult,
   BruceWakeAck,
+  BruceWakeWordGain,
   ChecklistSummary,
   ChecklistWithSteps,
   DeviceDataSources,
@@ -708,12 +710,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mode }),
     }),
-  // Wake-word sensitivity: mic gain applied before the phrase is scored.
-  bruceSetWakeWordGain: (gain: number) =>
-    request<{ wakeWordGain: number }>('/bruce/wake-word-gain', {
-      method: 'POST',
-      body: JSON.stringify({ gain }),
-    }),
+  // Wake-word sensitivity: mic gain applied before the phrase is scored,
+  // either pinned to a multiplier or left to Bruce's gain control ('auto').
+  bruceSetWakeWordGain: (gain: BruceWakeWordGain) =>
+    request<{ wakeWordGain: BruceWakeWordGain; wakeWordGainApplied: number }>(
+      '/bruce/wake-word-gain',
+      { method: 'POST', body: JSON.stringify({ gain }) },
+    ),
+  // A few seconds of mic level and wake-word score, for the Bruce page's mic
+  // meter. Polled far faster than the status above, and only while it's shown.
+  getBruceMicLevels: () => request<BruceMicLevelsResponse>('/bruce/levels'),
 
   // Talking to Bruce from this browser. The audio does not come through the
   // server: `startBruceVoice` returns a credential the page uses to open its

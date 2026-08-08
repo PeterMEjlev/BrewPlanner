@@ -36,6 +36,18 @@ function oneOf(name, allowed, fallback) {
   return fallback;
 }
 
+/**
+ * Wake-word gain tunable: a positive number, or 'auto' for the gain control.
+ * Anything else (unset, empty, a typo) means 'auto' — the setting that works
+ * without knowing the room, and the safer thing to fall back to.
+ */
+function gain(name, fallback) {
+  const v = process.env[`BRUCE_${name}`];
+  if (v == null || v === '') return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 'auto';
+}
+
 /** Accepted values for WAKE_ACK, shared with the engine and the status API. */
 const WAKE_ACK_MODES = ['speak', 'plop', 'none'];
 
@@ -85,18 +97,70 @@ module.exports = {
   // the phrase, and put the threshold between the two.
   WAKE_WORD_DEBUG: bool('WAKE_WORD_DEBUG', false),
 
-  // Amplify the mic before scoring it, for when the phrase has to be said
-  // right next to the microphone. The models see raw PCM16 magnitudes, so the
-  // same words from across the room score lower purely for being quieter, and
-  // 2–4 here can be worth more than dropping the threshold — which is capped
-  // in practice by "hey brew" scoring 0.480.
+  // How much the mic is amplified before the phrase is scored. The models see
+  // raw PCM16 magnitudes, so the same words from across the room score lower
+  // purely for being quieter — this is the lever for "I have to stand next to
+  // the microphone".
   //
-  // It lifts background noise by the same factor, so it helps a faint phrase
-  // in a quiet room and does nothing for one competing with the fridge. Turn
-  // WAKE_WORD_DEBUG on and watch whether the spoken peak actually separates
-  // from the idle peak. Detection only — the audio OpenAI hears and the
-  // silence thresholds are unaffected.
-  WAKE_WORD_GAIN: num('WAKE_WORD_GAIN', 1),
+  // 'auto' (the default) hands that to the automatic gain control below, which
+  // is what makes one setting work at both one metre and five. A number pins
+  // the gain instead, which is only worth doing to reproduce a measurement:
+  // one fixed number cannot be right at both distances, and a number big
+  // enough to carry across the room hard-clips speech at the mic.
+  //
+  // Either way it lifts background noise by the same factor as the phrase, so
+  // it cannot rescue a phrase that is quieter than the room. Detection only —
+  // the audio OpenAI hears and the silence thresholds are unaffected.
+  WAKE_WORD_GAIN: gain('WAKE_WORD_GAIN', 'auto'),
+
+  // Corner frequency (Hz) of the high-pass filter in front of the scorer, and
+  // in front of the gain control's own level measurement. A brewery's noise —
+  // chiller, fridge, pumps, fans — is mostly below this, and cutting it both
+  // clears the bottom mel bins and stops rumble from being mistaken for a loud
+  // room (which would otherwise hold the automatic gain down). 0 disables it.
+  WAKE_WORD_HIGHPASS_HZ: num('WAKE_WORD_HIGHPASS_HZ', 120),
+
+
+  // ── Wake-word automatic gain control ─────────────────────────────────────
+  //
+  // Only consulted while WAKE_WORD_GAIN is 'auto'. The gain tracks a decaying
+  // peak envelope of the (high-passed) mic, so it settles near the ceiling
+  // while the room is quiet and eases off when someone is speaking close by.
+  // It moves slowly on purpose: the classifier reads 1.28 s of audio at a
+  // time, and a gain that chased the envelope within an utterance would
+  // flatten the very loudness contour the phrase is recognised by.
+
+  // Peak level (0–32768) the gain aims to put speech at. ~−12 dBFS: loud
+  // enough to be well clear of the mic's own noise, quiet enough that a
+  // sudden louder syllable still has headroom before it clips.
+  WAKE_WORD_AGC_TARGET_PEAK: num('WAKE_WORD_AGC_TARGET_PEAK', 8000),
+
+  // Ceiling on the amplified *noise floor* (RMS). Gain is capped so the room's
+  // own hiss never gets louder than this, however quiet the room is — past
+  // this point more gain only feeds the model noise, since amplification
+  // cannot change the ratio between the phrase and the room.
+  WAKE_WORD_AGC_MAX_NOISE: num('WAKE_WORD_AGC_MAX_NOISE', 600),
+
+  // Bounds on the gain itself. The floor is below 1 so genuinely loud, close
+  // speech is turned *down* rather than clipped.
+  WAKE_WORD_AGC_MIN_GAIN: num('WAKE_WORD_AGC_MIN_GAIN', 0.5),
+  WAKE_WORD_AGC_MAX_GAIN: num('WAKE_WORD_AGC_MAX_GAIN', 16),
+
+  // Seconds for the gain to cover ~63% of the distance when it is coming
+  // *down* — which is what a phrase arriving asks for. Long relative to a
+  // 0.8 s wake phrase, so the phrase is scored at essentially one gain.
+  WAKE_WORD_AGC_ATTACK_S: num('WAKE_WORD_AGC_ATTACK_S', 4),
+
+  // The same, for the gain going back *up*. Shorter, because that only
+  // happens while the room is quiet and nothing is being distorted by it —
+  // and because a slow one means half a minute before someone who has been
+  // talking beside the mic can be heard from the far corner again.
+  WAKE_WORD_AGC_RELEASE_S: num('WAKE_WORD_AGC_RELEASE_S', 1.5),
+
+  // Half-life (seconds) of the peak envelope the gain is derived from. With
+  // the release above, this is the other half of how quickly full gain comes
+  // back after someone stops talking near the mic.
+  WAKE_WORD_AGC_PEAK_HALFLIFE_S: num('WAKE_WORD_AGC_PEAK_HALFLIFE_S', 1.5),
 
 
   // ── Voice Activity Detection ─────────────────────────────────────────────

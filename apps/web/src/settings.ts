@@ -69,6 +69,18 @@ export interface Settings {
    * as a guest and rearranging can't lose the admin-only pages — see navOrder.ts.
    */
   navOrder: string[];
+  /**
+   * Show Bruce's live microphone meter on the Bruce page — the raw mic level,
+   * the noise floor the wake detector is working against, and what it scores
+   * the phrase at. A diagnostic for "Bruce doesn't hear me from over there",
+   * which is several different faults wearing the same symptom; see
+   * apps/bruce/src/engine/MicLevelMeter.js.
+   *
+   * Off by default, and local like the rest of these: it makes the page poll
+   * the Bruce service several times a second, which the kiosk left on a wall
+   * has no reason to do.
+   */
+  bruceMicDebug: boolean;
 }
 
 /**
@@ -90,6 +102,7 @@ export const DEFAULT_SETTINGS: Settings = {
   recipeStyleCategories: DEFAULT_STYLE_CATEGORIES,
   recipeHiddenSubstyles: [],
   navOrder: [],
+  bruceMicDebug: false,
 };
 
 // Tuning bounds + step sizes, shared by the steppers so clamping and the UI

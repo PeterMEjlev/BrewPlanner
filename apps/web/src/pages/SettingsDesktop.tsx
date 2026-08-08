@@ -7,6 +7,7 @@ import {
   SENSOR_CATALOG,
   type BruceServiceStatus,
   type BruceWakeAck,
+  type BruceWakeWordGain,
   type DeviceDataSource,
   type DeviceDataSources,
   type DeviceStatus,
@@ -234,7 +235,12 @@ function renderSettingsCategory(category: SettingsCategoryId): React.ReactNode {
     case 'notifications':
       return <NotificationsSection />;
     case 'bruce':
-      return <BruceVoiceSection />;
+      return (
+        <>
+          <BruceVoiceSection />
+          <BruceMicDebugSection />
+        </>
+      );
     case 'account':
       return <AccountSection />;
     case 'accounts':
@@ -422,15 +428,23 @@ const WAKE_ACK_OPTIONS: { value: BruceWakeAck; label: string }[] = [
   { value: 'none', label: 'Silent' },
 ];
 
+/** Auto vs a pinned multiplier for the wake-word gain. */
+const WAKE_GAIN_MODES: { value: 'auto' | 'manual'; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'manual', label: 'Fixed' },
+];
+
 /**
  * Bruce's voice settings.
  *
- * Unlike everything else on this page, these live in the Bruce service's
- * memory rather than in localStorage or the database: they apply from the next
- * wake word and fall back to the BRUCE_* values in /etc/brewplanner.env when
- * bruce.service restarts. Read once on mount rather than polled — a settings
- * panel that is mounted even while another category is showing has no business
- * making a request every couple of seconds.
+ * Most of these live in the Bruce service's memory rather than in localStorage
+ * or the database: they apply from the next wake word and fall back to the
+ * BRUCE_* values in /etc/brewplanner.env when bruce.service restarts. Read once
+ * on mount rather than polled — a settings panel that is mounted even while
+ * another category is showing has no business making a request every couple of
+ * seconds. The mic meter toggle at the bottom is the exception: it is a
+ * per-browser preference, so it sits in the same localStorage store as the
+ * display settings.
  */
 function BruceVoiceSection(): JSX.Element {
   const [status, setStatus] = useState<BruceServiceStatus | null>(null);
@@ -491,6 +505,12 @@ function BruceVoiceSection(): JSX.Element {
   }
 
   const gain = status.wakeWordGain ?? 1;
+  const auto = gain === 'auto';
+  const setGain = (next: BruceWakeWordGain): void =>
+    void apply(
+      () => api.bruceSetWakeWordGain(next),
+      ({ wakeWordGain, wakeWordGainApplied }) => ({ wakeWordGain, wakeWordGainApplied }),
+    );
 
   return (
     <Card
@@ -500,20 +520,40 @@ function BruceVoiceSection(): JSX.Element {
       <div className="divide-y divide-zinc-800">
         <Row
           label="Wake word sensitivity"
-          hint="Amplifies the microphone before the wake phrase is scored, so “hey Bruce” carries from further away. Raising it lifts room noise by the same amount, so go up in steps — too high and other talk starts waking him."
+          hint={
+            auto
+              ? 'Bruce tracks how loud the room is and amplifies the microphone to match, so the phrase carries from across the brewery without being distorted when you say it up close.'
+              : 'Amplifies the microphone by a fixed amount before the wake phrase is scored. No single number is right both up close and from the far corner — Auto is what covers both; a fixed one is for reproducing a measurement.'
+          }
         >
-          <Stepper
-            value={gain}
-            format={(v) => `×${v.toFixed(1)}`}
-            bounds={BRUCE_WAKE_WORD_GAIN}
-            onChange={(v) =>
-              void apply(
-                () => api.bruceSetWakeWordGain(v),
-                ({ wakeWordGain }) => ({ wakeWordGain }),
-              )
-            }
-            ariaLabel="Wake word sensitivity"
-          />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Segmented
+              value={auto ? 'auto' : 'manual'}
+              options={WAKE_GAIN_MODES}
+              // Leaving Auto pins the gain at wherever it had settled, so the
+              // switch itself doesn't change what Bruce hears.
+              onChange={(mode) =>
+                setGain(
+                  mode === 'auto'
+                    ? 'auto'
+                    : clampStep(status.wakeWordGainApplied ?? 1, BRUCE_WAKE_WORD_GAIN),
+                )
+              }
+            />
+            {auto ? (
+              <span className="tabular-nums text-sm text-zinc-500">
+                now ×{(status.wakeWordGainApplied ?? 1).toFixed(1)}
+              </span>
+            ) : (
+              <Stepper
+                value={gain}
+                format={(v) => `×${v.toFixed(1)}`}
+                bounds={BRUCE_WAKE_WORD_GAIN}
+                onChange={setGain}
+                ariaLabel="Wake word sensitivity"
+              />
+            )}
+          </div>
         </Row>
         <Row
           label="On “hey Bruce”"
@@ -538,7 +578,43 @@ function BruceVoiceSection(): JSX.Element {
 }
 
 /** The fields of BruceStatus this panel edits. */
-type BruceStatusFields = { wakeWordGain: number; wakeAck: BruceWakeAck };
+type BruceStatusFields = {
+  wakeWordGain: BruceWakeWordGain;
+  wakeWordGainApplied: number;
+  wakeAck: BruceWakeAck;
+};
+
+/**
+ * The mic meter switch.
+ *
+ * Its own card, and shown whether or not bruce.service is answering, because
+ * the thing it turns on is what you reach for when Bruce is misbehaving —
+ * finding it greyed out because he is offline would be exactly backwards.
+ * Local to this browser (localStorage), unlike the settings above.
+ */
+function BruceMicDebugSection(): JSX.Element {
+  const { bruceMicDebug } = useSettings();
+  return (
+    <Card
+      title="Microphone diagnostics"
+      hint="For working out why Bruce didn't hear you — whether the microphone missed the phrase, or heard it and scored it too low."
+    >
+      <Row
+        label="Show the mic meter on the Bruce page"
+        hint="Adds a live level trace and wake-word score beside the brewery speaker card. Walk to where he doesn't hear you, say “hey Bruce”, and watch which one falls short. It polls Bruce a few times a second while shown, so leave it off on a wall kiosk."
+      >
+        <Segmented
+          value={bruceMicDebug ? 'on' : 'off'}
+          options={[
+            { value: 'off', label: 'Off' },
+            { value: 'on', label: 'On' },
+          ]}
+          onChange={(v) => setSetting('bruceMicDebug', v === 'on')}
+        />
+      </Row>
+    </Card>
+  );
+}
 
 /** Compact −/value/+ stepper for a clamped numeric setting (mouse-friendly). */
 function Stepper({

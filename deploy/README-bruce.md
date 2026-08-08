@@ -163,12 +163,12 @@ Say the wake phrase near the mic — Bruce answers *"Yes?"*, then ask e.g.
 > while the OpenAI session connects, so on `none` there is nothing masking that
 > wait and the first reply of a conversation can feel a beat slower.
 
-**Settings → Bruce** is where both live settings are: the acknowledgement above
-and **wake word sensitivity**, which amplifies the mic before the phrase is
-scored — the fix for having to stand next to the microphone. Both apply from
-the next wake word and revert to their `BRUCE_*` defaults when the service
-restarts, so once you have found values you like, write them into
-`/etc/brewplanner.env`.
+**Settings → Bruce** is where the live settings are: the acknowledgement above,
+and **wake word sensitivity** — *Auto* (the default, and what makes the phrase
+carry across the room) or a pinned multiplier. Both apply from the next wake
+word and revert to their `BRUCE_*` defaults when the service restarts, so once
+you have found values you like, write them into `/etc/brewplanner.env`. The
+same page has the **mic meter** toggle for the Bruce page — see step 7.
 
 > **The wake phrase is "hey Bruce".** `apps/bruce/wake-words/hey_bruce.onnx`
 > is a custom-trained model and is the default — no env var needed. Say the
@@ -196,6 +196,77 @@ up on his own; lower it if you have to shout.
 fires on nothing in a 136-clip negative set at 0.5, but `hey brew` peaks at
 0.480 — just under the line. Below 0.5 that is the first phrase that will start
 waking him. See `apps/bruce/wake-words/README.md` for the full measurements.
+
+## 7. When he only hears you from up close
+
+The usual complaint, and the threshold is usually not the answer. The models
+score raw PCM16 magnitudes, so the *same words* score lower from across the
+room purely for arriving quieter. Measured through the real models with the
+same synthetic utterance at two levels:
+
+| | peak level the models are shown |
+|---|---|
+| spoken near the mic | 8200 |
+| the same words, far field | 830 |
+
+A 10:1 difference for identical words — which no threshold can compensate for,
+because lowering it hits `hey brew` at 0.480 long before it recovers the gap.
+
+Three things sit between the room and the model, and they fail differently.
+**Turn on the mic meter first** (Settings → Bruce → Microphone diagnostics),
+walk to where he misses you, say the phrase, and read which one it is:
+
+- **The level trace barely moves.** The mic never really heard you. Raise the
+  capture gain — `alsamixer`, F6 for the card, F4 for capture — and check
+  whether the capsule has a hardware AGC that is switched off:
+
+  ```bash
+  amixer -c <card> scontents          # look for "Auto Gain Control"
+  amixer -c <card> sset 'Auto Gain Control' on
+  amixer -c <card> sset 'Mic' 100%
+  sudo alsactl store                  # survive a reboot
+  ```
+
+  A capsule's own AGC is doing this job in analogue, before quantisation, and
+  is worth more than anything downstream can do afterwards. Mind the knock-on:
+  it lifts the idle noise floor too, so re-check `BRUCE_SILENCE_ENERGY_THRESHOLD`
+  and `BRUCE_MIN_SPEECH_ENERGY` afterwards (see step 2).
+
+- **The level clears the room line but the score stays under the wake line.**
+  He heard you and didn't recognise you. That is the model, and the only real
+  fix is retraining with more far-field augmentation — see below.
+
+- **The level moves but never clears the room line.** The phrase is not louder
+  than the brewery. Gain lifts both by the same factor and can never close that
+  gap; move the mic away from the chiller and the pumps, or closer to where you
+  stand.
+
+### What Bruce already does about it
+
+Two stages sit in front of the scorer, both on by default:
+
+- **A 120 Hz high-pass** (`BRUCE_WAKE_WORD_HIGHPASS_HZ`, `0` disables). Chiller,
+  fridge, pumps and fans are nearly all below it, and that energy otherwise
+  fills the bottom mel bins the phrase has to be recognised in.
+
+- **Automatic gain** (`BRUCE_WAKE_WORD_GAIN=auto`, the default). It tracks the
+  room and puts speech in front of the models at a consistent level whether it
+  was spoken at one metre or five — in the measurement above, far-field audio
+  reaches the models at 7900 instead of 830. It moves over seconds rather than
+  milliseconds so a 0.8 s wake phrase is scored at essentially one gain, and a
+  per-frame ceiling limits loud close speech instead of clipping it.
+
+  Settings → Bruce shows where it has settled and can pin it to a fixed
+  multiplier instead. A fixed number is for reproducing a measurement — no
+  single one is right both up close and from the far corner, which is what
+  `BRUCE_WAKE_WORD_GAIN=6` was trying and failing to be.
+
+  The tunables (`BRUCE_WAKE_WORD_AGC_*`) are documented in
+  `apps/bruce/config.js`; the arithmetic and the reasoning are in
+  `apps/bruce/src/engine/GainControl.js`.
+
+Both are detection-only. The audio OpenAI hears, and the silence thresholds
+from step 2, are untouched by either.
 
 ## Retraining the wake-word model
 
@@ -347,8 +418,11 @@ chat. Settings, all optional, in `/etc/brewplanner.env`:
   `AUDIODRIVER=alsa AUDIODEV=plughw:3 sox --default-device -r 16000 -c 1 -b 16 -e signed-integer -t raw - | wc -c`
 - **Wake word never triggers** — wrong mic device (step 2), the mic level is too
   low (`alsamixer`, F6 to pick the card, raise capture volume), or the threshold
-  is too high (step 6). `BRUCE_WAKE_WORD_DEBUG=1` tells you which: a peak score
-  that never moves off ~0 means no usable audio is reaching the detector.
+  is too high (step 6). `BRUCE_WAKE_WORD_DEBUG=1` tells you which: it now logs
+  the level and gain beside the score, and a peak score that never moves off ~0
+  with the mic reading nothing means no usable audio is reaching the detector.
+- **Wake word triggers, but only from up close** — step 7. Turn on the mic
+  meter and read whether the microphone missed the phrase or the model did.
 - **Bruce wakes up on his own** — raise `BRUCE_WAKE_WORD_THRESHOLD` (step 6).
   Expect this to need attention if you train a single-word "Bruce" model.
 - **Bruce listens for the full 10 s after every question** — the room's noise

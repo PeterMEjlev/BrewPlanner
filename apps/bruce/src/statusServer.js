@@ -7,10 +7,11 @@
  * auth of its own — the only way in from outside is through the proxy.
  *
  *   GET  /status         → state, session, model, volume, transcript ring
+ *   GET  /levels         → a few seconds of mic level + wake-word score
  *   POST /speak {message} → Bruce says the message out loud
  *   POST /volume {percent} → set speech volume (0–200, 100 = native)
  *   POST /wake-ack {mode} → what the wake phrase triggers (speak|plop|none)
- *   POST /wake-word-gain {gain} → wake-word sensitivity (mic gain before scoring)
+ *   POST /wake-word-gain {gain} → wake-word sensitivity (number, or "auto")
  */
 
 const http = require('http');
@@ -66,9 +67,17 @@ function startStatusServer({ bruce, transcript, model, port = 3555 }) {
         volumePercent: Math.round(bruce.volume * 100),
         wakeAck: bruce.wakeAck,
         wakeWordGain: bruce.wakeWordGain,
+        wakeWordGainApplied: bruce.wakeWordGainApplied,
         startedAt,
         transcript,
       });
+    }
+
+    // Polled several times a second while the dashboard's mic meter is open,
+    // and by nothing at all otherwise — hence its own endpoint rather than
+    // more fields on /status, which every Bruce page fetches every 2s.
+    if (req.method === 'GET' && url === '/levels') {
+      return sendJson(res, 200, bruce.micLevels);
     }
 
     if (req.method === 'POST' && url === '/speak') {
@@ -104,14 +113,24 @@ function startStatusServer({ bruce, transcript, model, port = 3555 }) {
 
     if (req.method === 'POST' && url === '/wake-word-gain') {
       return readJsonBody(req, res, (body) => {
+        if (body.gain === 'auto') {
+          bruce.setWakeWordGain('auto');
+          return sendJson(res, 200, {
+            wakeWordGain: bruce.wakeWordGain,
+            wakeWordGainApplied: bruce.wakeWordGainApplied,
+          });
+        }
         const gain = Number(body.gain);
         if (!Number.isFinite(gain) || gain <= 0) {
-          return sendJson(res, 400, { error: 'gain must be a positive number' });
+          return sendJson(res, 400, { error: 'gain must be a positive number or "auto"' });
         }
         // The dashboard's range is the authority on what's sensible; this only
         // guards against a value that would break the detector outright.
         bruce.setWakeWordGain(Math.min(gain, 16));
-        return sendJson(res, 200, { wakeWordGain: bruce.wakeWordGain });
+        return sendJson(res, 200, {
+          wakeWordGain: bruce.wakeWordGain,
+          wakeWordGainApplied: bruce.wakeWordGainApplied,
+        });
       });
     }
 

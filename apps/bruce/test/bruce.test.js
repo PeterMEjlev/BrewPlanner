@@ -338,16 +338,179 @@ function makeStub(spoken = []) {
 
   {
     const bruce = makeBruce();
-    assert.strictEqual(bruce.wakeWordGain, 1, 'defaults to the raw mic');
+    assert.strictEqual(bruce.wakeWordGain, 'auto', 'defaults to the gain control');
+    assert.ok(bruce.wakeWordGainApplied > 1, 'auto starts amplifying, not at the raw mic');
+
     bruce.setWakeWordGain(3);
     assert.strictEqual(bruce.wakeWordGain, 3);
+    assert.strictEqual(bruce.wakeWordGainApplied, 3, 'a pinned gain is applied as given');
     // A zero or negative gain would mute the detector rather than make it less
     // sensitive, so it is refused instead of silently deafening Bruce.
     for (const bad of [0, -1, Number.NaN]) {
       assert.throws(() => bruce.setWakeWordGain(bad), /positive number/);
     }
     assert.strictEqual(bruce.wakeWordGain, 3, 'a rejected gain changes nothing');
+
+    bruce.setWakeWordGain('auto');
+    assert.strictEqual(bruce.wakeWordGain, 'auto', 'and back to automatic');
     ok('wake-word gain is settable live and refuses to mute the detector');
+  }
+
+  // ── Wake word: the high-pass filter ──────────────────────────────────────
+  //
+  // The filter in front of the scorer. Its whole job is to stop the brewery's
+  // low-frequency machinery from filling the mel bins the phrase lives in, so
+  // what matters is that it kills DC and rumble while leaving speech alone.
+
+  {
+    const HighPassFilter = require('../src/engine/HighPassFilter.js');
+
+    /** Steady-state amplitude of a sine at `hz` after the filter. */
+    const responseAt = (hz, cutoff = 120) => {
+      const filter = new HighPassFilter(cutoff, 16000);
+      let peak = 0;
+      // Half a second in: long past the transient, so this is the real gain.
+      for (let i = 0; i < 8000; i++) {
+        const y = filter.process(1000 * Math.sin((2 * Math.PI * hz * i) / 16000));
+        if (i > 4000) peak = Math.max(peak, Math.abs(y));
+      }
+      return peak / 1000;
+    };
+
+    assert.ok(responseAt(1000) > 0.98, 'speech passes untouched');
+    assert.ok(responseAt(300) > 0.9, 'the bottom of the speech range survives');
+    assert.ok(responseAt(50) < 0.2, 'a 50 Hz hum is largely gone');
+
+    // A constant offset — which some USB capsules carry — is pure DC and must
+    // decay to nothing, otherwise it eats headroom before the gain stage.
+    const dc = new HighPassFilter(120, 16000);
+    let last = 0;
+    for (let i = 0; i < 8000; i++) last = dc.process(5000);
+    assert.ok(Math.abs(last) < 1, `DC is removed (left ${last})`);
+
+    // 0 Hz means "off", and off has to be exactly a pass-through: it is the
+    // escape hatch if the filter ever turns out to hurt a wake model.
+    const off = new HighPassFilter(0, 16000);
+    assert.strictEqual(off.enabled, false);
+    assert.strictEqual(off.process(1234), 1234);
+    ok('high-pass filter removes DC and rumble, passes speech, and disables cleanly');
+  }
+
+  // ── Wake word: the gain control ──────────────────────────────────────────
+  //
+  // The reason one sensitivity setting can cover both "next to the mic" and
+  // "across the brewery". These drive it in 80ms frames, as the detector does.
+
+  {
+    const GainControl = require('../src/engine/GainControl.js');
+
+    /** Run `seconds` of frames at a fixed level, returning the final gain. */
+    const run = (control, { rms, peak }, seconds) => {
+      let gain = control.gain;
+      for (let i = 0; i < Math.round(seconds / 0.08); i++) gain = control.update(rms, peak);
+      return gain;
+    };
+
+    // A quiet room: nothing to turn down, so the gain sits at the ceiling and
+    // a phrase from the far corner arrives amplified as far as it can be.
+    const quiet = new GainControl();
+    assert.ok(run(quiet, { rms: 20, peak: 60 }, 30) > 15, 'a quiet room gets full gain');
+
+    // Someone talking right at the mic: held down so the phrase is presented
+    // near the target rather than clipped into distortion.
+    const close = new GainControl();
+    const closeGain = run(close, { rms: 3000, peak: 12000 }, 30);
+    assert.ok(closeGain < 1.5, `close speech is turned down (got ×${closeGain.toFixed(2)})`);
+    assert.ok(closeGain * 12000 < 32767, 'and stays inside the int16 range');
+
+    // ...and full gain comes back once they stop, which is what makes the next
+    // phrase from across the room audible. Ten seconds is a few half-lives.
+    assert.ok(run(close, { rms: 20, peak: 60 }, 10) > 10, 'gain recovers after they stop');
+
+    // The move is slow on purpose: across one 0.8s wake phrase the gain must
+    // barely shift, or it flattens the loudness contour the model reads.
+    const during = new GainControl();
+    run(during, { rms: 20, peak: 60 }, 30);
+    const before = during.gain;
+    run(during, { rms: 3000, peak: 12000 }, 0.8);
+    assert.ok(during.gain / before > 0.75, 'a phrase is scored at essentially one gain');
+
+    // A noisy room caps the gain: amplification lifts the room as much as the
+    // phrase, so past this point it only feeds the model louder noise.
+    const noisy = new GainControl({ maxNoise: 600 });
+    const noisyGain = run(noisy, { rms: 300, peak: 900 }, 60);
+    assert.ok(noisyGain <= 2.1, `noise caps the gain (got ×${noisyGain.toFixed(2)})`);
+    assert.ok(noisy.noiseFloor > 200, 'and the room level is tracked for the meter');
+
+    // The gain moves over seconds, so the first loud words after a quiet spell
+    // arrive while it is still up where the quiet room left it. That frame has
+    // to come back limited, not clipped: clipping is a square wave, and a
+    // square wave scores worse than the quiet audio it was made from.
+    const onset = new GainControl();
+    run(onset, { rms: 20, peak: 60 }, 30);
+    const firstLoud = onset.update(3000, 12000);
+    assert.ok(firstLoud * 12000 <= 32767, `the first loud frame is not clipped (×${firstLoud.toFixed(2)})`);
+    assert.ok(firstLoud * 12000 > 20000, 'but is still presented loudly, not squashed');
+    assert.ok(onset.gain > firstLoud, 'the ceiling is per-frame; the operating point is unmoved');
+
+    // A digitally silent mic must not ask for infinite gain.
+    const silent = new GainControl();
+    assert.ok(Number.isFinite(run(silent, { rms: 0, peak: 0 }, 10)), 'silence stays finite');
+
+    // Pinned means pinned — the control still tracks the room for the meter,
+    // but never touches the gain.
+    const pinned = new GainControl({ gain: 4 });
+    assert.strictEqual(run(pinned, { rms: 20, peak: 60 }, 30), 4, 'a pinned gain never moves');
+    assert.ok(pinned.noiseFloor > 0, 'though the room is still tracked');
+    ok('gain control lifts a quiet room, ducks close speech, and respects the noise cap');
+  }
+
+  // ── The mic meter ────────────────────────────────────────────────────────
+
+  {
+    const MicLevelMeter = require('../src/engine/MicLevelMeter.js');
+
+    /** `samples` PCM16 samples at a constant magnitude. */
+    const tone = (samples, magnitude) => {
+      const buf = Buffer.alloc(samples * 2);
+      for (let i = 0; i < samples; i++) buf.writeInt16LE(i % 2 ? magnitude : -magnitude, i * 2);
+      return buf;
+    };
+
+    const meter = new MicLevelMeter();
+    // Chunks that don't divide evenly into the 100ms bucket: the recorder
+    // hands over whatever size it likes, and the trace must come out even
+    // anyway — buckets close on sample count, not on wall clock.
+    for (let i = 0; i < 10; i++) meter.push(tone(700, 1000));
+    const { samples, bucketMs } = meter.snapshot();
+    assert.strictEqual(bucketMs, 100);
+    assert.strictEqual(samples.length, 4, '7000 samples is four full 1600-sample buckets');
+    for (const bucket of samples) {
+      assert.strictEqual(bucket.rms, 1000, 'a constant tone reads as its own amplitude');
+      assert.strictEqual(bucket.peak, 1000);
+      assert.strictEqual(bucket.score, null, 'no wake score offered, none reported');
+    }
+
+    // Scores ride along with the audio, and a bucket keeps the highest it saw.
+    meter.noteScore(0.02);
+    meter.noteScore(0.61);
+    meter.push(tone(1600, 500));
+    const scored = meter.snapshot().samples.at(-1);
+    assert.strictEqual(scored.score, 0.61, 'the bucket keeps its best score');
+
+    // The window is bounded — this is a live trace, not a log.
+    for (let i = 0; i < 200; i++) meter.push(tone(1600, 100));
+    const full = meter.snapshot();
+    assert.strictEqual(full.samples.length, full.windowMs / full.bucketMs);
+
+    // Whatever the detector says about itself rides along, so the page can
+    // draw the noise floor and threshold lines against the same trace.
+    const described = meter.snapshot({ noiseFloor: 42, gain: 6.5, gainMode: 'auto', threshold: 0.5 });
+    assert.strictEqual(described.noiseFloor, 42);
+    assert.strictEqual(described.gainMode, 'auto');
+    assert.strictEqual(described.threshold, 0.5);
+    assert.strictEqual(meter.snapshot().threshold, null, 'and is null when not offered');
+    ok('mic meter buckets audio evenly, keeps peak scores, and bounds its window');
   }
 
   // ── Status server: real HTTP round trip ─────────────────────────────────
@@ -361,10 +524,15 @@ function makeStub(spoken = []) {
       volume: 1,
       wakeAck: 'speak',
       wakeWordGain: 1,
+      wakeWordGainApplied: 1,
+      micLevels: { now: 1, bucketMs: 100, windowMs: 6000, samples: [{ rms: 12, peak: 40, score: 0.01 }] },
       speak: (t) => spoken.push(t),
       setVolume(g) { this.volume = Math.max(0, Math.min(2, g)); },
       setWakeAck(m) { this.wakeAck = m; },
-      setWakeWordGain(g) { this.wakeWordGain = g; },
+      setWakeWordGain(g) {
+        this.wakeWordGain = g;
+        this.wakeWordGainApplied = g === 'auto' ? 16 : g;
+      },
     };
     const transcript = [{ type: 'assistant', content: 'hello', timestamp: 1 }];
     const server = startStatusServer({ bruce: fakeBruce, transcript, model: 'gpt-realtime-mini', port: 3556 });
@@ -430,6 +598,20 @@ function makeStub(spoken = []) {
     assert.strictEqual(badGain.status, 400);
     assert.strictEqual(fakeBruce.wakeWordGain, 2.5, 'rejected gain left the setting alone');
 
+    // "auto" is a setting, not a number — it has to survive Number() coercion
+    // (which would make it NaN and fail the positive-number check).
+    const autoRes = await (await fetch('http://127.0.0.1:3556/wake-word-gain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gain: 'auto' }),
+    })).json();
+    assert.strictEqual(autoRes.wakeWordGain, 'auto');
+    assert.strictEqual(autoRes.wakeWordGainApplied, 16, 'and reports where it landed');
+
+    const levels = await (await fetch('http://127.0.0.1:3556/levels')).json();
+    assert.strictEqual(levels.bucketMs, 100);
+    assert.strictEqual(levels.samples.length, 1, 'the mic trace is served as-is');
+
     const bad = await fetch('http://127.0.0.1:3556/speak', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -438,7 +620,7 @@ function makeStub(spoken = []) {
     assert.strictEqual(bad.status, 400);
 
     server.close();
-    ok('status server serves state and forwards speak/volume/wake-ack');
+    ok('status server serves state, levels, and forwards speak/volume/wake-ack');
   }
 
 

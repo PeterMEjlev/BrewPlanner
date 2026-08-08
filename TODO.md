@@ -1,10 +1,14 @@
 
+- Buy bluetooth reciever and extension cable for TILT data inside fridge.
 
+- Remove left-over bruce logic in BrewSystem3.0 repo
+
+- Phone page for brewsystem isnt using full real estate available on phone screen. make it use all the available space, no nothing is wasted. 
 
 - ## Add support for
   - Electricity (Watt) usage
   - Water usage 
-  - Gravity of beer/wort fermentation (Tilt gravity sensor.) Tilt broadcasts BLE/iBeacon data.
+
 
 
 

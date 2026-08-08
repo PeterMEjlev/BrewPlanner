@@ -2,6 +2,8 @@
 
 const { EventEmitter } = require('events');
 const path = require('path');
+const HighPassFilter = require('./HighPassFilter');
+const GainControl = require('./GainControl');
 
 // Loaded on start(), not at import: onnxruntime-node is a heavyweight native
 // addon whose worker threads outlive a plain `require`, and the test suite
@@ -13,14 +15,23 @@ let ort = null;
  * running locally through ONNX Runtime. Offline, free, and account-less — it
  * replaced Porcupine, which needs a Picovoice access key we no longer have.
  *
- * Three models in a chain, all in `wake-words/`:
+ * Three models in a chain, all in `wake-words/`, behind two stages of
+ * preparing the audio for them:
  *
- *   16kHz PCM ──▶ melspectrogram.onnx ──▶ embedding_model.onnx ──▶ <phrase>.onnx
- *                 8 mel frames per        one 96-d embedding       score 0..1
- *                 80ms of audio           per 76 mel frames        per 16 embeddings
+ *   16kHz PCM ─▶ high-pass ─▶ gain ─▶ melspectrogram.onnx ─▶ embedding_model.onnx ─▶ <phrase>.onnx
+ *                120 Hz       auto    8 mel frames per       one 96-d embedding      score 0..1
+ *                                     80ms of audio          per 76 mel frames       per 16 embeddings
  *
- * The first two are shared by every wake word; only the last is phrase-specific,
- * so swapping the wake phrase is a one-file change (BRUCE_WAKE_WORD_MODEL).
+ * The two front stages are what make the phrase work from across the room
+ * rather than only next to the mic: the filter takes the brewery's low-end
+ * machinery noise out of the mel bins the phrase has to be recognised in, and
+ * the gain puts speech in front of the models at a level they were trained on
+ * whether it was spoken at one metre or five. See HighPassFilter and
+ * GainControl; both are pass-throughs if configured off.
+ *
+ * The first two models are shared by every wake word; only the last is
+ * phrase-specific, so swapping the wake phrase is a one-file change
+ * (BRUCE_WAKE_WORD_MODEL).
  *
  * This is a direct port of openWakeWord's streaming path (`AudioFeatures.
  * _streaming_features` and `Model.predict` in the Python original), which is
@@ -48,6 +59,8 @@ const SEED_SECONDS = 4;                     // random audio used to prime the bu
 // than grow a queue that can never catch up.
 const MAX_PENDING_BYTES = SAMPLE_RATE * 2 * 2;  // 2 seconds
 
+const FRAME_SECONDS = FRAME_SAMPLES / SAMPLE_RATE;  // 0.08
+
 class WakeWordDetector extends EventEmitter {
   /**
    * @param {object} opts
@@ -58,15 +71,29 @@ class WakeWordDetector extends EventEmitter {
    * @param {number} [opts.refractoryMs=2000] - Ignore further detections for this
    *   long after one fires, so a single "hey Bruce" triggers exactly once
    * @param {boolean} [opts.debug=false] - Log the highest score each second
-   * @param {number} [opts.gain=1] - Amplify mic samples before scoring them.
-   *   The models see raw PCM16 magnitudes, so speech from across the room
-   *   scores lower simply for being quieter. Raising this is the lever for
-   *   "I have to stand next to the mic" when the phrase is clear but faint —
-   *   it does NOT improve a phrase buried in background noise, since it lifts
-   *   the noise by exactly as much. Affects detection only; the audio sent to
-   *   OpenAI and the silence thresholds are untouched.
+   * @param {number|'auto'} [opts.gain='auto'] - Amplify mic samples before
+   *   scoring them. The models see raw PCM16 magnitudes, so speech from across
+   *   the room scores lower simply for being quieter — this is the lever for
+   *   "I have to stand next to the mic". 'auto' lets the gain control below
+   *   pick it per moment, which is the only way one setting covers both one
+   *   metre and five; a number pins it. Either way it lifts background noise
+   *   as much as the phrase, so it does NOT rescue a phrase buried in noise.
+   *   Affects detection only; the audio sent to OpenAI and the silence
+   *   thresholds are untouched.
+   * @param {number} [opts.highPassHz=120] - Corner of the high-pass filter run
+   *   before scoring (and before the gain control measures the level). 0 = off.
+   * @param {object} [opts.agc] - Gain-control tuning; see GainControl.DEFAULTS.
    */
-  constructor({ modelPath, featureModelDir, threshold = 0.5, refractoryMs = 2000, debug = false, gain = 1 }) {
+  constructor({
+    modelPath,
+    featureModelDir,
+    threshold = 0.5,
+    refractoryMs = 2000,
+    debug = false,
+    gain = 'auto',
+    highPassHz = 120,
+    agc = {},
+  }) {
     super();
     this._modelPath = path.resolve(modelPath);
     this._featureModelDir = featureModelDir
@@ -75,7 +102,19 @@ class WakeWordDetector extends EventEmitter {
     this._threshold = threshold;
     this._refractoryMs = refractoryMs;
     this._debug = debug;
-    this._gain = gain > 0 ? gain : 1;
+
+    this._highPass = new HighPassFilter(highPassHz, SAMPLE_RATE);
+    this._gainControl = new GainControl({ ...agc, gain, frameSeconds: FRAME_SECONDS });
+    // What the *previous* frame was actually multiplied by, which the gain
+    // ramp starts from. Not the control's operating point: on a frame loud
+    // enough to need the peak ceiling the two differ, and ramping from the
+    // operating point would put the clipping straight back at the frame's head.
+    this._appliedGain = this._gainControl.gain;
+    // Measured post-filter, so the room's rumble doesn't read as a loud room.
+    // Reported to the dashboard's mic meter as well, which is how these get
+    // tuned from the brewery floor rather than from a guess.
+    this._frameRms = 0;
+    this._framePeak = 0;
 
     this._melSession = null;
     this._embedSession = null;
@@ -88,6 +127,7 @@ class WakeWordDetector extends EventEmitter {
 
     this._raw = new Int16Array(MEL_INPUT_SAMPLES);  // rolling tail of mic samples
     this._rawFilled = 0;
+    this._scratch = new Float32Array(FRAME_SAMPLES); // one frame, filtered, pre-gain
     this._mel = [];                                 // Float32Array(32) rows
     this._features = [];                            // Float32Array(96) rows
     this._seedFeatures = [];                        // pristine copy for reset()
@@ -113,22 +153,44 @@ class WakeWordDetector extends EventEmitter {
     return this._lastScore;
   }
 
-  /** Current mic amplification applied before scoring. */
+  /** The configured amplification: a fixed number, or 'auto'. */
   get gain() {
-    return this._gain;
+    return this._gainControl.setting;
+  }
+
+  /** The amplification actually in force right now (a number, always). */
+  get appliedGain() {
+    return this._gainControl.gain;
+  }
+
+  /** The detection threshold this detector was built with. */
+  get threshold() {
+    return this._threshold;
+  }
+
+  /**
+   * What the last 80ms of microphone looked like to the scorer: RMS and peak
+   * after the high-pass filter and before the gain, the tracked noise floor,
+   * and the gain applied. All on the PCM16 scale (0–32768). Zeroed until the
+   * first frame has been processed.
+   */
+  get level() {
+    return {
+      rms: this._frameRms,
+      peak: this._framePeak,
+      noiseFloor: this._gainControl.noiseFloor,
+      gain: this._gainControl.gain,
+    };
   }
 
   /**
    * Change the amplification live. Takes effect on the next 80ms frame; the
    * rolling history already captured keeps whatever gain it was scored at,
    * which washes out within a second.
-   * @param {number} gain - Must be greater than 0
+   * @param {number|'auto'} gain - A number greater than 0, or 'auto'
    */
   setGain(gain) {
-    if (!Number.isFinite(gain) || gain <= 0) {
-      throw new Error(`Wake-word gain must be a positive number, got ${gain}`);
-    }
-    this._gain = gain;
+    this._gainControl.setGain(gain);
   }
 
   /**
@@ -173,6 +235,7 @@ class WakeWordDetector extends EventEmitter {
   reset() {
     this._raw.fill(0);
     this._rawFilled = 0;
+    this._highPass.reset();
     // The Python original resets to ones((76, 32)); matching it keeps the first
     // embedding after a reset identical to the reference implementation.
     this._mel = Array.from({ length: MEL_WINDOW }, () => new Float32Array(MEL_BINS).fill(1));
@@ -221,22 +284,43 @@ class WakeWordDetector extends EventEmitter {
     }
   }
 
-  /** @private One 80ms step: mel -> embedding -> score. */
+  /** @private One 80ms step: filter -> gain -> mel -> embedding -> score. */
   async _processFrame(frameBytes) {
-    // Slide the new samples into the rolling tail, amplified if configured.
-    // Clipped to the int16 range: a gain high enough to clip is distorting the
-    // phrase and will score worse, which is the signal to turn it back down.
+    // High-pass first, and measure the frame from the filtered signal: every
+    // level decision below is about speech, so low-frequency machinery noise
+    // must be out of the way before anything is measured.
+    let sumSquares = 0;
+    let peak = 0;
+    for (let i = 0; i < FRAME_SAMPLES; i++) {
+      const x = this._highPass.process(frameBytes.readInt16LE(i * 2));
+      this._scratch[i] = x;
+      sumSquares += x * x;
+      const magnitude = Math.abs(x);
+      if (magnitude > peak) peak = magnitude;
+    }
+    this._frameRms = Math.sqrt(sumSquares / FRAME_SAMPLES);
+    this._framePeak = peak;
+
+    const previousGain = this._appliedGain;
+    const gain = this._gainControl.update(this._frameRms, this._framePeak);
+    this._appliedGain = gain;
+
+    // Slide the new samples into the rolling tail. A rising gain is ramped in
+    // across the frame rather than stepped, so it can't put a discontinuity
+    // into the audio — a step is a click, and a click is broadband energy in
+    // every mel bin. A falling one lands at once (`Math.min`), because the
+    // reason it falls may be this frame's own peak needing the ceiling, and a
+    // ramp would clip the head of the frame on the way down.
+    //
+    // Still clamped to the int16 range: under 'auto' the ceiling means it
+    // never comes to that, but a pinned gain is applied as pinned, and
+    // clipping is the honest signal that the number is too high for the room.
     this._raw.copyWithin(0, FRAME_SAMPLES);
     const base = MEL_INPUT_SAMPLES - FRAME_SAMPLES;
-    if (this._gain === 1) {
-      for (let i = 0; i < FRAME_SAMPLES; i++) {
-        this._raw[base + i] = frameBytes.readInt16LE(i * 2);
-      }
-    } else {
-      for (let i = 0; i < FRAME_SAMPLES; i++) {
-        const amplified = Math.round(frameBytes.readInt16LE(i * 2) * this._gain);
-        this._raw[base + i] = Math.max(-32768, Math.min(32767, amplified));
-      }
+    const gainStep = (gain - previousGain) / FRAME_SAMPLES;
+    for (let i = 0; i < FRAME_SAMPLES; i++) {
+      const factor = Math.min(previousGain + gainStep * (i + 1), gain);
+      this._raw[base + i] = Math.max(-32768, Math.min(32767, Math.round(this._scratch[i] * factor)));
     }
     this._rawFilled = Math.min(this._rawFilled + FRAME_SAMPLES, MEL_INPUT_SAMPLES);
 
@@ -257,13 +341,24 @@ class WakeWordDetector extends EventEmitter {
 
     const score = await this._classify();
     this._lastScore = score;
+    // Every scored frame, for the dashboard's mic meter. 12.5 a second, and
+    // the engine is the only listener.
+    this.emit('score', score);
 
     if (this._debug) {
       this._debugPeak = Math.max(this._debugPeak, score);
       const now = Date.now();
       if (now - this._debugAt >= 1000) {
         this._debugAt = now;
-        console.log(`[Bruce] Wake-word peak score: ${this._debugPeak.toFixed(3)} (threshold ${this._threshold})`);
+        // The levels belong beside the score: a peak stuck at 0.001 means
+        // something different when the room reads 20 RMS than when it reads
+        // 2000, and reading them apart is how tuning goes wrong.
+        const { rms, noiseFloor, gain } = this.level;
+        console.log(
+          `[Bruce] Wake-word peak score: ${this._debugPeak.toFixed(3)} (threshold ${this._threshold}) ` +
+            `— mic ${Math.round(rms)} rms, floor ${Math.round(noiseFloor)}, ` +
+            `gain ×${gain.toFixed(1)}${this.gain === 'auto' ? ' (auto)' : ''}`
+        );
         this._debugPeak = 0;
       }
     }

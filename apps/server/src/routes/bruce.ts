@@ -5,6 +5,8 @@ import type {
   BruceChatState,
   BruceInstructions,
   BruceKnowledgeState,
+  BruceMicLevels,
+  BruceMicLevelsResponse,
   BrucePhaseName,
   BruceServiceStatus,
   BruceStatus,
@@ -71,7 +73,7 @@ import { isOpenAIConfigured } from '../openai.js';
 /**
  * The Bruce page's two halves.
  *
- * `/status`, `/speak`, `/volume` and `/wake-ack` proxy the voice assistant (apps/bruce),
+ * `/status`, `/levels`, `/speak`, `/volume` and `/wake-ack` proxy the voice assistant (apps/bruce),
  * which runs as its own service on this Pi behind a loopback-only API. Same
  * shape as the brew-rig proxy: reads need a session (or trusted-local),
  * controls need admin, and only the endpoints named here are forwarded. Bruce
@@ -163,6 +165,22 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  // GET /api/bruce/levels — a few seconds of microphone level and wake-word
+  // score. Separate from /status because it is polled several times a second,
+  // and only while someone has the mic meter open on the Bruce page.
+  app.get('/levels', { preHandler: requireAuth }, async (): Promise<BruceMicLevelsResponse> => {
+    try {
+      const res = await fetch(`${bruceBase()}/levels`, {
+        signal: AbortSignal.timeout(BRUCE_TIMEOUT_MS),
+      });
+      if (!res.ok) return { online: false };
+      const levels = (await res.json()) as BruceMicLevels;
+      return { online: true, ...levels };
+    } catch {
+      return { online: false };
+    }
+  });
+
   // POST /api/bruce/speak — make Bruce say a message out loud in the brewery.
   app.post('/speak', { preHandler: requireAdmin }, async (req, reply) => {
     const body = parse(bruceSpeakSchema, req.body, reply);
@@ -187,7 +205,8 @@ export async function bruceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /api/bruce/wake-word-gain — how loudly the wake phrase has to be said.
-  // Amplifies the mic before scoring; same lifetime as /wake-ack (in memory on
+  // Amplifies the mic before scoring, either at a pinned multiplier or under
+  // Bruce's own gain control (`auto`). Same lifetime as /wake-ack (in memory on
   // the service, back to BRUCE_WAKE_WORD_GAIN on restart).
   app.post('/wake-word-gain', { preHandler: requireAdmin }, async (req, reply) => {
     const body = parse(bruceWakeWordGainSchema, req.body, reply);

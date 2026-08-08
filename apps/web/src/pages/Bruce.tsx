@@ -9,6 +9,7 @@ import type {
   BruceIndexJob,
   BruceInstructions,
   BruceKnowledgeState,
+  BruceMicLevelsResponse,
   BrucePhase,
   BrucePhaseName,
   BruceServiceStatus,
@@ -36,6 +37,7 @@ import {
   MusicIcon,
   ThinkingDots,
 } from '../components/icons';
+import { useSettings } from '../settings';
 import { usePoll } from '../usePoll';
 import { clockTime, dateTime, relativeTime } from '../util';
 
@@ -1400,6 +1402,174 @@ function SpeakBox(): JSX.Element {
   );
 }
 
+// --- The mic meter ----------------------------------------------------------
+// Off unless Settings → Bruce turns it on. See MicMeter for what it is for.
+
+/** How often the meter refreshes. Fast enough to watch a phrase land. */
+const LEVEL_POLL_MS = 400;
+
+/**
+ * Quietest level the meter draws, in dBFS. Speech across a room lands around
+ * −45 dBFS and a quiet room's own hiss around −58, so a linear scale would
+ * squash every interesting reading into the bottom pixel.
+ */
+const LEVEL_FLOOR_DB = -66;
+
+/** A PCM16 level (0–32768) as a 0–1 height on that scale. */
+function levelHeight(value: number): number {
+  if (value <= 0) return 0;
+  const db = 20 * Math.log10(value / 32768);
+  return Math.max(0, Math.min(1, (db - LEVEL_FLOOR_DB) / -LEVEL_FLOOR_DB));
+}
+
+/** Peak this close to full scale means the capture gain itself is clipping. */
+const CLIPPING = 32000;
+
+/** One trace of bars, oldest → newest, drawn right-aligned so "now" is the right edge. */
+function Trace({
+  bars,
+  heightClass,
+}: {
+  bars: { height: number; className: string }[];
+  heightClass: string;
+}): JSX.Element {
+  return (
+    <div className={`flex items-end gap-px overflow-hidden rounded bg-zinc-950 ${heightClass}`}>
+      {bars.map((bar, i) => (
+        <div
+          key={i}
+          className={`min-w-0 flex-1 rounded-sm ${bar.className}`}
+          // A floor of 1px keeps silence readable as "the meter is running,
+          // and there is nothing there" rather than as a blank panel.
+          style={{ height: `${Math.max(bar.height * 100, 1.5)}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * What Bruce's microphone is hearing, live.
+ *
+ * The point is to separate three faults that all present as "he doesn't hear
+ * me from over there": the mic not picking the phrase up (level trace barely
+ * moves), the room being as loud as the phrase (level moves but never clears
+ * the noise-floor line), or the wake model scoring a perfectly audible phrase
+ * too low (level is fine, score stays under the threshold line). The first two
+ * are fixed with hardware and placement, the third only by retraining — so
+ * knowing which one it is decides the whole afternoon.
+ *
+ * Both traces cover the same six seconds: say "hey Bruce" from where he misses
+ * you, then read them.
+ */
+function MicMeter(): JSX.Element {
+  const [levels, setLevels] = useState<BruceMicLevelsResponse | null>(null);
+
+  usePoll(async (isStale) => {
+    try {
+      const next = await api.getBruceMicLevels();
+      if (!isStale()) setLevels(next);
+    } catch {
+      if (!isStale()) setLevels({ online: false });
+    }
+  }, LEVEL_POLL_MS);
+
+  if (levels == null || !levels.online) {
+    return (
+      <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-xs text-zinc-600">
+        {levels == null ? 'Reading the microphone…' : 'No microphone reading — Bruce stopped answering.'}
+      </div>
+    );
+  }
+
+  const { samples, noiseFloor, threshold, gain, gainMode } = levels;
+  // The two numbers actually worth reading: you cannot watch a live bar while
+  // saying the phrase, so the meter keeps the best of the window for you.
+  const loudest = samples.reduce((max, s) => Math.max(max, s.peak), 0);
+  const bestScore = samples.reduce<number | null>(
+    (max, s) => (s.score == null ? max : Math.max(max ?? 0, s.score)),
+    null,
+  );
+  const clipping = loudest >= CLIPPING;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Microphone</h3>
+        <span className="text-[11px] tabular-nums text-zinc-500">
+          {gain == null ? '—' : `×${gain.toFixed(1)}`}
+          {gainMode === 'auto' && <span className="ml-1 text-zinc-600">auto</span>}
+        </span>
+      </div>
+
+      <div className="relative">
+        <Trace
+          heightClass="h-14"
+          bars={samples.map((s) => ({
+            height: levelHeight(s.rms),
+            className: s.peak >= CLIPPING ? 'bg-rose-500' : 'bg-emerald-500/80',
+          }))}
+        />
+        {/* Where the room sits. A phrase has to clear this line by a good
+            margin — amplification lifts both, so it can never close the gap. */}
+        {noiseFloor != null && noiseFloor > 0 && (
+          <div
+            className="pointer-events-none absolute inset-x-0 border-t border-dashed border-amber-500/60"
+            style={{ bottom: `${levelHeight(noiseFloor) * 100}%` }}
+          />
+        )}
+      </div>
+
+      <dl className="flex justify-between text-[11px] tabular-nums text-zinc-500">
+        <div className="flex gap-1">
+          <dt>loudest 6 s</dt>
+          <dd className={clipping ? 'text-rose-400' : 'text-zinc-300'}>{loudest}</dd>
+        </div>
+        <div className="flex gap-1">
+          <dt className="text-amber-500/80">room</dt>
+          <dd className="text-zinc-300">{noiseFloor == null ? '—' : Math.round(noiseFloor)}</dd>
+        </div>
+      </dl>
+
+      <div className="relative">
+        <Trace
+          heightClass="h-8"
+          bars={samples.map((s) => ({
+            height: s.score ?? 0,
+            className:
+              s.score != null && threshold != null && s.score >= threshold
+                ? 'bg-emerald-400'
+                : 'bg-sky-500/70',
+          }))}
+        />
+        {threshold != null && (
+          <div
+            className="pointer-events-none absolute inset-x-0 border-t border-dashed border-emerald-400/60"
+            style={{ bottom: `${threshold * 100}%` }}
+          />
+        )}
+      </div>
+
+      <dl className="flex justify-between text-[11px] tabular-nums text-zinc-500">
+        <div className="flex gap-1">
+          <dt>best “hey Bruce” score</dt>
+          <dd className="text-zinc-300">{bestScore == null ? '—' : bestScore.toFixed(3)}</dd>
+        </div>
+        <div className="flex gap-1">
+          <dt className="text-emerald-400/80">wakes at</dt>
+          <dd className="text-zinc-300">{threshold == null ? '—' : threshold.toFixed(2)}</dd>
+        </div>
+      </dl>
+
+      <p className="text-[11px] leading-relaxed text-zinc-600">
+        {clipping
+          ? 'The microphone is clipping — turn its capture gain down in alsamixer, distortion scores worse than quiet.'
+          : 'Say “hey Bruce” from where he misses you. Level barely moving means the mic never heard it; level clear of the room line but the score short of the wake line means he heard it and didn’t recognise it.'}
+      </p>
+    </div>
+  );
+}
+
 /** One line of the live voice transcript. */
 function TranscriptLine({ entry }: { entry: BruceTranscriptEntry }): JSX.Element {
   if (entry.type === 'function_call' || entry.type === 'system') {
@@ -1424,6 +1594,10 @@ function TranscriptLine({ entry }: { entry: BruceTranscriptEntry }): JSX.Element
 }
 
 function VoiceRail({ status }: { status: BruceServiceStatus | null }): JSX.Element {
+  // Settings → Bruce → Microphone diagnostics. Off by default: the meter polls
+  // several times a second, which a kiosk left on a wall has no reason to do.
+  const { bruceMicDebug: micDebug } = useSettings();
+
   if (status == null) {
     return (
       <section className="h-fit rounded-xl border border-zinc-800 bg-zinc-900 p-5 text-sm text-zinc-500">
@@ -1481,6 +1655,8 @@ function VoiceRail({ status }: { status: BruceServiceStatus | null }): JSX.Eleme
           <dd className="text-zinc-200">{relativeTime(status.startedAt)}</dd>
         </div>
       </dl>
+
+      {micDebug && <MicMeter />}
 
       <VolumeControl serverPercent={status.volumePercent} />
       <SpeakBox />

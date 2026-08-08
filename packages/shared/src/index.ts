@@ -3274,10 +3274,16 @@ export interface BruceStatus {
    */
   wakeAck?: BruceWakeAck;
   /**
-   * Mic amplification used when scoring the wake phrase (1 = raw mic). Same
-   * caveat as `wakeAck`: an older Bruce service omits it.
+   * How the mic amplification used for wake-phrase scoring is chosen: a fixed
+   * multiplier, or `auto` for the gain control. Same caveat as `wakeAck`: an
+   * older Bruce service omits it.
    */
-  wakeWordGain?: number;
+  wakeWordGain?: BruceWakeWordGain;
+  /**
+   * The amplification actually in force — under `auto`, where the control has
+   * settled for the room right now. Omitted by an older Bruce service.
+   */
+  wakeWordGainApplied?: number;
   /** ISO timestamp of when the Bruce service started. */
   startedAt: string;
   transcript: BruceTranscriptEntry[];
@@ -3311,13 +3317,70 @@ export type BruceWakeAckInput = z.infer<typeof bruceWakeAckSchema>;
  * further, below it Bruce needs them louder. Bounded here so the settings UI
  * and the API agree on the range.
  */
-export const BRUCE_WAKE_WORD_GAIN = { min: 0.5, max: 6, step: 0.5 } as const;
+export const BRUCE_WAKE_WORD_GAIN = { min: 0.5, max: 16, step: 0.5 } as const;
+
+/**
+ * The sensitivity setting itself: `auto` hands the gain to Bruce's gain
+ * control, which tracks the room and is the setting that works at both one
+ * metre and five. A number pins it, which is really only useful for
+ * reproducing a measurement — no single number is right at both distances.
+ */
+export type BruceWakeWordGain = number | 'auto';
 
 /** Body for POST /api/bruce/wake-word-gain. */
 export const bruceWakeWordGainSchema = z.object({
-  gain: z.coerce.number().min(BRUCE_WAKE_WORD_GAIN.min).max(BRUCE_WAKE_WORD_GAIN.max),
+  // `auto` first: z.coerce.number() would turn the string into NaN and fail
+  // the bounds, but only after having eaten the literal branch's turn.
+  gain: z.union([
+    z.literal('auto'),
+    z.coerce.number().min(BRUCE_WAKE_WORD_GAIN.min).max(BRUCE_WAKE_WORD_GAIN.max),
+  ]),
 });
 export type BruceWakeWordGainInput = z.infer<typeof bruceWakeWordGainSchema>;
+
+/**
+ * One bucket of Bruce's microphone trace — `bucketMs` of audio, on the PCM16
+ * scale (0–32768).
+ */
+export interface BruceMicSample {
+  /** RMS level of the raw microphone over the bucket. */
+  rms: number;
+  /** Loudest single sample in it — 32767 means the capture gain is clipping. */
+  peak: number;
+  /**
+   * Highest wake-word score in the bucket, or null when there is none to show:
+   * the detector only runs while Bruce is idle, so a conversation leaves a gap.
+   */
+  score: number | null;
+}
+
+/**
+ * A few seconds of what Bruce's microphone is hearing (GET /levels on his
+ * loopback API), for the mic meter on the Bruce page. Levels are the raw mic;
+ * `filteredRms` and `noiseFloor` are what the wake detector sees after its
+ * high-pass filter.
+ */
+export interface BruceMicLevels {
+  /** Epoch milliseconds the newest bucket ends at. */
+  now: number;
+  bucketMs: number;
+  windowMs: number;
+  /** Oldest → newest; shorter than `windowMs / bucketMs` just after a restart. */
+  samples: BruceMicSample[];
+  /** Latest high-passed frame RMS from the wake detector, null before its first frame. */
+  filteredRms: number | null;
+  /** The room level the gain control tracks — the phrase has to beat this. */
+  noiseFloor: number | null;
+  /** Amplification the detector is applying right now. */
+  gain: number | null;
+  /** How that gain is chosen. */
+  gainMode: BruceWakeWordGain | null;
+  /** Score that counts as a detection, so the meter can draw the line. */
+  threshold: number | null;
+}
+
+/** Envelope for GET /api/bruce/levels — mirrors the status route's. */
+export type BruceMicLevelsResponse = { online: false } | ({ online: true } & BruceMicLevels);
 
 // ---------------------------------------------------------------------------
 // Bruce chat (text). Unlike the voice assistant above, this runs *in the

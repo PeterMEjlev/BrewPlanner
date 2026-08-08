@@ -4,6 +4,7 @@ require('dotenv').config();
 const path = require('path');
 const { EventEmitter } = require('events');
 const WakeWordDetector = require('./WakeWordDetector');
+const MicLevelMeter = require('./MicLevelMeter');
 const AudioManager = require('./AudioManager');
 const AudioEchoCanceller = require('./AudioEchoCanceller');
 const RealtimeClient = require('./RealtimeClient');
@@ -67,7 +68,22 @@ class BruceAssistant extends EventEmitter {
       refractoryMs: cfg.WAKE_WORD_REFRACTORY_MS,
       debug: cfg.WAKE_WORD_DEBUG,
       gain: cfg.WAKE_WORD_GAIN,
+      highPassHz: cfg.WAKE_WORD_HIGHPASS_HZ,
+      agc: {
+        targetPeak: cfg.WAKE_WORD_AGC_TARGET_PEAK,
+        maxNoise: cfg.WAKE_WORD_AGC_MAX_NOISE,
+        minGain: cfg.WAKE_WORD_AGC_MIN_GAIN,
+        maxGain: cfg.WAKE_WORD_AGC_MAX_GAIN,
+        attackSeconds: cfg.WAKE_WORD_AGC_ATTACK_S,
+        releaseSeconds: cfg.WAKE_WORD_AGC_RELEASE_S,
+        peakHalfLifeSeconds: cfg.WAKE_WORD_AGC_PEAK_HALFLIFE_S,
+      },
     });
+
+    // Fed from every mic chunk in every state, unlike the wake detector — a
+    // level meter that went dead the moment Bruce started talking would be
+    // read as "the mic died" by whoever is standing in the brewery with it.
+    this._meter = new MicLevelMeter();
 
     this._audio = new AudioManager();
 
@@ -260,18 +276,42 @@ class BruceAssistant extends EventEmitter {
     this._wakeAck = mode;
   }
 
-  /** How much the mic is amplified before the wake phrase is scored. */
+  /**
+   * How the mic amplification used for wake-word scoring is chosen: a fixed
+   * number, or 'auto' for the gain control.
+   */
   get wakeWordGain() {
     return this._wakeWord.gain;
   }
 
+  /** The amplification in force right now — under 'auto', where it has settled. */
+  get wakeWordGainApplied() {
+    return this._wakeWord.appliedGain;
+  }
+
   /**
    * Make the wake word easier (>1) or harder (<1) to trigger by scaling the
-   * mic before scoring. Not persisted — a restart returns to BRUCE_WAKE_WORD_GAIN.
-   * @param {number} gain
+   * mic before scoring, or hand that to the gain control with 'auto'. Not
+   * persisted — a restart returns to BRUCE_WAKE_WORD_GAIN.
+   * @param {number|'auto'} gain
    */
   setWakeWordGain(gain) {
     this._wakeWord.setGain(gain);
+  }
+
+  /**
+   * A few seconds of microphone level and wake-word score, for the dashboard's
+   * mic meter. See MicLevelMeter for what the numbers are and why.
+   */
+  get micLevels() {
+    const level = this._wakeWord.level;
+    return this._meter.snapshot({
+      filteredRms: level.rms,
+      noiseFloor: level.noiseFloor,
+      gain: level.gain,
+      gainMode: this._wakeWord.gain,
+      threshold: this._wakeWord.threshold,
+    });
   }
 
   /** True while the OpenAI session is connected and configured. */
@@ -332,6 +372,7 @@ class BruceAssistant extends EventEmitter {
   _bindEvents() {
     // Mic audio is routed based on current state
     this._audio.on('data', (chunk) => {
+      this._meter.push(chunk);
       if (this._state === 'idle') {
         this._wakeWord.processAudio(chunk);
       } else if (this._state === 'listening') {
@@ -351,6 +392,8 @@ class BruceAssistant extends EventEmitter {
         this._onWakeWordDetected();
       }
     });
+
+    this._wakeWord.on('score', (score) => this._meter.noteScore(score));
 
     // TTS audio chunks stream in as Base64-decoded PCM16 buffers
     this._realtime.on('audioChunk', (buffer) => {
