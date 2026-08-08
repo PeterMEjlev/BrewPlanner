@@ -37,7 +37,8 @@ import {
 } from '../components/icons';
 import { MetricModal } from '../components/MetricModal';
 import { useBrewSystemLive } from '../components/brewsystem/useBrewSystemLive';
-import { VESSELS, formatTemp } from '../components/brewsystem/vessels';
+import { useRigTheme } from '../components/brewsystem/rigTheme';
+import { VESSELS, formatTemp, vesselColor } from '../components/brewsystem/vessels';
 import {
   type Keg,
   SHEETS_VIEW_URL,
@@ -2213,6 +2214,8 @@ function contentCounts(kegs: Keg[]): { contents: string; count: number; color: s
  */
 function BrewSystemCard({ onOpen }: { onOpen: () => void }): JSX.Element | null {
   const { status, state } = useBrewSystemLive();
+  // The rig's own vessel colours, so BK reads here as it does on its screen.
+  const rigTheme = useRigTheme();
 
   // Nothing to say until the first answer, and nothing at all on an install
   // with no rig — same rule the sidebar's badge follows.
@@ -2249,7 +2252,7 @@ function BrewSystemCard({ onOpen }: { onOpen: () => void }): JSX.Element | null 
                 >
                   <div
                     className="text-[11px] font-semibold uppercase tracking-wide"
-                    style={{ color: vessel.color }}
+                    style={{ color: vesselColor(rigTheme, vessel) }}
                   >
                     {vessel.label}
                   </div>

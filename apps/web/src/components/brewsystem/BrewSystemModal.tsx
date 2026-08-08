@@ -17,7 +17,8 @@ import { formatAxisValue, niceRange, withMinSpan } from '../charts';
 import { type Span, useChartZoom } from '../chartZoom';
 import { timeAxis } from '../timeAxis';
 import { useBrewSystemLive } from './useBrewSystemLive';
-import { VESSELS, type Vessel, formatTemp, formatTimerSeconds } from './vessels';
+import { useRigTheme } from './rigTheme';
+import { VESSELS, type Vessel, formatTemp, formatTimerSeconds, vesselColor } from './vessels';
 
 /**
  * The Overview brew-system card, enlarged: the same readings at a size you can
@@ -192,6 +193,9 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
 
   const shown = useMemo(() => VESSELS.filter((v) => !hidden[v.key]), [hidden]);
 
+  // The rig's own vessel colours, so a trace here matches the rig's screen.
+  const rigTheme = useRigTheme();
+
   // Full extent of the selected window — both the unzoomed view and the floor
   // that zooming out returns to.
   const xExtent = useMemo<Span | null>(
@@ -310,7 +314,7 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
                 >
                   <div
                     className="text-[11px] font-semibold uppercase tracking-wider"
-                    style={{ color: vessel.color }}
+                    style={{ color: vesselColor(rigTheme, vessel) }}
                   >
                     {vessel.name}
                   </div>
@@ -380,7 +384,7 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
                       className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition"
                       style={
                         on
-                          ? { borderColor: vessel.color, color: vessel.color }
+                          ? { borderColor: vesselColor(rigTheme, vessel), color: vesselColor(rigTheme, vessel) }
                           : { borderColor: '#3f3f46', color: '#71717a' }
                       }
                     >
@@ -453,7 +457,7 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
                           type="monotone"
                           dataKey={vessel.key}
                           name={vessel.label}
-                          stroke={vessel.color}
+                          stroke={vesselColor(rigTheme, vessel)}
                           strokeWidth={2}
                           dot={false}
                           isAnimationActive={false}

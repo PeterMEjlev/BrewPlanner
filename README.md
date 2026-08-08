@@ -194,6 +194,31 @@ offline card and reconnects automatically. The rig's backend keeps running the
 regulation loop, power limit, and safety watchdog itself, so a dropped remote
 connection can never leave a heater unmanaged.
 
+The rig also owns how it *looks*. `GET /api/brew-system/config` carries its power
+limits, auto-efficiency curves and theme colours, so recolouring a vessel on the
+rig's own Settings → Theme screen recolours it here too — on this page, on the
+Overview's rig card, and in the enlarged temperature chart (`rigTheme.ts` holds
+one shared copy so the three don't each ask). The rig's shipped colours are the
+fallback, which is what an offline rig draws in.
+
+It goes the other way for kegs: both machines read the same published keg sheet,
+and this hub has the palette editor (Settings → Keg content colours), so the rig
+follows *this* palette. Keep the recipe→contents matching rules in
+`packages/shared` in step with the rig's `src/utils/kegContent.js` — linking the
+same recipe in either place should label the keg the same.
+
+**The rig reads this library for recipes too.** Its Recipe tab, its start-menu
+session picker and its keg editor all go through `GET /api/recipes`,
+`/api/recipes/:id`, `/api/recipes/:id/brew-sessions` and
+`/api/brew-sessions/counts` (proxied by its own backend — its browser can't
+reach this host directly). It used to read Brewer's Friend itself, which meant
+two libraries with different contents and put the costing, the calculated EBC and
+the hop stages permanently out of its reach. Practical consequence: the brew
+sheet shape those routes return is now a contract with a second client, and the
+rig renders `cost`, `pricing`, `ebcEstimated`, `stage` and `timeUnit` directly.
+`predictBeerColor` and `estimateFermentationDays` are ported into the rig's
+`src/utils/` rather than shared — a change to either belongs in both.
+
 ### Bruce — chat
 
 The `/bruce` page is a written conversation with the brewery's assistant,

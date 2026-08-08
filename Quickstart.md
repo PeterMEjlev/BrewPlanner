@@ -10,13 +10,12 @@ npm run dev
 ```
 
 ## Build Android .APK
+Powershell:
 ```bash
-npm run android:build --workspace @checklist/web
-
+npm run android:build --workspace "@checklist/web"     # vite build + cap sync
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\apps\web\android\gradlew.bat assembleDebug -p apps\web\android
 ```
-
 ## Deploy to the Pi (over SSH) - "~/checklist/deploy/update.sh"
 
 

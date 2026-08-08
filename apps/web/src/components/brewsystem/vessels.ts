@@ -1,4 +1,5 @@
 import type { BrewPot } from '@checklist/shared';
+import type { BrewTheme } from './theme';
 
 /**
  * The three vessels of the brewing rig, in the order its own screen shows them.
@@ -15,20 +16,27 @@ export interface VesselMeta {
   label: string;
   /** Spelled out, where there's room for it. */
   name: string;
-  /**
-   * The rig's chart colour for this vessel (its ThemeContext vesselBK/MLT/HLT),
-   * so a trace here is the colour a brewer already reads it as on the rig.
-   */
-  color: string;
+  /** Which of the rig's themeable vessel colours this one is drawn in. */
+  themeKey: 'vesselBK' | 'vesselMLT' | 'vesselHLT';
   /** The control key, for the two vessels that have a heater. */
   pot: BrewPot | null;
 }
 
 export const VESSELS: readonly VesselMeta[] = [
-  { key: 'bk', label: 'BK', name: 'Boil Kettle', color: '#ef4444', pot: 'BK' },
-  { key: 'mlt', label: 'MLT', name: 'Mash Tun', color: '#10b981', pot: null },
-  { key: 'hlt', label: 'HLT', name: 'Hot Liquor Tank', color: '#3b82f6', pot: 'HLT' },
+  { key: 'bk', label: 'BK', name: 'Boil Kettle', themeKey: 'vesselBK', pot: 'BK' },
+  { key: 'mlt', label: 'MLT', name: 'Mash Tun', themeKey: 'vesselMLT', pot: null },
+  { key: 'hlt', label: 'HLT', name: 'Hot Liquor Tank', themeKey: 'vesselHLT', pot: 'HLT' },
 ] as const;
+
+/**
+ * What colour to draw a vessel in, from the rig's own theme — so a trace here
+ * is the colour the brewer already reads it as on the rig's screen. Pair with
+ * {@link useRigTheme}; the colour was hardcoded here until the rig's vessel
+ * colours became themeable and this stopped being true.
+ */
+export function vesselColor(theme: BrewTheme, vessel: VesselMeta): string {
+  return theme[vessel.themeKey];
+}
 
 /** One decimal place, or an em-dash-ish `--` for a sensor that didn't answer. */
 export function formatTemp(value: number | null | undefined): string {

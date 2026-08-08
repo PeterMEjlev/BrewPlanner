@@ -11,6 +11,15 @@ export interface BrewTheme {
   accentBlue: string;
   accentGreen: string;
   accentOrange: string;
+  /**
+   * The three vessels' own colours, which the rig makes themeable and uses for
+   * its chart traces. Read here through {@link vesselColor} rather than the CSS
+   * variables — the traces and vessel labels are drawn from JS (Recharts
+   * `stroke`, inline `style`), where a `var(--color-vessel-bk)` never resolves.
+   */
+  vesselBK: string;
+  vesselMLT: string;
+  vesselHLT: string;
   textPrimary: string;
   textSecondary: string;
   textMuted: string;
@@ -31,6 +40,9 @@ export const DEFAULT_BREW_THEME: BrewTheme = {
   accentBlue: '#3b82f6',
   accentGreen: '#10b981',
   accentOrange: '#f97316',
+  vesselBK: '#ef4444',
+  vesselMLT: '#10b981',
+  vesselHLT: '#3b82f6',
   textPrimary: '#f1f5f9',
   textSecondary: '#cbd5e1',
   textMuted: '#94a3b8',
@@ -52,6 +64,9 @@ const CSS_VAR_MAP: Record<keyof BrewTheme, string> = {
   accentBlue: '--color-accent-blue',
   accentGreen: '--color-accent-green',
   accentOrange: '--color-accent-orange',
+  vesselBK: '--color-vessel-bk',
+  vesselMLT: '--color-vessel-mlt',
+  vesselHLT: '--color-vessel-hlt',
   textPrimary: '--color-text-primary',
   textSecondary: '--color-text-secondary',
   textMuted: '--color-text-muted',

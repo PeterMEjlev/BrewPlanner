@@ -12,6 +12,7 @@ import styles from './BrewingPanel.module.css';
 import BrewTimer from './BrewTimer';
 import PotCard, { type PotCardState, type PotUpdate } from './PotCard';
 import PumpCard, { type PumpUpdate } from './PumpCard';
+import { primeRigTheme } from './rigTheme';
 import { DEFAULT_BREW_THEME, buildThemeVars, mergeBrewTheme, type BrewTheme } from './theme';
 
 /**
@@ -151,6 +152,9 @@ export function BrewingPanel(): JSX.Element {
         configLoadedRef.current = true;
         if (config.app) setRigApp(config.app);
         setRigTheme(mergeBrewTheme(config.theme));
+        // Hand the same answer to the shared store, so the Overview card and the
+        // enlarged chart get the rig's vessel colours without asking again.
+        primeRigTheme(config.theme);
       } catch {
         /* retried on the next successful poll */
       }
