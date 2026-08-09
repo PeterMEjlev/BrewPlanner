@@ -207,6 +207,15 @@
    >=44px tall, which is why the paddings shrink less than the fonts do. */
 @media (max-width: 640px) {
   .brewingPanel {
+    /* How much taller the screen is than this layout needs, and therefore how
+       much there is to spend. The rows below take their share by flexing, which
+       can't overflow; the two readings that answer the extra room by growing
+       rather than by floating in it are scaled from this instead, so on a phone
+       with nothing to spare they stay exactly the size they are today.
+       680px is the screen this layout fills with nothing left over: ~595px of
+       cards, the bottom bar, and the page's gutter. */
+    --slack: max(0px, 100dvh - 680px);
+
     --font-size-xs: 11px;
     --font-size-sm: 13px;
     --font-size-base: 14px;
@@ -214,7 +223,11 @@
     --font-size-xl: 20px;
     --font-size-2xl: 22px;
     --font-size-3xl: 34px;
-    --font-size-4xl: 30px;
+    /* The brew timer's digits — the other reading with a row of its own, so it
+       spends the slack the same way the MLT one does (see PotCard.module.css).
+       An eighth of it, against the quarter the timer card itself is handed, so
+       the digits always land well inside the card. */
+    --font-size-4xl: clamp(30px, calc(30px + var(--slack) * 0.13), 56px);
     gap: 8px;
   }
 
@@ -227,12 +240,27 @@
     gap: 8px;
   }
 
+  /* The page hands the panel the whole screen (see BrewSystem.tsx) and the two
+     rows share out what the cards don't need, so the panel ends at the bottom
+     bar instead of a third of the way up it. Grow factors rather than equal
+     shares: a vessel and the timer are read at arm's length across a brewery,
+     where a pump is a button and a slider that only have to be hittable.
+     `stretch` undoes the kiosk's `align-items: start`, which in this column
+     would size each card to its own content width. */
+  .potRow {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    flex-grow: 3; /* one per pot card */
+  }
+
   /* The pumps and the timer share one wrapper on the kiosk (pump | timer |
      pump). Stacked, the timer would come between the two pumps, so it is sent
      to the end — the two pumps read as a pair, and the timer closes the page. */
   .pumpRow {
     display: flex;
     flex-direction: column;
+    flex-grow: 2.6; /* 0.6 per pump, 1.4 for the timer */
   }
 
   .pumpRow > :nth-child(2) {

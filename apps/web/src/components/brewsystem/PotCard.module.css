@@ -239,10 +239,19 @@
     min-width: 0;
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    /* The row of readings and the row of sliders split the card's height evenly
+       (neither can go under its own content, so on a short phone this is just
+       the natural layout). The card is a flex item of a pot row that fills the
+       screen, so on a tall one the share arrives as air around the reading and
+       as a taller slider — not as a gap under the last card. */
+    grid-template-rows: 1fr 1fr;
     align-items: center;
     column-gap: 10px;
     row-gap: 6px;
     padding: 8px 12px;
+    /* Grow from the natural height rather than `flex: 1`'s zero basis, so the
+       three vessels keep their proportions: BK and HLT stay the tall ones. */
+    flex: 1 1 auto;
   }
 
   /* Dissolved so their children join the card's grid directly. */
@@ -267,6 +276,11 @@
     display: none;
   }
 
+  /* Stays 30px however tall the screen is, unlike the MLT reading below: this
+     one shares its row with the watts and both buttons, and at its widest
+     ("100.0°", a boiling kettle, next to a throttled "8,500 W") that row has no
+     width left to give. Growing it is what the panel spends height on instead —
+     see the sliders below. */
   .pvValue {
     grid-column: 2;
     grid-row: 1;
@@ -324,6 +338,13 @@
        one-screen fit. */
     position: relative;
     gap: 0;
+    /* Against the grid's `align-items: center`: the track takes the whole row,
+       so a card with height to spare spends it on the one control a wet hand
+       has to hit accurately, rather than on padding around a 44px bar. The
+       floor lives here, on the wrapper, and not on the range input — see the
+       slider below. */
+    align-self: stretch;
+    min-height: 44px;
   }
 
   /* Turning REG on adds the Set Temperature slider — and a card that grows by a
@@ -359,14 +380,22 @@
     text-shadow: inherit;
   }
 
-  /* 44px is the floor for a wet finger, and the panel needs every pixel back
-     that it can take from elsewhere to stay on one screen. */
+  /* 44px is the floor for a wet finger (it sits on .control above, so the whole
+     row can't go under it) and the panel needs every pixel back that it can take
+     from elsewhere to stay on one screen; past that floor the track fills
+     whatever the stretched row gives it. */
   .slider {
-    height: 44px;
+    flex: 1;
   }
 
+  /* Level with the track instead of overhanging it as the kiosk's thumb does.
+     Chrome takes an input's intrinsic height from its tallest part, and the
+     track's height is no longer fixed, so a 52px thumb would quietly become the
+     smallest a pot card can be — costing a phone too short for the panel ~8px of
+     extra scrolling per slider. Nothing is lost: the thumb is transparent, and a
+     press anywhere on the track starts the drag. */
   .slider::-webkit-slider-thumb {
-    height: 52px;
+    height: 44px;
   }
 
   /* MLT is read-only, so its row is just the name and the reading — the biggest
@@ -375,6 +404,9 @@
      above removes the box that query measured. */
   .potCard.mlt {
     grid-template-columns: auto 1fr;
+    /* One row, not the two-row template above, or the reading would sit in the
+       top half with the card's share of the spare height empty below it. */
+    grid-template-rows: 1fr;
     padding: 6px 12px;
   }
 
@@ -382,9 +414,17 @@
     display: contents;
   }
 
+  /* The one reading with a row to itself, so it's also the one that can answer
+     a tall screen by getting bigger instead of by floating in more space. It
+     grows with --slack (see BrewingPanel.module.css) at a rate under the share
+     of that slack this card is handed, so the number can never outgrow the card
+     it sits in; on a phone with nothing spare it stays at the 34px that fits.
+     Capped twice over: 80px is as big as this row gets before the card starts
+     looking like a placeholder, and 20vw keeps the widest value ("100.0°")
+     clear of the name beside it on a narrow phone. */
   .mlt .pvSection.mltTemp .pvValue {
     grid-column: 2;
-    font-size: 34px;
+    font-size: clamp(34px, calc(34px + var(--slack, 0px) * 0.16), min(80px, 20vw));
     justify-self: end;
   }
 }

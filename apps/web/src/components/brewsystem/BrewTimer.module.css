@@ -104,6 +104,12 @@
   .brewTimer {
     padding: 6px 12px 8px;
     gap: 0;
+    /* The panel gives the timer the largest single share of a tall screen's
+       spare height (see BrewingPanel.module.css) — mostly spent on the digits,
+       which grow with it; `center` keeps the three lines together in the middle
+       of the card rather than riding at its top. */
+    flex: 1.4 1 auto;
+    justify-content: center;
   }
 
   .label {

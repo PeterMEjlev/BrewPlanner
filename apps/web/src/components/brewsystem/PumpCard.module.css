@@ -135,9 +135,14 @@
     /* Columns are placed explicitly below, so the row keeps its shape when the
        gear isn't rendered (it only exists while the pump is running). */
     grid-template-columns: auto auto auto 1fr;
+    /* The single row fills the card, so the speed track can stretch with it. */
+    grid-template-rows: 1fr;
     align-items: center;
     column-gap: 10px;
     padding: 6px 12px;
+    /* A pump takes the smallest share of the screen's spare height (see the pot
+       row in BrewingPanel.module.css) and grows from its natural size. */
+    flex: 0.6 1 auto;
   }
 
   .header {
@@ -167,6 +172,12 @@
     grid-column: 4;
     position: relative;
     gap: 0;
+    /* Against `align-items: center`: the track takes the card's full height, so
+       the pump's share of the spare screen becomes hittable slider. The 44px
+       floor sits on the wrapper rather than the input — see the pot card, where
+       the same pair of rules is explained. */
+    align-self: stretch;
+    min-height: 44px;
   }
 
   .controlLabel {
@@ -187,11 +198,12 @@
   }
 
   .slider {
-    height: 44px;
+    flex: 1;
     width: 100%;
   }
 
+  /* Level with the track, for the reason the pot card's thumb spells out. */
   .slider::-webkit-slider-thumb {
-    height: 52px;
+    height: 44px;
   }
 }

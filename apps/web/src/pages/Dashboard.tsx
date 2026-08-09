@@ -67,6 +67,7 @@ import {
   useMetricSeriesFull,
   useMetricSeriesT,
 } from '../useDeviceData';
+import { useIsMobile } from '../useIsMobile';
 import { usePoll } from '../usePoll';
 import { relativeTime } from '../util';
 
@@ -303,25 +304,6 @@ interface ChartTarget {
 
 /** Opens the enlarge-on-click chart overlay for a metric. */
 type OpenChart = (target: ChartTarget) => void;
-
-/**
- * True on phone-sized screens (below Tailwind's `md`, where the shell switches to
- * the bottom-nav layout). Drives the compact dashboard used by the Android app
- * and the website on a phone; desktop keeps the full command-centre layout.
- */
-function useIsMobile(): boolean {
-  const query = '(max-width: 767px)';
-  const [isMobile, setIsMobile] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const onChange = (): void => setIsMobile(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-  return isMobile;
-}
 
 /**
  * The hub landing page at `/`. A desktop "command centre": the fermenter and
