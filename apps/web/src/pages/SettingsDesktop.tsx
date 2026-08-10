@@ -1472,93 +1472,98 @@ function CriticalAlertsCard({
         <p className="text-sm text-zinc-500">Loading…</p>
       ) : (
         <div className="divide-y divide-zinc-800/70">
-          <ToggleRow
+          <AlertSetting
             label="Fermenter pressure lost"
             hint="Only fires on a fermenter that was holding pressure and has dropped — an empty one sitting at zero never triggers it."
             on={settings.pressureLostEnabled}
             onChange={(on) => update({ pressureLostEnabled: on })}
-          />
-          <NumberRow
-            label="Counts as lost at or below"
-            unit={pressureLabel}
-            value={pressureIn(settings.pressureLostBar, pressureUnit)}
-            min={0}
-            max={pressureIn(1, pressureUnit)}
-            step={pressureStep}
-            disabled={!settings.pressureLostEnabled}
-            onChange={(v) => update({ pressureLostBar: pressureToBar(v, pressureUnit) })}
-          />
-          <ToggleRow
+          >
+            <Threshold
+              label="Counts as lost at or below"
+              unit={pressureLabel}
+              value={pressureIn(settings.pressureLostBar, pressureUnit)}
+              min={0}
+              max={pressureIn(1, pressureUnit)}
+              step={pressureStep}
+              disabled={!settings.pressureLostEnabled}
+              onChange={(v) => update({ pressureLostBar: pressureToBar(v, pressureUnit) })}
+            />
+          </AlertSetting>
+          <AlertSetting
             label="Fermenter over-pressure"
             hint="A stuck spunding valve or a runaway ferment."
             on={settings.pressureHighEnabled}
             onChange={(on) => update({ pressureHighEnabled: on })}
-          />
-          <NumberRow
-            label="Too high at or above"
-            unit={pressureLabel}
-            value={pressureIn(settings.pressureHighBar, pressureUnit)}
-            min={pressureIn(0.1, pressureUnit)}
-            max={pressureIn(10, pressureUnit)}
-            step={pressureStep}
-            disabled={!settings.pressureHighEnabled}
-            onChange={(v) => update({ pressureHighBar: pressureToBar(v, pressureUnit) })}
-          />
-          <ToggleRow
+          >
+            <Threshold
+              label="Too high at or above"
+              unit={pressureLabel}
+              value={pressureIn(settings.pressureHighBar, pressureUnit)}
+              min={pressureIn(0.1, pressureUnit)}
+              max={pressureIn(10, pressureUnit)}
+              step={pressureStep}
+              disabled={!settings.pressureHighEnabled}
+              onChange={(v) => update({ pressureHighBar: pressureToBar(v, pressureUnit) })}
+            />
+          </AlertSetting>
+          <AlertSetting
             label="Fermenter overheating"
             hint="The chamber running hot — usually a heat belt stuck on."
             on={settings.fermenterHotEnabled}
             onChange={(on) => update({ fermenterHotEnabled: on })}
-          />
-          <NumberRow
-            label="Too hot at or above"
-            unit="°C"
-            value={settings.fermenterHotC}
-            min={20}
-            max={80}
-            step={1}
-            disabled={!settings.fermenterHotEnabled}
-            onChange={(v) => update({ fermenterHotC: v })}
-          />
-          <ToggleRow
+          >
+            <Threshold
+              label="Too hot at or above"
+              unit="°C"
+              value={settings.fermenterHotC}
+              min={20}
+              max={80}
+              step={1}
+              disabled={!settings.fermenterHotEnabled}
+              onChange={(v) => update({ fermenterHotC: v })}
+            />
+          </AlertSetting>
+          <AlertSetting
             label="Fermenter fridge not responding"
             hint="The controller is calling for heat or cooling, but the chamber just sits at brewery temperature — the fridge or heater isn't doing anything."
             on={settings.fermenterStalledEnabled}
             onChange={(on) => update({ fermenterStalledEnabled: on })}
           />
-          <ToggleRow
+          <AlertSetting
             label="Keg fridge warming up"
             hint="Sustained for an hour, so opening the door for a pour doesn't count."
             on={settings.kegsWarmEnabled}
             onChange={(on) => update({ kegsWarmEnabled: on })}
-          />
-          <NumberRow
-            label="Too warm at or above"
-            unit="°C"
-            value={settings.kegsWarmC}
-            min={0}
-            max={40}
-            step={0.5}
-            disabled={!settings.kegsWarmEnabled}
-            onChange={(v) => update({ kegsWarmC: v })}
-          />
-          <ToggleRow
+          >
+            <Threshold
+              label="Too warm at or above"
+              unit="°C"
+              value={settings.kegsWarmC}
+              min={0}
+              max={40}
+              step={0.5}
+              disabled={!settings.kegsWarmEnabled}
+              onChange={(v) => update({ kegsWarmC: v })}
+            />
+          </AlertSetting>
+          <AlertSetting
             label="Brewery near freezing"
             hint="Anything holding water is at risk below this."
             on={settings.breweryColdEnabled}
             onChange={(on) => update({ breweryColdEnabled: on })}
-          />
-          <NumberRow
-            label="Too cold at or below"
-            unit="°C"
-            value={settings.breweryColdC}
-            min={-20}
-            max={15}
-            step={0.5}
-            disabled={!settings.breweryColdEnabled}
-            onChange={(v) => update({ breweryColdC: v })}
-          />
-          <ToggleRow
+          >
+            <Threshold
+              label="Too cold at or below"
+              unit="°C"
+              value={settings.breweryColdC}
+              min={-20}
+              max={15}
+              step={0.5}
+              disabled={!settings.breweryColdEnabled}
+              onChange={(v) => update({ breweryColdC: v })}
+            />
+          </AlertSetting>
+          <AlertSetting
             label="Critical sensor offline"
             hint="The fermenter's pressure sensor, controller or Tilt, or the keg fridge's controller, going quiet. Every device's outage is recorded on the Alerts page either way."
             on={settings.sensorOfflineEnabled}
@@ -1584,23 +1589,24 @@ function RoutineAlertsCard({
         <p className="text-sm text-zinc-500">Loading…</p>
       ) : (
         <div className="divide-y divide-zinc-800/70">
-          <ToggleRow
+          <AlertSetting
             label="Keg stored too long"
             hint="Alert when a filled keg passes the age below."
             on={settings.kegAlertEnabled}
             onChange={(on) => update({ kegAlertEnabled: on })}
-          />
-          <NumberRow
-            label="Alert after"
-            unit="days"
-            value={settings.kegAlertDays}
-            min={1}
-            max={365}
-            step={1}
-            disabled={!settings.kegAlertEnabled}
-            onChange={(v) => update({ kegAlertDays: Math.round(v) })}
-          />
-          <ToggleRow
+          >
+            <Threshold
+              label="Alert after"
+              unit="days"
+              value={settings.kegAlertDays}
+              min={1}
+              max={365}
+              step={1}
+              disabled={!settings.kegAlertEnabled}
+              onChange={(v) => update({ kegAlertDays: Math.round(v) })}
+            />
+          </AlertSetting>
+          <AlertSetting
             label="Fermentation complete"
             hint="Alert when the Tilt's gravity has held flat."
             on={settings.fermentDoneEnabled}
@@ -1612,38 +1618,69 @@ function RoutineAlertsCard({
   );
 }
 
-/** An on/off row — the shape most of this screen is made of. */
-function ToggleRow({
+/**
+ * One alert: what it watches, an on/off, and — for the ones that have a number
+ * to argue about — its threshold.
+ *
+ * The threshold sits *inside* this block rather than as another row in the list,
+ * because as a sibling row it read as a setting of its own: the divider above it
+ * looked like a separator between two alerts, so "Too warm at or above" appeared
+ * to belong to whatever came next. Two things fix that, and both are needed —
+ * a recessed panel, which can only be read as belonging to the thing above it,
+ * and spacing that is tighter inside a group than between groups. Dimming the
+ * panel when the alert is off says it a third time.
+ */
+function AlertSetting({
   label,
   hint,
   on,
   onChange,
+  children,
 }: {
   label: string;
   hint?: string;
   on: boolean;
   onChange: (on: boolean) => void;
+  /** The alert's threshold control, if it has one. */
+  children?: React.ReactNode;
 }): JSX.Element {
   return (
-    <Row label={label} hint={hint}>
-      <Segmented<'on' | 'off'>
-        value={on ? 'on' : 'off'}
-        options={[
-          { value: 'on', label: 'On' },
-          { value: 'off', label: 'Off' },
-        ]}
-        onChange={(v) => onChange(v === 'on')}
-      />
-    </Row>
+    <div className="py-4 first:pt-0 last:pb-0">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-zinc-200">{label}</div>
+          {hint && <div className="text-xs leading-snug text-zinc-500">{hint}</div>}
+        </div>
+        <div className="max-w-full shrink-0">
+          <Segmented<'on' | 'off'>
+            value={on ? 'on' : 'off'}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+            onChange={(v) => onChange(v === 'on')}
+          />
+        </div>
+      </div>
+      {children && (
+        <div
+          className={`mt-2 rounded-lg bg-black/25 px-3 py-2 transition-opacity ${
+            on ? '' : 'opacity-40'
+          }`}
+        >
+          {children}
+        </div>
+      )}
+    </div>
   );
 }
 
 /**
- * A threshold row. Clamped on the way out rather than on the input's `min`/`max`
- * alone, because typing into a number field can transit through values the
- * server's schema would reject — and a rejected save is silent here.
+ * The number an alert fires at. Clamped on the way out rather than trusting the
+ * input's `min`/`max`, because typing into a number field transits through
+ * values the server's schema would reject — and a rejected save is silent here.
  */
-function NumberRow({
+function Threshold({
   label,
   unit,
   value,
@@ -1663,11 +1700,12 @@ function NumberRow({
   onChange: (value: number) => void;
 }): JSX.Element {
   return (
-    <Row label={label}>
-      <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <span className="text-xs text-zinc-400">{label}</span>
+      <div className="flex shrink-0 items-center gap-2">
         <input
           type="number"
-          className={`${inputClass} w-28 text-right tabular-nums`}
+          className={`${inputClass} w-24 py-1 text-right tabular-nums`}
           min={min}
           max={max}
           step={step}
@@ -1678,9 +1716,9 @@ function NumberRow({
             if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
           }}
         />
-        <span className="w-9 text-xs text-zinc-500">{unit}</span>
+        <span className="w-8 text-xs text-zinc-500">{unit}</span>
       </div>
-    </Row>
+    </div>
   );
 }
 

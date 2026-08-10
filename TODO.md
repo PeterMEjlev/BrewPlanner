@@ -3,14 +3,14 @@
 
 - Remove left-over bruce logic in BrewSystem3.0 repo
 
-- make sure all notification settings that should be configurable are availabe in the settings/notifications page
+- make settings page remember last sub menu when revisited
 
 - ## Add support for
   - Electricity (Watt) usage
   - Water usage 
 
 
-git commit -m "Added critical notifiacations to phone app on severe issues. Removed telegram inteagration"
+
 
 
 

@@ -240,7 +240,12 @@ export function pressureToBar(value: number, unit: PressureUnit): number {
   return unit === 'psi' ? Math.round((value / BAR_TO_PSI) * 1000) / 1000 : value;
 }
 
-/** Step and label for a pressure input in the chosen unit. */
+/**
+ * Step and label for a pressure input in the chosen unit. Fine steps on purpose:
+ * the thresholds are stored in bar, so a round bar default lands on an awkward
+ * PSI figure (0.05 bar is 0.7 psi) — and a value off the step is `:invalid` to
+ * the browser, which would mark a perfectly good default as an error.
+ */
 export function pressureInputUnit(unit: PressureUnit): { step: number; label: string } {
-  return unit === 'psi' ? { step: 0.5, label: 'PSI' } : { step: 0.05, label: 'bar' };
+  return unit === 'psi' ? { step: 0.1, label: 'PSI' } : { step: 0.01, label: 'bar' };
 }
