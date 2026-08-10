@@ -1699,38 +1699,57 @@ const TOOLS: Record<string, ToolSpec> = {
   update_notification_settings: {
     definition: tool(
       'update_notification_settings',
-      'Change the alert preferences: whether a keg raises an alert once it has been full for a while (and after how many days), and whether an alert fires when fermentation looks finished. Send only the fields the user asked to change; the rest are left as they are.',
+      'Switch the brewery alerts on or off: the routine ones (an old keg, a finished fermentation) and the critical ones that go to everyone\'s phone (fermenter pressure lost or too high, the fermenter overheating, the fermenter fridge not responding, the keg fridge warming up, the brewery near freezing, a critical sensor going quiet). Send only the fields the user asked to change; the rest are left as they are. The thresholds themselves are set on the Settings page, not here.',
       {
         keg_alert_enabled: { type: 'boolean', description: 'Whether old kegs raise an alert.' },
         keg_alert_days: { type: 'number', description: 'Age in days at which a keg raises one (1–365).' },
         ferment_done_enabled: { type: 'boolean', description: 'Whether a finished fermentation raises an alert.' },
+        pressure_lost_enabled: { type: 'boolean', description: 'Whether losing fermenter pressure raises an alert.' },
+        pressure_high_enabled: { type: 'boolean', description: 'Whether fermenter over-pressure raises an alert.' },
+        fermenter_hot_enabled: { type: 'boolean', description: 'Whether an overheating fermenter raises an alert.' },
+        fermenter_stalled_enabled: { type: 'boolean', description: 'Whether a fermenter fridge that is not responding raises an alert.' },
+        kegs_warm_enabled: { type: 'boolean', description: 'Whether a warming keg fridge raises an alert.' },
+        brewery_cold_enabled: { type: 'boolean', description: 'Whether a brewery near freezing raises an alert.' },
+        sensor_offline_enabled: { type: 'boolean', description: 'Whether a critical sensor going quiet raises an alert.' },
       },
     ),
     phase: () => ({ phase: 'brewery', detail: 'alert settings' }),
     run: (args, actor) => {
-      const kegEnabled = bool(args, 'keg_alert_enabled');
       const kegDays = num(args, 'keg_alert_days');
-      const fermentDone = bool(args, 'ferment_done_enabled');
-      if (kegEnabled === undefined && kegDays === undefined && fermentDone === undefined) {
-        return 'No setting was given to change, so nothing changed.';
-      }
-      if (kegDays !== undefined && (!Number.isInteger(kegDays) || kegDays < 1 || kegDays > 365)) {
-        return 'The keg alert age must be a whole number of days between 1 and 365. Nothing changed.';
-      }
+      // Every other field is a plain on/off, so they share one table: the
+      // argument name, the setting it writes, and how to say it back out loud.
+      const toggles = [
+        ['keg_alert_enabled', 'kegAlertEnabled', 'keg age alerts'],
+        ['ferment_done_enabled', 'fermentDoneEnabled', 'fermentation-complete alerts'],
+        ['pressure_lost_enabled', 'pressureLostEnabled', 'pressure-lost alerts'],
+        ['pressure_high_enabled', 'pressureHighEnabled', 'over-pressure alerts'],
+        ['fermenter_hot_enabled', 'fermenterHotEnabled', 'fermenter overheating alerts'],
+        ['fermenter_stalled_enabled', 'fermenterStalledEnabled', 'fermenter fridge alerts'],
+        ['kegs_warm_enabled', 'kegsWarmEnabled', 'keg fridge alerts'],
+        ['brewery_cold_enabled', 'breweryColdEnabled', 'brewery freezing alerts'],
+        ['sensor_offline_enabled', 'sensorOfflineEnabled', 'sensor offline alerts'],
+      ] as const;
 
       const current = repo.getNotificationSettings();
-      const next = {
-        kegAlertEnabled: kegEnabled ?? current.kegAlertEnabled,
-        kegAlertDays: kegDays ?? current.kegAlertDays,
-        fermentDoneEnabled: fermentDone ?? current.fermentDoneEnabled,
-      };
-      repo.setNotificationSettings(next);
+      const next = { ...current };
+      const changed: string[] = [];
 
-      const changed = [
-        kegEnabled !== undefined ? `keg age alerts ${next.kegAlertEnabled ? 'on' : 'off'}` : null,
-        kegDays !== undefined ? `keg age threshold ${next.kegAlertDays} days` : null,
-        fermentDone !== undefined ? `fermentation-complete alerts ${next.fermentDoneEnabled ? 'on' : 'off'}` : null,
-      ].filter(Boolean);
+      if (kegDays !== undefined) {
+        if (!Number.isInteger(kegDays) || kegDays < 1 || kegDays > 365) {
+          return 'The keg alert age must be a whole number of days between 1 and 365. Nothing changed.';
+        }
+        next.kegAlertDays = kegDays;
+        changed.push(`keg age threshold ${kegDays} days`);
+      }
+      for (const [arg, field, label] of toggles) {
+        const value = bool(args, arg);
+        if (value === undefined) continue;
+        next[field] = value;
+        changed.push(`${label} ${value ? 'on' : 'off'}`);
+      }
+
+      if (changed.length === 0) return 'No setting was given to change, so nothing changed.';
+      repo.setNotificationSettings(next);
       audited(actor, 'Settings', `updated notification settings (${changed.join(', ')})`);
       return `Updated: ${changed.join(', ')}.`;
     },

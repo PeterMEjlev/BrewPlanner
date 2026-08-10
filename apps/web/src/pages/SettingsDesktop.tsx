@@ -20,7 +20,12 @@ import {
   type UserRole,
 } from '@checklist/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type BrewSystemUpdateStatus, type SystemUpdateStatus } from '../api';
+import {
+  api,
+  type BrewSystemUpdateStatus,
+  type NotificationStatus,
+  type SystemUpdateStatus,
+} from '../api';
 import { useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
@@ -46,6 +51,9 @@ import {
   KEG_WARN_DAYS,
   TEMP_MIN_SPAN,
   clampStep,
+  pressureIn,
+  pressureInputUnit,
+  pressureToBar,
   resetSettings,
   setSetting,
   useSettings,
@@ -101,7 +109,7 @@ const SETTINGS_CATEGORIES: {
   {
     id: 'notifications',
     label: 'Notifications',
-    description: 'Server-side Telegram alerts',
+    description: 'What the phone app is told about',
   },
   {
     id: 'bruce',
@@ -852,7 +860,7 @@ function KegFreshnessSection(): JSX.Element {
   return (
     <Card
       title="Keg freshness indicator"
-      hint="Shade a filled keg's date on the Kegs page once it's been stored this long — amber past the first mark, red past the second. A local cue, separate from the Telegram keg-age alert."
+      hint="Shade a filled keg's date on the Kegs page once it's been stored this long — amber past the first mark, red past the second. A local cue, separate from the keg-age notification."
     >
       <div className="divide-y divide-zinc-800/70">
         <Row label="Amber after (days)" hint="Worth keeping an eye on (≈2 months by default).">
@@ -1325,9 +1333,20 @@ function KegContentColorsSection(): JSX.Element {
 
 // --- Notifications (server-shared) -----------------------------------------
 
+/**
+ * Everything the hub can tell you about, split by how urgent it is.
+ *
+ * The delivery card comes first because it is the one that explains silence:
+ * every toggle below it is meaningless if the hub has no Firebase key or no
+ * phone has registered, and those two failures look identical from the outside.
+ * Critical alerts then come before routine ones — a fermenter losing pressure is
+ * why anyone opens this screen.
+ *
+ * Thresholds are stored in the hub's units (bar, °C) and shown in this
+ * browser's, so a brewer who reads pressure in PSI types a threshold in PSI.
+ */
 function NotificationsSection(): JSX.Element {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
-  const [test, setTest] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
   useEffect(() => {
     let cancelled = false;
@@ -1349,75 +1368,319 @@ function NotificationsSection(): JSX.Element {
     });
   };
 
+  return (
+    <>
+      <PushDeliveryCard />
+      <CriticalAlertsCard settings={settings} update={update} />
+      <RoutineAlertsCard settings={settings} update={update} />
+    </>
+  );
+}
+
+/** Whether a notification would reach anyone at all, and a way to prove it. */
+function PushDeliveryCard(): JSX.Element {
+  const [status, setStatus] = useState<NotificationStatus | null>(null);
+  const [test, setTest] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [testError, setTestError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getNotificationStatus()
+      .then((s) => !cancelled && setStatus(s))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const runTest = (): void => {
     setTest('sending');
+    setTestError(null);
     api
       .sendTestNotification()
       .then(() => setTest('sent'))
-      .catch(() => setTest('error'));
+      .catch((err: unknown) => {
+        setTest('error');
+        setTestError(err instanceof Error ? err.message : null);
+      });
   };
+
+  const delivery = !status
+    ? 'Checking…'
+    : !status.pushConfigured
+      ? 'Not configured — the server has no Firebase key, so nothing is sent.'
+      : status.registeredDevices === 0
+        ? 'Ready, but no phone has registered yet. Open the app and allow notifications.'
+        : `Ready — ${status.registeredDevices} ${status.registeredDevices === 1 ? 'phone' : 'phones'} registered.`;
 
   return (
     <Card
-      title="Notifications"
-      hint="Telegram alerts sent by the server. The bot token and chat are set on the server (env vars)."
+      title="Phone notifications"
+      hint="Alerts go to the phone app. Someone else's changes and the brewery alerts below arrive on separate Android channels, so you can silence one without losing the other."
+    >
+      <div className="divide-y divide-zinc-800/70">
+        <Row label="Delivery" hint={delivery}>
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+              !status
+                ? 'bg-zinc-800 text-zinc-400'
+                : status.pushConfigured && status.registeredDevices > 0
+                  ? 'bg-emerald-500/15 text-emerald-300'
+                  : 'bg-amber-500/15 text-amber-300'
+            }`}
+          >
+            {!status ? '…' : status.pushConfigured && status.registeredDevices > 0 ? 'Ready' : 'Silent'}
+          </span>
+        </Row>
+        <Row
+          label="Test notification"
+          hint={
+            test === 'sent'
+              ? 'Sent — check your phone.'
+              : test === 'error'
+                ? (testError ?? 'Send failed — check the server log.')
+                : 'Send one now, to every registered phone.'
+          }
+        >
+          <button type="button" className={btnGhost} onClick={runTest} disabled={test === 'sending'}>
+            {test === 'sending' ? 'Sending…' : 'Send test'}
+          </button>
+        </Row>
+      </div>
+    </Card>
+  );
+}
+
+/** The live-telemetry conditions that mean something is going wrong right now. */
+function CriticalAlertsCard({
+  settings,
+  update,
+}: {
+  settings: NotificationSettings | null;
+  update: (patch: Partial<NotificationSettings>) => void;
+}): JSX.Element {
+  const { pressureUnit } = useSettings();
+  const { step: pressureStep, label: pressureLabel } = pressureInputUnit(pressureUnit);
+
+  return (
+    <Card
+      title="Critical alerts"
+      hint="Raised once when the condition starts and cleared when the readings come back — a fridge that stays broken tells you once, not every five minutes. Only real sensor data can raise one; a sensor left on mock data never will."
     >
       {!settings ? (
         <p className="text-sm text-zinc-500">Loading…</p>
       ) : (
         <div className="divide-y divide-zinc-800/70">
-          <Row label="Keg stored too long" hint="Alert when a filled keg passes the age below.">
-            <Segmented<'on' | 'off'>
-              value={settings.kegAlertEnabled ? 'on' : 'off'}
-              options={[
-                { value: 'on', label: 'On' },
-                { value: 'off', label: 'Off' },
-              ]}
-              onChange={(v) => update({ kegAlertEnabled: v === 'on' })}
-            />
-          </Row>
-          <Row label="Alert after (days)">
-            <input
-              type="number"
-              className={`${inputClass} w-28 text-right tabular-nums`}
-              min={1}
-              max={365}
-              step={1}
-              value={settings.kegAlertDays}
-              disabled={!settings.kegAlertEnabled}
-              onChange={(e) => {
-                const n = Math.round(Number(e.target.value));
-                if (Number.isFinite(n)) update({ kegAlertDays: Math.min(365, Math.max(1, n)) });
-              }}
-            />
-          </Row>
-          <Row label="Fermentation complete" hint="Alert when the Tilt's gravity has held flat.">
-            <Segmented<'on' | 'off'>
-              value={settings.fermentDoneEnabled ? 'on' : 'off'}
-              options={[
-                { value: 'on', label: 'On' },
-                { value: 'off', label: 'Off' },
-              ]}
-              onChange={(v) => update({ fermentDoneEnabled: v === 'on' })}
-            />
-          </Row>
-          <Row
-            label="Test message"
-            hint={
-              test === 'sent'
-                ? 'Sent — check Telegram.'
-                : test === 'error'
-                  ? 'Send failed — is the server configured?'
-                  : 'Send a test alert now.'
-            }
-          >
-            <button type="button" className={btnGhost} onClick={runTest} disabled={test === 'sending'}>
-              {test === 'sending' ? 'Sending…' : 'Send test'}
-            </button>
-          </Row>
+          <ToggleRow
+            label="Fermenter pressure lost"
+            hint="Only fires on a fermenter that was holding pressure and has dropped — an empty one sitting at zero never triggers it."
+            on={settings.pressureLostEnabled}
+            onChange={(on) => update({ pressureLostEnabled: on })}
+          />
+          <NumberRow
+            label="Counts as lost at or below"
+            unit={pressureLabel}
+            value={pressureIn(settings.pressureLostBar, pressureUnit)}
+            min={0}
+            max={pressureIn(1, pressureUnit)}
+            step={pressureStep}
+            disabled={!settings.pressureLostEnabled}
+            onChange={(v) => update({ pressureLostBar: pressureToBar(v, pressureUnit) })}
+          />
+          <ToggleRow
+            label="Fermenter over-pressure"
+            hint="A stuck spunding valve or a runaway ferment."
+            on={settings.pressureHighEnabled}
+            onChange={(on) => update({ pressureHighEnabled: on })}
+          />
+          <NumberRow
+            label="Too high at or above"
+            unit={pressureLabel}
+            value={pressureIn(settings.pressureHighBar, pressureUnit)}
+            min={pressureIn(0.1, pressureUnit)}
+            max={pressureIn(10, pressureUnit)}
+            step={pressureStep}
+            disabled={!settings.pressureHighEnabled}
+            onChange={(v) => update({ pressureHighBar: pressureToBar(v, pressureUnit) })}
+          />
+          <ToggleRow
+            label="Fermenter overheating"
+            hint="The chamber running hot — usually a heat belt stuck on."
+            on={settings.fermenterHotEnabled}
+            onChange={(on) => update({ fermenterHotEnabled: on })}
+          />
+          <NumberRow
+            label="Too hot at or above"
+            unit="°C"
+            value={settings.fermenterHotC}
+            min={20}
+            max={80}
+            step={1}
+            disabled={!settings.fermenterHotEnabled}
+            onChange={(v) => update({ fermenterHotC: v })}
+          />
+          <ToggleRow
+            label="Fermenter fridge not responding"
+            hint="The controller is calling for heat or cooling, but the chamber just sits at brewery temperature — the fridge or heater isn't doing anything."
+            on={settings.fermenterStalledEnabled}
+            onChange={(on) => update({ fermenterStalledEnabled: on })}
+          />
+          <ToggleRow
+            label="Keg fridge warming up"
+            hint="Sustained for an hour, so opening the door for a pour doesn't count."
+            on={settings.kegsWarmEnabled}
+            onChange={(on) => update({ kegsWarmEnabled: on })}
+          />
+          <NumberRow
+            label="Too warm at or above"
+            unit="°C"
+            value={settings.kegsWarmC}
+            min={0}
+            max={40}
+            step={0.5}
+            disabled={!settings.kegsWarmEnabled}
+            onChange={(v) => update({ kegsWarmC: v })}
+          />
+          <ToggleRow
+            label="Brewery near freezing"
+            hint="Anything holding water is at risk below this."
+            on={settings.breweryColdEnabled}
+            onChange={(on) => update({ breweryColdEnabled: on })}
+          />
+          <NumberRow
+            label="Too cold at or below"
+            unit="°C"
+            value={settings.breweryColdC}
+            min={-20}
+            max={15}
+            step={0.5}
+            disabled={!settings.breweryColdEnabled}
+            onChange={(v) => update({ breweryColdC: v })}
+          />
+          <ToggleRow
+            label="Critical sensor offline"
+            hint="The fermenter's pressure sensor, controller or Tilt, or the keg fridge's controller, going quiet. Every device's outage is recorded on the Alerts page either way."
+            on={settings.sensorOfflineEnabled}
+            onChange={(on) => update({ sensorOfflineEnabled: on })}
+          />
         </div>
       )}
     </Card>
+  );
+}
+
+/** Things worth knowing, but not worth waking up for. */
+function RoutineAlertsCard({
+  settings,
+  update,
+}: {
+  settings: NotificationSettings | null;
+  update: (patch: Partial<NotificationSettings>) => void;
+}): JSX.Element {
+  return (
+    <Card title="Routine alerts" hint="One-off news about a keg or a batch, on the ordinary channel.">
+      {!settings ? (
+        <p className="text-sm text-zinc-500">Loading…</p>
+      ) : (
+        <div className="divide-y divide-zinc-800/70">
+          <ToggleRow
+            label="Keg stored too long"
+            hint="Alert when a filled keg passes the age below."
+            on={settings.kegAlertEnabled}
+            onChange={(on) => update({ kegAlertEnabled: on })}
+          />
+          <NumberRow
+            label="Alert after"
+            unit="days"
+            value={settings.kegAlertDays}
+            min={1}
+            max={365}
+            step={1}
+            disabled={!settings.kegAlertEnabled}
+            onChange={(v) => update({ kegAlertDays: Math.round(v) })}
+          />
+          <ToggleRow
+            label="Fermentation complete"
+            hint="Alert when the Tilt's gravity has held flat."
+            on={settings.fermentDoneEnabled}
+            onChange={(on) => update({ fermentDoneEnabled: on })}
+          />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** An on/off row — the shape most of this screen is made of. */
+function ToggleRow({
+  label,
+  hint,
+  on,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  on: boolean;
+  onChange: (on: boolean) => void;
+}): JSX.Element {
+  return (
+    <Row label={label} hint={hint}>
+      <Segmented<'on' | 'off'>
+        value={on ? 'on' : 'off'}
+        options={[
+          { value: 'on', label: 'On' },
+          { value: 'off', label: 'Off' },
+        ]}
+        onChange={(v) => onChange(v === 'on')}
+      />
+    </Row>
+  );
+}
+
+/**
+ * A threshold row. Clamped on the way out rather than on the input's `min`/`max`
+ * alone, because typing into a number field can transit through values the
+ * server's schema would reject — and a rejected save is silent here.
+ */
+function NumberRow({
+  label,
+  unit,
+  value,
+  min,
+  max,
+  step,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  unit: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}): JSX.Element {
+  return (
+    <Row label={label}>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          className={`${inputClass} w-28 text-right tabular-nums`}
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          disabled={disabled}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
+          }}
+        />
+        <span className="w-9 text-xs text-zinc-500">{unit}</span>
+      </div>
+    </Row>
   );
 }
 

@@ -1549,19 +1549,51 @@ export const DEFAULT_DEVICE_DATA_SOURCES: DeviceDataSources = Object.fromEntries
 export type AlertSeverity = 'critical' | 'warning' | 'info';
 
 /**
- * What produced an alert. `device_offline` is raised when a previously-seen
- * device stops reporting (and cleared when it returns); the others mirror the
- * Telegram notification checks and are one-shot events.
+ * What produced an alert.
+ *
+ * Two kinds live here. **Episode** sources describe a condition that starts and
+ * later ends — `device_offline` and every `CRITICAL_ALERT_SOURCES` entry — and
+ * are raised once when the condition begins and resolved when the readings come
+ * back to normal, so a fridge that stays broken buzzes the phone once rather
+ * than every tick. **Event** sources (`keg_age`, `ferment_done`) are one-shot
+ * facts with nothing to resolve.
  */
-export type AlertSource = 'device_offline' | 'keg_age' | 'ferment_done';
+export type AlertSource =
+  | 'device_offline'
+  | 'keg_age'
+  | 'ferment_done'
+  | 'fermenter_pressure_lost'
+  | 'fermenter_pressure_high'
+  | 'fermenter_hot'
+  | 'fermenter_stalled'
+  | 'kegs_warm'
+  | 'brewery_cold';
+
+/**
+ * The telemetry conditions that mean something in the brewery is going wrong
+ * right now — a lost seal, a fridge that has stopped cooling, beer warming up.
+ * These are the ones the hub interrupts a phone for; the rest are recorded to
+ * the Alerts page and left there.
+ */
+export const CRITICAL_ALERT_SOURCES = [
+  'fermenter_pressure_lost',
+  'fermenter_pressure_high',
+  'fermenter_hot',
+  'fermenter_stalled',
+  'kegs_warm',
+  'brewery_cold',
+] as const satisfies readonly AlertSource[];
+
+export type CriticalAlertSource = (typeof CRITICAL_ALERT_SOURCES)[number];
 
 /**
  * A recorded alert event, kept as history on the server — unlike the
  * dashboard's live-derived "active alerts" feed. `resolvedAt` is set when a
- * self-clearing condition ends (today only `device_offline`, when the device
- * comes back online); event alerts (keg age, fermentation done) never resolve.
- * `dismissedAt` is set when a user clicks the alert away on the dashboard, which
- * removes it from every feed (the server omits dismissed alerts from listings).
+ * self-clearing condition ends (an episode source: the device came back, the
+ * pressure recovered, the fridge caught up); event alerts (keg age,
+ * fermentation done) never resolve. `dismissedAt` is set when a user clicks the
+ * alert away on the dashboard, which removes it from every feed (the server
+ * omits dismissed alerts from listings).
  */
 export interface Alert {
   id: number;
@@ -2204,21 +2236,82 @@ export function parseKegDate(d: string): number {
  * key-value `settings` table) — unlike the kiosk's localStorage prefs — because
  * the background scheduler that actually sends the alerts runs on the server and
  * must see one shared, authoritative value regardless of which browser changed
- * it. Telegram credentials themselves are env vars, never stored here.
+ * it. The Firebase credentials that carry the notifications are env vars, never
+ * stored here.
+ *
+ * Thresholds are in the units the hub stores readings in — bar for pressure,
+ * °C for temperature — not in whatever unit the browser happens to display.
+ * The Settings page converts on the way in and out.
  */
 export interface NotificationSettings {
+  // --- Routine (one-shot events) -------------------------------------------
   /** Alert when a beer keg has been filled for at least `kegAlertDays`. */
   kegAlertEnabled: boolean;
   /** Age (days) at which a keg triggers the "drink it" alert. */
   kegAlertDays: number;
   /** Alert when the Tilt's gravity has held flat (fermentation complete). */
   fermentDoneEnabled: boolean;
+
+  // --- Critical (episode conditions, pushed to the phones) -----------------
+  /**
+   * Alert when a fermenter that *was* pressurised falls to nothing — a blown
+   * seal, an open PRV, a lost spunding valve. Self-arming, so an empty
+   * fermenter sitting at zero never triggers it (see the server's critical.ts).
+   */
+  pressureLostEnabled: boolean;
+  /** Bar at or below which pressure counts as lost. */
+  pressureLostBar: number;
+  /** Alert when fermenter pressure climbs past a safe ceiling. */
+  pressureHighEnabled: boolean;
+  /** Bar at or above which pressure counts as dangerous. */
+  pressureHighBar: number;
+  /** Alert when the fermenter chamber runs hot (a heater stuck on). */
+  fermenterHotEnabled: boolean;
+  /** °C at or above which the fermenter chamber counts as overheating. */
+  fermenterHotC: number;
+  /**
+   * Alert when the fermenter controller is calling for heat or cooling but the
+   * chamber just sits at brewery-ambient temperature — the fridge or heater
+   * isn't actually doing anything (unplugged, tripped, or failed).
+   */
+  fermenterStalledEnabled: boolean;
+  /** Alert when the filled-keg fridge warms up. */
+  kegsWarmEnabled: boolean;
+  /** °C at or above which the keg fridge counts as too warm. */
+  kegsWarmC: number;
+  /** Alert when the brewery drops toward freezing. */
+  breweryColdEnabled: boolean;
+  /** °C at or below which the brewery counts as dangerously cold. */
+  breweryColdC: number;
+  /**
+   * Push the existing device-offline alert to the phones when the sensor that
+   * went quiet is one the brewery depends on (the fermenter's pressure sensor,
+   * controller or Tilt, and the keg fridge's controller). Offline alerts for
+   * every device are recorded on the Alerts page regardless.
+   */
+  sensorOfflineEnabled: boolean;
 }
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   kegAlertEnabled: true,
   kegAlertDays: 30,
   fermentDoneEnabled: true,
+  pressureLostEnabled: true,
+  // ~0.7 psi: low enough that a fermenter still holding a token of pressure
+  // isn't called empty, high enough to catch a sensor reading a hair above zero.
+  pressureLostBar: 0.05,
+  pressureHighEnabled: true,
+  // ~29 psi. Well past any spunding setpoint, short of what a stainless
+  // fermenter is rated for.
+  pressureHighBar: 2,
+  fermenterHotEnabled: true,
+  fermenterHotC: 40,
+  fermenterStalledEnabled: true,
+  kegsWarmEnabled: true,
+  kegsWarmC: 12,
+  breweryColdEnabled: true,
+  breweryColdC: 2,
+  sensorOfflineEnabled: true,
 };
 
 // ---------------------------------------------------------------------------
@@ -2850,10 +2943,29 @@ export const priceOverrideQuerySchema = z.object({
  * object each save (last-write-wins). `kegAlertDays` is bounded to a sane range
  * so a fat-fingered value can't disable the alert (0) or push it years out.
  */
+/**
+ * Body for `PUT /api/notifications/settings`. The critical-alert fields are
+ * optional and the server merges what it is given over what is stored, so a
+ * phone running an older build of the app — which fetches the settings, edits
+ * one, and puts the whole object back — keeps working instead of being rejected
+ * for omitting fields it has never heard of. It simply leaves them alone.
+ */
 export const notificationSettingsSchema = z.object({
   kegAlertEnabled: z.boolean(),
   kegAlertDays: z.number().int().min(1).max(365),
   fermentDoneEnabled: z.boolean(),
+  pressureLostEnabled: z.boolean().optional(),
+  pressureLostBar: z.number().min(0).max(1).optional(),
+  pressureHighEnabled: z.boolean().optional(),
+  pressureHighBar: z.number().min(0.1).max(10).optional(),
+  fermenterHotEnabled: z.boolean().optional(),
+  fermenterHotC: z.number().min(20).max(80).optional(),
+  fermenterStalledEnabled: z.boolean().optional(),
+  kegsWarmEnabled: z.boolean().optional(),
+  kegsWarmC: z.number().min(0).max(40).optional(),
+  breweryColdEnabled: z.boolean().optional(),
+  breweryColdC: z.number().min(-20).max(15).optional(),
+  sensorOfflineEnabled: z.boolean().optional(),
 });
 export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchema>;
 

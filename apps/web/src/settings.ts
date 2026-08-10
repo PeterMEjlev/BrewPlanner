@@ -37,7 +37,7 @@ export interface Settings {
    * amber once it's been stored at least `kegWarnDays`, then red past
    * `kegOldDays` — mirroring the brew sheet's yellow/red date highlight. Kept
    * local (not server) like the other display thresholds: a purely visual cue,
-   * separate from the server-side keg-age Telegram alert (`kegAlertDays`).
+   * separate from the server-side keg-age notification (`kegAlertDays`).
    */
   kegWarnDays: number;
   kegOldDays: number;
@@ -222,4 +222,25 @@ export function formatPressure(bar: number, unit: PressureUnit): { value: string
   return unit === 'psi'
     ? { value: String(Math.round(bar * BAR_TO_PSI)), unit: 'PSI' }
     : { value: bar.toFixed(2), unit: 'bar' };
+}
+
+/**
+ * The pair that lets a pressure *setting* be typed in whichever unit this
+ * browser is set to while the server keeps storing bar. {@link formatPressure}
+ * can't do it: it rounds PSI to whole numbers for the dashboard's big readouts,
+ * which would quantise an alert threshold of 0.7 psi to 1 — and it returns text,
+ * where a number input needs a number.
+ */
+export function pressureIn(bar: number, unit: PressureUnit): number {
+  return unit === 'psi' ? Math.round(bar * BAR_TO_PSI * 10) / 10 : Math.round(bar * 100) / 100;
+}
+
+/** The inverse: a figure typed in `unit`, back to the bar the hub stores. */
+export function pressureToBar(value: number, unit: PressureUnit): number {
+  return unit === 'psi' ? Math.round((value / BAR_TO_PSI) * 1000) / 1000 : value;
+}
+
+/** Step and label for a pressure input in the chosen unit. */
+export function pressureInputUnit(unit: PressureUnit): { step: number; label: string } {
+  return unit === 'psi' ? { step: 0.5, label: 'PSI' } : { step: 0.05, label: 'bar' };
 }

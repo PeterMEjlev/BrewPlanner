@@ -1,4 +1,4 @@
-import type { Alert, AlertSeverity, AlertSource } from '@checklist/shared';
+import { type Alert, type AlertSeverity, type AlertSource, CRITICAL_ALERT_SOURCES } from '@checklist/shared';
 import { useCallback, useState } from 'react';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
@@ -36,12 +36,30 @@ const SOURCE_LABEL: Record<AlertSource, string> = {
   device_offline: 'Device offline',
   keg_age: 'Keg age',
   ferment_done: 'Fermentation',
+  fermenter_pressure_lost: 'Pressure lost',
+  fermenter_pressure_high: 'Over-pressure',
+  fermenter_hot: 'Fermenter hot',
+  fermenter_stalled: 'Fridge not responding',
+  kegs_warm: 'Keg fridge warm',
+  brewery_cold: 'Brewery cold',
 };
 
 /**
- * An alert is active until its condition clears: an offline alert until the
- * device reports again, and one-shot events (keg age, fermentation done) until
- * dismissed. Mirrors the dashboard so both badges agree on the count.
+ * Sources whose alerts describe a condition that ends by itself — a device that
+ * comes back, pressure that recovers, a fridge that catches up. Those rows can
+ * read "Resolved"; a one-shot event (keg age, fermentation done) has nothing to
+ * resolve and simply stops being active when it's dismissed. Kept in sync with
+ * the server's episode sources (see the shared AlertSource docs).
+ */
+const EPISODE_SOURCES: ReadonlySet<AlertSource> = new Set<AlertSource>([
+  'device_offline',
+  ...CRITICAL_ALERT_SOURCES,
+]);
+
+/**
+ * An alert is active until its condition clears: an episode alert until the
+ * readings come back to normal, and one-shot events (keg age, fermentation
+ * done) until dismissed. Mirrors the dashboard so both badges agree on the count.
  */
 function isActive(a: Alert): boolean {
   return a.resolvedAt == null;
@@ -49,9 +67,10 @@ function isActive(a: Alert): boolean {
 
 /**
  * The alert history page: a server-backed timeline of past alerts (device
- * offline episodes, keg-age and fermentation-complete events), newest first.
- * Unlike the Overview's live "active alerts" widget, this persists across
- * restarts and shows resolved alerts too.
+ * offline episodes, the critical telemetry conditions, keg-age and
+ * fermentation-complete events), newest first. Unlike the Overview's live
+ * "active alerts" widget, this persists across restarts and shows resolved
+ * alerts too.
  */
 export function AlertsPage(): JSX.Element {
   // Shared with the sidebar's alert badge, which polls the same feed — one
@@ -185,7 +204,7 @@ function AlertRow({
           <p className="mt-1 text-sm text-zinc-400">{alert.detail}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <StatusPill active={active} resolved={alert.source === 'device_offline' && !active} />
+          <StatusPill active={active} resolved={EPISODE_SOURCES.has(alert.source) && !active} />
           {onDismiss && (
             <button
               type="button"

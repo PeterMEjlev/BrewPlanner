@@ -42,8 +42,8 @@ import { registerAuditHook } from '../audit/hook.js';
 import { getRequestUser, requireAdmin, requireAuth } from '../auth/index.js';
 import * as bf from '../brewersfriend.js';
 import { KegWriteNotConfiguredError, fetchKegs, updateKeg } from '../kegs.js';
-import { pushConfigured } from '../notify/push.js';
-import { registerPushToken, unregisterPushToken } from '../notify/pushTokens.js';
+import { pushConfigured, pushToEveryone } from '../notify/push.js';
+import { countPushTargets, registerPushToken, unregisterPushToken } from '../notify/pushTokens.js';
 import * as prices from '../prices.js';
 import { pricingInfo } from '../prices.js';
 import { deleteOverride as deletePriceOverride, saveOverride as savePriceOverride } from '../priceOverrides.js';
@@ -53,7 +53,6 @@ import { ensureInitialRecipeImport, importFromBrewersFriend } from '../recipeImp
 import * as recipeRepo from '../recipeRepo.js';
 import { outdoorTemperature } from '../weather.js';
 import { yeastSpecFor } from '../yeastStrains.js';
-import * as telegram from '../notify/telegram.js';
 import * as repo from '../repo.js';
 import {
   UpdateInProgressError,
@@ -695,14 +694,17 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // --- Notifications ----------------------------------------------------
-  // Operator-tunable alert preferences (keg age, fermentation done). The
-  // background scheduler reads these; Telegram credentials stay in env vars.
+  // Operator-tunable alert preferences: which conditions raise an alert and at
+  // what threshold. The background scheduler reads these; the Firebase
+  // credentials that deliver them stay in env vars.
   app.get('/notifications/settings', async () => repo.getNotificationSettings());
 
   app.put('/notifications/settings', adminOnly, async (req, reply) => {
     const body = parse(notificationSettingsSchema, req.body, reply);
     if (!body) return;
-    return repo.setNotificationSettings(body);
+    // Merged, not replaced: the critical-alert fields are optional so an older
+    // app build can still save the settings it knows about (see the schema).
+    return repo.setNotificationSettings({ ...repo.getNotificationSettings(), ...body });
   });
 
   // --- Graph colours ----------------------------------------------------
@@ -749,21 +751,43 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     return repo.setKegContentColors(body);
   });
 
-  // Send a test message so the operator can confirm delivery from the UI.
-  // 503 when the server has no Telegram credentials; 502 if the send fails.
+  // Whether a notification would actually reach anyone, for the Settings page:
+  // the hub needs Firebase credentials *and* at least one phone to have handed
+  // over a token. Both can be missing independently, and the two failures need
+  // different fixes, so they're reported separately rather than as one boolean.
+  app.get('/notifications/status', async () => ({
+    pushConfigured: pushConfigured(),
+    registeredDevices: countPushTargets(),
+  }));
+
+  // Send a test push so the operator can confirm delivery from the UI. 503 when
+  // there's nothing to deliver through (no Firebase key, or no phone
+  // registered); 502 if every send failed.
   app.post('/notifications/test', adminOnly, async (req, reply) => {
-    if (!telegram.isConfigured()) {
+    if (!pushConfigured()) {
       return reply
         .status(503)
-        .send({ error: 'Telegram is not configured (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID).' });
+        .send({ error: 'Push is not configured (set FCM_SERVICE_ACCOUNT_KEY_FILE on the server).' });
     }
-    try {
-      await telegram.sendTelegram('✅ <b>BrewPlanner</b> test notification from Settings.');
-      return { sent: true };
-    } catch (err) {
-      req.log.error(err, 'Telegram test send failed');
-      return reply.status(502).send({ error: 'Telegram send failed.' });
+    if (countPushTargets() === 0) {
+      return reply
+        .status(503)
+        .send({ error: 'No phone has registered for notifications yet. Sign in to the app first.' });
     }
+    const sent = await pushToEveryone(
+      {
+        title: 'BrewPlanner test',
+        body: 'Notifications are wired up — this is what a brewery alert will look like.',
+        path: '/alerts',
+        critical: true,
+        collapseKey: 'test',
+      },
+      req.log,
+    );
+    if (sent === 0) {
+      return reply.status(502).send({ error: 'Firebase accepted nothing — check the server log.' });
+    }
+    return { sent: true, devices: sent };
   });
 
   // --- Push notifications (Android app) ---------------------------------

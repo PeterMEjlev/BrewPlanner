@@ -1,17 +1,27 @@
-import { type Keg, parseKegDate } from '@checklist/shared';
+import { parseKegDate } from '@checklist/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import { recordAlert } from '../alerts/repo.js';
 import { getRecentReadingsByMetric } from '../devices/repo.js';
 import { fetchKegs } from '../kegs.js';
 import { getNotificationSettings, getSetting, setSetting } from '../repo.js';
-import { sendTelegram } from './telegram.js';
+import { runCriticalChecks } from './critical.js';
+import { pushToEveryone } from './push.js';
 
 /**
- * Periodic notification checks, run on an interval from index.ts. Each check is
- * a recurring *condition* (not a one-shot event), so every send is recorded in
- * the key-value `settings` table under a `notify:` marker and never repeats for
- * the same keg-fill / fermentation. A check throwing never stops the others or
- * the loop — failures are logged and retried next tick.
+ * Periodic notification checks, run on an interval from index.ts. Everything
+ * here ends up in two places: the durable alert history the Alerts page reads,
+ * and — for the ones worth interrupting someone over — a push to the phones.
+ *
+ * Two kinds of check share the loop. The **routine** ones below (a keg that has
+ * been sitting too long, a fermentation that has finished) are one-shot facts
+ * about a thing that has already happened: each send is recorded in the
+ * key-value `settings` table under a `notify:` marker so it never repeats for
+ * the same keg-fill or batch. The **critical** ones in critical.ts watch live
+ * telemetry for something going wrong right now and manage their own
+ * start/resolve episodes.
+ *
+ * A check throwing never stops the others or the loop — failures are logged and
+ * retried next tick.
  */
 
 const DAY_MS = 86_400_000;
@@ -52,6 +62,8 @@ export async function runNotificationChecks(log: FastifyBaseLogger): Promise<voi
       log.error(err, 'fermentation-complete notification check failed');
     }
   }
+
+  await runCriticalChecks(settings, log);
 }
 
 // --- Keg age ----------------------------------------------------------------
@@ -72,24 +84,16 @@ async function checkOldKegs(thresholdDays: number, log: FastifyBaseLogger): Prom
     const marker = `notify:keg:${keg.number}:${keg.date}`;
     if (getSetting(marker)) continue;
 
-    await sendTelegram(kegAlertMessage(keg, ageDays));
-    recordAlert({
-      source: 'keg_age',
-      severity: 'warning',
-      title: `Keg ${keg.number}: ${keg.contents} is ${ageDays} days old`,
-      detail: `Filled ${keg.date}. Time to drink it before it fades.`,
-    });
+    const title = `Keg ${keg.number}: ${keg.contents} is ${ageDays} days old`;
+    const detail = `Filled ${keg.date}${keg.abv ? ` · ${keg.abv}` : ''}. Time to drink it before it fades.`;
+    recordAlert({ source: 'keg_age', severity: 'warning', title, detail });
+    // Routine news, not an emergency: the ordinary channel, and the marker is
+    // written whether or not a phone was listening — an alert is "sent" once it
+    // is in the history, and a hub with no phones must not re-raise it forever.
+    await pushToEveryone({ title, body: detail, path: '/kegs' }, log);
     setSetting(marker, new Date().toISOString());
     log.info(`Sent keg-age alert for keg ${keg.number} (${ageDays} days).`);
   }
-}
-
-function kegAlertMessage(keg: Keg, ageDays: number): string {
-  const abv = keg.abv ? ` · ${keg.abv}` : '';
-  return (
-    `🛢️ <b>Keg ${keg.number}: ${escapeHtml(keg.contents)}</b> is ${ageDays} days old${abv}\n` +
-    `Filled ${keg.date}. Time to drink it before it fades! 🍺`
-  );
 }
 
 // --- Fermentation complete --------------------------------------------------
@@ -128,25 +132,12 @@ async function checkFermentationDone(log: FastifyBaseLogger): Promise<void> {
   const marker = `notify:ferment:${peak.recordedAt}`;
   if (getSetting(marker)) return;
 
-  await sendTelegram(
-    `🍺 <b>Fermentation complete</b>\n` +
-      `Gravity has held at ${fg.toFixed(3)} SG (within ${STABLE_SG.toFixed(3)}) ` +
-      `for ${Math.round(STABLE_HOURS)}h.\n` +
-      `Peaked at ${peak.value.toFixed(3)} — time to cold crash / keg.`,
-  );
-  recordAlert({
-    source: 'ferment_done',
-    severity: 'info',
-    title: 'Fermentation complete',
-    detail:
-      `Gravity held at ${fg.toFixed(3)} SG (within ${STABLE_SG.toFixed(3)}) for ` +
-      `${Math.round(STABLE_HOURS)}h — time to cold crash / keg.`,
-  });
+  const title = 'Fermentation complete';
+  const detail =
+    `Gravity held at ${fg.toFixed(3)} SG (within ${STABLE_SG.toFixed(3)}) for ` +
+    `${Math.round(STABLE_HOURS)}h, down from ${peak.value.toFixed(3)} — time to cold crash / keg.`;
+  recordAlert({ source: 'ferment_done', severity: 'info', title, detail });
+  await pushToEveryone({ title, body: detail, path: '/' }, log);
   setSetting(marker, new Date().toISOString());
   log.info('Sent fermentation-complete alert.');
-}
-
-/** Escape the handful of characters that are special in Telegram's HTML mode. */
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

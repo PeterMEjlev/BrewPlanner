@@ -98,6 +98,17 @@ export interface BrewSystemUpdateStatus {
   log: string;
 }
 
+/**
+ * Whether an alert would actually reach a phone. The two halves fail
+ * independently and need different fixes — a missing Firebase key is the
+ * server's problem, no registered device is the phone's — so the Settings page
+ * gets them separately rather than as one "working" flag.
+ */
+export interface NotificationStatus {
+  pushConfigured: boolean;
+  registeredDevices: number;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {};
   // Only send a JSON content-type when there's actually a body — Fastify
@@ -513,8 +524,9 @@ export const api = {
   clearPriceOverride: (kind: IngredientKind, name: string) =>
     request<void>(`/prices/override?${priceQuery({ kind, name })}`, { method: 'DELETE' }),
 
-  // Notification preferences (server-backed, shared across browsers) + a test
-  // send so the user can confirm Telegram delivery from the Settings screen.
+  // Notification preferences (server-backed, shared across browsers), whether
+  // a notification would reach anyone, and a test send so the user can confirm
+  // delivery to their phone from the Settings screen.
   getNotificationSettings: () =>
     request<NotificationSettings>('/notifications/settings'),
   updateNotificationSettings: (settings: NotificationSettings) =>
@@ -522,8 +534,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),
+  getNotificationStatus: () => request<NotificationStatus>('/notifications/status'),
   sendTestNotification: () =>
-    request<{ sent: boolean }>('/notifications/test', { method: 'POST' }),
+    request<{ sent: boolean; devices: number }>('/notifications/test', { method: 'POST' }),
 
   // This phone's Firebase token, so the hub can push other people's changes to
   // it (native app only — see push.ts). `configured` says whether the hub has

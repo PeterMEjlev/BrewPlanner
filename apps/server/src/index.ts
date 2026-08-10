@@ -8,7 +8,6 @@ import { sqlite } from './db/index.js';
 import { RETENTION_DAYS, pruneOldReadings } from './devices/retention.js';
 import { runNotificationChecks } from './notify/checks.js';
 import { pushConfigError, pushConfigured } from './notify/push.js';
-import { isConfigured as telegramConfigured } from './notify/telegram.js';
 import { startRecipeBackupScheduler } from './recipeBackup.js';
 
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -71,9 +70,10 @@ function installShutdownHandlers(app: FastifyInstance): void {
 
 /**
  * Periodically fold live device state into the durable alert history (offline
- * episodes; see alerts/evaluate.ts). Runs regardless of Telegram config so the
- * Alerts page always has data. Override the cadence with ALERT_INTERVAL_SECONDS;
- * the interval is unref'd so it never holds the process open on shutdown.
+ * episodes; see alerts/evaluate.ts). Runs regardless of whether push is
+ * configured, so the Alerts page always has data. Override the cadence with
+ * ALERT_INTERVAL_SECONDS; the interval is unref'd so it never holds the process
+ * open on shutdown.
  */
 function startAlertScheduler(app: FastifyInstance): void {
   const intervalMs = Number(process.env.ALERT_INTERVAL_SECONDS ?? 60) * 1000;
@@ -85,35 +85,35 @@ function startAlertScheduler(app: FastifyInstance): void {
 }
 
 /**
- * Periodically check for notification conditions (keg age, fermentation done)
- * and push Telegram alerts. Only runs when Telegram is configured; the interval
- * is unref'd so it never holds the process open on shutdown. Override the cadence
- * with NOTIFY_INTERVAL_SECONDS.
+ * Periodically check for the conditions worth telling someone about: the
+ * routine ones (keg age, fermentation done) and the critical telemetry ones (a
+ * fermenter that has lost pressure, a fridge that has stopped cooling). See
+ * notify/checks.ts.
+ *
+ * Runs whether or not push is configured. Every check records to the alert
+ * history first and notifies second, so a hub with no Firebase project still
+ * builds the Alerts page — it just doesn't buzz anybody. Override the cadence
+ * with NOTIFY_INTERVAL_SECONDS; the interval is unref'd so it never holds the
+ * process open on shutdown.
  */
 function startNotificationScheduler(app: FastifyInstance): void {
-  if (!telegramConfigured()) {
-    app.log.info(
-      'Telegram notifications disabled (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to enable).',
-    );
-    return;
-  }
   const intervalMs = Number(process.env.NOTIFY_INTERVAL_SECONDS ?? 300) * 1000;
   const tick = () => void runNotificationChecks(app.log);
   setInterval(tick, intervalMs).unref();
   // Run once shortly after boot so a due alert doesn't wait a full interval.
   setTimeout(tick, 15_000).unref();
-  app.log.info(`Telegram notifications enabled (checking every ${intervalMs / 1000}s).`);
+  app.log.info(`Notification checks enabled (checking every ${intervalMs / 1000}s).`);
 }
 
 /**
- * Say once, at boot, whether the phones will be told about other people's
- * changes (see notify/push.ts). There is no scheduler behind this — pushes are
- * sent as changes happen — but "my phone stopped buzzing" is otherwise a silent
- * failure, and a line in the journal is where you'd go looking.
+ * Say once, at boot, whether the phones will actually be reached (see
+ * notify/push.ts). There is no scheduler behind this — pushes are sent as
+ * changes and alerts happen — but "my phone stopped buzzing" is otherwise a
+ * silent failure, and a line in the journal is where you'd go looking.
  */
 function reportPushStatus(app: FastifyInstance): void {
   if (pushConfigured()) {
-    app.log.info('Push notifications enabled (Android app is told about others\' changes).');
+    app.log.info('Push notifications enabled (the app is told about changes and critical alerts).');
     return;
   }
   const err = pushConfigError();

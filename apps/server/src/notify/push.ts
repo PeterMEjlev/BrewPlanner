@@ -1,7 +1,7 @@
 import { createSign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { FastifyBaseLogger } from 'fastify';
-import { pushTargetsExcept, unregisterPushToken } from './pushTokens.js';
+import { type PushTarget, pushTargetsExcept, unregisterPushToken } from './pushTokens.js';
 
 /**
  * Push notifications to the Android app, over Firebase Cloud Messaging.
@@ -32,12 +32,37 @@ interface ServiceAccountKey {
   project_id: string;
 }
 
+/**
+ * The Android notification channels the hub posts to. They exist so the two
+ * kinds of message can be silenced independently on the phone: someone renaming
+ * a keg and the fermenter losing pressure at 3am do not deserve the same
+ * treatment, and Android only lets the person holding the phone make that
+ * distinction per channel. Both are created by the app on first run — a message
+ * posted to a channel that doesn't exist is dropped — so these ids must match
+ * the ones in the web app's push.ts.
+ */
+const CHANGES_CHANNEL = 'konfus-changes';
+const CRITICAL_CHANNEL = 'konfus-critical';
+
 /** What a push says, plus where tapping it should land in the app. */
 export interface PushMessage {
   title: string;
   body: string;
   /** In-app path to open on tap, e.g. `/kegs`. */
   path: string;
+  /**
+   * Something is wrong in the brewery right now: post to the critical channel
+   * instead of the changes one. Only the hub's own alert checks set this — a
+   * person's edit is never critical, however dramatic.
+   */
+  critical?: boolean;
+  /**
+   * What FCM should collapse this message against, so a burst about one subject
+   * arrives as one line rather than ten. Defaults to the target path; critical
+   * alerts pass their alert source, which keeps a pressure alarm from swallowing
+   * a temperature alarm just because both open the dashboard.
+   */
+  collapseKey?: string;
 }
 
 function base64url(value: Buffer | string): string {
@@ -150,11 +175,14 @@ async function sendToToken(
           data: { path: message.path },
           android: {
             // Changes in the brewery are worth waking the phone for, but they
-            // are not alarms: normal priority, one channel, collapsed by path so
-            // a burst about the same page shows as one line rather than ten.
+            // are not alarms — the channel is what separates the two, and the
+            // collapse key keeps a burst about one subject to a single line.
             priority: 'HIGH',
-            collapseKey: message.path,
-            notification: { channelId: 'konfus-changes', defaultSound: true },
+            collapseKey: message.collapseKey ?? message.path,
+            notification: {
+              channelId: message.critical ? CRITICAL_CHANNEL : CHANGES_CHANNEL,
+              defaultSound: true,
+            },
           },
         },
       }),
@@ -172,6 +200,44 @@ async function sendToToken(
 }
 
 /**
+ * Fan one message out to a set of phones. Never throws: delivery is best-effort
+ * by nature, and callers fire and forget rather than block a response on FCM.
+ * Resolves to the number of phones that took it.
+ */
+async function deliver(
+  targets: PushTarget[],
+  message: PushMessage,
+  log: FastifyBaseLogger,
+): Promise<number> {
+  try {
+    const key = serviceAccountKey();
+    if (!key || targets.length === 0) return 0;
+
+    const bearer = await accessToken(key);
+    const results = await Promise.all(
+      targets.map(async (target) => {
+        try {
+          const alive = await sendToToken(key, bearer, target.token, message);
+          if (!alive) {
+            unregisterPushToken(target.token);
+            log.info('Dropped a push token FCM no longer recognises');
+            return false;
+          }
+          return true;
+        } catch (err) {
+          log.warn({ err }, 'Push notification failed for one device');
+          return false;
+        }
+      }),
+    );
+    return results.filter(Boolean).length;
+  } catch (err) {
+    log.warn({ err }, 'Push notification failed');
+    return 0;
+  }
+}
+
+/**
  * Announce a change to every registered phone except the one belonging to the
  * account that made it. Never throws and never blocks the caller's response —
  * callers fire and forget.
@@ -181,27 +247,18 @@ export async function pushChangeToOthers(
   message: PushMessage,
   log: FastifyBaseLogger,
 ): Promise<void> {
-  try {
-    const key = serviceAccountKey();
-    if (!key) return;
-    const targets = pushTargetsExcept(actorUserId);
-    if (targets.length === 0) return;
+  await deliver(pushTargetsExcept(actorUserId), message, log);
+}
 
-    const bearer = await accessToken(key);
-    await Promise.all(
-      targets.map(async (target) => {
-        try {
-          const alive = await sendToToken(key, bearer, target.token, message);
-          if (!alive) {
-            unregisterPushToken(target.token);
-            log.info('Dropped a push token FCM no longer recognises');
-          }
-        } catch (err) {
-          log.warn({ err }, 'Push notification failed for one device');
-        }
-      }),
-    );
-  } catch (err) {
-    log.warn({ err }, 'Push notification failed');
-  }
+/**
+ * Tell *every* registered phone. Used for the hub's own alerts, which nobody
+ * caused and so have no author to leave out — the person who happens to be
+ * signed in on the phone next to the fermenter is exactly who needs telling.
+ * Resolves to how many phones took it.
+ */
+export async function pushToEveryone(
+  message: PushMessage,
+  log: FastifyBaseLogger,
+): Promise<number> {
+  return deliver(pushTargetsExcept(null), message, log);
 }

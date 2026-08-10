@@ -93,35 +93,43 @@ export function dismissAllAlerts(): number {
 }
 
 /**
- * The open (unresolved) offline alert for a device, if one exists — used to
- * dedupe so a device that stays offline raises a single alert, not one per tick.
+ * Narrows to one episode: a given source on a given device (or on no device at
+ * all, for conditions that aren't tied to one). `deviceId: null` has to be an
+ * `IS NULL` rather than an `= NULL`, which would match nothing.
  */
-export function openOfflineAlert(deviceId: number): Alert | null {
+function episodeWhere(source: AlertSource, deviceId: number | null) {
+  return and(
+    deviceId == null ? isNull(alerts.deviceId) : eq(alerts.deviceId, deviceId),
+    eq(alerts.source, source),
+    isNull(alerts.resolvedAt),
+  );
+}
+
+/**
+ * The open (unresolved) alert of this kind for a device, if one exists — the
+ * dedupe behind every episode source: a condition that persists (a device that
+ * stays offline, a fridge that stays warm) raises a single alert, not one per
+ * tick, and so buzzes the phones once.
+ */
+export function openAlert(source: AlertSource, deviceId: number | null): Alert | null {
   const row = db
     .select()
     .from(alerts)
-    .where(
-      and(
-        eq(alerts.deviceId, deviceId),
-        eq(alerts.source, 'device_offline'),
-        isNull(alerts.resolvedAt),
-      ),
-    )
+    .where(episodeWhere(source, deviceId))
     .orderBy(desc(alerts.id))
     .get();
   return row ? toPublic(row) : null;
 }
 
-/** Close any open offline alerts for a device (it came back online). */
-export function resolveOfflineAlerts(deviceId: number): void {
-  db.update(alerts)
+/**
+ * Close any open alert of this kind for a device — the condition has ended (the
+ * device reported again, the pressure recovered). Returns how many it closed, so
+ * a caller can log a recovery only when there was something to recover from.
+ */
+export function resolveAlerts(source: AlertSource, deviceId: number | null): number {
+  return db
+    .update(alerts)
     .set({ resolvedAt: nowIso() })
-    .where(
-      and(
-        eq(alerts.deviceId, deviceId),
-        eq(alerts.source, 'device_offline'),
-        isNull(alerts.resolvedAt),
-      ),
-    )
-    .run();
+    .where(episodeWhere(source, deviceId))
+    .run().changes;
 }

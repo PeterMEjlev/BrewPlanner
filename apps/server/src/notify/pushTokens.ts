@@ -49,7 +49,12 @@ export function pushTargetsExcept(exceptUserId: number | null): PushTarget[] {
   return rows;
 }
 
-/** Whether any phone is registered at all — lets the caller skip the work early. */
-export function hasPushTargets(): boolean {
-  return db.select({ token: pushTokens.token }).from(pushTokens).limit(1).all().length > 0;
+/**
+ * How many phones are registered. Shown on the Settings page, where "push is
+ * configured but nothing arrives" is otherwise indistinguishable from "push is
+ * broken" — the usual cause being that nobody has opened the app and granted
+ * the notification permission yet.
+ */
+export function countPushTargets(): number {
+  return db.select({ token: pushTokens.token }).from(pushTokens).all().length;
 }

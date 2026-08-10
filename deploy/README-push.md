@@ -1,19 +1,31 @@
 # Push notifications to the Android app — one-time setup
 
-When somebody else changes something that matters — a fermenter setpoint, what
-is in a keg, a saved recipe, a started brew session, a to-do added or removed,
-a settings change — every *other* signed-in phone gets a notification. Tapping
-it opens the page the change was on.
+The hub sends two kinds of notification, on two Android channels so they can be
+silenced independently from the phone's own notification settings.
 
-You are never notified about your own changes. That is the whole reason the
-token is stored against an account: the hub knows who made the change and
-leaves that person's phone out.
+**Brewery alerts** (`konfus-critical`) go to *every* phone: the fermenter losing
+pressure or running away with it, a chamber overheating, a fridge that has
+stopped cooling, kegs warming up, the brewery near freezing, a critical sensor
+gone quiet. Nobody caused these, so there is nobody to leave out. Which of them
+fire, and at what threshold, is set in the app under **Settings →
+Notifications**; the same screen has a **Send test** button and says whether
+delivery is working at all.
+
+**Changes** (`konfus-changes`) go to every *other* signed-in phone when somebody
+changes something that matters — a fermenter setpoint, what is in a keg, a saved
+recipe, a started brew session, a to-do added or removed, a settings change.
+Tapping one opens the page the change was on. You are never notified about your
+own changes; that is the whole reason the token is stored against an account.
 
 **Nothing below is needed for the app to work.** With no Firebase credentials
 the hub simply never pushes (it says so once at boot, in the journal), and the
-app is unchanged in every other respect. What this adds is the buzz.
+app is unchanged in every other respect — the alerts are still recorded and
+shown on the Alerts page. What this adds is the buzz.
 
 ## What sends a notification
+
+Brewery alerts are listed in **Settings → Notifications** and all open the
+Alerts page. Changes:
 
 | Change                                     | Opens       |
 | ------------------------------------------ | ----------- |
@@ -85,7 +97,7 @@ separate from the JSON above, and the one thing here that is a secret.
    ```sh
    sudo systemctl restart checklist-server
    journalctl -u checklist-server -n 30 | grep -i push
-   # Push notifications enabled (Android app is told about others' changes).
+   # Push notifications enabled (the app is told about changes and critical alerts).
    ```
 
 The Pi only needs **outbound** HTTPS to Google for this. Nothing new is exposed,
@@ -113,10 +125,19 @@ user's notifications.
 
 ## Troubleshooting
 
-**Nothing arrives at all.** Check the boot line from step 2. "Push notifications
-disabled" means the hub has no key; a warning about an unreadable key means the
-JSON is not a service-account key (the `google-services.json` from step 1 is a
-common mix-up — that one belongs in the APK, not on the Pi).
+**Nothing arrives at all.** Open **Settings → Notifications** first: the
+Delivery row says whether the hub has a key and how many phones are registered,
+which separates the two causes. Then check the boot line from step 2. "Push
+notifications disabled" means the hub has no key; a warning about an unreadable
+key means the JSON is not a service-account key (the `google-services.json` from
+step 1 is a common mix-up — that one belongs in the APK, not on the Pi).
+
+**Changes arrive but brewery alerts don't** (or the reverse). They are separate
+Android channels, so one can be muted on the phone while the other works:
+Settings → Apps → Konfus → Notifications, then check *Brewery alerts* and
+*Brewery changes*. Also worth checking on the hub: **Settings → Notifications**
+has an on/off per alert, and a sensor left on **mock** data never raises one —
+only real readings can.
 
 **One phone gets nothing, others do.** It never registered: notification
 permission was declined, or the build has no `google-services.json`. Sign out

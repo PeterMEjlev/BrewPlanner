@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { DEFAULT_RECIPE_SETTINGS } from '@checklist/shared';
+import { DEFAULT_NOTIFICATION_SETTINGS, DEFAULT_RECIPE_SETTINGS } from '@checklist/shared';
 import type { RecipeEditInput } from '@checklist/shared';
 
 /**
@@ -191,14 +191,15 @@ describe('Bruce chat tools', () => {
   // --- Settings -------------------------------------------------------------
 
   it('changes only the notification field it was given', async () => {
-    repo.setNotificationSettings({ kegAlertEnabled: true, kegAlertDays: 30, fermentDoneEnabled: true });
+    // Seeded and asserted from the defaults, so the point of the test — that one
+    // named field moves and nothing else does — survives new settings being added.
+    repo.setNotificationSettings({ ...DEFAULT_NOTIFICATION_SETTINGS, kegAlertDays: 30 });
 
     const reply = await tools.runBruceTool('update_notification_settings', { keg_alert_days: 21 }, ASKER);
     assert.match(reply, /keg age threshold 21 days/);
     assert.deepEqual(repo.getNotificationSettings(), {
-      kegAlertEnabled: true,
+      ...DEFAULT_NOTIFICATION_SETTINGS,
       kegAlertDays: 21,
-      fermentDoneEnabled: true,
     });
 
     const refused = await tools.runBruceTool('update_notification_settings', { keg_alert_days: 900 }, ASKER);

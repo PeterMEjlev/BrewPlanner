@@ -41,6 +41,20 @@ const NOTIFICATION_FIELDS: readonly FieldLabel<NotificationSettings>[] = [
   { key: 'kegAlertEnabled', label: 'keg-age alerts', value: onOff },
   { key: 'kegAlertDays', label: 'the keg-age alert threshold', value: withUnit('days') },
   { key: 'fermentDoneEnabled', label: 'fermentation-done alerts', value: onOff },
+  // Switching a critical alert off is exactly the change someone will want to
+  // find in the history later, when the thing it watches for goes wrong quietly.
+  { key: 'pressureLostEnabled', label: 'pressure-lost alerts', value: onOff },
+  { key: 'pressureLostBar', label: 'the pressure-lost threshold', value: withUnit('bar', 2) },
+  { key: 'pressureHighEnabled', label: 'over-pressure alerts', value: onOff },
+  { key: 'pressureHighBar', label: 'the over-pressure threshold', value: withUnit('bar', 2) },
+  { key: 'fermenterHotEnabled', label: 'fermenter-overheating alerts', value: onOff },
+  { key: 'fermenterHotC', label: 'the fermenter-overheating threshold', value: withUnit('°C', 1) },
+  { key: 'fermenterStalledEnabled', label: 'fermenter-fridge alerts', value: onOff },
+  { key: 'kegsWarmEnabled', label: 'keg-fridge alerts', value: onOff },
+  { key: 'kegsWarmC', label: 'the keg-fridge threshold', value: withUnit('°C', 1) },
+  { key: 'breweryColdEnabled', label: 'brewery-freezing alerts', value: onOff },
+  { key: 'breweryColdC', label: 'the brewery-freezing threshold', value: withUnit('°C', 1) },
+  { key: 'sensorOfflineEnabled', label: 'sensor-offline alerts', value: onOff },
 ];
 
 const GRAPH_COLOR_FIELDS: readonly FieldLabel<GraphColors>[] = [
