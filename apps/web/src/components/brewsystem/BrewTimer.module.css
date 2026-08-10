@@ -97,40 +97,75 @@
   font-weight: var(--font-weight-medium);
 }
 
-/* Phone: the timer keeps its full size relative to the rows above — it's the
-   one card still worth reading across the brewery — but loses the padding that
-   made it a tall block, so the vessels above it stay on screen with it. */
+/* Phone: the timer becomes two short lines — caption and hint on one, the
+   digits on the other — and stops taking a share of the screen's spare height.
+   It was the tallest card on the panel while being the one a brewer looks at
+   least often; the height it used to grow into now goes to the pot cards and
+   the pumps (see BrewingPanel.module.css), whose sliders are what a wet hand
+   actually has to hit.
+
+   The three digit pairs also spread across the full width here rather than
+   sitting together in the middle. Each one is its own drag zone, and grouped in
+   the centre of a full-width card all three landed inside the middle (minutes)
+   third — so a drag on the hours changed the minutes. Spread, each pair sits in
+   the middle of its own zone, and the colons fall on the boundaries between
+   them. (BrewTimer.tsx matches a press to the nearest pair, so the two can't
+   drift apart again.) */
 @media (max-width: 640px) {
   .brewTimer {
-    padding: 6px 12px 8px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    padding: 4px 12px 6px;
     gap: 0;
-    /* The panel gives the timer the largest single share of a tall screen's
-       spare height (see BrewingPanel.module.css) — mostly spent on the digits,
-       which grow with it; `center` keeps the three lines together in the middle
-       of the card rather than riding at its top. */
-    flex: 1.4 1 auto;
-    justify-content: center;
+    /* Content height only: the rows above take the spare screen instead. */
+    flex: 0 0 auto;
   }
 
   .label {
+    grid-area: 1 / 1;
     font-size: var(--font-size-xs);
   }
 
-  /* HH:MM:SS is eight monospace characters plus the segment padding either side
-     of each pair — at the kiosk's 56px and 4px tracking that is ~420px, so the
-     tracking goes as well as the size (via --font-size-4xl) to bring the row
-     inside a narrow phone. */
+  /* Onto the caption's line — as the hint of a card that is now mostly digits,
+     it doesn't need a line of its own. */
+  .statusHint {
+    grid-area: 1 / 2;
+    font-size: var(--font-size-xs);
+    text-align: right;
+  }
+
+  /* HH:MM:SS is eight characters plus the segment padding either side of each
+     pair — at the kiosk's 56px and 4px tracking that is ~420px, so the tracking
+     goes as well as the size (via --font-size-4xl) to bring the row inside a
+     narrow phone. */
   .timeDisplay {
+    grid-area: 2 / 1 / 3 / -1;
     letter-spacing: 1px;
   }
 
+  /* Equal thirds of the card, each centred: the drag zones made visible. */
   .segment {
+    flex: 1;
+    text-align: center;
     /* Vertical padding is the drag target's height, so it stays generous while
        the card around it tightens. */
     padding: 6px 4px;
   }
 
+  .colon {
+    color: var(--color-text-dark);
+  }
+}
+
+/* The narrow half of the phone range (a 320px screen, the smallest still in
+   use). Worst case is "BREW STOPWATCH" beside "Timer Complete! • Tap to
+   Dismiss": at 11px that pair is a few pixels over the line and the hint wraps,
+   costing the card a whole extra row. Neither is a touch target — the card
+   itself is — so they give back the pixel rather than the layout. */
+@media (max-width: 380px) {
+  .label,
   .statusHint {
-    font-size: var(--font-size-xs);
+    font-size: 10px;
   }
 }

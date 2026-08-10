@@ -10,7 +10,8 @@ import styles from './BrewTimer.module.css';
  * (fire-and-forget, like every other control on this page).
  *
  * Gestures: tap = start/pause, hold = reset, vertical drag = set the segment
- * under the finger (left third = hours, middle = minutes, right = seconds).
+ * under the finger — whichever of HH / MM / SS is drawn nearest to it, so the
+ * pair you press is always the pair you change.
  */
 
 const postTimer = (action: 'start' | 'stop' | 'reset' | 'set', seconds?: number): void => {
@@ -21,8 +22,11 @@ const DRAG_THRESHOLD = 20; // pixels of vertical drag per tick
 const DRAG_START_THRESHOLD = 10; // pixels before a press is considered a drag
 const LONG_PRESS_MS = 800;
 
+const SEGMENTS = ['h', 'm', 's'] as const;
+type Segment = (typeof SEGMENTS)[number];
+
 interface Press {
-  segment: 'h' | 'm' | 's';
+  segment: Segment;
   startY: number;
   accumulated: number;
   dragging: boolean;
@@ -42,6 +46,9 @@ function BrewTimer({ timerState }: { timerState: BrewTimerState }): JSX.Element 
 
   // Press state — covers tap, drag-to-adjust, and long-press-to-reset
   const pressRef = useRef<Press | null>(null);
+  // The rendered digit pairs, so a press can be matched against where they
+  // actually are rather than against a fixed slice of the card (see segmentAt).
+  const segmentRefs = useRef<Record<Segment, HTMLDivElement | null>>({ h: null, m: null, s: null });
 
   const canAdjust = !isRunning && displaySeconds === target;
 
@@ -84,7 +91,35 @@ function BrewTimer({ timerState }: { timerState: BrewTimerState }): JSX.Element 
     }
   }, [timerState]);
 
-  const applySegmentDelta = (segment: 'h' | 'm' | 's', delta: number): void => {
+  /**
+   * The digit pair a press belongs to: the one drawn nearest to it, which puts
+   * the boundary between two zones exactly halfway between the two numbers.
+   * The card is the touch target but the digits don't fill it — they sit at
+   * different widths on the kiosk and on a phone — so slicing the card into
+   * thirds would hand a press on a number to the wrong pair. That fallback is
+   * kept only for the frame before the refs attach.
+   */
+  const segmentAt = (clientX: number, card: HTMLElement): Segment => {
+    let closest: Segment | null = null;
+    let bestDistance = Infinity;
+    for (const key of SEGMENTS) {
+      const el = segmentRefs.current[key];
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      const distance = Math.abs(clientX - (rect.left + rect.width / 2));
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        closest = key;
+      }
+    }
+    if (closest) return closest;
+    const rect = card.getBoundingClientRect();
+    const third = rect.width / 3;
+    const relX = clientX - rect.left;
+    return relX < third ? 'h' : relX < 2 * third ? 'm' : 's';
+  };
+
+  const applySegmentDelta = (segment: Segment, delta: number): void => {
     setTarget((prev) => {
       const h = Math.floor(prev / 3600);
       const m = Math.floor((prev % 3600) / 60);
@@ -141,10 +176,7 @@ function BrewTimer({ timerState }: { timerState: BrewTimerState }): JSX.Element 
   // Unified card-level pointer handling.
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const relX = e.clientX - rect.left;
-    const third = rect.width / 3;
-    const segment: Press['segment'] = relX < third ? 'h' : relX < 2 * third ? 'm' : 's';
+    const segment = segmentAt(e.clientX, e.currentTarget);
 
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -232,11 +264,32 @@ function BrewTimer({ timerState }: { timerState: BrewTimerState }): JSX.Element 
     >
       <div className={styles.label}>Brew {mode}</div>
       <div className={styles.timeDisplay}>
-        <div className={styles.segment}>{String(h).padStart(2, '0')}</div>
+        <div
+          className={styles.segment}
+          ref={(el) => {
+            segmentRefs.current.h = el;
+          }}
+        >
+          {String(h).padStart(2, '0')}
+        </div>
         <span className={styles.colon}>:</span>
-        <div className={styles.segment}>{String(m).padStart(2, '0')}</div>
+        <div
+          className={styles.segment}
+          ref={(el) => {
+            segmentRefs.current.m = el;
+          }}
+        >
+          {String(m).padStart(2, '0')}
+        </div>
         <span className={styles.colon}>:</span>
-        <div className={styles.segment}>{String(s).padStart(2, '0')}</div>
+        <div
+          className={styles.segment}
+          ref={(el) => {
+            segmentRefs.current.s = el;
+          }}
+        >
+          {String(s).padStart(2, '0')}
+        </div>
       </div>
       <div className={styles.statusHint}>{getHint()}</div>
     </div>
