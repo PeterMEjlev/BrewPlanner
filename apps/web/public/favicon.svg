@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"
+     aria-label="Konfus">
+  <rect width="64" height="64" rx="14" fill="#09090b" />
+  <g fill="#ffffff">
+    <path d="M 12.157 11.520 L 22.141 11.520 L 22.141 52.480 L 12.157 52.480 Z" />
+    <path d="M 20.097 34.749 L 51.843 11.520 L 34.935 11.520 L 14.201 26.691 Z" />
+    <path d="M 13.963 34.563 L 35.569 52.480 L 51.209 52.480 L 20.336 26.877 Z" />
+  </g>
+</svg>

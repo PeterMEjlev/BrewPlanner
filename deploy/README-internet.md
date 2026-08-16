@@ -150,8 +150,44 @@ few seconds while the server restarts, then confirms the new version.
   Google, etc.) *in front of* the app in the Cloudflare dashboard
   (Zero Trust → Access → Applications). Then only approved identities ever
   reach the login page at all.
-- **WAF / rate limiting** — Cloudflare's dashboard can rate-limit
-  `/api/auth/login` to blunt brute-force attempts.
+- **WAF / rate limiting** — the login endpoint is already throttled in the app
+  (10/min per client IP, keyed on `cf-connecting-ip`; see the rate-limit
+  registration in `apps/server/src/app.ts`). What that does *not* cover is sheer
+  volume against everything else: nothing stops one IP pushing thousands of
+  requests a second through the tunnel at a Raspberry Pi running SQLite. One
+  edge rule closes that, and stops the traffic at Cloudflare so the Pi never
+  sees it.
+
+  **Security → WAF → Rate limiting rules → Create rule:**
+
+  | Field | Value |
+  | --- | --- |
+  | If incoming requests match | `(http.host eq "konfusbrewing.com")` |
+  | Characteristics | IP address |
+  | Period | 1 minute |
+  | Requests | 1000 |
+  | Action | Block |
+  | Duration | 10 seconds (or the shortest the plan offers) |
+
+  Scoping to the app hostname keeps the rule clear of `ssh.konfusbrewing.com`,
+  which is protected by Cloudflare Access instead. The free plan allows one rate
+  limiting rule and offers a reduced set of periods/durations — pick the nearest
+  option the UI gives you.
+
+  **Why 1000 and not something tighter:** the dashboard is poll-driven, and the
+  polls are not slow. The Bruce mic meter alone runs at 400 ms (`LEVEL_POLL_MS`)
+  = 150 req/min, plus the Bruce page at 2 s, a job poll at 1.5 s while one runs,
+  and four shared fleet channels at 15 s — roughly 236 req/min at peak for a
+  *single* client. The Android app talks to the tunnel hostname even on the home
+  Wi-Fi, so a phone and a laptop at home share one public IP and one bucket:
+  ~470 req/min of entirely legitimate traffic. A 100/min limit would lock you
+  out of your own brewery. 1000/min leaves ~4x headroom while still capping any
+  one IP at ~16 req/s.
+
+  After enabling it, watch **Security → Events** for a few days and confirm the
+  only thing it ever blocks is something you don't recognise. If you later add
+  faster polling, re-check the arithmetic above before assuming the ceiling
+  still fits.
 - Keep `COOKIE_SECURE=true` and `NODE_ENV=production` (already set in the
   server service) so session cookies are only sent over HTTPS.
 

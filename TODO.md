@@ -3,7 +3,7 @@
 
 - Remove left-over bruce logic in BrewSystem3.0 repo
 
-- make settings page remember last sub menu when revisited
+
 
 - ## Add support for
   - Electricity (Watt) usage
@@ -42,3 +42,12 @@ their next poll. An SSE endpoint (GET /api/events) broadcasting a device-status
 event on each accepted ingest would make dashboards update instantly, cut request
 volume, and work through the tunnel. Keep polling as fallback. Optional — polling
 does work.
+
+## Next up by impact
+#12 (split Dashboard.tsx / SettingsDesktop.tsx — `fermentationDone` has already
+converged into ferment.ts, so the ferment-status hook is the natural next piece)
+and #13 (SSE push instead of polling, now that one shared channel per resource
+would be easy to feed from a single event stream).
+
+Still untested after #14: the notify/checks.ts thresholds, and the keg grid's
+optimistic-edit path.
