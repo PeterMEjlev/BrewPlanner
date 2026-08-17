@@ -22,6 +22,8 @@
 
 import {
   DEFAULT_GRAPH_COLORS,
+  EMPTIED_KEG_FIELDS,
+  KEG_STATE_CONTENTS,
   REPORTING_INTERVAL_SEC,
   SENSOR_CATALOG,
   abvFromGravities,
@@ -290,7 +292,7 @@ function alertSection(): string {
 }
 
 /** Contents values that are a keg state rather than a beer. */
-const NON_BEER = ['???', 'Clean', 'Dirty', 'Starsan'];
+const NON_BEER = KEG_STATE_CONTENTS;
 
 /**
  * The keg board in one sentence: how many of each beer, then the empties.
@@ -1487,7 +1489,7 @@ const TOOLS: Record<string, ToolSpec> = {
         number: { type: 'string', description: 'Which keg, as written on the board, e.g. "5".' },
         action: enumOf(
           ['fill', 'empty', 'clean', 'edit'],
-          '"fill" needs `contents`, and stamps today unless a date is given. "empty" sets it Dirty and clears the beer\'s details. "clean" sets it Clean. "edit" changes only the fields you pass.',
+          '"fill" needs `contents`, and stamps today unless a date is given. "empty" sets it Dirty and clears what the beer left behind — its date, ABV, recipe link and old note — though a `note` passed with it is kept, for what is wrong with the keg itself. "clean" sets it Clean. "edit" changes only the fields you pass.',
         ),
         contents: { type: 'string', description: 'What is in it — the beer name when filling.' },
         abv: { type: 'string', description: 'ABV as text, e.g. "6.2%".' },
@@ -1530,7 +1532,7 @@ const TOOLS: Record<string, ToolSpec> = {
       const today = new Date();
       const todayText = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
 
-      let fields: { contents: string; date: string; note: string; abv: string };
+      let fields: { contents: string; date: string; note: string; abv: string; recipeId?: string };
       switch (action) {
         case 'fill':
           fields = {
@@ -1542,9 +1544,12 @@ const TOOLS: Record<string, ToolSpec> = {
           break;
         // Emptying and cleaning both clear the beer's details: a Dirty keg
         // carrying the last beer's ABV and fill date reads, at a glance on the
-        // board, as though it were still full of it.
+        // board, as though it were still full of it. Emptying spells the whole
+        // set out (recipe link included) — updateKeg would enforce it anyway,
+        // but the audit summary below reads off these fields. The old beer's
+        // note goes with them; a note given *now* is about the keg, so it stays.
         case 'empty':
-          fields = { contents: 'Dirty', date: '', note: text(args, 'note') ?? '', abv: '' };
+          fields = { contents: 'Dirty', ...EMPTIED_KEG_FIELDS, note: text(args, 'note') ?? '' };
           break;
         case 'clean':
           fields = { contents: 'Clean', date: '', note: text(args, 'note') ?? '', abv: '' };

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_KEG_CONTENT_COLORS, parseKegDate, parseKegs } from './index.js';
+import {
+  DEFAULT_KEG_CONTENT_COLORS,
+  holdsBeer,
+  isDirtyContents,
+  normalizeKegUpdate,
+  parseKegDate,
+  parseKegs,
+} from './index.js';
 
 /**
  * The keg sheet is a Google Sheet published as CSV, so this parser is fed
@@ -60,6 +67,79 @@ describe('parseKegs', () => {
 
   it('survives an empty export', () => {
     expect(parseKegs('')).toEqual([]);
+  });
+});
+
+describe('normalizeKegUpdate', () => {
+  const full = {
+    contents: 'Hazy IPA',
+    date: '04/07/2026',
+    note: 'Dry hopped',
+    abv: '6.2',
+    recipeId: 'rec-1',
+  };
+
+  it('clears the beer behind a keg marked dirty', () => {
+    // The whole point: an emptied keg keeps nothing of what was in it, or the
+    // board reads as though it were still full — and the fill date keeps
+    // tripping the keg-age alert.
+    expect(normalizeKegUpdate({ ...full, contents: 'Dirty', note: '' })).toEqual({
+      contents: 'Dirty',
+      date: '',
+      note: '',
+      abv: '',
+      recipeId: '',
+    });
+  });
+
+  it('keeps a note written on a dirty keg', () => {
+    // A dirty keg's note is about the keg — "seal is weeping" is worth reading
+    // at the wash. Only the *previous* beer's note goes, and dropping that is
+    // the editor's job at the moment the keg turns dirty, not this one's.
+    expect(normalizeKegUpdate({ ...full, contents: 'Dirty', note: 'Seal is weeping' })).toMatchObject(
+      { contents: 'Dirty', note: 'Seal is weeping', date: '', abv: '', recipeId: '' },
+    );
+  });
+
+  it('clears the recipe link even when the caller omitted it', () => {
+    // Omitted means "leave the cell alone" to the sheet writer, so the blank has
+    // to be sent explicitly or the dirty keg stays linked to its last recipe.
+    const { recipeId: _omitted, ...withoutRecipe } = full;
+    expect(normalizeKegUpdate({ ...withoutRecipe, contents: 'dirty' })).toHaveProperty(
+      'recipeId',
+      '',
+    );
+  });
+
+  it('leaves any other content untouched', () => {
+    expect(normalizeKegUpdate(full)).toEqual(full);
+    expect(normalizeKegUpdate({ ...full, contents: 'Clean' })).toEqual({ ...full, contents: 'Clean' });
+  });
+});
+
+describe('holdsBeer', () => {
+  it('says no to every keg state, however it is cased', () => {
+    // What the transfer picker offers as a target: a keg nobody can pour from.
+    for (const state of ['???', 'Clean', 'Dirty', 'Starsan', 'clean', ' DIRTY ', '']) {
+      expect(holdsBeer(state)).toBe(false);
+    }
+  });
+
+  it('says yes to a beer, including one named after a state', () => {
+    expect(holdsBeer('NEIPA')).toBe(true);
+    expect(holdsBeer('Dirty Blonde')).toBe(true);
+  });
+});
+
+describe('isDirtyContents', () => {
+  it('matches however the sheet spells it', () => {
+    expect(isDirtyContents('Dirty')).toBe(true);
+    expect(isDirtyContents(' dirty ')).toBe(true);
+  });
+
+  it('does not match a beer that merely mentions it', () => {
+    expect(isDirtyContents('Dirty Blonde')).toBe(false);
+    expect(isDirtyContents('')).toBe(false);
   });
 });
 

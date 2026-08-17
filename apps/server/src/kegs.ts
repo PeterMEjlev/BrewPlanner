@@ -3,6 +3,7 @@ import {
   type Keg,
   type KegContentColors,
   type UpdateKegInput,
+  normalizeKegUpdate,
   parseKegs,
 } from '@checklist/shared';
 
@@ -84,6 +85,11 @@ export class KegWriteNotConfiguredError extends Error {
  * The Apps Script always responds 200 (ContentService can't set status codes),
  * signalling failures in the JSON body, so we surface `{ error }` as a thrown
  * Error rather than trusting the HTTP status alone.
+ *
+ * This is the one door onto the sheet, so the board's content rules are applied
+ * here (see normalizeKegUpdate): a keg marked dirty loses the emptied beer's
+ * date, ABV and recipe link, whichever client asked for the change. The note is
+ * left as sent — a dirty keg is allowed one about itself.
  */
 export async function updateKeg(number: string, fields: UpdateKegInput): Promise<void> {
   const url = process.env.KEG_SHEET_WRITE_URL;
@@ -91,7 +97,7 @@ export async function updateKeg(number: string, fields: UpdateKegInput): Promise
 
   const res = await fetch(url, {
     method: 'POST',
-    body: JSON.stringify({ number, ...fields }),
+    body: JSON.stringify({ number, ...normalizeKegUpdate(fields) }),
   });
   if (!res.ok) throw new Error(`Keg sheet write failed: ${res.status} ${res.statusText}`);
 

@@ -1,4 +1,10 @@
-import type { KegContent, Recipe } from '@checklist/shared';
+import {
+  EMPTIED_KEG_FIELDS,
+  holdsBeer,
+  isDirtyContents,
+  type KegContent,
+  type Recipe,
+} from '@checklist/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
@@ -29,6 +35,28 @@ const POLL_MS = 60_000;
 
 /** slate-800 — the base colour each content tint fades into (matches brew-system). */
 const TINT_BASE = '#1e293b';
+
+/**
+ * Stout's palette colour is a near-black roast — right as a card tint, and all
+ * but invisible as text on this background. Everywhere a content name is
+ * *written* in its own colour it gets this warm brown instead.
+ */
+const STOUT_LABEL_COLOR = '#A68B6B';
+
+/** Whether a content wears {@link STOUT_LABEL_COLOR} rather than its palette colour. */
+function isStoutContents(contents: string): boolean {
+  return contents.trim().toLowerCase() === 'stout';
+}
+
+/** The colour to write a content name in, or undefined to leave it plain. */
+function contentLabelColor(
+  contents: string,
+  colors: Record<KegContent, string>,
+  fallback?: string | null,
+): string | undefined {
+  if (isStoutContents(contents)) return STOUT_LABEL_COLOR;
+  return getContentColor(contents, colors) ?? fallback ?? undefined;
+}
 
 /** Return a copy of `set` with `value` toggled in/out. */
 function toggleInSet(set: Set<string>, value: string): Set<string> {
@@ -61,6 +89,8 @@ export function KegsDesktopPage(): JSX.Element {
 
   // Single-keg edit (the keg being edited, or null).
   const [editingKeg, setEditingKeg] = useState<Keg | null>(null);
+  // The keg whose beer is being racked elsewhere, once the editor hands off.
+  const [transferSource, setTransferSource] = useState<Keg | null>(null);
   // Multi-select: a Set of keg numbers, the range anchor (the last keg clicked
   // without Shift, like a file list), an explicit "Select" toggle, and whether
   // the bulk modal is open.
@@ -104,14 +134,14 @@ export function KegsDesktopPage(): JSX.Element {
   useEffect(() => {
     if (!selecting) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !editingKeg && !bulkEditing) {
+      if (e.key === 'Escape' && !editingKeg && !bulkEditing && !transferSource) {
         e.preventDefault();
         exitSelect();
       }
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [selecting, editingKeg, bulkEditing, exitSelect]);
+  }, [selecting, editingKeg, bulkEditing, transferSource, exitSelect]);
 
   // Windows-Explorer-style selection over the keg grid:
   //   • plain click       → edit that keg (or toggle it once a selection exists)
@@ -164,6 +194,7 @@ export function KegsDesktopPage(): JSX.Element {
       applyLocalUpdates(updated);
       setEditingKeg(null);
       setBulkEditing(false);
+      setTransferSource(null);
       exitSelect();
     },
     [applyLocalUpdates, exitSelect],
@@ -287,12 +318,32 @@ export function KegsDesktopPage(): JSX.Element {
         </div>
       )}
 
-      {/* Single-keg editor. */}
+      {/* Single-keg editor. A keg with beer in it can hand that beer over to the
+          transfer picker instead of being edited. */}
       {editingKeg && (
         <KegEditModal
           kegs={[editingKeg]}
           colors={colors}
           onClose={() => setEditingKeg(null)}
+          onSaved={handleSaved}
+          onTransfer={
+            holdsBeer(editingKeg.contents)
+              ? () => {
+                  setTransferSource(editingKeg);
+                  setEditingKeg(null);
+                }
+              : undefined
+          }
+        />
+      )}
+
+      {/* Transfer: rack one keg's beer into the kegs picked here. */}
+      {transferSource && (
+        <KegTransferModal
+          source={transferSource}
+          kegs={kegs}
+          colors={colors}
+          onClose={() => setTransferSource(null)}
           onSaved={handleSaved}
         />
       )}
@@ -337,7 +388,7 @@ function KegCard({
   const color = getContentColor(keg.contents, colors) ?? keg.color;
   const unknown = isUnknownContents(keg.contents);
   // Stout is near-black, so it reads better as a heavier tint with a muted label.
-  const isStout = keg.contents.trim().toLowerCase() === 'stout';
+  const isStout = isStoutContents(keg.contents);
   const rgb = color ? hexToRgb(color) : null;
   const cardStyle: React.CSSProperties = rgb
     ? {
@@ -345,7 +396,7 @@ function KegCard({
         background: `linear-gradient(135deg, rgba(${rgb}, ${isStout ? 0.55 : 0.15}), ${TINT_BASE})`,
       }
     : {};
-  const labelColor = isStout ? '#A68B6B' : (color ?? undefined);
+  const labelColor = contentLabelColor(keg.contents, colors, keg.color);
 
   // Read-only guests get a plain card with no button semantics, hover, or focus
   // affordances; editors get the full click-to-edit / select behaviour.
@@ -432,6 +483,294 @@ function KegCard({
   );
 }
 
+// --- Transfer modal ---------------------------------------------------------
+
+/** The keg fields that travel with the beer when it's racked into another keg. */
+function beerOf(
+  keg: Keg,
+): { contents: string; date: string; note: string; abv: string; recipeId: string } {
+  // The fill date goes across unchanged: racking doesn't make the beer younger,
+  // and a reset date would hide an ageing keg from the keg-age alert.
+  return {
+    contents: keg.contents,
+    date: keg.date,
+    note: keg.note,
+    abv: keg.abv,
+    recipeId: keg.recipeId,
+  };
+}
+
+/** A sheet volume as a number for arithmetic ("19 L" → 19, "" → 0). */
+function volumeOf(keg: Keg): number {
+  return parseFloat(keg.volume) || 0;
+}
+
+/**
+ * Whatever the sheet writes after the number ("19 L" → "L", "19" → ""), so a
+ * total can be spoken in the same units the board uses without this page
+ * inventing one.
+ */
+function volumeUnit(volume: string): string {
+  return volume.match(/^\s*[\d.,]+\s*(\D.*)$/)?.[1]?.trim() ?? '';
+}
+
+/**
+ * Racking one keg's beer into others. The picked kegs each receive the beer as
+ * it stands — same contents, fill date, ABV, note and recipe link — and the keg
+ * it came out of is marked Dirty, since that's exactly what has just happened
+ * to it.
+ *
+ * Only kegs holding no beer can be picked, so a stray click can't pour a stout
+ * over somebody's pilsner. The targets are written first and the source emptied
+ * only once they've all succeeded: a transfer that fails halfway should leave
+ * the beer recorded where it still is, not lose track of it.
+ */
+function KegTransferModal({
+  source,
+  kegs,
+  colors,
+  onClose,
+  onSaved,
+}: {
+  source: Keg;
+  /** Every keg on the board — the pickable ones are filtered out of this. */
+  kegs: Keg[];
+  colors: Record<KegContent, string>;
+  onClose: () => void;
+  onSaved: (updated: Keg[]) => void;
+}): JSX.Element {
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [progress, setProgress] = useState('');
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  const candidates = sortKegs(
+    kegs.filter((k) => k.number !== source.number && !holdsBeer(k.contents)),
+    'number',
+    true,
+  );
+  const targets = candidates.filter((k) => picked.has(k.number));
+
+  // Volumes are advisory: the sheet's numbers say what fits, but a brewer
+  // splitting 19 into two 9s knows they're leaving some behind. Say so, don't
+  // block it.
+  const unit = volumeUnit(source.volume);
+  const sourceVolume = volumeOf(source);
+  const pickedVolume = targets.reduce((sum, k) => sum + volumeOf(k), 0);
+  const overCapacity = sourceVolume > 0 && pickedVolume > sourceVolume;
+  // The stripe wears the beer's true colour; the name is written in whatever is
+  // legible as text (see contentLabelColor — stout is the awkward one).
+  const sourceTint = getContentColor(source.contents, colors) ?? source.color;
+  const sourceColor = contentLabelColor(source.contents, colors, source.color);
+
+  const handleTransfer = async (): Promise<void> => {
+    setSaving(true);
+    setError('');
+    const beer = beerOf(source);
+    const beerColor = getContentColor(source.contents, colors) ?? source.color;
+    const updated: Keg[] = [];
+
+    for (const [i, keg] of targets.entries()) {
+      setProgress(`Filling keg #${keg.number} (${i + 1} of ${targets.length})…`);
+      try {
+        await api.updateKeg(keg.number, beer);
+        updated.push({ ...keg, ...beer, color: beerColor });
+      } catch (e) {
+        setError(
+          `Failed on keg #${keg.number}: ${cleanError(e)} — keg #${source.number} was left as it is.`,
+        );
+        setSaving(false);
+        setProgress('');
+        if (updated.length > 0) onSaved(updated);
+        return;
+      }
+    }
+
+    // The beer is elsewhere now, so the keg it left is dirty — and carries none
+    // of its details, note included (see EMPTIED_KEG_FIELDS).
+    setProgress(`Emptying keg #${source.number}…`);
+    const emptied = { contents: 'Dirty', ...EMPTIED_KEG_FIELDS, note: '' };
+    try {
+      await api.updateKeg(source.number, emptied);
+      updated.push({ ...source, ...emptied, color: getContentColor('Dirty', colors) });
+    } catch (e) {
+      setError(
+        `The beer moved, but keg #${source.number} could not be marked dirty: ${cleanError(e)}`,
+      );
+      setSaving(false);
+      setProgress('');
+      onSaved(updated);
+      return;
+    }
+
+    setSaving(false);
+    setProgress('');
+    onSaved(updated);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 cursor-default bg-black/70 backdrop-blur-sm"
+      />
+
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-md flex-col rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50">
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-5 py-3.5">
+          <h2 className="truncate text-base font-semibold tracking-tight text-zinc-50">
+            Transfer keg{' '}
+            <span style={sourceColor ? { color: sourceColor } : undefined}>#{source.number}</span>
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+          {/* What's moving. */}
+          <div
+            className="rounded-lg border border-zinc-800 px-3 py-2"
+            style={sourceTint ? { borderLeft: `3px solid ${sourceTint}` } : undefined}
+          >
+            <div className="text-sm font-semibold" style={sourceColor ? { color: sourceColor } : undefined}>
+              {source.contents}
+            </div>
+            <div className="mt-0.5 text-xs text-zinc-500">
+              {[
+                source.volume,
+                source.date && `filled ${source.date}`,
+                source.abv && `${source.abv.replace(/%/g, '')}% ABV`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+          </div>
+
+          {/* Where it's going. */}
+          <div>
+            <div className="mb-1 flex items-baseline justify-between gap-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+                Transfer into
+              </span>
+              {targets.length > 0 && (
+                <span className="text-xs tabular-nums text-zinc-500">
+                  {targets.length} keg{targets.length !== 1 ? 's' : ''}
+                  {pickedVolume > 0 && ` · ${pickedVolume}${unit && ` ${unit}`}`}
+                </span>
+              )}
+            </div>
+
+            {candidates.length === 0 ? (
+              <p className="rounded-lg border border-zinc-800 px-3 py-4 text-center text-sm text-zinc-500">
+                Every other keg holds beer. Empty or clean one first.
+              </p>
+            ) : (
+              <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-zinc-800 p-1">
+                {candidates.map((keg) => {
+                  const on = picked.has(keg.number);
+                  const stateColor = getContentColor(keg.contents, colors) ?? keg.color;
+                  return (
+                    <button
+                      key={keg.number}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setPicked((prev) => toggleInSet(prev, keg.number))}
+                      className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition ${
+                        on ? 'bg-blue-500/15 ring-1 ring-inset ring-blue-500/50' : 'hover:bg-zinc-900'
+                      }`}
+                    >
+                      <span
+                        aria-hidden
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
+                          on ? 'border-blue-500 bg-blue-500 text-white' : 'border-zinc-600'
+                        }`}
+                      >
+                        {on && '✓'}
+                      </span>
+                      <span className="text-sm font-semibold text-zinc-100">#{keg.number}</span>
+                      {keg.volume && (
+                        <span className="rounded bg-black/40 px-1.5 py-0.5 text-xs text-zinc-400">
+                          {keg.volume}
+                        </span>
+                      )}
+                      <span className="ml-auto flex items-center gap-1.5 text-xs text-zinc-500">
+                        {stateColor && (
+                          <span
+                            aria-hidden
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: stateColor }}
+                          />
+                        )}
+                        {keg.contents || '???'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {overCapacity && (
+            <p className="text-sm text-amber-400">
+              ⚠ The kegs picked hold {pickedVolume}
+              {unit && ` ${unit}`} — more than #{source.number}’s {sourceVolume}
+              {unit && ` ${unit}`}. Fine if you know what you’re leaving behind.
+            </p>
+          )}
+
+          <p className="text-xs text-zinc-500">
+            Each keg picked gets {source.contents}
+            {source.date && `, filled ${source.date}`}
+            {source.abv && ` at ${source.abv.replace(/%/g, '')}%`}. Keg #{source.number} is then
+            marked Dirty and its details cleared.
+          </p>
+
+          {error && <p className="text-sm text-red-400">{error}</p>}
+          {progress && <p className="text-sm text-zinc-500">{progress}</p>}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-zinc-800 px-5 py-3.5">
+          <button type="button" onClick={onClose} className={btnGhost} disabled={saving}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleTransfer()}
+            disabled={saving || targets.length === 0}
+            className={btnPrimary}
+          >
+            {saving
+              ? 'Transferring…'
+              : targets.length === 0
+                ? 'Transfer'
+                : `Transfer to ${targets.length} keg${targets.length !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Pulsing placeholder shown while the sheet loads. */
 function KegSkeleton(): JSX.Element {
   return (
@@ -506,22 +845,30 @@ function KegEditModal({
   colors,
   onClose,
   onSaved,
+  onTransfer,
 }: {
   kegs: Keg[];
   colors: Record<KegContent, string>;
   onClose: () => void;
   onSaved: (updated: Keg[]) => void;
+  /** Hand this keg's beer to the transfer picker. Absent when there's none to move. */
+  onTransfer?: () => void;
 }): JSX.Element {
   const isBulk = kegs.length > 1;
   // Callers only mount this with at least one keg (a single edit or a non-empty
   // selection), so kegs[0] is always present.
   const first = kegs[0]!;
 
+  // A keg that is already dirty opens with its beer fields blank, whatever the
+  // sheet still holds: they're about to be cleared on save, so showing them
+  // would only promise they'd be kept. Its note is its own — a dirty keg's note
+  // is about the keg, not the beer that left — so that one is shown as written.
+  const startsDirty = !isBulk && isDirtyContents(first.contents);
   const [form, setForm] = useState<KegForm>({
     contents: first.contents || '???',
-    date: isBulk ? '' : first.date,
+    date: isBulk || startsDirty ? '' : first.date,
     note: isBulk ? '' : first.note,
-    abv: isBulk ? '' : first.abv,
+    abv: isBulk || startsDirty ? '' : first.abv,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -536,7 +883,7 @@ function KegEditModal({
   const [showPicker, setShowPicker] = useState(false);
   const [recipeSearch, setRecipeSearch] = useState('');
   const [linkedRecipe, setLinkedRecipe] = useState<Recipe | null>(() =>
-    !isBulk && first.recipeId && recipesCache
+    !isBulk && !startsDirty && first.recipeId && recipesCache
       ? recipesCache.find((r) => r.id === first.recipeId) ?? null
       : null,
   );
@@ -545,7 +892,7 @@ function KegEditModal({
   // instead of wiping it; `linkedRecipe` only drives the display chip. Bulk edits
   // don't use this — they key off `linkedRecipe` so they only touch the link when
   // one was explicitly chosen.
-  const [recipeId, setRecipeId] = useState(isBulk ? '' : first.recipeId);
+  const [recipeId, setRecipeId] = useState(isBulk || startsDirty ? '' : first.recipeId);
 
   // Close on Escape; lock body scroll while open.
   useEffect(() => {
@@ -574,7 +921,7 @@ function KegEditModal({
         // Restore the linked-recipe chip for a single keg that was saved with a
         // recipe (bulk edits don't carry one). Matched from the fetched list so
         // the name/style/url stay current.
-        if (!isBulk && first.recipeId) {
+        if (!isBulk && !startsDirty && first.recipeId) {
           const saved = data.find((r) => r.id === first.recipeId);
           if (saved) setLinkedRecipe(saved);
         }
@@ -592,6 +939,26 @@ function KegEditModal({
 
   const update = (field: keyof KegForm, value: string): void =>
     setForm((f) => ({ ...f, [field]: value }));
+
+  // A keg marked dirty has been emptied, so nothing the beer left behind stays
+  // with it — the server clears those cells on the way to the sheet either way
+  // (see normalizeKegUpdate). Emptying the fields here as well, and locking
+  // them, means the form shows what is about to be written rather than letting
+  // someone type an ABV that silently vanishes on save.
+  const isDirty = isDirtyContents(form.contents);
+
+  const handleContents = (value: string): void => {
+    if (!isDirtyContents(value)) {
+      update('contents', value);
+      return;
+    }
+    // Turning dirty drops the beer, its note included — "Dry-hopped" describes
+    // something nobody can pour any more. The field stays open, though: what
+    // gets typed from here is about the keg ("seal weeping"), and it sticks.
+    setForm({ contents: value, date: '', note: '', abv: '' });
+    setLinkedRecipe(null);
+    setRecipeId('');
+  };
 
   const handleLink = (recipe: Recipe): void => {
     setLinkedRecipe(recipe);
@@ -639,7 +1006,13 @@ function KegEditModal({
       // bulk-assigning content doesn't wipe each keg's existing link); single
       // saves the tracked id (seeded from the keg), so unlinking clears the cell.
       const kegRecipeId = isBulk ? linkedRecipe?.id ?? keg.recipeId : recipeId;
-      const fields = { contents: form.contents, date, note, abv, recipeId: kegRecipeId };
+      // Dirty wins over "blank keeps the existing value": marking a batch of
+      // kegs dirty has to empty every one of them, not preserve their beers.
+      // The note is whatever the field now holds — blanked when the keg turned
+      // dirty, unless something was typed about the keg since.
+      const fields = isDirty
+        ? { contents: form.contents, ...EMPTIED_KEG_FIELDS, note: form.note.trim() }
+        : { contents: form.contents, date, note, abv, recipeId: kegRecipeId };
       try {
         await api.updateKeg(keg.number, fields);
         updated.push({ ...keg, ...fields, color });
@@ -658,7 +1031,7 @@ function KegEditModal({
     onSaved(updated);
   };
 
-  const titleColor = getContentColor(form.contents, colors);
+  const titleColor = contentLabelColor(form.contents, colors);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
@@ -697,8 +1070,8 @@ function KegEditModal({
             </p>
           )}
 
-          {/* Recipe linking */}
-          <div>
+          {/* Recipe linking — a dirty keg holds no beer, so it links to none. */}
+          <div className={isDirty ? 'hidden' : undefined}>
             {!linkedRecipe ? (
               !showPicker ? (
                 <button
@@ -797,29 +1170,44 @@ function KegEditModal({
               id="keg-contents"
               className={inputClass}
               value={form.contents}
-              onChange={(value) => update('contents', value)}
+              onChange={handleContents}
               options={[
                 ...(extraContent ? [{ value: extraContent }] : []),
                 ...KEG_CONTENT_OPTIONS.map((opt) => ({ value: opt })),
               ]}
             />
+            {isDirty && (
+              <p className="mt-2 text-xs text-zinc-500">
+                Emptied — the fill date, ABV and recipe link are cleared. A note about the keg
+                itself still sticks.
+              </p>
+            )}
           </div>
 
           {/* Date */}
           <div>
             <label className={labelClass} htmlFor="keg-date">
-              Date{isBulk && <span className="ml-1 normal-case text-zinc-500">(blank = keep existing)</span>}
+              Date
+              {isBulk && !isDirty && (
+                <span className="ml-1 normal-case text-zinc-500">(blank = keep existing)</span>
+              )}
             </label>
             <div className="flex gap-2">
               <input
                 id="keg-date"
                 type="text"
-                className={inputClass}
+                className={`${inputClass} disabled:text-zinc-600`}
                 value={form.date}
+                disabled={isDirty}
                 onChange={(e) => update('date', e.target.value)}
-                placeholder={isBulk ? 'Leave blank to keep existing' : 'DD/MM/YYYY'}
+                placeholder={isBulk && !isDirty ? 'Leave blank to keep existing' : 'DD/MM/YYYY'}
               />
-              <button type="button" onClick={() => update('date', todayDDMMYYYY())} className={btnGhost}>
+              <button
+                type="button"
+                disabled={isDirty}
+                onClick={() => update('date', todayDDMMYYYY())}
+                className={btnGhost}
+              >
                 Today
               </button>
             </div>
@@ -828,7 +1216,10 @@ function KegEditModal({
           {/* Note */}
           <div>
             <label className={labelClass} htmlFor="keg-note">
-              Note{isBulk && <span className="ml-1 normal-case text-zinc-500">(blank = keep existing)</span>}
+              Note
+              {isBulk && !isDirty && (
+                <span className="ml-1 normal-case text-zinc-500">(blank = keep existing)</span>
+              )}
             </label>
             <input
               id="keg-note"
@@ -836,22 +1227,32 @@ function KegEditModal({
               className={inputClass}
               value={form.note}
               onChange={(e) => update('note', e.target.value)}
-              placeholder={isBulk ? 'Leave blank to keep existing' : 'e.g. Dry-hopped'}
+              placeholder={
+                isDirty
+                  ? 'e.g. Seal is weeping'
+                  : isBulk
+                    ? 'Leave blank to keep existing'
+                    : 'e.g. Dry-hopped'
+              }
             />
           </div>
 
           {/* ABV */}
           <div>
             <label className={labelClass} htmlFor="keg-abv">
-              ABV{isBulk && <span className="ml-1 normal-case text-zinc-500">(blank = keep existing)</span>}
+              ABV
+              {isBulk && !isDirty && (
+                <span className="ml-1 normal-case text-zinc-500">(blank = keep existing)</span>
+              )}
             </label>
             <input
               id="keg-abv"
               type="text"
-              className={inputClass}
+              className={`${inputClass} disabled:text-zinc-600`}
               value={form.abv}
+              disabled={isDirty}
               onChange={(e) => update('abv', e.target.value)}
-              placeholder={isBulk ? 'Leave blank to keep existing' : 'e.g. 5.2'}
+              placeholder={isBulk && !isDirty ? 'Leave blank to keep existing' : 'e.g. 5.2'}
             />
           </div>
 
@@ -860,6 +1261,21 @@ function KegEditModal({
         </div>
 
         <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-zinc-800 bg-zinc-950/95 px-5 py-3.5 backdrop-blur">
+          {/* Racking this beer somewhere else is a different job from editing the
+              row, so it hands off to its own dialog rather than growing this
+              form. Offered only while the keg still holds the beer as saved —
+              once the contents field has been changed here, what would move is
+              no longer what's in the keg. */}
+          {onTransfer && form.contents === first.contents && (
+            <button
+              type="button"
+              onClick={onTransfer}
+              disabled={saving}
+              className={`${btnGhost} mr-auto`}
+            >
+              ⇄ Transfer contents…
+            </button>
+          )}
           <button type="button" onClick={onClose} className={btnGhost} disabled={saving}>
             Cancel
           </button>

@@ -6,7 +6,7 @@ import type {
   Reading,
   Recipe,
 } from '@checklist/shared';
-import { getRecipeColor, matchContentOption } from '@checklist/shared';
+import { getRecipeColor, isDirtyContents, matchContentOption } from '@checklist/shared';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -2038,14 +2038,12 @@ function StatPair({ label, value }: { label: string; value: string }): JSX.Eleme
 const KEG_FALLBACK_COLORS = ['#a78bfa', '#f472b6', '#fb923c', '#34d399', '#60a5fa'];
 const EMPTY_KEG_COLOR = '#3f3f46';
 
-/**
+/*
  * A "Dirty" keg is one waiting for a wash, not a beer on tap. It keeps its
  * warning red in the ring, but sits flush like the empty slice — what the
- * raised slices mean is "stocked".
+ * raised slices mean is "stocked". `isDirtyContents` is the shared test, so the
+ * donut and the keg editor agree on what counts as dirty.
  */
-function isDirtyContents(contents: string): boolean {
-  return contents.trim().toLowerCase() === 'dirty';
-}
 
 function KegInventoryPanel({
   kegs,

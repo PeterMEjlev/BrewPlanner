@@ -2217,6 +2217,45 @@ export function parseKegs(
     .filter((k) => k.number);
 }
 
+/**
+ * "Dirty" is the board's word for a keg that has just been emptied and is
+ * waiting for a wash. The beer is gone, so everything it left behind goes with
+ * it — see {@link EMPTIED_KEG_FIELDS}.
+ */
+export function isDirtyContents(contents: string): boolean {
+  return contents.trim().toLowerCase() === 'dirty';
+}
+
+/**
+ * What the beer takes with it when a keg is emptied. A dirty keg still carrying
+ * the last beer's fill date, ABV and recipe link reads at a glance on the board
+ * as though it were still full of that beer, and its stale fill date keeps
+ * tripping the keg-age alert long after the beer was drunk.
+ *
+ * The note is deliberately not in here. It's the only field that can be about
+ * the *keg* rather than the beer — "seal is weeping", "lid needs a new o-ring" —
+ * and that's worth writing on a keg heading for the wash. The beer's old note
+ * still goes: the editor blanks it as the keg turns dirty, and whatever is typed
+ * after that sticks.
+ *
+ * Blank strings rather than omitted fields: the sheet writer leaves absent
+ * columns untouched, so only an empty value actually clears the cell.
+ */
+export const EMPTIED_KEG_FIELDS = { date: '', abv: '', recipeId: '' } as const;
+
+/**
+ * Contents that are a keg *state* rather than a beer — what the board writes in
+ * a keg nobody can pour from. A keg in one of these is free to be filled, which
+ * is what makes it a candidate to receive a transfer.
+ */
+export const KEG_STATE_CONTENTS = ['???', 'Clean', 'Dirty', 'Starsan'];
+
+/** Whether a keg holds something pourable, as opposed to a state or nothing. */
+export function holdsBeer(contents: string): boolean {
+  const c = contents.trim();
+  return c !== '' && !KEG_STATE_CONTENTS.some((state) => state.toLowerCase() === c.toLowerCase());
+}
+
 /** Sheet dates are DD/MM/YYYY; returns an epoch-ms timestamp, or 0 if unparseable. */
 export function parseKegDate(d: string): number {
   if (!d) return 0;
@@ -3020,6 +3059,20 @@ export const updateKegSchema = z.object({
   recipeId: z.string().trim().max(200).optional(),
 });
 export type UpdateKegInput = z.infer<typeof updateKegSchema>;
+
+/**
+ * Apply the board's content rules to an edit before it's written: marking a keg
+ * dirty clears the beer's details ({@link EMPTIED_KEG_FIELDS}). Enforced on the
+ * way into the sheet rather than in each editor, so the rule holds whichever
+ * client made the change — the desktop keg editor, Bruce, or a bare API call.
+ *
+ * The note passes through untouched: a dirty keg may carry a note about itself,
+ * so what the caller sent is what it gets. Dropping the *previous* beer's note
+ * is the editor's job, at the moment the keg turns dirty.
+ */
+export function normalizeKegUpdate(fields: UpdateKegInput): UpdateKegInput {
+  return isDirtyContents(fields.contents) ? { ...fields, ...EMPTIED_KEG_FIELDS } : fields;
+}
 
 /** Body for `PUT /api/graph-colors`. The whole palette is sent each save. */
 export const graphColorsSchema = z.object({
