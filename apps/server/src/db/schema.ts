@@ -158,6 +158,18 @@ export const recipes = sqliteTable(
     brewersFriendUrl: text('brewers_friend_url').notNull().default(''),
     /** JSON encoded RecipeEditInput; parsed with recipeEditSchema on every read. */
     recipe: text('recipe').notNull(),
+    /**
+     * Every version of one beer shares a family id — the id of its first
+     * version. A version is a whole row rather than a diff because that is what
+     * keeps the rest of the app honest: a brew session, a keg and the fermenter
+     * selection all point at `recipes.id`, so a batch stays attached to the
+     * exact sheet it was brewed from even after v3 is written.
+     */
+    familyId: text('family_id').notNull().default(''),
+    /** 1 for the original, ascending within the family. */
+    version: integer('version').notNull().default(1),
+    /** What the brewer changed here ("more Citra late"); empty when unsaid. */
+    versionNote: text('version_note').notNull().default(''),
     createdAt: text('created_at')
       .notNull()
       .default(sql`(CURRENT_TIMESTAMP)`),
@@ -168,6 +180,9 @@ export const recipes = sqliteTable(
   (t) => [
     unique('recipes_brewers_friend_id_unq').on(t.brewersFriendId),
     index('recipes_created_at_idx').on(t.createdAt),
+    // The library lists one card per beer (its newest version) and a brew sheet
+    // asks for its own siblings — both are "this family, by version".
+    index('recipes_family_idx').on(t.familyId, t.version),
   ],
 );
 

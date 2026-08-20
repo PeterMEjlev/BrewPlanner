@@ -7,6 +7,7 @@ import type {
   RecipeOrigin,
   RecipeIngredientOption,
   RecipeStats,
+  RecipeVersionSummary,
 } from '@checklist/shared';
 import { applyRecipeCalculations, recipeEditSchema } from '@checklist/shared';
 import { desc, eq } from 'drizzle-orm';
@@ -17,7 +18,7 @@ import { getSetting } from './repo.js';
 
 type RecipeRow = typeof recipes.$inferSelect;
 
-function rowToDetail(row: RecipeRow): RecipeDetail {
+function rowToDetail(row: RecipeRow, versions: RecipeVersionSummary[] = []): RecipeDetail {
   const input = rowInput(row);
   const origin: RecipeOrigin = row.origin === 'brewersfriend' ? 'brewersfriend' : 'local';
   return hydrateRecipe(
@@ -25,6 +26,13 @@ function rowToDetail(row: RecipeRow): RecipeDetail {
       id: row.id,
       origin,
       url: row.brewersFriendUrl,
+      familyId: familyOf(row),
+      version: row.version,
+      versionNote: row.versionNote,
+      // Only a sheet fetched on its own carries its siblings: the list views
+      // hydrate every recipe they hold, and a version query apiece would be a
+      // query per card for something no card shows.
+      versions,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     },
@@ -32,15 +40,29 @@ function rowToDetail(row: RecipeRow): RecipeDetail {
   );
 }
 
+/**
+ * A row's family, tolerating one that has none.
+ *
+ * The column is backfilled by migration, so this only stands in for a row
+ * written by a build that predates versioning and inserted since — a recipe on
+ * its own is its own family, which is exactly what the migration says too.
+ */
+function familyOf(row: Pick<RecipeRow, 'id' | 'familyId'>): string {
+  return row.familyId || row.id;
+}
+
 function rowInput(row: RecipeRow): RecipeEditInput {
   return recipeEditSchema.parse(JSON.parse(row.recipe));
 }
 
-function rowToSummary(row: RecipeRow): Recipe {
+function rowToSummary(row: RecipeRow, versionCount = 1): Recipe {
   const input = rowInput(row);
   return {
     id: row.id,
     origin: row.origin === 'brewersfriend' ? 'brewersfriend' : 'local',
+    familyId: familyOf(row),
+    version: row.version,
+    versionCount,
     name: input.name,
     style: input.style,
     abv: input.abv,
@@ -52,17 +74,77 @@ function rowToSummary(row: RecipeRow): Recipe {
   };
 }
 
+/**
+ * The library as the grid shows it: one entry per beer, being its newest
+ * version. Older versions are reachable from the sheet's version picker rather
+ * than as cards of their own — a beer brewed four times with three revisions is
+ * one beer, and listing every revision would bury the rest of the library.
+ */
 export function listRecipes(): Recipe[] {
+  const rows = db.select().from(recipes).orderBy(desc(recipes.createdAt)).all();
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(familyOf(row), (counts.get(familyOf(row)) ?? 0) + 1);
+  return newestPerFamily(rows).map((row) => rowToSummary(row, counts.get(familyOf(row)) ?? 1));
+}
+
+/**
+ * One row per family — the highest version number in each, with the row's own
+ * order otherwise preserved so the caller's `ORDER BY` still decides the list.
+ *
+ * Highest version rather than most recently created: back-filling notes onto v1
+ * after writing v2 must not make v1 the one the library opens on.
+ */
+function newestPerFamily(rows: RecipeRow[]): RecipeRow[] {
+  const newest = new Map<string, RecipeRow>();
+  for (const row of rows) {
+    const current = newest.get(familyOf(row));
+    if (!current || row.version > current.version) newest.set(familyOf(row), row);
+  }
+  return rows.filter((row) => newest.get(familyOf(row)) === row);
+}
+
+/** Every version of one beer, newest first — what a sheet's version picker lists. */
+export function listRecipeVersions(familyId: string): RecipeVersionSummary[] {
   return db
-    .select()
+    .select({
+      id: recipes.id,
+      version: recipes.version,
+      versionNote: recipes.versionNote,
+      createdAt: recipes.createdAt,
+      updatedAt: recipes.updatedAt,
+    })
     .from(recipes)
-    .orderBy(desc(recipes.createdAt))
+    .where(eq(recipes.familyId, familyId))
+    .orderBy(desc(recipes.version))
+    .all();
+}
+
+/**
+ * Which beer a recipe id belongs to, or null if there is no such recipe. Used
+ * by the brew log, which counts and lists batches per beer rather than per
+ * version.
+ */
+export function recipeFamilyId(id: string): string | null {
+  const row = db
+    .select({ id: recipes.id, familyId: recipes.familyId })
+    .from(recipes)
+    .where(eq(recipes.id, id))
+    .get();
+  return row ? familyOf(row) : null;
+}
+
+/** Every version id of one beer, for queries that span a family. */
+export function recipeFamilyIds(familyId: string): string[] {
+  return db
+    .select({ id: recipes.id })
+    .from(recipes)
+    .where(eq(recipes.familyId, familyId))
     .all()
-    .map(rowToSummary);
+    .map((row) => row.id);
 }
 
 export function listRecipeDetails(): RecipeDetail[] {
-  return db.select().from(recipes).orderBy(desc(recipes.createdAt)).all().map(rowToDetail);
+  return db.select().from(recipes).orderBy(desc(recipes.createdAt)).all().map((row) => rowToDetail(row));
 }
 
 export function listRecipeStats(): RecipeStats[] {
@@ -89,6 +171,9 @@ export function listRecipeBackups(): { entries: RecipeBackupEntry[]; unreadable:
         id: row.id,
         origin: row.origin === 'brewersfriend' ? 'brewersfriend' : 'local',
         url: row.brewersFriendUrl,
+        familyId: familyOf(row),
+        version: row.version,
+        versionNote: row.versionNote,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         recipe: rowInput(row),
@@ -105,6 +190,10 @@ export interface RecipeBackupEntry {
   id: string;
   origin: RecipeOrigin;
   url: string;
+  /** Which beer this is a version of, and which version — so a restore keeps the chain. */
+  familyId: string;
+  version: number;
+  versionNote: string;
   createdAt: string;
   updatedAt: string;
   recipe: RecipeEditInput;
@@ -174,10 +263,26 @@ export function listIngredientNames(kind: IngredientKind, query = '', limit = 60
 
 export function getRecipe(id: string): RecipeDetail | null {
   const row = db.select().from(recipes).where(eq(recipes.id, id)).get();
-  return row ? rowToDetail(row) : null;
+  return row ? rowToDetail(row, listRecipeVersions(familyOf(row))) : null;
 }
 
-export function createRecipe(input: RecipeEditInput): RecipeDetail {
+/**
+ * The version of a beer that a link to it should open: its newest. Given any
+ * version's id, so a bookmark, a keg or an old brew session can all be followed
+ * to "this beer as it stands now".
+ */
+export function latestRecipeInFamily(familyId: string): RecipeDetail | null {
+  const row = db
+    .select()
+    .from(recipes)
+    .where(eq(recipes.familyId, familyId))
+    .orderBy(desc(recipes.version))
+    .get();
+  return row ? rowToDetail(row, listRecipeVersions(familyOf(row))) : null;
+}
+
+/** A new beer: version 1 of a family of its own. Also what cloning writes. */
+export function createRecipe(input: RecipeEditInput, versionNote = ''): RecipeDetail {
   const now = new Date().toISOString();
   const id = randomUUID();
   const calculated = applyRecipeCalculations(input);
@@ -187,6 +292,12 @@ export function createRecipe(input: RecipeEditInput): RecipeDetail {
       origin: 'local',
       recipe: JSON.stringify(calculated),
       brewersFriendUrl: '',
+      // Its own family, which it is the first member of. A clone is a new beer
+      // rather than a version of the one it was copied from: it gets its own
+      // family, and so its own brew history, from the moment it is saved.
+      familyId: id,
+      version: 1,
+      versionNote,
       createdAt: now,
       updatedAt: now,
     })
@@ -194,11 +305,74 @@ export function createRecipe(input: RecipeEditInput): RecipeDetail {
   return getRecipe(id)!;
 }
 
-export function updateRecipe(id: string, input: RecipeEditInput): RecipeDetail | null {
+/**
+ * The next version of an existing beer: a new row in the same family, numbered
+ * one past the highest version there.
+ *
+ * A whole row rather than a diff against v1, because a version has to be
+ * brewable on its own — a brew session, a keg and the fermenter selection all
+ * point at a recipe id, and each must go on meaning the sheet it meant.
+ *
+ * Numbered from the family's high-water mark rather than its row count, so
+ * deleting v2 leaves the next version as v4 instead of minting a second v3.
+ *
+ * Null when `sourceId` names no recipe — the caller answers 404.
+ */
+export function createRecipeVersion(
+  sourceId: string,
+  input: RecipeEditInput,
+  versionNote = '',
+): RecipeDetail | null {
+  const source = db
+    .select({ id: recipes.id, familyId: recipes.familyId, origin: recipes.origin, brewersFriendUrl: recipes.brewersFriendUrl })
+    .from(recipes)
+    .where(eq(recipes.id, sourceId))
+    .get();
+  if (!source) return null;
+  const familyId = familyOf(source);
+  const highest = db
+    .select({ version: recipes.version })
+    .from(recipes)
+    .where(eq(recipes.familyId, familyId))
+    .orderBy(desc(recipes.version))
+    .get();
+  const now = new Date().toISOString();
+  const id = randomUUID();
+  db.insert(recipes)
+    .values({
+      id,
+      // A version of an imported recipe is this brewery's own work, not
+      // Brewer's Friend's — and it has no page over there to link to.
+      origin: 'local',
+      recipe: JSON.stringify(applyRecipeCalculations(input)),
+      brewersFriendUrl: '',
+      familyId,
+      version: (highest?.version ?? 0) + 1,
+      versionNote,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  return getRecipe(id)!;
+}
+
+/**
+ * Save an edit to one version. `versionNote` is left alone when null, so a
+ * client that doesn't know about versions can't blank the note by saving.
+ */
+export function updateRecipe(
+  id: string,
+  input: RecipeEditInput,
+  versionNote: string | null = null,
+): RecipeDetail | null {
   const calculated = applyRecipeCalculations(input);
   const result = db
     .update(recipes)
-    .set({ recipe: JSON.stringify(calculated), updatedAt: new Date().toISOString() })
+    .set({
+      recipe: JSON.stringify(calculated),
+      ...(versionNote == null ? {} : { versionNote }),
+      updatedAt: new Date().toISOString(),
+    })
     .where(eq(recipes.id, id))
     .run();
   return result.changes > 0 ? getRecipe(id) : null;
@@ -223,6 +397,8 @@ export function importBrewersFriendRecipe(recipe: RecipeDetail): boolean {
       brewersFriendId: recipe.id,
       brewersFriendUrl: recipe.url,
       recipe: JSON.stringify(input),
+      familyId: recipe.id,
+      version: 1,
       createdAt: recipe.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     })

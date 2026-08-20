@@ -21,6 +21,7 @@ import {
   recipeDefaultsSchema,
   recipeDraftSchema,
   recipeEditSchema,
+  recipeSaveSchema,
   recipeIngredientCatalogQuerySchema,
   setActiveRecipeSchema,
   startBrewSessionSchema,
@@ -112,7 +113,17 @@ const adminOnly = { preHandler: requireAdmin };
  * Stand-in identity for a recipe that isn't saved yet, so the pricing pass can
  * reuse the same hydration the library does. Nothing in a cost depends on it.
  */
-const DRAFT_METADATA = { id: '', origin: 'local' as const, url: '', createdAt: '', updatedAt: '' };
+const DRAFT_METADATA = {
+  id: '',
+  origin: 'local' as const,
+  url: '',
+  familyId: '',
+  version: 1,
+  versionNote: '',
+  versions: [],
+  createdAt: '',
+  updatedAt: '',
+};
 
 export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // Every route below requires authentication, except when the request is
@@ -422,10 +433,23 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // lookup is unavailable: the editor simply opens with the field empty.
   app.get('/weather/outdoor', async () => ({ outdoor: await outdoorTemperature() }));
 
+  // A new beer — including the copy that "Clone" saves, which is a new beer
+  // rather than a version of the one it was copied from.
   app.post('/recipes', adminOnly, async (req, reply) => {
-    const body = parse(recipeEditSchema, req.body, reply);
+    const body = parse(recipeSaveSchema, req.body, reply);
     if (!body) return;
-    return reply.status(201).send(recipeRepo.createRecipe(body));
+    return reply.status(201).send(recipeRepo.createRecipe(body.recipe, body.versionNote ?? ''));
+  });
+
+  // The next version of an existing beer: a sheet of its own, in the same
+  // family, so the recipe it was written from stays exactly as it was brewed.
+  app.post('/recipes/:id/versions', adminOnly, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = parse(recipeSaveSchema, req.body, reply);
+    if (!body) return;
+    const saved = recipeRepo.createRecipeVersion(id, body.recipe, body.versionNote ?? '');
+    if (!saved) return reply.status(404).send({ error: 'Recipe not found' });
+    return reply.status(201).send(saved);
   });
 
   // What the sheet in the editor would cost, without saving it. A POST because
@@ -457,9 +481,9 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   app.put('/recipes/:id', adminOnly, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = parse(recipeEditSchema, req.body, reply);
+    const body = parse(recipeSaveSchema, req.body, reply);
     if (!body) return;
-    const saved = recipeRepo.updateRecipe(id, body);
+    const saved = recipeRepo.updateRecipe(id, body.recipe, body.versionNote);
     if (!saved) return reply.status(404).send({ error: 'Recipe not found' });
     const active = repo.getActiveRecipe();
     if (active?.id === id) {

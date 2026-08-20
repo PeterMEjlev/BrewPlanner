@@ -331,6 +331,22 @@ const RULES: Rule[] = [
       };
     },
   },
+  // A new version of an existing beer. Its own line in the history rather than
+  // reading as a plain "created recipe": what happened is that a recipe the
+  // brewery already has was revised, and the note says what changed.
+  {
+    method: 'POST',
+    re: /^\/api\/recipes\/([^/]+)\/versions$/,
+    push: '/recipes',
+    build: ({ body }) => {
+      const name = str(body, 'name');
+      const note = str(body, 'versionNote');
+      return {
+        entity: 'Recipe',
+        action: `Created a new version of${name ? ` "${name}"` : ' a recipe'}${note ? `: ${note}` : ''}`,
+      };
+    },
+  },
   { method: 'DELETE', re: /^\/api\/recipes\/([^/]+)$/, build: () => ({ entity: 'Recipe', action: 'Deleted a recipe from BrewPlanner' }) },
   { method: 'POST', re: /^\/api\/recipes\/import\/brewersfriend$/, build: () => ({ entity: 'Recipe', action: 'Imported recipes from Brewer\'s Friend' }) },
   // The nightly backup writes no audit row (it isn't a request); a backup

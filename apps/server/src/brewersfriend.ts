@@ -184,6 +184,11 @@ function toRecipe(r: BrewersFriendRecipe): Recipe {
   return {
     id: str(r.id),
     origin: 'brewersfriend',
+    // An imported sheet arrives as version 1 of a family of its own; further
+    // versions of it are written here, not on Brewer's Friend.
+    familyId: str(r.id),
+    version: 1,
+    versionCount: 1,
     name: str(r.title) || 'Untitled recipe',
     style: styleName(r),
     // Normalize to a bare number string and drop any "%" the API includes.
@@ -506,6 +511,12 @@ function toRecipeDetail(r: BrewersFriendRecipe): RecipeDetail {
   return {
     id: str(r.id),
     origin: 'brewersfriend',
+    // An imported sheet arrives as version 1 of a family of its own; further
+    // versions of it are written here, not on Brewer's Friend.
+    familyId: str(r.id),
+    version: 1,
+    versionNote: '',
+    versions: [],
     name: str(r.title) || 'Untitled recipe',
     style: styleName(r),
     settings: {

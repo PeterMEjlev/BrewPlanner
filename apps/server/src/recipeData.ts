@@ -6,6 +6,7 @@ import type {
   RecipeOrigin,
   RecipeOtherIngredient,
   RecipeStats,
+  RecipeVersionSummary,
   RecipeYeast,
 } from '@checklist/shared';
 import { predictBeerColor } from '@checklist/shared';
@@ -22,6 +23,12 @@ export interface RecipeMetadata {
   id: string;
   origin: RecipeOrigin;
   url: string;
+  /** Which beer this is a version of, which version, and what changed in it. */
+  familyId: string;
+  version: number;
+  versionNote: string;
+  /** The beer's other versions, newest first — the version picker's list. */
+  versions: RecipeVersionSummary[];
   createdAt: string;
   updatedAt: string;
 }

@@ -117,6 +117,17 @@ export interface Recipe {
   id: string;
   /** Where this app-owned recipe originally came from. */
   origin?: RecipeOrigin;
+  /**
+   * The beer this is a version of — shared by every version, equal to the id of
+   * the first one. Optional for the same reason as `ibu`/`ebc` below: a stored
+   * "in the fermenter" selection saved by an older build carries neither this
+   * nor the two fields under it.
+   */
+  familyId?: string;
+  /** 1 for the original, ascending. */
+  version?: number;
+  /** How many versions of this beer exist, the newest included. */
+  versionCount?: number;
   name: string;
   /** Beer style (e.g. "West Coast IPA"); may be empty if the recipe has none. */
   style: string;
@@ -259,6 +270,10 @@ export interface RecipeBackupFile {
     id: string;
     origin: RecipeOrigin;
     url: string;
+    /** Which beer and which version — absent in files written before versioning. */
+    familyId?: string;
+    version?: number;
+    versionNote?: string;
     createdAt: string;
     updatedAt: string;
     recipe: RecipeEditInput;
@@ -439,6 +454,13 @@ export interface BrewSession {
   id: number;
   /** The library recipe this came from; null once that recipe has been deleted. */
   recipeId: string | null;
+  /**
+   * Which version of that recipe was brewed. Only filled in where the list is
+   * a beer's own history (`GET /api/recipes/:id/brew-sessions`), which spans
+   * every version and so has to say which one each batch belongs to; the whole
+   * log leaves it undefined.
+   */
+  recipeVersion?: number;
   recipe: BrewSessionRecipeSnapshot;
   status: BrewSessionStatus;
   /** The brew session itself. Editable, so a batch can be logged after the fact. */
@@ -517,6 +539,11 @@ export interface BrewSessionDetail extends BrewSession {
 
 /** How often one recipe has been brewed, for the badge on the recipe grid. */
 export interface RecipeBrewCount {
+  /**
+   * The recipe *family* — every version of a beer counts towards one badge, so
+   * writing a v2 doesn't reset a house beer's tally to zero. Equal to the
+   * recipe id for a beer that has only ever had one version.
+   */
   recipeId: string;
   count: number;
   /** The most recent brew session for this recipe. */
@@ -1025,6 +1052,20 @@ export interface RecipeWaterProfile {
 }
 
 /**
+ * One entry in a recipe's version picker: enough to label and open a version
+ * without fetching (and re-costing) its whole brew sheet.
+ */
+export interface RecipeVersionSummary {
+  id: string;
+  version: number;
+  /** What changed in this version; empty when the brewer didn't say. */
+  versionNote: string;
+  /** When this version was written, and when it was last saved. */
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
  * The full brew sheet for one recipe (GET /api/recipes/:id) — everything the
  * Recipes detail page shows. Numbers stay strings in the shape Brewer's Friend
  * returns them; the UI formats them, so a value we can't parse still displays
@@ -1033,6 +1074,14 @@ export interface RecipeWaterProfile {
 export interface RecipeDetail {
   id: string;
   origin: RecipeOrigin;
+  /** The beer this sheet is a version of; equal to `id` for the first version. */
+  familyId: string;
+  /** 1 for the original, ascending. */
+  version: number;
+  /** What the brewer changed in this version; empty when they didn't say. */
+  versionNote: string;
+  /** Every version of this beer, newest first — what the version picker lists. */
+  versions: RecipeVersionSummary[];
   name: string;
   style: string;
   /** Original gravity, e.g. "1.062". */
@@ -2851,6 +2900,26 @@ export const recipeEditSchema = z.object(recipeEditFields).transform((value): Re
   ...value,
   settings: { ...DEFAULT_RECIPE_SETTINGS, ...value.settings },
 }));
+
+/**
+ * Body for the three routes that write a brew sheet — `POST /api/recipes`,
+ * `POST /api/recipes/:id/versions` and `PUT /api/recipes/:id`.
+ *
+ * The sheet's own fields with the version note alongside them, rather than
+ * wrapped in an envelope, so a client that predates versioning still sends a
+ * valid body: the note is simply absent and the version keeps the one it has.
+ * The note is metadata about the version, not part of the recipe, which is why
+ * it travels beside {@link RecipeEditInput} instead of inside it.
+ */
+export const recipeSaveSchema = z
+  .object({ ...recipeEditFields, versionNote: z.string().trim().max(300).optional() })
+  .transform((value): { recipe: RecipeEditInput; versionNote: string | null } => {
+    const { versionNote, ...recipe } = value;
+    return {
+      recipe: { ...recipe, settings: { ...DEFAULT_RECIPE_SETTINGS, ...recipe.settings } },
+      versionNote: versionNote ?? null,
+    };
+  });
 
 /**
  * Body for `POST /api/recipes/price` — a recipe as it currently stands in the

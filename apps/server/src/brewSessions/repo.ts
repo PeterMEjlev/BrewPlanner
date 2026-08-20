@@ -13,7 +13,8 @@ import type {
 import { BREW_SESSION_STATUSES, extractPotential, isFermentableLine } from '@checklist/shared';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { brewSessionRigSamples, brewSessions } from '../db/schema.js';
+import { brewSessionRigSamples, brewSessions, recipes } from '../db/schema.js';
+import { recipeFamilyId } from '../recipeRepo.js';
 import { fermentationSummary } from './telemetry.js';
 
 /**
@@ -114,14 +115,24 @@ function rowStatus(value: string): BrewSessionStatus {
  * by brew date among the rows sharing a recipe id, so back-dating a forgotten
  * batch renumbers the ones after it rather than appending out of order.
  *
+ * Counted per beer rather than per version: the fourth batch of a house IPA is
+ * the fourth batch of it whether it was brewed to v1 or v3, and restarting the
+ * count at 1 because the hop schedule was adjusted would misdescribe both.
+ *
  * Rows whose recipe has since been deleted are all `recipeId === null`, and
  * counting those together would number unrelated batches as one series — so they
  * are simply numbered 1 apiece.
  */
 function brewNumbers(): Map<number, number> {
   const rows = db
-    .select({ id: brewSessions.id, recipeId: brewSessions.recipeId, brewedAt: brewSessions.brewedAt })
+    .select({
+      id: brewSessions.id,
+      recipeId: brewSessions.recipeId,
+      familyId: recipes.familyId,
+      brewedAt: brewSessions.brewedAt,
+    })
     .from(brewSessions)
+    .leftJoin(recipes, eq(recipes.id, brewSessions.recipeId))
     .orderBy(asc(brewSessions.brewedAt), asc(brewSessions.id))
     .all();
   const seen = new Map<string, number>();
@@ -131,8 +142,9 @@ function brewNumbers(): Map<number, number> {
       numbers.set(row.id, 1);
       continue;
     }
-    const next = (seen.get(row.recipeId) ?? 0) + 1;
-    seen.set(row.recipeId, next);
+    const family = row.familyId || row.recipeId;
+    const next = (seen.get(family) ?? 0) + 1;
+    seen.set(family, next);
     numbers.set(row.id, next);
   }
   return numbers;
@@ -183,20 +195,32 @@ export function listBrewSessions(): BrewSession[] {
 /**
  * One recipe's own batches, newest first — the brew history on its sheet.
  *
+ * Every version of the beer, not only the version being read: "how often have
+ * we made this, and how did it come out?" is a question about the beer, and a
+ * v3 sheet that claimed the beer had been brewed once would be answering a
+ * different one. Which version each batch was brewed to is carried on the row
+ * (`recipeVersion`) so the history can say so.
+ *
  * Numbered from the whole log rather than from this subset, so a batch is the
  * "#3" here that it is everywhere else. Rows whose recipe was deleted are not
  * reachable from any sheet, which is the point: their `recipeId` is null and
  * they belong to no recipe any more.
  */
 export function listRecipeBrewSessions(recipeId: string): BrewSession[] {
+  const family = recipeFamilyId(recipeId);
+  if (family == null) return [];
   const numbers = brewNumbers();
   return db
-    .select()
+    .select({ session: brewSessions, version: recipes.version })
     .from(brewSessions)
-    .where(eq(brewSessions.recipeId, recipeId))
+    .innerJoin(recipes, eq(recipes.id, brewSessions.recipeId))
+    .where(eq(recipes.familyId, family))
     .orderBy(desc(brewSessions.brewedAt), desc(brewSessions.id))
     .all()
-    .map((row) => rowToBrewSession(row, numbers.get(row.id) ?? 1));
+    .map(({ session, version }) => ({
+      ...rowToBrewSession(session, numbers.get(session.id) ?? 1),
+      recipeVersion: version,
+    }));
 }
 
 /** One brew session with its logged rig temperatures and derived fermentation figures. */
@@ -331,20 +355,24 @@ export function brewSessionName(id: number): string | null {
 /**
  * How many times each recipe has been brewed, and when last — the badge on the
  * recipe grid. One grouped query rather than a count per card.
+ *
+ * Grouped by beer rather than by version, and keyed by the family id the grid
+ * carries on every card: a beer on its eighth batch reads "×8" whether those
+ * eight batches were brewed to one version of it or four.
  */
 export function recipeBrewCounts(): RecipeBrewCount[] {
   return db
     .select({
-      recipeId: brewSessions.recipeId,
+      familyId: recipes.familyId,
       count: sql<number>`count(${brewSessions.id})`,
       lastBrewedAt: sql<string>`max(${brewSessions.brewedAt})`,
     })
     .from(brewSessions)
-    .where(sql`${brewSessions.recipeId} is not null`)
-    .groupBy(brewSessions.recipeId)
+    .innerJoin(recipes, eq(recipes.id, brewSessions.recipeId))
+    .groupBy(recipes.familyId)
     .all()
     .map((row) => ({
-      recipeId: row.recipeId ?? '',
+      recipeId: row.familyId,
       count: row.count,
       lastBrewedAt: row.lastBrewedAt,
     }));
