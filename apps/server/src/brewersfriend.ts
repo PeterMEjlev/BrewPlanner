@@ -517,6 +517,8 @@ function toRecipeDetail(r: BrewersFriendRecipe): RecipeDetail {
     version: 1,
     versionNote: '',
     versions: [],
+    // Brewer's Friend has no equivalent field; the brewery writes its own.
+    notes: null,
     name: str(r.title) || 'Untitled recipe',
     style: styleName(r),
     settings: {

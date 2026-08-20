@@ -87,6 +87,7 @@ const EMPTY_RECIPE: RecipeDetail = {
     price: null,
   }],
   otherIngredients: [],
+  notes: null,
   mashGuidelines: null,
   waterProfile: null,
   pricing: { currency: 'DKK', lastChecked: '', source: '', available: false },

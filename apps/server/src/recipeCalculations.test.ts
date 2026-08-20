@@ -354,6 +354,29 @@ test('fermentation time follows the strain, the temperature and the gravity', ()
   });
   assert.equal(mixed!.family, 'mixed');
   assert.ok(mixed!.days > ale.days);
+
+  // A single-strain souring yeast sours the wort itself and is done in a week.
+  // Every word in its name and type also appears in a blended culture's, so
+  // this is the case that used to come back as "46 days" for a beer that is in
+  // the fermenter for one.
+  for (const name of ['WildBrew Philly Sour', 'Philly Sour', 'Lachancea thermotolerans']) {
+    const souring = estimateFermentationDays({
+      og: 1.045,
+      temperatureC: 22,
+      yeast: [pitch({ name, type: 'Sour' })],
+    });
+    assert.equal(souring!.family, 'sour', `${name} is a souring yeast, not a mixed culture`);
+    assert.ok(souring!.days <= 10, `${name} should finish in about a week, got ${souring!.days}`);
+  }
+
+  // A true blended culture is still the slow one, and still wins a co-pitch.
+  const blend = estimateFermentationDays({
+    og: 1.045,
+    temperatureC: 22,
+    yeast: [pitch({ name: 'WildBrew Philly Sour', type: 'Sour' }), pitch({ name: 'Lactobacillus Brevis', type: 'Lacto' })],
+  });
+  assert.equal(blend!.family, 'mixed');
+  assert.ok(blend!.days > 30);
 });
 
 test('a fermentation estimate needs a yeast, and falls back to the strain’s own range', () => {

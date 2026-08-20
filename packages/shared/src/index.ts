@@ -1120,6 +1120,12 @@ export interface RecipeDetail {
   hops: RecipeHop[];
   yeast: RecipeYeast[];
   otherIngredients: RecipeOtherIngredient[];
+  /**
+   * Anything about the beer that isn't tied to one part of the sheet — where it
+   * came from, how it went, what to change next time. Null when unwritten.
+   * Distinct from the mash and water notes, which describe those steps alone.
+   */
+  notes: string | null;
   /** Null when the recipe has neither mash steps nor mash notes. */
   mashGuidelines: RecipeMashGuidelines | null;
   /** Null when the recipe specifies no water targets at all. */
@@ -1158,6 +1164,8 @@ export interface RecipeEditInput {
   hops: RecipeHopEdit[];
   yeast: RecipeYeastEdit[];
   otherIngredients: RecipeOtherIngredientEdit[];
+  /** Free-form notes about the recipe as a whole. Null when unwritten. */
+  notes: string | null;
   mashGuidelines: RecipeMashGuidelines | null;
   waterProfile: RecipeWaterProfile | null;
 }
@@ -2891,6 +2899,10 @@ const recipeEditFields = {
   hops: z.array(recipeHopEditSchema).max(500),
   yeast: z.array(recipeYeastEditSchema).max(100),
   otherIngredients: z.array(recipeOtherIngredientEditSchema).max(500),
+  // Defaulted, not merely nullable: every recipe stored before this field
+  // existed is re-parsed with this schema on every read, and a bare `nullable`
+  // would make the whole library fail to load rather than read as unwritten.
+  notes: optionalRecipeText.default(null),
   mashGuidelines: recipeMashGuidelinesSchema.nullable(),
   waterProfile: recipeWaterProfileSchema.nullable(),
 };

@@ -47,6 +47,7 @@ function recipe(name: string): RecipeEditInput {
     ],
     yeast: [],
     otherIngredients: [],
+    notes: 'Charlotte likes it dry.\n\nNext time: dry hop a day earlier.',
     mashGuidelines: null,
     waterProfile: null,
   };
@@ -54,7 +55,10 @@ function recipe(name: string): RecipeEditInput {
 
 test('older stored recipe JSON receives the new editor defaults', () => {
   const current = recipe('Legacy shape');
-  const { settings: _settings, ...legacy } = current;
+  // `notes` too: every recipe written before the field existed is re-parsed
+  // through this schema on every read, so a missing key has to read as
+  // "unwritten" rather than failing the whole library to load.
+  const { settings: _settings, notes: _notes, ...legacy } = current;
   const parsed = recipeEditSchema.parse({
     ...legacy,
     settings: {
@@ -98,6 +102,8 @@ test('older stored recipe JSON receives the new editor defaults', () => {
   assert.equal(parsed.hops[0]?.form, 'Pellet');
   assert.equal(parsed.mashGuidelines?.steps[0]?.amountUnit, '');
   assert.equal(parsed.waterProfile?.sourceName, null);
+  assert.equal(parsed.notes, null, 'a sheet stored without general notes still loads');
+  assert.equal('notes' in parsed, true);
 });
 
 test('recipe statistics are calculated from the brewing inputs', () => {
@@ -199,6 +205,12 @@ test('recipe library supports local CRUD and non-destructive legacy imports', as
 
     const updated = repo.updateRecipe(created.id, recipe('Edited here'));
     assert.equal(updated?.name, 'Edited here');
+    // General notes survive the save/read round trip, blank lines and all —
+    // they are prose, not a figure, so nothing may collapse the paragraphs.
+    assert.equal(updated?.notes, 'Charlotte likes it dry.\n\nNext time: dry hop a day earlier.');
+    assert.equal(repo.getRecipe(created.id)?.notes, updated?.notes);
+    // And are cleared, not left behind, when the brewer empties the box.
+    assert.equal(repo.updateRecipe(created.id, { ...recipe('Edited here'), notes: null })?.notes, null);
     assert.equal(repo.listRecipeStats()[0]?.hopGrams, 50);
 
     // A pre-migration local override must win when its BF recipe is imported.

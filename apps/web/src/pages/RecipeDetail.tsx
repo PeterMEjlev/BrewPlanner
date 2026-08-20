@@ -63,7 +63,7 @@ import { asCleanMessage } from '../util';
 type EditorMode = 'edit' | 'version' | 'clone' | null;
 
 /** Which sections are folded away. Persisted so a preference survives reloads. */
-type SectionKey = 'fermentables' | 'hops' | 'other' | 'yeast' | 'mash' | 'water' | 'brews';
+type SectionKey = 'fermentables' | 'hops' | 'other' | 'yeast' | 'mash' | 'water' | 'notes' | 'brews';
 
 const COLLAPSE_KEY = 'brewplanner.recipeSections';
 
@@ -75,6 +75,7 @@ const ALL_OPEN: Record<SectionKey, boolean> = {
   yeast: false,
   mash: false,
   water: false,
+  notes: false,
   brews: false,
 };
 
@@ -831,6 +832,24 @@ export function RecipeDetailPage(): JSX.Element {
             </SheetSection>
           )}
 
+          {/* The brewer's own notes on the beer, in the same place the editor
+              keeps them so the two views read alike. Absent when unwritten:
+              an empty panel on every recipe that has never needed one is worse
+              than no panel at all. Wrapped `pre-wrap`, because notes are typed
+              as paragraphs and a blank line between them is meant. */}
+          {recipe.notes?.trim() && (
+            <SheetSection
+              title="Notes"
+              icon="📝"
+              open={!collapsed.notes}
+              onToggle={() => toggle('notes')}
+            >
+              <p className="whitespace-pre-wrap px-4 py-3 text-sm leading-relaxed text-zinc-300">
+                {recipe.notes.trim()}
+              </p>
+            </SheetSection>
+          )}
+
           {/* Last, because it isn't part of the sheet you brew from: the rest of
               this page is the recipe, this is what happened when it was made.
               Absent until there's a first batch, the way the grid's badge is. */}
@@ -1413,7 +1432,9 @@ function VersionPicker({
   onNewVersion?: () => void;
 }): JSX.Element {
   const navigate = useNavigate();
-  const NEW = ' new';
+  // Sentinel for the menu's action row. A literal that no recipe id can be:
+  // ids are UUIDs, so a colon-prefixed word can never collide with one.
+  const NEW = '::new-version';
   const options: SelectOption<string>[] = recipe.versions.map((v) => ({
     value: v.id,
     label: `v${v.version}`,

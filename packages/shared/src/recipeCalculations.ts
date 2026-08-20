@@ -776,7 +776,7 @@ export function aromaHopRate(
 // ---------------------------------------------------------------------------
 
 /** The strain families that ferment on visibly different clocks. */
-export type YeastFamily = 'ale' | 'lager' | 'kveik' | 'mixed';
+export type YeastFamily = 'ale' | 'lager' | 'kveik' | 'sour' | 'mixed';
 
 /**
  * How each family behaves: how long it takes a 1.050 wort to reach terminal
@@ -791,12 +791,27 @@ const YEAST_FAMILIES: Record<YeastFamily, { days: number; refC: number; label: s
   ale: { days: 5, refC: 20, label: 'Ale yeast' },
   lager: { days: 14, refC: 11, label: 'Lager yeast' },
   kveik: { days: 3, refC: 30, label: 'Kveik' },
+  // Lachancea and the other single-strain souring yeasts. They make a sour beer
+  // by themselves, on an ale's clock — souring in the first days of a primary
+  // that is over in a week. Being quick is the entire reason a brewery reaches
+  // for one instead of a blended culture, so they must not be timed as one.
+  sour: { days: 7, refC: 22, label: 'Souring yeast' },
   // Brett, lacto and the blended cultures: primary is the quick part, and the
   // beer is not finished when it stops bubbling.
   mixed: { days: 60, refC: 20, label: 'Mixed culture' },
 };
 
 const KVEIK = /kveik|voss|hornindal|lutra|opshaug|framgarden|ebbegarden|sigmund|hothead|oslo/i;
+/**
+ * The single-strain souring yeasts, which have to be recognised *before*
+ * {@link MIXED} gets to them.
+ *
+ * Every word that marks a beer as sour also marks it, wrongly, as slow: Philly
+ * Sour is catalogued with the type "Sour", is sold as "WildBrew Philly Sour",
+ * and so matches `sour`, `wild` and `philly` — three separate routes into a
+ * sixty-day estimate for a yeast that finishes in a week.
+ */
+const FAST_SOUR = /philly\s*sour|lachancea|sourvisiae|thermotolerans/i;
 const MIXED = /brett|sour|lacto|pedio|brux|wild|mixed|philly|funk/i;
 const LAGER = /lager|pilsner yeast|w-?34\/?70|s-?23|s-?189|diamond|augustiner|urquell/i;
 
@@ -804,6 +819,8 @@ const LAGER = /lager|pilsner yeast|w-?34\/?70|s-?23|s-?189|diamond|augustiner|ur
 function yeastFamily(yeast: { name: string; type: string }): YeastFamily {
   const said = `${yeast.type} ${yeast.name}`;
   if (KVEIK.test(said)) return 'kveik';
+  // Before MIXED, which would otherwise claim it on the word "sour" alone.
+  if (FAST_SOUR.test(said)) return 'sour';
   if (MIXED.test(said)) return 'mixed';
   if (LAGER.test(said)) return 'lager';
   return 'ale';
@@ -872,7 +889,8 @@ export function estimateFermentationDays(input: {
   // The slowest pitch decides: a mixed-fermentation beer is not done when its
   // sacch is, and a co-pitch is finished when the last strain is.
   const families = pitched.map(yeastFamily);
-  const family = (['mixed', 'lager', 'ale', 'kveik'] as YeastFamily[]).find((candidate) =>
+  // Ordered slowest first, so a co-pitch is finished when its last strain is.
+  const family = (['mixed', 'lager', 'sour', 'ale', 'kveik'] as YeastFamily[]).find((candidate) =>
     families.includes(candidate),
   ) ?? 'ale';
   const profile = YEAST_FAMILIES[family];

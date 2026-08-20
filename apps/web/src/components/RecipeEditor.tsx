@@ -31,7 +31,7 @@ import type {
   RecipeYeastSpec,
   UnpricedIngredient,
 } from '@checklist/shared';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { kr } from '../money';
 import { TARGET_PRESETS } from '../water';
@@ -109,7 +109,8 @@ type EditorSectionKey =
   | 'yeast'
   | 'other'
   | 'mash'
-  | 'water';
+  | 'water'
+  | 'notes';
 
 const COLLAPSE_KEY = 'brewplanner.recipeEditorSections';
 
@@ -126,6 +127,7 @@ const ALL_OPEN: Record<EditorSectionKey, boolean> = {
   other: false,
   mash: false,
   water: false,
+  notes: false,
 };
 
 /**
@@ -143,6 +145,7 @@ const NEW_RECIPE_COLLAPSED: Record<EditorSectionKey, boolean> = {
   other: true,
   mash: true,
   water: true,
+  notes: true,
 };
 
 /**
@@ -189,6 +192,7 @@ const SECTION_RAIL: Array<{ key: EditorSectionKey; icon: string; label: string }
   { key: 'other', icon: '🧪', label: 'Other' },
   { key: 'mash', icon: '🌡️', label: 'Mash guidelines' },
   { key: 'water', icon: '💧', label: 'Water chemistry' },
+  { key: 'notes', icon: '📝', label: 'Notes' },
 ];
 
 /** Where the rail's links land, and what the position marker measures. */
@@ -293,6 +297,7 @@ function editable(recipe: RecipeDetail): RecipeEditInput {
   return {
     name: recipe.name,
     style: recipe.style,
+    notes: recipe.notes,
     settings: { ...DEFAULT_RECIPE_SETTINGS, ...recipe.settings },
     og: recipe.og,
     preBoilGravity: recipe.preBoilGravity,
@@ -660,6 +665,8 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
     window.scrollTo({ top: y, behavior: 'smooth' });
   }, [pendingJump]);
   const [locked, setLocked] = useState<Record<LockedLines, boolean[]>>({ fermentables: [], hops: [], yeast: [] });
+  /** Namespace for the amount boxes' ids, so two editors on a page can't collide. */
+  const amountIdPrefix = useId();
   const categories = useMemo(() => {
     // The recipe's saved category stays selectable even when the brewer has
     // taken it out of the dropdown — a Brewer's Friend import arrives filed
@@ -885,10 +892,14 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
                   {/* Never locked: the catalogue says what a malt *is*, not how
                       much of it this recipe calls for, and picking one is
                       normally the step right before typing the weight. */}
-                  <Field label="Amount" value={line.amount} suffix="kg" className="sm:col-span-2" onChange={(amount) => updateFermentable(index, { amount, unit: 'kg' })} />
+                  <Field id={amountFieldId('fermentables', index)} label="Amount" value={line.amount} suffix="kg" className="sm:col-span-2" onChange={(amount) => updateFermentable(index, { amount, unit: 'kg' })} />
                   <IngredientSearchSelect kind="fermentable" label="Malt / fermentable" value={line.name} className="sm:col-span-4" disabled={isLocked('fermentables', index)} catalogueOnly={catalogueOnly} onChange={(name, option) => {
                     updateFermentable(index, { name, ebc: option?.ebc ?? null, ppg: estimateFermentablePpg(name) });
                     setLineLock('fermentables', index, Boolean(option));
+                    // Only for a malt picked off the list. Typing a name by hand
+                    // fires this on every keystroke, and jumping the cursor away
+                    // mid-word would make the field impossible to type into.
+                    if (option) focusAmount('fermentables', index);
                   }} />
                   <ReadOnlyField label="Selected colour" value={line.ebc} decimals={1} suffix="EBC" className="sm:col-span-2" />
                   {/* Filled in from the malt, and editable off a maltster's analysis sheet — this is what the gravities are calculated from. */}
@@ -933,11 +944,14 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
               >
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-8">
                   {/* As with the malts: the charge is the recipe's, not the shop's. */}
-                  <Field label="Amount" value={line.amount} onChange={(amount) => updateHop(index, { amount })} />
+                  <Field id={amountFieldId('hops', index)} label="Amount" value={line.amount} onChange={(amount) => updateHop(index, { amount })} />
                   <SelectField label="Unit" value={line.unit} options={options(WEIGHT_UNITS)} onChange={(unit) => updateHop(index, { unit })} />
                   <IngredientSearchSelect kind="hop" label="Hop" value={line.name} className="sm:col-span-2 lg:col-span-4" disabled={isLocked('hops', index)} catalogueOnly={catalogueOnly} onChange={(name, option) => {
                     updateHop(index, { name, aa: option?.aa == null ? '' : String(option.aa) });
                     setLineLock('hops', index, option?.aa != null);
+                    // Whenever a hop is picked, including one the catalogue has
+                    // no alpha acid for — the charge still has to be weighed.
+                    if (option) focusAmount('hops', index);
                   }} />
                   <Field label="Alpha acid" value={line.aa} suffix="%" className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(aa) => updateHop(index, { aa })} />
                   <Field label={hopTimeLabel(line.stage)} value={line.time} className="lg:col-span-2" disabled={isLocked('hops', index)} onChange={(time) => updateHop(index, { time })} />
@@ -1008,10 +1022,11 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
                   <IngredientSearchSelect kind="yeast" label="Yeast / culture" value={line.name} disabled={isLocked('yeast', index)} catalogueOnly={catalogueOnly} onChange={(name, option) => {
                     updateYeast(index, { name, ...yeastFromStrain(option?.yeast) });
                     setLineLock('yeast', index, Boolean(option?.yeast));
+                    if (option) focusAmount('yeast', index);
                   }} />
                   <div className="grid gap-3 sm:grid-cols-3">
                     {/* How many sachets to pitch is the brewer's call, not the listing's. */}
-                    <Field label="Amount" value={line.amount} onChange={(amount) => updateYeast(index, { amount })} />
+                    <Field id={amountFieldId('yeast', index)} label="Amount" value={line.amount} onChange={(amount) => updateYeast(index, { amount })} />
                     <SelectField label="Unit" value={line.amountUnit} options={options([...COUNT_UNITS, ...WEIGHT_UNITS])} onChange={(amountUnit) => updateYeast(index, { amountUnit })} />
                     <Field label="Attenuation" value={line.attenuation} suffix="%" disabled={isLocked('yeast', index)} onChange={(attenuation) => updateYeast(index, { attenuation })} />
                   </div>
@@ -1145,6 +1160,29 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
           </div>
         </EditorSection>
 
+        {/* Everything about the beer that doesn't belong to a step: where the
+            idea came from, how the last batch went, what to change next time.
+            Last, so it never stands between the brewer and the sheet they came
+            here to fill in — and its own section rather than a field tacked
+            onto setup, because notes grow. */}
+        <EditorSection
+          title="Notes"
+          icon="📝"
+          meta={notesMeta(draft.notes)}
+          description="Anything about this recipe as a whole — not the mash or the water, which have notes of their own."
+          {...section('notes')}
+        >
+          <label className="block text-xs font-medium text-zinc-400">
+            General notes
+            <textarea
+              className={`${fieldClass} min-h-32 resize-y`}
+              value={draft.notes ?? ''}
+              placeholder="Brewed this for Charlotte's birthday. Next time: pitch warmer and dry hop a day earlier."
+              onChange={(event) => setDraft((d) => ({ ...d, notes: nullableText(event.target.value) }))}
+            />
+          </label>
+        </EditorSection>
+
         <div className="sticky bottom-3 z-30 flex items-center justify-end gap-2 rounded-xl border border-zinc-700 bg-zinc-900/95 p-3 shadow-2xl backdrop-blur">
           <button type="button" onClick={cancel} disabled={saving} className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50">
             Cancel
@@ -1228,6 +1266,35 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
 
   function updateFermentable(index: number, patch: Partial<RecipeFermentableEdit>): void {
     setDraft((d) => ({ ...d, fermentables: d.fermentables.map((line, i) => i === index ? { ...line, ...patch } : line) }));
+  }
+
+  /** The amount box belonging to one ingredient line. */
+  function amountFieldId(kind: LockedLines, index: number): string {
+    return `${amountIdPrefix}-${kind}-amount-${index}`;
+  }
+
+  /**
+   * Put the cursor in a line's amount box.
+   *
+   * Choosing an ingredient only ever fills in half a row: the catalogue knows
+   * what a malt is, not how much of it this recipe calls for, so the weight is
+   * always the next thing typed. Landing there automatically saves a click per
+   * ingredient, which over a grain bill and a hop schedule is most of the
+   * clicks in writing a recipe.
+   *
+   * Deferred a frame because the dropdown is still closing when the selection
+   * lands — focusing into that teardown just hands the caret straight back. The
+   * existing text is selected rather than appended to, so changing the malt on
+   * a line that already has a weight lets the new one be typed straight over it.
+   */
+  function focusAmount(kind: LockedLines, index: number): void {
+    requestAnimationFrame(() => {
+      const field = document.getElementById(amountFieldId(kind, index));
+      if (field instanceof HTMLInputElement) {
+        field.focus();
+        field.select();
+      }
+    });
   }
 
   /**
@@ -1611,13 +1678,23 @@ function LineCard({ label, onRemove, locked, onToggleLock, children }: { label: 
  * with barely a character of usable width, which is how "71" comes out reading
  * as "7".
  */
+/**
+ * What a collapsed Notes header says: how much is written, so a folded section
+ * doesn't hide the fact that there is something in it. Undefined when empty —
+ * "0 words" is a worse answer than saying nothing.
+ */
+function notesMeta(notes: string | null): string | undefined {
+  const words = (notes ?? '').trim().split(/\s+/).filter(Boolean).length;
+  return words === 0 ? undefined : `${words} word${words === 1 ? '' : 's'}`;
+}
+
 function suffixPadding(suffix: string | undefined): string {
   if (!suffix) return '';
   if (suffix.length <= 2) return 'pr-8';
   return suffix.length === 3 ? 'pr-10' : 'pr-12';
 }
 
-function Field({ label, value, onChange, suffix, className = '', required = false, type = 'text', step, placeholder, disabled = false }: { label: string; value: string | number | null | undefined; onChange: (value: string) => void; suffix?: string; className?: string; required?: boolean; type?: string; step?: string; placeholder?: string; disabled?: boolean }): JSX.Element {
+function Field({ label, value, onChange, suffix, className = '', required = false, type = 'text', step, placeholder, disabled = false, id }: { label: string; value: string | number | null | undefined; onChange: (value: string) => void; suffix?: string; className?: string; required?: boolean; type?: string; step?: string; placeholder?: string; disabled?: boolean; /** Only needed by a field something else has to move the cursor into. */ id?: string }): JSX.Element {
   return (
     <label className={`block text-xs font-medium text-zinc-400 ${className}`}>
       {label}
@@ -1626,7 +1703,7 @@ function Field({ label, value, onChange, suffix, className = '', required = fals
             complete number one keystroke before ".85" is, and re-writing the box
             mid-word would move the caret out from under whoever is still
             typing. Same rule the range field follows. */}
-        <input className={`${fieldClass} ${suffixPadding(suffix)} disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-400`} value={value ?? ''} onChange={(event) => onChange(event.target.value)} onBlur={(event) => { const tidied = withLeadingZero(event.target.value); if (tidied !== event.target.value) onChange(tidied); }} required={required} type={type} step={step} placeholder={placeholder} disabled={disabled} />
+        <input id={id} className={`${fieldClass} ${suffixPadding(suffix)} disabled:cursor-not-allowed disabled:bg-zinc-900 disabled:text-zinc-400`} value={value ?? ''} onChange={(event) => onChange(event.target.value)} onBlur={(event) => { const tidied = withLeadingZero(event.target.value); if (tidied !== event.target.value) onChange(tidied); }} required={required} type={type} step={step} placeholder={placeholder} disabled={disabled} />
         {suffix && <span className="pointer-events-none absolute inset-y-0 right-3 top-1 flex items-center text-xs text-zinc-600">{suffix}</span>}
       </div>
     </label>

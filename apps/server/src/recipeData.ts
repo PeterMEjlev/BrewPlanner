@@ -153,6 +153,7 @@ export function editableRecipe(recipe: RecipeDetail): RecipeEditInput {
     yeast: recipe.yeast.map(
       ({ grams: _grams, units: _units, price: _price, ...line }) => line,
     ),
+    notes: recipe.notes,
     otherIngredients: recipe.otherIngredients.map(
       ({ grams: _grams, units: _units, price: _price, ...line }) => line,
     ),
