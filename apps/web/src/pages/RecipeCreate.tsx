@@ -17,6 +17,12 @@ import { asCleanMessage } from '../util';
 const EMPTY_RECIPE: RecipeDetail = {
   id: '',
   origin: 'local',
+  // A sheet that hasn't been saved belongs to no family yet; saving it makes it
+  // version 1 of one of its own.
+  familyId: '',
+  version: 1,
+  versionNote: '',
+  versions: [],
   name: '',
   style: '',
   settings: { ...DEFAULT_RECIPE_SETTINGS },

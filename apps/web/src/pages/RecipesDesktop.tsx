@@ -1174,7 +1174,7 @@ export function RecipesDesktopPage(): JSX.Element {
                     colors={colors}
                     stats={stats?.get(r.id) ?? null}
                     showHopRate={sort === 'hopsPerL'}
-                    brewCount={brewCounts.get(r.id) ?? null}
+                    brewCount={brewCounts.get(r.familyId ?? r.id) ?? null}
                     onBrew={controllable ? () => void startBrewSession(r.id) : undefined}
                     starting={starting === r.id}
                   />
@@ -1256,6 +1256,17 @@ function RecipeCard({
             title={`Brewed ${brewCount.count} time${brewCount.count === 1 ? '' : 's'} · last on ${brewDate(brewCount.lastBrewedAt)}`}
           >
             ×{brewCount.count}
+          </span>
+        )}
+        {/* The card is the beer's newest version, so say which one that is once
+            there has been more than one. A beer nobody has revised stays
+            unlabelled: "v1" on every card would be noise on all of them. */}
+        {(recipe.versionCount ?? 1) > 1 && (
+          <span
+            className="shrink-0 rounded border border-zinc-700 bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-300"
+            title={`Newest of ${recipe.versionCount} versions — older ones are on the recipe's own page`}
+          >
+            v{recipe.version}
           </span>
         )}
         {recipe.origin === 'brewersfriend' && (

@@ -35,6 +35,8 @@ import { DashboardShell } from '../components/DashboardShell';
 import { IngredientName, PriceCell } from '../components/PricePicker';
 import type { PricedLine } from '../components/PricePicker';
 import { RecipeEditor } from '../components/RecipeEditor';
+import type { SelectOption } from '../components/Select';
+import { Select } from '../components/Select';
 import { SheetSection } from '../components/SheetSection';
 import { UnpricedIngredientsDialog } from '../components/UnpricedIngredients';
 import { kr } from '../money';
@@ -52,6 +54,13 @@ import { asCleanMessage } from '../util';
  * keeps what it fetched for the session (see recipeStore): moving between
  * recipes, or back to the grid and in again, then costs nothing.
  */
+
+/**
+ * What the brew-sheet editor is open for. One form, three destinations:
+ * `edit` replaces this version, `version` adds the next version of the same
+ * beer, and `clone` starts a separate beer from a copy of this sheet.
+ */
+type EditorMode = 'edit' | 'version' | 'clone' | null;
 
 /** Which sections are folded away. Persisted so a preference survives reloads. */
 type SectionKey = 'fermentables' | 'hops' | 'other' | 'yeast' | 'mash' | 'water' | 'brews';
@@ -154,7 +163,14 @@ export function RecipeDetailPage(): JSX.Element {
   const [brews, setBrews] = useState<BrewSession[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState(false);
+  /**
+   * What the editor below is open for, if anything. All three write the same
+   * sheet through the same form; they differ only in what saving does — replace
+   * this version, add the next one to the beer, or start a beer of its own.
+   */
+  const [mode, setMode] = useState<EditorMode>(null);
+  /** The note the pending version will be saved with ("more Citra late"). */
+  const [versionNote, setVersionNote] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<SectionKey, boolean>>(loadCollapsed);
@@ -248,18 +264,36 @@ export function RecipeDetailPage(): JSX.Element {
     }
   }
 
+  /**
+   * Save whatever the editor is open for. Nothing is written until this runs,
+   * so a clone or a version that's abandoned halfway leaves no half-recipe
+   * behind in the library.
+   *
+   * A new version or a copy is a different recipe from the one being read, so
+   * both navigate to what they created rather than quietly redrawing this page
+   * as a sheet the brewer didn't ask to open.
+   */
   async function saveEdit(draft: RecipeEditInput): Promise<void> {
-    if (editSaving) return;
+    if (editSaving || mode == null) return;
     setEditSaving(true);
     setError(null);
     try {
-      const saved = await api.updateRecipe(id, draft);
+      if (mode === 'clone' || mode === 'version') {
+        const saved = mode === 'clone'
+          ? await api.createRecipe(draft)
+          : await api.createRecipeVersion(id, draft, versionNote.trim());
+        invalidateRecipes();
+        setMode(null);
+        navigate(`/recipes/${encodeURIComponent(saved.id)}`);
+        return;
+      }
+      const saved = await api.updateRecipe(id, draft, versionNote.trim());
       invalidateRecipes();
       setRecipe(saved);
       if (active?.id === saved.id) {
         setActive({ ...active, name: saved.name, style: saved.style, abv: saved.abv, ibu: saved.ibu, ebc: saved.ebc });
       }
-      setEditing(false);
+      setMode(null);
     } catch (e) {
       setError(asCleanMessage(e));
     } finally {
@@ -267,15 +301,35 @@ export function RecipeDetailPage(): JSX.Element {
     }
   }
 
+  /** Open the editor in one of its three modes, on the right opening draft. */
+  function openEditor(next: Exclude<EditorMode, null>): void {
+    setError(null);
+    // A copy opens under a name that says what it is, so saving it can't
+    // silently produce a second recipe indistinguishable from the first.
+    // A new version keeps the name — it is the same beer.
+    setVersionNote(next === 'edit' ? (recipe?.versionNote ?? '') : '');
+    setMode(next);
+  }
+
   async function deleteRecipe(): Promise<void> {
     if (!recipe || deleting) return;
-    if (!window.confirm(`Delete “${recipe.name}” from BrewPlanner? This cannot be undone.`)) return;
+    // Named by version where there is more than one, so deleting v2 of a beer
+    // can't read as deleting the beer.
+    const what = recipe.versions.length > 1
+      ? `v${recipe.version} of “${recipe.name}”`
+      : `“${recipe.name}”`;
+    if (!window.confirm(`Delete ${what} from BrewPlanner? This cannot be undone.`)) return;
     setDeleting(true);
     setError(null);
     try {
       await api.deleteRecipe(recipe.id);
       invalidateRecipes();
-      navigate('/recipes', { replace: true });
+      // A beer with other versions still exists, so land on its newest
+      // remaining one rather than throwing the brewer back to the library.
+      const sibling = recipe.versions.find((v) => v.id !== recipe.id);
+      navigate(sibling ? `/recipes/${encodeURIComponent(sibling.id)}` : '/recipes', {
+        replace: true,
+      });
     } catch (e) {
       setError(asCleanMessage(e));
       setDeleting(false);
@@ -349,7 +403,15 @@ export function RecipeDetailPage(): JSX.Element {
     );
   }
 
-  if (editing) {
+  if (mode != null) {
+    // What the form opens on. A copy opens pre-renamed; the other two modes
+    // open on the sheet as it stands.
+    const draft = mode === 'clone' ? { ...recipe, name: `${recipe.name} (copy)` } : recipe;
+    const heading = mode === 'edit'
+      ? `Edit recipe${recipe.versions.length > 1 ? ` · v${recipe.version}` : ''}`
+      : mode === 'version'
+        ? `New version · v${nextVersion(recipe)}`
+        : 'Copy recipe';
     return (
       <DashboardShell active="recipes">
         {/* Wider than the read view below: the editor spends this width on a
@@ -358,12 +420,55 @@ export function RecipeDetailPage(): JSX.Element {
         <main className="w-full max-w-[1600px] px-5 py-5">
           <BackLink />
           <div className="mt-4 flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#f06a5c]">Edit recipe</p>
-              <h1 className="mt-0.5 text-xl font-semibold tracking-tight text-zinc-50">{recipe.name}</h1>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#f06a5c]">{heading}</p>
+              <h1 className="mt-0.5 text-xl font-semibold tracking-tight text-zinc-50">
+                {mode === 'clone' ? `${recipe.name} (copy)` : recipe.name}
+              </h1>
+              {mode === 'clone' && (
+                <p className="mt-1 text-sm text-zinc-500">
+                  Saved as a separate recipe with its own brew history. Nothing is written until
+                  you save.
+                </p>
+              )}
+              {mode === 'version' && (
+                <p className="mt-1 text-sm text-zinc-500">
+                  v{recipe.version} stays exactly as it is, including the batches brewed from it.
+                </p>
+              )}
             </div>
           </div>
-          <RecipeEditor recipe={recipe} saving={editSaving} error={error} onSave={saveEdit} onCancel={() => { setEditing(false); setError(null); }} />
+          {/* What changed, asked where the change is being made. Only for the
+              two modes it means something in: a copy is a new beer rather than
+              a revision of one, so it has nothing to have changed from. */}
+          {mode !== 'clone' && (
+            <label className="mt-3 block">
+              <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                What changed {mode === 'version' ? 'in this version' : 'here'}{' '}
+                <span className="font-normal normal-case tracking-normal text-zinc-600">
+                  · optional
+                </span>
+              </span>
+              <input
+                type="text"
+                value={versionNote}
+                maxLength={300}
+                onChange={(e) => setVersionNote(e.target.value)}
+                placeholder="e.g. more Citra in the whirlpool, mash 2 °C cooler"
+                className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-[#f87a68]"
+              />
+            </label>
+          )}
+          {/* Keyed by mode so switching between them starts the form on the
+              right draft rather than keeping the one it was already holding. */}
+          <RecipeEditor
+            key={`${mode}-${recipe.id}`}
+            recipe={draft}
+            saving={editSaving}
+            error={error}
+            onSave={saveEdit}
+            onCancel={() => { setMode(null); setError(null); }}
+          />
         </main>
       </DashboardShell>
     );
@@ -421,15 +526,41 @@ export function RecipeDetailPage(): JSX.Element {
                 </>
               )}
             </p>
+            {/* What the brewer changed here, where they'd look for it: on the
+                sheet itself, not only in the version menu. */}
+            {recipe.versionNote.trim() && (
+              <p className="mt-1.5 pl-[26px] text-sm text-zinc-500">
+                <span className="font-semibold text-zinc-400">v{recipe.version}:</span>{' '}
+                {recipe.versionNote.trim()}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* Which version is being read, and the way to the others. Always
+                shown, even for a beer that has only ever had one version: it is
+                also where a new version is started from, and hiding it until
+                there were two would hide the way to make the second. */}
+            <VersionPicker
+              recipe={recipe}
+              onNewVersion={controllable ? () => openEditor('version') : undefined}
+            />
             {controllable && (
               <button
                 type="button"
-                onClick={() => { setError(null); setEditing(true); }}
+                onClick={() => openEditor('edit')}
                 className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 hover:text-white"
               >
                 Edit recipe
+              </button>
+            )}
+            {controllable && (
+              <button
+                type="button"
+                onClick={() => openEditor('clone')}
+                title={`Start a separate recipe from a copy of ${recipe.name}`}
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 hover:text-white"
+              >
+                Copy
               </button>
             )}
             {controllable && (
@@ -715,7 +846,11 @@ export function RecipeDetailPage(): JSX.Element {
             >
               <ul className="divide-y divide-zinc-800">
                 {brews.map((brew) => (
-                  <BrewHistoryRow key={brew.id} brew={brew} />
+                  <BrewHistoryRow
+                    key={brew.id}
+                    brew={brew}
+                    showVersions={recipe.versions.length > 1}
+                  />
                 ))}
               </ul>
             </SheetSection>
@@ -1252,7 +1387,81 @@ function YeastRow({
  *
  * The recipe's name is deliberately absent: on its own sheet, every row is it.
  */
-function BrewHistoryRow({ brew }: { brew: BrewSession }): JSX.Element {
+/** The number the next version of this beer would be given. */
+function nextVersion(recipe: RecipeDetail): number {
+  return recipe.versions.reduce((highest, v) => Math.max(highest, v.version), recipe.version) + 1;
+}
+
+/**
+ * Which version of a beer is on screen, and the way to its others.
+ *
+ * A dropdown rather than a row of chips: a recipe that has been revised half a
+ * dozen times would otherwise push the actions off the header, and the older
+ * versions are looked at rarely — the point of the control is that the newest
+ * one is what opens, with the rest a click away when a brewer wants to see what
+ * the batch they liked in March was actually made to.
+ *
+ * "New version" sits at the foot of the same menu, since it is the one action
+ * that belongs to the set rather than to the version being read.
+ */
+function VersionPicker({
+  recipe,
+  onNewVersion,
+}: {
+  recipe: RecipeDetail;
+  /** Absent for a read-only guest, who gets the list without the action. */
+  onNewVersion?: () => void;
+}): JSX.Element {
+  const navigate = useNavigate();
+  const NEW = ' new';
+  const options: SelectOption<string>[] = recipe.versions.map((v) => ({
+    value: v.id,
+    label: `v${v.version}`,
+    // The date it was written, and what the brewer said changed in it — which
+    // together are how you recognise the version you're looking for.
+    description: [versionDate(v.createdAt), v.versionNote.trim()].filter(Boolean).join(' · ')
+      || undefined,
+  }));
+  if (onNewVersion) {
+    options.push({ value: NEW, label: `+ New version (v${nextVersion(recipe)})` });
+  }
+  return (
+    <Select
+      value={recipe.id}
+      options={options}
+      onChange={(value) => {
+        if (value === NEW) onNewVersion?.();
+        else if (value !== recipe.id) navigate(`/recipes/${encodeURIComponent(value)}`);
+      }}
+      align="right"
+      menuClassName="min-w-[16rem]"
+      aria-label="Recipe version"
+      title={
+        recipe.versions.length > 1
+          ? `Version ${recipe.version} of ${recipe.versions.length}`
+          : 'This recipe has one version'
+      }
+      className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 hover:text-white"
+    />
+  );
+}
+
+/** A version's date, short — "19 Mar 2026". Falls back to the raw value. */
+function versionDate(iso: string): string {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime())
+    ? iso
+    : at.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function BrewHistoryRow({
+  brew,
+  showVersions,
+}: {
+  brew: BrewSession;
+  /** Silent for a beer that has only ever had one version — "v1" says nothing. */
+  showVersions: boolean;
+}): JSX.Element {
   const og = brew.measured.og || brew.recipe.og;
   const fg = brew.measured.fg || brew.recipe.fg;
   const abv = abvFromGravities(brew.measured.og, brew.measured.fg);
@@ -1279,6 +1488,17 @@ function BrewHistoryRow({ brew }: { brew: BrewSession }): JSX.Element {
           >
             #{brew.brewNumber}
           </span>
+          {/* The history spans every version of the beer, so a batch has to say
+              which one it was brewed to — otherwise two rows with different
+              gravities look like the same recipe behaving differently. */}
+          {brew.recipeVersion != null && showVersions && (
+            <span
+              className="shrink-0 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-400"
+              title={`Brewed to version ${brew.recipeVersion} of this recipe`}
+            >
+              v{brew.recipeVersion}
+            </span>
+          )}
           <span
             className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
               STATUS_CHIP[brew.status]

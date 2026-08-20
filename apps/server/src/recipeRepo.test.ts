@@ -213,6 +213,10 @@ test('recipe library supports local CRUD and non-destructive legacy imports', as
         id: '42',
         origin: 'brewersfriend',
         url: 'https://www.brewersfriend.com/homebrew/recipe/view/42',
+        familyId: '42',
+        version: 1,
+        versionNote: '',
+        versions: [],
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-02T00:00:00.000Z',
       },
@@ -226,6 +230,58 @@ test('recipe library supports local CRUD and non-destructive legacy imports', as
     assert.equal(repo.updateRecipe('42', recipe('Kept app edit'))?.name, 'Kept app edit');
     assert.equal(repo.importBrewersFriendRecipe(importedSheet), false);
     assert.equal(repo.getRecipe('42')?.name, 'Kept app edit');
+
+    // --- Versions of a beer ------------------------------------------------
+    // A version is a whole sheet of its own in the same family, so the recipe a
+    // batch was brewed from stays exactly as it was brewed.
+    const v1 = repo.createRecipe(recipe('House IPA'));
+    assert.equal(v1.version, 1);
+    assert.equal(v1.familyId, v1.id, 'a new beer is the first version of its own family');
+    assert.deepEqual(v1.versions.map((v) => v.version), [1]);
+
+    const v2 = repo.createRecipeVersion(v1.id, recipe('House IPA'), 'more Citra late');
+    assert.equal(v2?.version, 2);
+    assert.equal(v2?.familyId, v1.familyId, 'a version stays with the beer it revises');
+    assert.notEqual(v2?.id, v1.id, 'a version is its own row, so a brewed batch keeps pointing at what it was brewed from');
+    assert.equal(v2?.versionNote, 'more Citra late');
+    assert.equal(repo.createRecipeVersion('nope', recipe('Nowhere')), null);
+
+    // v1 is untouched, and now knows about its sibling.
+    const reread = repo.getRecipe(v1.id);
+    assert.equal(reread?.version, 1);
+    assert.equal(reread?.name, 'House IPA');
+    assert.deepEqual(reread?.versions.map((v) => v.version), [2, 1], 'the picker lists newest first');
+
+    // The library shows the beer once, as its newest version.
+    const family = repo.listRecipes().filter((r) => r.familyId === v1.familyId);
+    assert.deepEqual(family.map((r) => r.id), [v2!.id]);
+    assert.equal(family[0]?.versionCount, 2);
+
+    // Numbering runs off the versions still in the family, so a gap in the
+    // middle is never filled in: with v1 and v3 present, the next one is v4.
+    const v3 = repo.createRecipeVersion(v1.id, recipe('House IPA'), 'dropped the wheat');
+    assert.equal(v3?.version, 3);
+    assert.equal(repo.deleteRecipe(v2!.id), true);
+    const v4 = repo.createRecipeVersion(v1.id, recipe('House IPA'), 'back to the wheat');
+    assert.equal(v4?.version, 4, 'a deleted v2 must not be refilled under the newest version');
+    assert.equal(repo.deleteRecipe(v4!.id), true);
+
+    // Saving an edit leaves the note alone unless a new one is passed — a client
+    // that knows nothing about versions can't blank it.
+    repo.updateRecipe(v3!.id, recipe('House IPA'));
+    assert.equal(repo.getRecipe(v3!.id)?.versionNote, 'dropped the wheat');
+    repo.updateRecipe(v3!.id, recipe('House IPA'), 'and the oats');
+    assert.equal(repo.getRecipe(v3!.id)?.versionNote, 'and the oats');
+
+    assert.equal(repo.recipeFamilyId(v3!.id), v1.familyId);
+    assert.equal(repo.recipeFamilyId('nope'), null);
+
+    // A copy is a beer of its own: the same sheet, but its own family, and so
+    // its own version chain and brew history from the moment it is saved.
+    const copy = repo.createRecipe(recipe('House IPA (copy)'));
+    assert.equal(copy.familyId, copy.id);
+    assert.notEqual(copy.familyId, v1.familyId);
+    assert.equal(copy.version, 1);
 
     assert.equal(repo.deleteRecipe(created.id), true);
     assert.equal(repo.getRecipe(created.id), null);

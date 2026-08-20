@@ -200,6 +200,9 @@ describe('which changes are announced', () => {
         'DELETE /api/todos/:id': '/todos',
         'POST /api/recipes': '/recipes',
         'PUT /api/recipes/:id': '/recipes',
+        // A new version of a beer is a change to the library the same way a new
+        // recipe is — the brewery should hear about it.
+        'POST /api/recipes/:id/versions': '/recipes',
         'POST /api/brew-sessions': '/brew-sessions',
         'PUT /api/kegs/:id': '/kegs',
         'PUT /api/notifications/settings': '/settings',

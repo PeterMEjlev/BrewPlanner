@@ -263,7 +263,27 @@ export function listIngredientNames(kind: IngredientKind, query = '', limit = 60
 
 export function getRecipe(id: string): RecipeDetail | null {
   const row = db.select().from(recipes).where(eq(recipes.id, id)).get();
-  return row ? rowToDetail(row, listRecipeVersions(familyOf(row))) : null;
+  if (!row) return null;
+  const versions = listRecipeVersions(familyOf(row));
+  // A row is always a version of itself. It wouldn't be in the list above if
+  // its `family_id` were blank — only reachable for a row written by a build
+  // that predates versioning — and a version picker that doesn't list the
+  // version on screen has nothing to show as selected.
+  return rowToDetail(
+    row,
+    versions.some((v) => v.id === row.id)
+      ? versions
+      : [
+          {
+            id: row.id,
+            version: row.version,
+            versionNote: row.versionNote,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          },
+          ...versions,
+        ],
+  );
 }
 
 /**
@@ -313,8 +333,12 @@ export function createRecipe(input: RecipeEditInput, versionNote = ''): RecipeDe
  * brewable on its own — a brew session, a keg and the fermenter selection all
  * point at a recipe id, and each must go on meaning the sheet it meant.
  *
- * Numbered from the family's high-water mark rather than its row count, so
- * deleting v2 leaves the next version as v4 instead of minting a second v3.
+ * Numbered one past the highest version still in the family rather than off its
+ * row count, so a family that lost its v2 goes 1 → 3 → 4 rather than minting a
+ * second v3. Deleting the newest version does free its number again, which is
+ * harmless: deleting a recipe row nulls the `recipeId` of every batch brewed
+ * from it, so a reissued number can't collide with a batch that still refers
+ * to the version it replaced.
  *
  * Null when `sourceId` names no recipe — the caller answers 404.
  */

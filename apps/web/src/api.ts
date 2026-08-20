@@ -404,15 +404,27 @@ export const api = {
   listRecipeStats: (_refresh = false) => request<RecipeStatsResponse>('/recipes/stats'),
   // One recipe's full brew sheet (ingredients, mash, water), for the detail page.
   getRecipe: (id: string) => request<RecipeDetail>(`/recipes/${encodeURIComponent(id)}`),
-  createRecipe: (recipe: RecipeEditInput) =>
+  // A new beer. Cloning an existing one comes through here too: a copy is its
+  // own recipe with its own brew history, not a version of what it was copied
+  // from. The note travels beside the sheet rather than inside it — it
+  // describes the version, not the beer.
+  createRecipe: (recipe: RecipeEditInput, versionNote = '') =>
     request<RecipeDetail>('/recipes', {
       method: 'POST',
-      body: JSON.stringify(recipe),
+      body: JSON.stringify({ ...recipe, versionNote }),
     }),
-  updateRecipe: (id: string, recipe: RecipeEditInput) =>
+  // The next version of an existing beer: a sheet of its own in the same
+  // family, leaving the version it was written from exactly as it was brewed.
+  createRecipeVersion: (id: string, recipe: RecipeEditInput, versionNote = '') =>
+    request<RecipeDetail>(`/recipes/${encodeURIComponent(id)}/versions`, {
+      method: 'POST',
+      body: JSON.stringify({ ...recipe, versionNote }),
+    }),
+  // Save an edit to one version. Omitting the note leaves the stored one alone.
+  updateRecipe: (id: string, recipe: RecipeEditInput, versionNote?: string) =>
     request<RecipeDetail>(`/recipes/${encodeURIComponent(id)}`, {
       method: 'PUT',
-      body: JSON.stringify(recipe),
+      body: JSON.stringify(versionNote == null ? recipe : { ...recipe, versionNote }),
     }),
   // The figures a blank brew sheet opens on. Server-shared, so the kiosk, a
   // laptop and the phone all start a new recipe on the same brewhouse.
