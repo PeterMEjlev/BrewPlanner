@@ -88,6 +88,11 @@ interface Props {
  * The three ingredient lists whose rows fill themselves in from the catalogue,
  * and so have something worth locking. Mash steps and "other ingredients" are
  * typed from scratch, so they have no lock.
+ *
+ * The lock covers what the catalogue vouched for — the colour, the extract
+ * potential, the alpha acid, the attenuation — and deliberately not how much of
+ * the ingredient goes in. A weight is the brewer's to type, and picking the
+ * ingredient is usually the step immediately before typing it.
  */
 type LockedLines = 'fermentables' | 'hops' | 'yeast';
 
@@ -342,6 +347,20 @@ function normalizeMashStep(step: RecipeMashStep): RecipeMashStep {
 function nullable(value: string): string | null {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+/**
+ * The same, for a field the brewer writes prose into rather than a figure.
+ *
+ * Blank still becomes null, but what they typed is kept exactly as typed. The
+ * trimming {@link nullable} does is fatal to a notes field: it runs on every
+ * keystroke, so the space ending "mash " is stripped the instant it is pressed
+ * and the next word is typed straight onto the last one — the field simply
+ * refuses to take a space. Leading and trailing whitespace is still tidied up,
+ * just at the point it matters: `optionalRecipeText` trims on save.
+ */
+function nullableText(value: string): string | null {
+  return value.trim() ? value : null;
 }
 
 function nullableNumber(value: string): number | null {
@@ -863,7 +882,10 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
                 }}
               >
                 <div className="grid gap-3 sm:grid-cols-8">
-                  <Field label="Amount" value={line.amount} suffix="kg" className="sm:col-span-2" disabled={isLocked('fermentables', index)} onChange={(amount) => updateFermentable(index, { amount, unit: 'kg' })} />
+                  {/* Never locked: the catalogue says what a malt *is*, not how
+                      much of it this recipe calls for, and picking one is
+                      normally the step right before typing the weight. */}
+                  <Field label="Amount" value={line.amount} suffix="kg" className="sm:col-span-2" onChange={(amount) => updateFermentable(index, { amount, unit: 'kg' })} />
                   <IngredientSearchSelect kind="fermentable" label="Malt / fermentable" value={line.name} className="sm:col-span-4" disabled={isLocked('fermentables', index)} catalogueOnly={catalogueOnly} onChange={(name, option) => {
                     updateFermentable(index, { name, ebc: option?.ebc ?? null, ppg: estimateFermentablePpg(name) });
                     setLineLock('fermentables', index, Boolean(option));
@@ -910,8 +932,9 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
                 }}
               >
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-8">
-                  <Field label="Amount" value={line.amount} disabled={isLocked('hops', index)} onChange={(amount) => updateHop(index, { amount })} />
-                  <SelectField label="Unit" value={line.unit} options={options(WEIGHT_UNITS)} disabled={isLocked('hops', index)} onChange={(unit) => updateHop(index, { unit })} />
+                  {/* As with the malts: the charge is the recipe's, not the shop's. */}
+                  <Field label="Amount" value={line.amount} onChange={(amount) => updateHop(index, { amount })} />
+                  <SelectField label="Unit" value={line.unit} options={options(WEIGHT_UNITS)} onChange={(unit) => updateHop(index, { unit })} />
                   <IngredientSearchSelect kind="hop" label="Hop" value={line.name} className="sm:col-span-2 lg:col-span-4" disabled={isLocked('hops', index)} catalogueOnly={catalogueOnly} onChange={(name, option) => {
                     updateHop(index, { name, aa: option?.aa == null ? '' : String(option.aa) });
                     setLineLock('hops', index, option?.aa != null);
@@ -987,8 +1010,9 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
                     setLineLock('yeast', index, Boolean(option?.yeast));
                   }} />
                   <div className="grid gap-3 sm:grid-cols-3">
-                    <Field label="Amount" value={line.amount} disabled={isLocked('yeast', index)} onChange={(amount) => updateYeast(index, { amount })} />
-                    <SelectField label="Unit" value={line.amountUnit} options={options([...COUNT_UNITS, ...WEIGHT_UNITS])} disabled={isLocked('yeast', index)} onChange={(amountUnit) => updateYeast(index, { amountUnit })} />
+                    {/* How many sachets to pitch is the brewer's call, not the listing's. */}
+                    <Field label="Amount" value={line.amount} onChange={(amount) => updateYeast(index, { amount })} />
+                    <SelectField label="Unit" value={line.amountUnit} options={options([...COUNT_UNITS, ...WEIGHT_UNITS])} onChange={(amountUnit) => updateYeast(index, { amountUnit })} />
                     <Field label="Attenuation" value={line.attenuation} suffix="%" disabled={isLocked('yeast', index)} onChange={(attenuation) => updateYeast(index, { attenuation })} />
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1101,7 +1125,7 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
             <AddRow label="Add a mash step" onAdd={addMashStep} />
             <label className="block text-xs font-medium text-zinc-400">
               Mash notes
-              <textarea className={`${fieldClass} min-h-20 resize-y`} value={draft.mashGuidelines?.notes ?? ''} onChange={(event) => updateMashHeader({ notes: nullable(event.target.value) })} />
+              <textarea className={`${fieldClass} min-h-20 resize-y`} value={draft.mashGuidelines?.notes ?? ''} onChange={(event) => updateMashHeader({ notes: nullableText(event.target.value) })} />
             </label>
           </div>
         </EditorSection>
@@ -1116,7 +1140,7 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
             ))}
             <label className="block text-xs font-medium text-zinc-400 sm:col-span-2 lg:col-span-4">
               Water notes
-              <textarea className={`${fieldClass} min-h-20 resize-y`} value={draft.waterProfile?.notes ?? ''} onChange={(event) => updateWater({ notes: nullable(event.target.value) })} />
+              <textarea className={`${fieldClass} min-h-20 resize-y`} value={draft.waterProfile?.notes ?? ''} onChange={(event) => updateWater({ notes: nullableText(event.target.value) })} />
             </label>
           </div>
         </EditorSection>
