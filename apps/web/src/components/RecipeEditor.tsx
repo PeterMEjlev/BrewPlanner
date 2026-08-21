@@ -1301,7 +1301,11 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
               range={styleRange?.abv}
               compareToStyle
               emptyNote={missing('abv')}
-              detail={calculation.fruitAbv > 0 ? `+${calculation.fruitAbv.toFixed(2)}% from fruit` : undefined}
+              detail={
+                calculation.fruitAbv > 0 && calculation.abv != null
+                  ? `Malt ${Math.max(0, calculation.abv - calculation.fruitAbv).toFixed(2)}% + fruit additions ${calculation.fruitAbv.toFixed(2)}%`
+                  : undefined
+              }
               title={calculation.fruitAbv > 0 ? 'Fruit contribution assumes a typical unsweetened Brix for the named juice or puree and that its sugar ferments dry.' : undefined}
             />
             <CalculatedStat label="IBU" value={calculation.ibu} decimals={1} range={styleRange?.ibu} compareToStyle emptyNote={missing('ibu')} />

@@ -626,7 +626,11 @@ export function RecipeDetailPage(): JSX.Element {
           <Stat
             label="ABV"
             value={`${fmt(recipe.abv, 1)}%`}
-            detail={fruitAbv > 0 ? `+${fruitAbv.toFixed(2)}% from fruit` : undefined}
+            detail={
+              fruitAbv > 0
+                ? `Malt ${Math.max(0, Number(recipe.abv) - fruitAbv).toFixed(2)}% + fruit additions ${fruitAbv.toFixed(2)}%`
+                : undefined
+            }
             title={fruitAbv > 0 ? 'Fruit contribution assumes a typical unsweetened Brix for the named juice or puree and that its sugar ferments dry.' : undefined}
           />
           <Stat label="IBU" value={fmt(recipe.ibu, 1)} />
