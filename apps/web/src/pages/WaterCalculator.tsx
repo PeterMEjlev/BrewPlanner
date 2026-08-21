@@ -1,5 +1,8 @@
+import type { SavedWaterProfile } from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { api } from '../api';
+import { canControl, useAuth } from '../auth';
 import {
   Card,
   Field,
@@ -119,6 +122,17 @@ interface CalcState {
   limits: IonLimits;
   mash: MashState;
   salts: SaltGrams;
+  /**
+   * The recipe hand-off this state was seeded from — the query string, verbatim
+   * — or null for a state nobody seeded. It exists because the hand-off params
+   * outlive the seeding: the Tools rail carries the search across a tool switch
+   * so flicking away and back doesn't lose the recipe, which also means this
+   * component remounts with the same params still on the URL. Re-seeding then
+   * would throw away every edit made since. Recorded here rather than in
+   * component state so it survives to the next visit, which is the case the
+   * brewer actually notices.
+   */
+  seededFrom: string | null;
 }
 
 const DEFAULT_MASH: MashState = {
@@ -137,6 +151,7 @@ const DEFAULT_STATE: CalcState = {
   limits: { ...TARGET_PRESETS[0]!.limits },
   mash: { ...DEFAULT_MASH },
   salts: { ...EMPTY_SALTS },
+  seededFrom: null,
 };
 
 /**
@@ -178,6 +193,7 @@ function loadState(): CalcState {
       source: { ...DEFAULT_STATE.source, ...p.source },
       target: { ...DEFAULT_STATE.target, ...p.target },
       hco3Override: p.hco3Override ?? null,
+      seededFrom: p.seededFrom ?? null,
       limits: { ...DEFAULT_STATE.limits, ...p.limits },
       mash: { ...DEFAULT_STATE.mash, ...p.mash },
       salts: { ...DEFAULT_STATE.salts, ...p.salts },
@@ -205,8 +221,16 @@ function loadState(): CalcState {
  * recipe's actual grain bill by the same shared model the recipe sheet uses, and
  * it replaces the pale-all-malt assumption this page falls back to when nobody
  * has told it what's in the mash tun.
+ *
+ * Seeding happens once per hand-off, tracked by {@link CalcState.seededFrom}:
+ * the params stay on the URL for as long as the brewer is on the page, so
+ * without that check every remount would overwrite their edits with the
+ * recipe's opening numbers. The banner's Reset offers the re-seed back
+ * deliberately.
  */
 function applyQueryParams(base: CalcState, params: URLSearchParams): CalcState {
+  const signature = params.toString();
+  if (!signature || base.seededFrom === signature) return base;
   const target = { ...base.target };
   let sawIon = false;
   for (const ion of TARGET_IONS) {
@@ -242,6 +266,7 @@ function applyQueryParams(base: CalcState, params: URLSearchParams): CalcState {
     hco3Override,
     mash,
     volumeL,
+    seededFrom: signature,
     // A recipe arrives with no idea which preset it came from, so grade its ions
     // as point targets rather than borrowing bands that may not apply.
     limits: {},
@@ -258,6 +283,29 @@ export function WaterCalculator(): JSX.Element {
   // defaults answer for a pale all-malt grist, and the pH they produce is on
   // screen either way.
   const [mashOpen, setMashOpen] = useState(false);
+  // The brewery's own target profiles, alongside the built-in style presets.
+  // They live on the server so they follow the brewer between screens, which
+  // means the picker has to cope with not having them yet — an empty list is a
+  // fine state to render, so there's no spinner here.
+  const [saved, setSaved] = useState<SavedWaterProfile[]>([]);
+  const [savingName, setSavingName] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const { auth } = useAuth();
+  const mayEditProfiles = canControl(auth);
+  useEffect(() => {
+    let live = true;
+    void api
+      .listWaterProfiles()
+      .then((list) => {
+        if (live) setSaved(list);
+      })
+      // A calculator that can't reach the saved list is still a working
+      // calculator, so this stays quiet rather than failing the page.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   const fromRecipe = params.get('recipe');
   const fromRecipeId = params.get('recipeId');
   useEffect(() => {
@@ -325,6 +373,64 @@ export function WaterCalculator(): JSX.Element {
       return { ...s, salts: suggestSalts(src, { ...s.target, hco3 }, s.volumeL) };
     });
   const clearSalts = (): void => setState((s) => ({ ...s, salts: { ...EMPTY_SALTS } }));
+  // The way back to the recipe's opening numbers. Seeding is once-only so that
+  // edits survive a remount, which leaves this as the only route to a re-seed —
+  // and it should be a button press, not a side effect of navigation.
+  const reseedFromRecipe = (): void =>
+    setState((s) => applyQueryParams({ ...s, seededFrom: null }, params));
+
+  // Applying a saved profile drops the preset bands, the same way hand-editing
+  // an ion does: these are point targets the brewery typed, and grading them
+  // against a style table's ranges would be grading them against the wrong
+  // thing. Bicarbonate rides along as an override, or as null for the profiles
+  // that chose to leave alkalinity to the grist.
+  const applySaved = (profile: SavedWaterProfile): void =>
+    setState((s) => ({
+      ...s,
+      target: {
+        ...s.target,
+        ca: profile.ca,
+        mg: profile.mg,
+        na: profile.na,
+        cl: profile.cl,
+        so4: profile.so4,
+      },
+      hco3Override: profile.hco3,
+      limits: {},
+    }));
+
+  const saveProfile = async (name: string): Promise<void> => {
+    setSaveError(null);
+    try {
+      // The five flavour ions as typed, plus whatever the HCO₃ field is
+      // actually doing — a typed override is saved as a number, and following
+      // the mash-pH model is saved as null so the profile keeps deferring to
+      // whatever grist it's later used with.
+      setSaved(
+        await api.saveWaterProfile({
+          name,
+          ca: target.ca,
+          mg: target.mg,
+          na: target.na,
+          cl: target.cl,
+          so4: target.so4,
+          hco3: hco3Override,
+        }),
+      );
+      setSavingName(null);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save the profile.');
+    }
+  };
+
+  const deleteProfile = async (id: string): Promise<void> => {
+    setSaveError(null);
+    try {
+      setSaved(await api.deleteWaterProfile(id));
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not delete the profile.');
+    }
+  };
 
   const ratio = sulfateChlorideRatio(result);
 
@@ -340,9 +446,17 @@ export function WaterCalculator(): JSX.Element {
           {params.get('volume')
             ? `Water volume is set to the recipe's ${params.get('volume')} L batch size — raise it to your actual total mash + sparge water.`
             : 'Check the water volume below before dosing.'}
+          {' '}
+          <button
+            type="button"
+            onClick={reseedFromRecipe}
+            className="font-semibold text-[#f87a68] underline-offset-2 hover:underline"
+          >
+            Reset to its targets
+          </button>
           {fromRecipeId && (
             <>
-              {' '}
+              {' · '}
               <Link
                 to={`/recipes/${encodeURIComponent(fromRecipeId)}`}
                 className="font-semibold text-[#f87a68] underline-offset-2 hover:underline"
@@ -443,6 +557,114 @@ export function WaterCalculator(): JSX.Element {
                 );
               })}
             </div>
+            {/* The brewery's own profiles, kept in a row of their own below the
+                style presets rather than mixed in with them. They're a
+                different kind of thing — someone here typed these, and only
+                these can be deleted — and a shared row would have made the ×
+                on half the buttons look like an oversight on the other half. */}
+            {(saved.length > 0 || mayEditProfiles) && (
+              <div className="mb-4 border-t border-zinc-800/60 pt-3">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                  Saved profiles
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {saved.map((profile) => {
+                    const active =
+                      TARGET_IONS.every((ion) => ion !== 'hco3' && target[ion] === profile[ion]) &&
+                      hco3Override === profile.hco3;
+                    return (
+                      <span
+                        key={profile.id}
+                        className={`inline-flex items-center rounded-lg border text-xs font-medium transition ${
+                          active
+                            ? 'border-transparent bg-gradient-to-br from-[#f87a68] to-[#e0463f] text-white shadow'
+                            : 'border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => applySaved(profile)}
+                          className="px-2.5 py-1"
+                        >
+                          {profile.name}
+                        </button>
+                        {mayEditProfiles && (
+                          <button
+                            type="button"
+                            aria-label={`Delete ${profile.name}`}
+                            onClick={() => void deleteProfile(profile.id)}
+                            className={`px-1.5 py-1 text-sm leading-none transition ${
+                              active ? 'text-white/70 hover:text-white' : 'text-zinc-500 hover:text-zinc-200'
+                            }`}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
+                  {/* Naming happens inline rather than in a dialog: the numbers
+                      being saved are on screen right behind it, and a modal
+                      would cover the thing the brewer is naming. */}
+                  {mayEditProfiles &&
+                    (savingName === null ? (
+                      <button
+                        type="button"
+                        onClick={() => setSavingName('')}
+                        className="rounded-lg border border-dashed border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-400 transition hover:border-zinc-500 hover:text-zinc-200"
+                      >
+                        + Save current
+                      </button>
+                    ) : (
+                      <form
+                        className="flex items-center gap-1.5"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const name = savingName.trim();
+                          if (name) void saveProfile(name);
+                        }}
+                      >
+                        <input
+                          autoFocus
+                          value={savingName}
+                          maxLength={60}
+                          placeholder="Profile name"
+                          aria-label="Profile name"
+                          onChange={(e) => setSavingName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') setSavingName(null);
+                          }}
+                          className="w-36 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 text-xs text-zinc-100 outline-none transition focus:border-[#f87a68]"
+                        />
+                        <button
+                          type="submit"
+                          disabled={savingName.trim() === ''}
+                          className="rounded-lg bg-gradient-to-br from-[#f87a68] to-[#e0463f] px-2.5 py-1 text-xs font-semibold text-white shadow transition hover:brightness-110 disabled:opacity-40"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSavingName(null)}
+                          className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:bg-zinc-800"
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    ))}
+                </div>
+                {/* Saving over a name replaces that profile, so say so before
+                    the brewer discovers it by losing one. */}
+                {savingName !== null && (
+                  <p className="mt-2 text-xs leading-snug text-zinc-500">
+                    Saves the five flavour ions and the HCO₃ setting above. Reusing a name
+                    overwrites that profile.
+                  </p>
+                )}
+                {saveError && <p className="mt-2 text-xs text-red-400">{saveError}</p>}
+              </div>
+            )}
             <IonGrid profile={target} onChange={setTargetIon} idPrefix="tgt" ions={TARGET_IONS} limits={limits} />
             {/* Bicarbonate sits apart from the five flavour ions because it
                 behaves differently: it arrives already answered by the mash-pH

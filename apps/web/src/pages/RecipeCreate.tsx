@@ -82,8 +82,10 @@ const EMPTY_RECIPE: RecipeDetail = {
     maxTempC: null,
     alcoholTolerance: '',
     starter: false,
-    // Blank: the ordinary case is one pitch, at the start.
+    // Blank: the ordinary case is one pitch, at the start, at the recipe's
+    // own fermentation temperature.
     addAfterDays: '',
+    heldAtC: '',
     grams: null,
     units: 1,
     price: null,

@@ -35,6 +35,8 @@ import type {
   FermenterState,
   FermenterStatus,
   GraphColors,
+  SaveWaterProfileInput,
+  SavedWaterProfile,
   HostStatus,
   IngredientKind,
   IngredientPriceOptions,
@@ -595,6 +597,20 @@ export const api = {
     request<GraphColors>('/graph-colors', {
       method: 'PUT',
       body: JSON.stringify(colors),
+    }),
+
+  // The brewery's saved target water profiles, shown alongside the built-in
+  // style presets in the water calculator. Both writes return the whole list,
+  // so a caller never needs a follow-up fetch.
+  listWaterProfiles: () => request<SavedWaterProfile[]>('/water-profiles'),
+  saveWaterProfile: (profile: SaveWaterProfileInput) =>
+    request<SavedWaterProfile[]>('/water-profiles', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    }),
+  deleteWaterProfile: (id: string) =>
+    request<SavedWaterProfile[]>(`/water-profiles/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     }),
 
   // Shared keg content colour palette, used by `/api/kegs`.

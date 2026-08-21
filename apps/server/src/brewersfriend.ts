@@ -910,8 +910,10 @@ function yeasts(r: BrewersFriendRecipe): RecipeYeast[] {
       // The API sends this as a 0/1 flag or a boolean depending on the field.
       starter: str(y.starter) === '1' || str(y.starter).toLowerCase() === 'true',
       // Brewer's Friend has no staged-pitch field, so an import is always
-      // "pitched at the start" until the brewery says otherwise here.
+      // "pitched at the start", at the recipe's own temperature, until the
+      // brewery says otherwise here.
       addAfterDays: '',
+      heldAtC: '',
     };
   });
 }
@@ -1005,6 +1007,9 @@ function mashGuidelines(r: BrewersFriendRecipe): RecipeMashGuidelines | null {
 function waterProfile(r: BrewersFriendRecipe): RecipeWaterProfile | null {
   const profile: RecipeWaterProfile = {
     sourceName: null,
+    // An imported recipe carries its own numbers and knows nothing of this
+    // brewery's saved profiles, so it arrives unlinked.
+    profileId: null,
     name: strOrNull(r.waterprofile),
     ph: strOrNull(r.ph),
     notes: strOrNull(r.waternotes),

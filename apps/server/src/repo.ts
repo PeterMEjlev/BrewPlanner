@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   ActiveState,
   Checklist,
@@ -11,6 +12,8 @@ import type {
   NotificationSettings,
   Recipe,
   RecipeDefaults,
+  SaveWaterProfileInput,
+  SavedWaterProfile,
   Step,
   Todo,
 } from '@checklist/shared';
@@ -355,6 +358,7 @@ const GRAPH_COLORS_KEY = 'graph_colors';
 const KEG_CONTENT_COLORS_KEY = 'keg_content_colors';
 const DEVICE_SOURCES_KEY = 'device_sources';
 const RECIPE_DEFAULTS_KEY = 'recipe_defaults';
+const WATER_PROFILES_KEY = 'water_profiles';
 
 /** Upsert a key-value setting (exported for the notification dedup markers). */
 export function setSetting(key: string, value: string): void {
@@ -450,6 +454,62 @@ export function getRecipeDefaults(): RecipeDefaults {
 export function setRecipeDefaults(d: RecipeDefaults): RecipeDefaults {
   setSetting(RECIPE_DEFAULTS_KEY, JSON.stringify(d));
   return d;
+}
+
+/**
+ * The brewery's saved target water profiles, oldest first. Stored as one JSON
+ * array under a single settings key rather than a table of its own: this is a
+ * short hand-curated list read whole every time, with no foreign keys pointing
+ * at it yet, so a table would buy nothing a blob doesn't already give.
+ *
+ * A malformed or missing blob reads as an empty library rather than throwing —
+ * the water calculator works perfectly well with no saved profiles, and failing
+ * the whole page over a bad settings row would be the worse outcome.
+ */
+export function getWaterProfiles(): SavedWaterProfile[] {
+  const raw = getSetting(WATER_PROFILES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as SavedWaterProfile[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Add a profile, or replace the one already using that name. Upserting by name
+ * is what a brewer means by saving over their own profile: they've tweaked
+ * "House pale" and want one of it, not two. Comparison is case-insensitive and
+ * trimmed, since "house pale" and "House Pale " are plainly the same profile.
+ *
+ * The whole updated list comes back so the caller doesn't need a second read to
+ * refresh its picker.
+ */
+export function saveWaterProfile(input: SaveWaterProfileInput): SavedWaterProfile[] {
+  const key = input.name.trim().toLowerCase();
+  const existing = getWaterProfiles();
+  const previous = existing.find((p) => p.name.trim().toLowerCase() === key);
+  const saved: SavedWaterProfile = {
+    ...input,
+    name: input.name.trim(),
+    // Keep the id and creation time across an overwrite: anything pointing at
+    // this profile by id should follow the edit rather than dangle.
+    id: previous?.id ?? randomUUID(),
+    createdAt: previous?.createdAt ?? now(),
+  };
+  const next = previous
+    ? existing.map((p) => (p.id === previous.id ? saved : p))
+    : [...existing, saved];
+  setSetting(WATER_PROFILES_KEY, JSON.stringify(next));
+  return next;
+}
+
+/** Remove one saved profile by id. Returns the list as it now stands. */
+export function deleteWaterProfile(id: string): SavedWaterProfile[] {
+  const next = getWaterProfiles().filter((p) => p.id !== id);
+  setSetting(WATER_PROFILES_KEY, JSON.stringify(next));
+  return next;
 }
 
 /**

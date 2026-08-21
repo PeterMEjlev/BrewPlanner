@@ -963,6 +963,16 @@ export interface RecipeYeast {
    * parsed still displays instead of becoming NaN.
    */
   addAfterDays: string;
+  /**
+   * The temperature this pitch is held at, °C, as a bare number string. Empty
+   * means the recipe's own fermentation temperature.
+   *
+   * Per pitch rather than per recipe because a staged pitch almost always comes
+   * with a ramp — the point of dropping kveik into a soured wort is to finish it
+   * warm, and a sheet that can say "on day four" but not "at 33 °C" records half
+   * the instruction.
+   */
+  heldAtC: string;
   /** Weight in grams, normalized from `amount`/`amountUnit`; null if unreadable. */
   grams: number | null;
   /**
@@ -1039,10 +1049,27 @@ export interface RecipeMashGuidelines {
  * into salt additions is the water calculator's job (see `apps/web/src/water.ts`),
  * which solves for actual salt masses rather than pretending ppm × litres is a
  * weight of gypsum.
+ *
+ * The ion fields are always populated, even on a recipe linked to a saved
+ * profile by {@link profileId}. That's deliberate: the link is resolved on read
+ * (see `hydrateRecipe`), so the stored numbers are a snapshot that only ever
+ * surfaces if the profile it points at is deleted. A recipe that loses its
+ * profile then still says what it was brewed to, rather than going blank.
  */
 export interface RecipeWaterProfile {
   /** Source-water preset/profile name. */
   sourceName: string | null;
+  /**
+   * The saved water profile this recipe follows ({@link SavedWaterProfile}), or
+   * null for a recipe whose numbers stand on their own — one typed by hand, one
+   * from a built-in style preset, or one imported from Brewer's Friend.
+   *
+   * A live reference, not a copy: editing the saved profile changes what every
+   * recipe pointing at it brews to, which is the point of saving one. The
+   * resolution happens server-side on read so the detail page, the editor,
+   * Bruce and the brew sheet can't disagree about it.
+   */
+  profileId: string | null;
   /** Profile name ("Balanced", "Burton"…); null when unnamed. */
   name: string | null;
   /** Target mash pH; null when unset. */
@@ -2456,6 +2483,46 @@ export const DEFAULT_GRAPH_COLORS: GraphColors = {
   setpoint: '#f59e0b', // amber reference line
 };
 
+/**
+ * A target water profile the brewery saved for itself, stored server-side (the
+ * `water_profiles` key of the `settings` table) so it follows the brewer from
+ * the desktop to their phone to the kiosk — and so a recipe can point at one by
+ * id later, which a browser-local list could never support.
+ *
+ * Only the *target* side is saved. The source profile is a property of the tap,
+ * not of the beer, and the built-in style presets already cover the "what am I
+ * aiming for" question these are meant to extend.
+ *
+ * Deliberately no per-ion bands, unlike the built-in presets: those bands come
+ * from the table the presets were read out of, and a brewer typing their own
+ * numbers is stating point targets. The calculator already drops a preset's
+ * band the moment an ion is hand-edited, so carrying one here would contradict
+ * the value it was saved from.
+ */
+export interface SavedWaterProfile {
+  id: string;
+  name: string;
+  /** Calcium, ppm. */
+  ca: number;
+  /** Magnesium, ppm. */
+  mg: number;
+  /** Sodium, ppm. */
+  na: number;
+  /** Chloride, ppm. */
+  cl: number;
+  /** Sulfate, ppm. */
+  so4: number;
+  /**
+   * Bicarbonate, ppm — or null to leave alkalinity to the mash-pH model, which
+   * is the right answer whenever the grist is what's driving it. Saving the
+   * distinction matters: a stored 0 means "I want no alkalinity", while null
+   * means "work it out from the grain bill I'm brewing that day".
+   */
+  hco3: number | null;
+  /** ISO timestamp, for a stable oldest-first order in the picker. */
+  createdAt: string;
+}
+
 // ---------------------------------------------------------------------------
 // Request validation schemas (Zod)
 // ---------------------------------------------------------------------------
@@ -2827,6 +2894,8 @@ const recipeYeastEditSchema = z.object({
   // Defaulted: every yeast line stored before staged pitches existed is
   // re-parsed through this schema on read, and must come back as "at the start".
   addAfterDays: amountText.default(''),
+  // Likewise: empty means "whatever the recipe ferments at".
+  heldAtC: amountText.default(''),
 });
 
 const recipeOtherIngredientEditSchema = z.object({
@@ -2862,6 +2931,9 @@ const recipeMashGuidelinesSchema = z.object({
 
 const recipeWaterProfileSchema = z.object({
   sourceName: z.string().trim().max(200).nullable().default(null),
+  // Defaulted: every water profile stored before saved profiles existed is
+  // re-parsed through this schema on read, and must come back unlinked.
+  profileId: z.string().trim().max(100).nullable().default(null),
   name: z.string().trim().max(200).nullable(),
   ph: z.string().trim().max(30).nullable(),
   notes: optionalRecipeText,
@@ -3180,6 +3252,24 @@ export const graphColorsSchema = z.object({
   setpoint: hexColor,
 });
 export type GraphColorsInput = z.infer<typeof graphColorsSchema>;
+
+/**
+ * Body for `POST /api/water-profiles`. Ion concentrations are capped well above
+ * anything drinkable (Burton's sulfate is ~700 ppm) so a typo can't be stored,
+ * while still admitting any real water. The id and timestamp are the server's
+ * to assign, so they aren't accepted here.
+ */
+const waterIonPpm = z.number().finite().min(0).max(2000);
+export const saveWaterProfileSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(60),
+  ca: waterIonPpm,
+  mg: waterIonPpm,
+  na: waterIonPpm,
+  cl: waterIonPpm,
+  so4: waterIonPpm,
+  hco3: waterIonPpm.nullable(),
+});
+export type SaveWaterProfileInput = z.infer<typeof saveWaterProfileSchema>;
 
 // --- Account (username / password changes) ---------------------------------
 

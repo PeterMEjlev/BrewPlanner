@@ -27,6 +27,7 @@ import type {
   RecipeSettings,
   RecipeStatKey,
   RecipeWaterProfile,
+  SavedWaterProfile,
   RecipeYeastEdit,
   RecipeYeastSpec,
   UnpricedIngredient,
@@ -546,6 +547,29 @@ function costSignature(draft: RecipeEditInput): string {
  * answer arrives, and again if one fails: a stale cost quietly attached to a
  * changed grain bill would be worse than no cost at all.
  */
+/**
+ * The brewery's saved water profiles, for the Target water picker. Read-only
+ * here — they're created and edited in the water calculator — and an empty list
+ * is a perfectly good answer, so a failed fetch just leaves the built-in style
+ * presets standing rather than blocking the editor.
+ */
+function useSavedWaterProfiles(): SavedWaterProfile[] {
+  const [profiles, setProfiles] = useState<SavedWaterProfile[]>([]);
+  useEffect(() => {
+    let live = true;
+    void api
+      .listWaterProfiles()
+      .then((list) => {
+        if (live) setProfiles(list);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return profiles;
+}
+
 function useDraftCost(draft: RecipeEditInput): {
   cost: RecipeCostBreakdown | null;
   /** Ask again without the sheet having changed — after a price was set. */
@@ -594,6 +618,12 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
   // What it costs, from the server's catalogue — the one figure on this page
   // that can't be worked out in the browser.
   const { cost, refresh: repriceDraft } = useDraftCost(draft);
+  const savedWaterProfiles = useSavedWaterProfiles();
+  // The profile this recipe follows, if it still exists. The server resolves the
+  // link on read, so a draft opened here already shows the profile's current
+  // numbers; this is what tells the UI to say so and to lock the ion fields.
+  const linkedWaterProfile =
+    savedWaterProfiles.find((p) => p.id === draft.waterProfile?.profileId) ?? null;
   // Which ingredients that total is missing — from the same pricing pass as the
   // figures, so the list names exactly what the cost is short of.
   const unpriced = cost?.unpricedLines ?? [];
@@ -1035,16 +1065,29 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
                       about it. Blank is the ordinary case, so the placeholder
                       says what blank means rather than leaving it to be
                       guessed. */}
-                  <Field
-                    label="Pitched"
-                    value={line.addAfterDays}
-                    suffix="days in"
-                    type="number"
-                    step="any"
-                    placeholder="At the start"
-                    className="sm:max-w-[14rem]"
-                    onChange={(addAfterDays) => updateYeast(index, { addAfterDays })}
-                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field
+                      label="Pitched"
+                      value={line.addAfterDays}
+                      suffix="days in"
+                      type="number"
+                      step="any"
+                      placeholder="At the start"
+                      onChange={(addAfterDays) => updateYeast(index, { addAfterDays })}
+                    />
+                    {/* The vessel's temperature from this pitch onwards, which
+                        is how a ramp gets recorded: the kveik going in on day
+                        four is also when the fermenter is turned up. */}
+                    <Field
+                      label="Held at"
+                      value={line.heldAtC}
+                      suffix="°C"
+                      type="number"
+                      step="any"
+                      placeholder={draft.fermentationTemp ?? "The recipe's temperature"}
+                      onChange={(heldAtC) => updateYeast(index, { heldAtC })}
+                    />
+                  </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <SelectField label="Form" value={line.form} options={options(YEAST_FORMS)} disabled={isLocked('yeast', index)} onChange={(form) => updateYeast(index, { form })} />
                     <SelectField label="Flocculation" value={line.flocculation} options={options(FLOCCULATION_OPTIONS)} disabled={isLocked('yeast', index)} onChange={(flocculation) => updateYeast(index, { flocculation })} />
@@ -1163,11 +1206,30 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
         <EditorSection title="Water chemistry" icon="💧" meta={draft.waterProfile?.name ?? undefined} description="Source water, target profile, and target ion levels in ppm." {...section('water')}>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <SearchableSelect label="Source water" value={draft.waterProfile?.sourceName ?? ''} options={options(WATER_SOURCES)} onChange={(value) => updateWater({ sourceName: nullable(value) })} className="sm:col-span-2" />
-            <SearchableSelect label="Target water" value={draft.waterProfile?.name ?? ''} options={TARGET_PRESETS.map((preset) => ({ value: preset.name, description: preset.note }))} onChange={chooseWaterTarget} className="sm:col-span-2" />
+            {/* Saved profiles lead the list: they're this brewery's own, and a
+                name collision with a shipped preset resolves in their favour
+                (see chooseWaterTarget). Both kinds sit in one list because to a
+                brewer they answer the same question — the description is what
+                says which is which, and only one of them stays live. */}
+            <SearchableSelect label="Target water" value={draft.waterProfile?.name ?? ''} options={[...savedWaterProfiles.map((profile) => ({ value: profile.name, description: 'Saved profile — stays in step with edits' })), ...TARGET_PRESETS.filter((preset) => !savedWaterProfiles.some((profile) => profile.name === preset.name)).map((preset) => ({ value: preset.name, description: preset.note }))]} onChange={chooseWaterTarget} className="sm:col-span-2" />
             <ReadOnlyField label="Estimated mash pH" value={calculation.mashPh} decimals={2} />
+            {/* Locked while linked rather than silently unlinking on the first
+                keystroke: a live link is the reason these numbers are what they
+                are, and quietly breaking it would leave the recipe looking
+                unchanged while it had stopped following anything. Unlink says
+                out loud what the brewer is choosing. */}
             {waterFields.map(({ key, label }) => (
-              <Field key={key} label={label} value={draft.waterProfile?.[key]} suffix="ppm" onChange={(value) => updateWater({ [key]: nullable(value) })} />
+              <Field key={key} label={label} value={draft.waterProfile?.[key]} suffix="ppm" disabled={linkedWaterProfile != null} onChange={(value) => updateWater({ [key]: nullable(value) })} />
             ))}
+            {linkedWaterProfile && (
+              <p className="text-xs leading-snug text-zinc-500 sm:col-span-2 lg:col-span-4">
+                Following the saved profile <span className="font-medium text-zinc-300">{linkedWaterProfile.name}</span> — editing it in the water calculator updates this recipe too.
+                {linkedWaterProfile.hco3 == null && ' Its bicarbonate is left to the mash-pH model, so the calculator solves it per brew.'}{' '}
+                <button type="button" onClick={unlinkWaterProfile} className="font-semibold text-[#f87a68] underline-offset-2 hover:underline">
+                  Unlink to edit these numbers
+                </button>
+              </p>
+            )}
             <label className="block text-xs font-medium text-zinc-400 sm:col-span-2 lg:col-span-4">
               Water notes
               <textarea className={`${fieldClass} min-h-20 resize-y`} value={draft.waterProfile?.notes ?? ''} onChange={(event) => updateWater({ notes: nullableText(event.target.value) })} />
@@ -1379,10 +1441,28 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
   function updateWater(patch: Partial<RecipeWaterProfile>): void {
     setDraft((d) => ({ ...d, waterProfile: { ...blankWater(), ...(d.waterProfile ?? {}), ...patch } }));
   }
+  /**
+   * Saved profiles are matched before the built-in presets, so a brewery that
+   * saves its own "Balanced" gets its own — the point of saving one is that it
+   * beats the shipped table. Picking a saved profile links the recipe to it by
+   * id; picking a preset, or typing a name of your own, leaves the recipe
+   * standing on its own numbers.
+   *
+   * The ppm figures are copied either way. For a linked recipe they're only a
+   * snapshot — the server overwrites them from the profile on every read — but
+   * writing them now means the fields are right before the next fetch, and it's
+   * what the recipe falls back to if the profile is ever deleted.
+   */
   function chooseWaterTarget(name: string): void {
+    const saved = savedWaterProfiles.find((candidate) => candidate.name === name);
+    if (saved) {
+      updateWater({ name: saved.name, profileId: saved.id, ...savedWaterFields(saved) });
+      return;
+    }
     const preset = TARGET_PRESETS.find((candidate) => candidate.name === name);
     updateWater({
       name: nullable(name),
+      profileId: null,
       ...(preset ? {
         calcium: String(preset.profile.ca),
         magnesium: String(preset.profile.mg),
@@ -1392,6 +1472,15 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
         bicarbonate: String(preset.profile.hco3),
       } : {}),
     });
+  }
+
+  /**
+   * Stop following the saved profile, keeping the numbers it was showing. The
+   * brewer wants this recipe to differ from the profile — the alternative would
+   * be editing the profile, which changes every other recipe using it.
+   */
+  function unlinkWaterProfile(): void {
+    updateWater({ profileId: null });
   }
 }
 
@@ -1962,7 +2051,7 @@ function blankHop(): RecipeHopEdit {
   return { name: '', amount: '', unit: 'g', use: 'Boil', stage: 'Boil', time: '', timeUnit: 'min', aa: '', ibu: '', form: 'Pellet', utilization: '', temp: '' };
 }
 function blankYeast(): RecipeYeastEdit {
-  return { name: '', lab: '', attenuation: '', amount: '1', amountUnit: 'each', type: 'Ale', form: 'Dry', flocculation: '', minTempC: null, maxTempC: null, alcoholTolerance: '', starter: false, addAfterDays: '' };
+  return { name: '', lab: '', attenuation: '', amount: '1', amountUnit: 'each', type: 'Ale', form: 'Dry', flocculation: '', minTempC: null, maxTempC: null, alcoholTolerance: '', starter: false, addAfterDays: '', heldAtC: '' };
 }
 function blankOther(): RecipeOtherIngredientEdit {
   return { name: '', amount: '', unit: 'g', use: 'Boil', time: '', timeUnit: 'min', type: 'Flavor' };
@@ -1993,7 +2082,21 @@ export function defaultFirstMashStep(defaults: RecipeDefaults): RecipeMashStep {
   };
 }
 function blankWater(): RecipeWaterProfile {
-  return { sourceName: null, name: null, ph: null, notes: null, calcium: null, magnesium: null, sodium: null, chloride: null, sulfate: null, bicarbonate: null };
+  return { sourceName: null, profileId: null, name: null, ph: null, notes: null, calcium: null, magnesium: null, sodium: null, chloride: null, sulfate: null, bicarbonate: null };
+}
+
+/** A saved profile's ppm figures as the recipe stores them — strings, or null. */
+function savedWaterFields(profile: SavedWaterProfile): Partial<RecipeWaterProfile> {
+  return {
+    calcium: String(profile.ca),
+    magnesium: String(profile.mg),
+    sodium: String(profile.na),
+    chloride: String(profile.cl),
+    sulfate: String(profile.so4),
+    // Left blank rather than zeroed: this profile defers to the grist, and the
+    // water calculator solves the figure per brew.
+    bicarbonate: profile.hco3 == null ? null : String(profile.hco3),
+  };
 }
 
 const waterFields: { key: 'calcium' | 'magnesium' | 'sodium' | 'chloride' | 'sulfate' | 'bicarbonate'; label: string }[] = [

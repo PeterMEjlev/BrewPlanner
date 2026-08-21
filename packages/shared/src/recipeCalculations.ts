@@ -852,6 +852,33 @@ function optimumTemp(yeast: { minTempC: number | null; maxTempC: number | null }
 const REFERENCE_OG_POINTS = 50;
 
 /**
+ * How much extract is still unfermented at the point a strain is called done.
+ * Terminal gravity is approached rather than arrived at, so "finished" has to
+ * be a threshold; this one puts a full run at the 95% mark.
+ */
+const DONE_SHARE = 0.05;
+const LN_DONE_SHARE = -Math.log(DONE_SHARE);
+
+/**
+ * How much of the fermentation is still to do on a given day, given how long
+ * the strain already working would take to finish on its own.
+ *
+ * Attenuation approaches terminal gravity rather than marching at it: the bulk
+ * of the extract goes in the first days and the last few points take as long
+ * again. Modelled as an exponential approach that is ~95% complete at the point
+ * the working strain would have reached terminal — so a pitch made two thirds
+ * of the way through finds most of the sugar already gone.
+ *
+ * Floored rather than allowed to reach zero: a strain pitched into nearly
+ * finished beer still has to wake up, and "adds no time at all" is never the
+ * honest answer.
+ */
+function shareLeftAt(day: number, runOfEarlier: number): number {
+  if (!(runOfEarlier > 0)) return 1;
+  return Math.max(DONE_SHARE, Math.exp((-LN_DONE_SHARE * day) / runOfEarlier));
+}
+
+/**
  * Roughly how many days the primary fermentation will take: the strain, the
  * temperature it's held at, and how much sugar it has to get through.
  *
@@ -889,6 +916,8 @@ export function estimateFermentationDays(input: {
     maxTempC: number | null;
     /** Days after the start that this one goes in; absent or empty means at the start. */
     addAfterDays?: string | number | null;
+    /** What this pitch is held at, °C; absent or empty means the recipe's figure. */
+    heldAtC?: string | number | null;
   }>;
 }): FermentationEstimate | null {
   const pitched = input.yeast.filter((line) => line.name.trim() !== '');
@@ -910,15 +939,15 @@ export function estimateFermentationDays(input: {
   const points = og == null ? REFERENCE_OG_POINTS : Math.max(1, (og - 1) * 1000);
   const work = Math.min(3, Math.max(0.6, Math.pow(points / REFERENCE_OG_POINTS, 0.8)));
 
-  /** How long one family takes on its own, at this temperature and gravity. */
-  const runFor = (family: YeastFamily): number => {
+  /** How long one family takes on its own, at the temperature it is held at. */
+  const runFor = (family: YeastFamily, heldAt: number): number => {
     const profile = YEAST_FAMILIES[family];
     // Q10 = 2: every 10 °C below the reference roughly doubles the time, and
     // every 10 above roughly halves it. Bounded because the relationship stops
     // holding at the edges — a strain pushed far past its range doesn't finish
     // in an afternoon, and one chilled far below it stalls rather than merely
     // slowing.
-    const heat = Math.min(4, Math.max(0.35, Math.pow(2, (profile.refC - temperatureC) / 10)));
+    const heat = Math.min(4, Math.max(0.35, Math.pow(2, (profile.refC - heldAt) / 10)));
     return profile.days * heat * work;
   };
 
@@ -926,15 +955,76 @@ export function estimateFermentationDays(input: {
    * The fermenter is free when the last strain in it has finished — and a
    * strain added on day four cannot have finished before day four.
    *
-   * So each pitch is timed from when it actually goes in, and the latest finish
-   * wins. For a single pitch at the start this is exactly what it always was.
-   * For a staged pitch it is the difference between "the kveik takes three
-   * days" and "the kveik takes three days, starting on day four".
+   * But it does not have a whole fermentation ahead of it either. By the time a
+   * finishing strain goes in, whatever was pitched at the start has been eating
+   * for days, and what is left for the newcomer is the tail: a kveik dropped
+   * into four-day-old sour beer is topping it off, not starting it. Charging it
+   * with a full ferment from original gravity is what made a beer that is done
+   * in five days read as nine.
    */
-  const finishes = pitched.map((line, index) => {
-    const family = families[index] ?? 'ale';
-    const addedOn = Math.max(0, recipeNumber(line.addAfterDays ?? null) ?? 0);
-    return { family, addedOn, finishesOn: addedOn + runFor(family) };
+  const schedule = pitched.map((line, index) => ({
+    family: families[index] ?? 'ale',
+    addedOn: Math.max(0, recipeNumber(line.addAfterDays ?? null) ?? 0),
+    // Its own temperature where the line names one — the ramp a staged pitch is
+    // made for — and the recipe's figure otherwise.
+    heldAt: recipeNumber(line.heldAtC ?? null) ?? temperatureC,
+    ownTemp: recipeNumber(line.heldAtC ?? null) != null,
+  }));
+
+  /**
+   * What the vessel is held at, and from when.
+   *
+   * A temperature belongs to the fermenter, not to the strain that asked for
+   * it: raising it to 33 °C on day four to suit the kveik warms everything
+   * already in there. Modelling it per-strain instead would have the souring
+   * yeast plodding along at its original temperature for the whole run, which
+   * is both wrong and the reason the ramp appeared to make no difference.
+   */
+  const ramps = [
+    { from: 0, tempC: schedule.find((p) => p.addedOn <= 0 && p.ownTemp)?.heldAt ?? temperatureC },
+    ...schedule
+      .filter((p) => p.ownTemp && p.addedOn > 0)
+      .map((p) => ({ from: p.addedOn, tempC: p.heldAt })),
+  ].sort((a, b) => a.from - b.from);
+
+  /**
+   * The day a strain that starts on `from` with `share` of the extract still to
+   * go reaches terminal gravity, walked forward through the ramps above.
+   *
+   * Rate rather than duration is what gets accumulated, because the temperature
+   * changes underneath: a strain part-way through a run is not "three days in"
+   * so much as "this far through the work", and warming the vessel makes the
+   * rest of it arrive sooner.
+   */
+  const finishDay = (family: YeastFamily, from: number, share: number): number => {
+    const target = Math.log(Math.max(share, DONE_SHARE) / DONE_SHARE);
+    if (target <= 0) return from;
+    let done = 0;
+    for (let i = 0; i < ramps.length; i += 1) {
+      const segmentStart = Math.max(from, ramps[i]!.from);
+      const next = ramps[i + 1]?.from ?? Number.POSITIVE_INFINITY;
+      if (next <= from) continue;
+      // How fast this strain works while the vessel sits at this temperature.
+      const rate = LN_DONE_SHARE / runFor(family, ramps[i]!.tempC);
+      const span = next - segmentStart;
+      if (done + rate * span >= target) return segmentStart + (target - done) / rate;
+      done += rate * span;
+    }
+    return from;
+  };
+
+  /** When the first strain in would reach terminal on its own, for the share below. */
+  const first = schedule.reduce((earliest, p) => (p.addedOn < earliest.addedOn ? p : earliest));
+  const firstRun = finishDay(first.family, first.addedOn, 1) - first.addedOn;
+  const finishes = schedule.map(({ family, addedOn, heldAt, ownTemp }) => {
+    const earlier = schedule.some((other) => other.addedOn < addedOn);
+    return {
+      family,
+      addedOn,
+      heldAt,
+      ownTemp,
+      finishesOn: finishDay(family, addedOn, earlier ? shareLeftAt(addedOn, firstRun) : 1),
+    };
   });
   const last = finishes.reduce((latest, candidate) =>
     candidate.finishesOn > latest.finishesOn ? candidate : latest,
@@ -947,11 +1037,14 @@ export function estimateFermentationDays(input: {
     days,
     minDays: Math.max(1, Math.round(days * 0.7)),
     maxDays: Math.max(2, Math.ceil(days * 1.4)),
-    temperatureC,
-    temperatureAssumed: assumed,
+    // The conditions of the pitch the answer is about, which for a ramped
+    // fermentation is the warm end rather than what it started at.
+    temperatureC: last.heldAt,
+    // Only assumed when neither the line nor the recipe said.
+    temperatureAssumed: assumed && !last.ownTemp,
     family,
     note: [
-      `${YEAST_FAMILIES[family].label} at ${Math.round(temperatureC)} °C`,
+      `${YEAST_FAMILIES[family].label} at ${Math.round(last.heldAt)} °C`,
       staged && last.addedOn > 0
         ? `(pitched on day ${Math.round(last.addedOn)}, so the count runs from there)`
         : null,
@@ -998,6 +1091,7 @@ export function applyRecipeCalculations(input: RecipeEditInput): RecipeEditInput
       ? {
           ...(recipe.waterProfile ?? {
             sourceName: null,
+            profileId: null,
             name: null,
             notes: null,
             calcium: null,

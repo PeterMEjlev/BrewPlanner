@@ -7,6 +7,7 @@ import type {
   RecipeOtherIngredient,
   RecipeStats,
   RecipeVersionSummary,
+  RecipeWaterProfile,
   RecipeYeast,
 } from '@checklist/shared';
 import { predictBeerColor } from '@checklist/shared';
@@ -18,6 +19,7 @@ import {
   pricingInfo,
   recipeCost,
 } from './prices.js';
+import { getWaterProfiles } from './repo.js';
 
 export interface RecipeMetadata {
   id: string;
@@ -83,6 +85,38 @@ function toUnits(amount: string, unit: string): number | null {
   return ['pkg', 'pkgs', 'each', 'items', 'vial'].includes(unit.toLowerCase()) ? n : null;
 }
 
+/**
+ * Resolve a recipe's saved-water-profile link against the current library.
+ *
+ * The link is live by design: a brewery that fixes a number in "House pale"
+ * expects every recipe brewed to it to follow, which is the whole reason for
+ * saving a profile instead of retyping one. So the stored ion columns are
+ * overwritten here on every read rather than trusted.
+ *
+ * A link that no longer resolves — someone deleted the profile — falls back to
+ * the stored snapshot and drops the id. That's the kinder failure: the recipe
+ * keeps saying what it was brewed to, and stops claiming to follow something
+ * that isn't there. `name` follows the profile too, so renaming one doesn't
+ * leave recipes labelled with the old name.
+ */
+function resolveWaterProfile(profile: RecipeWaterProfile | null): RecipeWaterProfile | null {
+  if (!profile?.profileId) return profile;
+  const saved = getWaterProfiles().find((p) => p.id === profile.profileId);
+  if (!saved) return { ...profile, profileId: null };
+  return {
+    ...profile,
+    name: saved.name,
+    calcium: String(saved.ca),
+    magnesium: String(saved.mg),
+    sodium: String(saved.na),
+    chloride: String(saved.cl),
+    sulfate: String(saved.so4),
+    // null bicarbonate is a real answer, not a blank: the profile is deferring
+    // to whatever the grist needs, which the water calculator solves per brew.
+    bicarbonate: saved.hco3 == null ? null : String(saved.hco3),
+  };
+}
+
 /** Rebuild weights, catalogue matches and totals from a stored editable sheet. */
 export function hydrateRecipe(meta: RecipeMetadata, input: RecipeEditInput): RecipeDetail {
   const fermentables: RecipeFermentable[] = input.fermentables.map((line) => {
@@ -126,6 +160,7 @@ export function hydrateRecipe(meta: RecipeMetadata, input: RecipeEditInput): Rec
     hops,
     yeast,
     otherIngredients,
+    waterProfile: resolveWaterProfile(input.waterProfile),
     pricing: pricingInfo(),
     cost: recipeCost(ingredients),
   };

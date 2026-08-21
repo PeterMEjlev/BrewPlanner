@@ -1342,8 +1342,14 @@ function HopRow({
  */
 function pitchTiming(yeast: RecipeYeast): string {
   const days = Number.parseFloat(String(yeast.addAfterDays ?? '').replace(',', '.'));
-  if (!Number.isFinite(days) || days <= 0) return '';
-  return `pitched day ${days % 1 === 0 ? days : days.toFixed(1)}`;
+  const held = Number.parseFloat(String(yeast.heldAtC ?? '').replace(',', '.'));
+  const when = Number.isFinite(days) && days > 0
+    ? `pitched day ${days % 1 === 0 ? days : days.toFixed(1)}`
+    : '';
+  // The ramp is worth saying even on a pitch that goes in at the start, since
+  // it is what the fermenter is held at rather than a property of the strain.
+  const at = Number.isFinite(held) ? `held at ${held}°C` : '';
+  return [when, at].filter(Boolean).join(', ');
 }
 
 function YeastRow({
@@ -1628,6 +1634,16 @@ function WaterSection({
       {profile.sourceName && (
         <div className="text-sm text-zinc-400">
           Source water: <span className="text-zinc-200">{profile.sourceName}</span>
+        </div>
+      )}
+      {/* Worth stating because it changes what these numbers *are*: not a
+          decision frozen into this recipe, but a reading of a profile that can
+          move under it. The server resolves the link before this renders, so
+          the ppm figures beside it are already current. */}
+      {profile.profileId && profile.name && (
+        <div className="text-xs text-zinc-500">
+          Following the saved profile <span className="text-zinc-300">{profile.name}</span> — these
+          figures track it.
         </div>
       )}
       {present.length > 0 && (

@@ -18,6 +18,7 @@ import {
   priceSearchQuerySchema,
   reorderStepsSchema,
   reorderTodosSchema,
+  saveWaterProfileSchema,
   recipeDefaultsSchema,
   recipeDraftSchema,
   recipeEditSchema,
@@ -765,6 +766,28 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(recipeDefaultsSchema, req.body, reply);
     if (!body) return;
     return repo.setRecipeDefaults(body);
+  });
+
+  // --- Saved water profiles --------------------------------------------
+  // The brewery's own target profiles, extending the built-in style presets in
+  // the water calculator. Readable by anyone who can open the tool; saving one
+  // changes what every brewer here sees, so it's an admin action like the other
+  // shared settings.
+  app.get('/water-profiles', async () => repo.getWaterProfiles());
+
+  // POST rather than a whole-list PUT: two people saving profiles from
+  // different screens should end up with both, not with whichever wrote last.
+  // The server owns the merge, and returns the list so the caller's picker can
+  // refresh without a second round trip.
+  app.post('/water-profiles', adminOnly, async (req, reply) => {
+    const body = parse(saveWaterProfileSchema, req.body, reply);
+    if (!body) return;
+    return repo.saveWaterProfile(body);
+  });
+
+  app.delete('/water-profiles/:id', adminOnly, async (req) => {
+    const { id } = req.params as { id: string };
+    return repo.deleteWaterProfile(id);
   });
 
   app.get('/keg-content-colors', async () => repo.getKegContentColors());

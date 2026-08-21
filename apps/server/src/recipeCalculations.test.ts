@@ -370,18 +370,32 @@ test('fermentation time follows the strain, the temperature and the gravity', ()
     assert.ok(souring!.days <= 10, `${name} should finish in about a week, got ${souring!.days}`);
   }
 
-  // A staged pitch is timed from when it actually goes in. This is the real
-  // shape of a modern sour: a souring yeast first, a finishing strain days
-  // later, and the fermenter is not free until that second one is done.
-  const together = estimateFermentationDays({
+  // The real shape of a modern sour, and the case this whole model exists for:
+  // a souring yeast first, then a kveik on day four with the fermenter turned
+  // up to finish it. It must come out *faster* than the souring yeast left to
+  // plod on alone, not slower — a finishing pitch finishes, it doesn't restart.
+  const sourAlone = estimateFermentationDays({
+    og: 1.045,
+    temperatureC: 22,
+    yeast: [pitch({ name: 'WildBrew Philly Sour', type: 'Sour' })],
+  });
+  const staged = estimateFermentationDays({
     og: 1.045,
     temperatureC: 22,
     yeast: [
       pitch({ name: 'WildBrew Philly Sour', type: 'Sour' }),
-      pitch({ name: 'Lallemand Voss Kveik' }),
+      pitch({ name: 'Lallemand Voss Kveik', addAfterDays: '4', heldAtC: '33' }),
     ],
   });
-  const staged = estimateFermentationDays({
+  assert.ok(
+    staged!.days < sourAlone!.days,
+    'a kveik pitched warm on day four should finish the beer sooner, not later',
+  );
+  assert.equal(staged!.days, 5, "Charlotte's shape: soured for four days, then finished warm");
+
+  // Turning the fermenter up is what buys those days: the same staged pitch
+  // without the ramp has nothing to speed the remaining extract along.
+  const noRamp = estimateFermentationDays({
     og: 1.045,
     temperatureC: 22,
     yeast: [
@@ -389,14 +403,27 @@ test('fermentation time follows the strain, the temperature and the gravity', ()
       pitch({ name: 'Lallemand Voss Kveik', addAfterDays: '4' }),
     ],
   });
-  assert.ok(
-    staged!.days > together!.days,
-    'a strain added on day four cannot have finished when one pitched at the start has',
-  );
-  assert.equal(staged!.family, 'kveik', 'the pitch that finishes last is the one reported');
-  assert.match(staged!.note, /day 4/, 'the note should say what the count runs from');
-  // Four days later in, four days later out — the delay is added, not absorbed.
-  assert.equal(staged!.days - together!.days, 4);
+  assert.ok(noRamp!.days > staged!.days, 'the temperature ramp has to move the answer');
+
+  // And a late pitch is never charged with a whole fermentation: by day four
+  // the souring yeast has eaten most of the extract, so the kveik cannot add
+  // its full five-day run on top. That mistake is what read as nine days.
+  assert.ok(noRamp!.days <= sourAlone!.days, 'a finishing pitch adds no time of its own here');
+
+  // With nothing pitched before it, though, a delayed strain does wait: there is
+  // no earlier yeast to have eaten anything, so day four is simply four days
+  // later. Checked kveik-against-kveik, so the comparison is like for like.
+  const kveikNow = estimateFermentationDays({
+    og: 1.045,
+    temperatureC: 22,
+    yeast: [pitch({ name: 'Lallemand Voss Kveik' })],
+  });
+  const kveikLater = estimateFermentationDays({
+    og: 1.045,
+    temperatureC: 22,
+    yeast: [pitch({ name: 'Lallemand Voss Kveik', addAfterDays: '4' })],
+  });
+  assert.equal(kveikLater!.days - kveikNow!.days, 4);
 
   // A pitch at the start is unchanged by the feature existing.
   assert.equal(
