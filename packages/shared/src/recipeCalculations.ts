@@ -135,10 +135,14 @@ export function estimateFruitAbvContribution(
   let abv = 0;
   for (const addition of additions) {
     const name = foldIngredientName(addition.name);
-    if (!isFruitProduct(name)) continue;
+    const known = FRUIT_BRIX.find(([pattern]) => pattern.test(name));
+    // Imported recipes often name only the fruit or brand ("Raspberry",
+    // "Ponthier Raspberry") even when the unit makes it clear that the row is
+    // a juice/puree. Recognised fruit therefore counts without the product word;
+    // an unknown fruit still needs to call itself juice, puree, pulp, etc.
+    if (known == null && !isFruitProduct(name)) continue;
     const litres = fruitProductLitres(addition.amount, addition.unit);
     if (litres == null) continue;
-    const known = FRUIT_BRIX.find(([pattern]) => pattern.test(name));
     const brix = known?.[1]
       ?? (/koncentrat|concentrate/.test(name) ? 65 : /juice|saft|most|nectar/.test(name) ? 11 : 10);
     abv += (litres / batchSizeL) * brix * ABV_PER_BRIX;

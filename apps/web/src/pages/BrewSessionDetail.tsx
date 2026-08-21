@@ -32,6 +32,7 @@ import {
   dateInputToIso,
   dateInputValue,
   formatDuration,
+  targetDelta,
 } from '../brewSessions';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
@@ -333,100 +334,133 @@ export function BrewSessionDetailPage(): JSX.Element {
             collapsed={collapsed}
             onToggle={toggle}
           >
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <DurationField
-                minutes={brewSession.durationMinutes}
-                editable={controllable}
-                onSave={(minutes) => save({ durationMinutes: minutes })}
-              />
-              <GravityField
-                label="Pre-boil gravity"
-                value={measured.preBoilGravity}
-                editable={controllable}
-                onSave={(preBoilGravity) => save({ measured: { preBoilGravity } })}
-              />
-              <NumberField
-                label="Pre-boil volume"
-                unit="L"
-                value={measured.preBoilVolumeL}
-                hint={
-                  measured.preBoilGravity && measured.preBoilVolumeL == null
-                    ? 'Add this and the mash efficiency follows'
-                    : null
-                }
-                editable={controllable}
-                onSave={(preBoilVolumeL) => save({ measured: { preBoilVolumeL } })}
-              />
-              <GravityField
-                label="Original gravity"
-                value={measured.og}
-                target={recipe.og}
-                editable={controllable}
-                onSave={(og) => save({ measured: { og } })}
-              />
-              <GravityField
-                label="Final gravity"
-                value={measured.fg}
-                target={recipe.fg}
-                editable={controllable}
-                onSave={(fg) => save({ measured: { fg } })}
-              />
-              <NumberField
-                label="Into the fermenter"
-                unit="L"
-                value={measured.volumeL}
-                target={recipe.batchSizeL != null ? `${recipe.batchSizeL} L` : null}
-                editable={controllable}
-                onSave={(volumeL) => save({ measured: { volumeL } })}
-              />
-              <NumberField
-                label="Mash temperature"
-                unit="°C"
-                value={measured.mashTempC}
-                target={recipe.mashTemp}
-                editable={controllable}
-                onSave={(mashTempC) => save({ measured: { mashTempC } })}
-              />
-              <NumberField
-                label="Boil"
-                unit="min"
-                value={measured.boilTimeMin}
-                editable={controllable}
-                onSave={(boilTimeMin) => save({ measured: { boilTimeMin } })}
-              />
-              {/* Calculated from the OG and volume, and only typed into when
-                  the brewer knows the arithmetic is wrong — an eyeballed volume
-                  moves this figure several points, and they were there. */}
-              <NumberField
-                label="Efficiency"
-                unit="%"
-                value={measured.efficiencyPct}
-                placeholder={brewhouse != null ? pct(brewhouse) : '—'}
-                readOnlyValue={brewhouse != null ? `${pct(brewhouse)} (calculated)` : null}
-                hint={
-                  brewhouse == null
-                    ? 'Measure the OG and the volume into the fermenter to calculate it'
-                    : measured.efficiencyPct == null
-                      ? `Calculated ${pct(brewhouse)} from the OG and volume`
-                      : `Overriding the calculated ${pct(brewhouse)} — clear to use it`
-                }
-                editable={controllable}
-                onSave={(efficiencyPct) => save({ measured: { efficiencyPct } })}
-              />
-              <NumberField
-                label="Water used"
-                unit="L"
-                value={measured.waterL}
-                editable={controllable}
-                onSave={(waterL) => save({ measured: { waterL } })}
-              />
-              <NumberField
-                label="Electricity"
-                unit="kWh"
-                value={measured.energyKwh}
-                editable={controllable}
-                onSave={(energyKwh) => save({ measured: { energyKwh } })}
-              />
+            <div className="space-y-4">
+              <Stage title="Mash and run-off">
+                <NumberField
+                  label="Mash temperature"
+                  unit="°C"
+                  value={measured.mashTempC}
+                  target={recipe.mashTemp}
+                  editable={controllable}
+                  onSave={(mashTempC) => save({ measured: { mashTempC } })}
+                />
+                <GravityField
+                  label="Pre-boil gravity"
+                  value={measured.preBoilGravity}
+                  target={recipe.preBoilGravity}
+                  editable={controllable}
+                  onSave={(preBoilGravity) => save({ measured: { preBoilGravity } })}
+                />
+                <NumberField
+                  label="Pre-boil volume"
+                  unit="L"
+                  value={measured.preBoilVolumeL}
+                  target={litres(recipe.preBoilVolumeL)}
+                  hint={
+                    measured.preBoilGravity && measured.preBoilVolumeL == null
+                      ? 'Add this and the mash efficiency follows'
+                      : null
+                  }
+                  editable={controllable}
+                  onSave={(preBoilVolumeL) => save({ measured: { preBoilVolumeL } })}
+                />
+              </Stage>
+
+              <Stage title="Boil">
+                <NumberField
+                  label="Boil"
+                  unit="min"
+                  value={measured.boilTimeMin}
+                  target={recipe.boilTimeMin != null ? `${recipe.boilTimeMin} min` : null}
+                  editable={controllable}
+                  onSave={(boilTimeMin) => save({ measured: { boilTimeMin } })}
+                />
+                <GravityField
+                  label="Post-boil gravity"
+                  value={measured.postBoilGravity}
+                  target={recipe.postBoilGravity}
+                  editable={controllable}
+                  onSave={(postBoilGravity) => save({ measured: { postBoilGravity } })}
+                />
+                <NumberField
+                  label="Post-boil volume"
+                  unit="L"
+                  value={measured.postBoilVolumeL}
+                  target={litres(recipe.postBoilVolumeL)}
+                  editable={controllable}
+                  onSave={(postBoilVolumeL) => save({ measured: { postBoilVolumeL } })}
+                />
+              </Stage>
+
+              <Stage title="Into the fermenter">
+                <GravityField
+                  label="Original gravity"
+                  value={measured.og}
+                  target={recipe.og}
+                  editable={controllable}
+                  onSave={(og) => save({ measured: { og } })}
+                />
+                <NumberField
+                  label="Volume"
+                  unit="L"
+                  value={measured.volumeL}
+                  target={litres(recipe.batchSizeL)}
+                  editable={controllable}
+                  onSave={(volumeL) => save({ measured: { volumeL } })}
+                />
+                {/* Calculated from the OG and volume, and only typed into when
+                    the brewer knows the arithmetic is wrong — an eyeballed volume
+                    moves this figure several points, and they were there. */}
+                <NumberField
+                  label="Efficiency"
+                  unit="%"
+                  value={measured.efficiencyPct}
+                  target={recipe.efficiencyPct != null ? `${recipe.efficiencyPct}%` : null}
+                  placeholder={brewhouse != null ? pct(brewhouse) : '—'}
+                  readOnlyValue={brewhouse != null ? `${pct(brewhouse)} (calculated)` : null}
+                  hint={
+                    brewhouse == null
+                      ? 'Measure the OG and the volume into the fermenter to calculate it'
+                      : measured.efficiencyPct == null
+                        ? `Calculated ${pct(brewhouse)} from the OG and volume`
+                        : `Overriding the calculated ${pct(brewhouse)} — clear to use it`
+                  }
+                  editable={controllable}
+                  onSave={(efficiencyPct) => save({ measured: { efficiencyPct } })}
+                />
+              </Stage>
+
+              <Stage title="Out of the fermenter">
+                <GravityField
+                  label="Final gravity"
+                  value={measured.fg}
+                  target={recipe.fg}
+                  editable={controllable}
+                  onSave={(fg) => save({ measured: { fg } })}
+                />
+              </Stage>
+
+              <Stage title="What the day cost">
+                <DurationField
+                  minutes={brewSession.durationMinutes}
+                  editable={controllable}
+                  onSave={(minutes) => save({ durationMinutes: minutes })}
+                />
+                <NumberField
+                  label="Water used"
+                  unit="L"
+                  value={measured.waterL}
+                  editable={controllable}
+                  onSave={(waterL) => save({ measured: { waterL } })}
+                />
+                <NumberField
+                  label="Electricity"
+                  unit="kWh"
+                  value={measured.energyKwh}
+                  editable={controllable}
+                  onSave={(energyKwh) => save({ measured: { energyKwh } })}
+                />
+              </Stage>
             </div>
             <DerivedFigures
               abv={abv}
@@ -459,6 +493,19 @@ export function BrewSessionDetailPage(): JSX.Element {
               <Fact label="Target ABV" value={recipe.abv ? `${recipe.abv}%` : '—'} />
               <Fact label="Bitterness" value={recipe.ibu ? `${recipe.ibu} IBU` : '—'} />
               <Fact label="Colour" value={recipe.ebc ? `${recipe.ebc} EBC` : '—'} />
+              <Fact
+                label="Target pre-boil"
+                value={kettleTarget(recipe.preBoilGravity, recipe.preBoilVolumeL)}
+              />
+              <Fact
+                label="Target post-boil"
+                value={kettleTarget(recipe.postBoilGravity, recipe.postBoilVolumeL)}
+              />
+              <Fact label="Boil" value={recipe.boilTimeMin != null ? `${recipe.boilTimeMin} min` : '—'} />
+              <Fact
+                label="Assumed efficiency"
+                value={recipe.efficiencyPct != null ? `${recipe.efficiencyPct}%` : '—'}
+              />
               <Fact label="Batch size" value={recipe.batchSizeL != null ? `${recipe.batchSizeL} L` : '—'} />
               <Fact label="Grain bill" value={recipe.grainKg != null ? `${recipe.grainKg} kg` : '—'} />
               <Fact label="Hops" value={recipe.hopGrams != null ? `${recipe.hopGrams} g` : '—'} />
@@ -878,8 +925,55 @@ function FermentationCard({
   );
 }
 
-/** A read-only figure with its label. */
-function Fact({ label, value }: { label: string; value: string }): JSX.Element {
+/**
+ * One part of the brew day and the figures taken during it. The card is grouped
+ * in the order the day actually happens — mash, boil, fermenter — so filling the
+ * log in is working down the page rather than hunting for the right box, and a
+ * gravity always sits beside the volume it was read in.
+ */
+function Stage({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+  return (
+    <div>
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+        {title}
+      </h3>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
+    </div>
+  );
+}
+
+/** A litre target for a field, or null when the recipe never stated one. */
+function litres(value: number | null): string | null {
+  return value == null ? null : `${value} L`;
+}
+
+/**
+ * A kettle target as the recipe stated it: "1.048 at 31 L", or whichever half it
+ * knows. An entry logged before these were snapshotted knows neither and reads
+ * as a dash, like every other figure the day never recorded.
+ */
+function kettleTarget(gravity: string | null, volumeL: number | null): string {
+  const parts = [gravity || null, volumeL == null ? null : `${volumeL} L`].filter(Boolean);
+  if (parts.length === 0) return '—';
+  return parts.join(' at ');
+}
+
+/**
+ * A read-only figure with its label, and optionally the recipe's number for the
+ * same thing — so a viewer who can't edit the log still reads plan against
+ * result, which is the whole reason the figures are recorded.
+ */
+function Fact({
+  label,
+  value,
+  target,
+  delta,
+}: {
+  label: string;
+  value: string;
+  target?: string | null;
+  delta?: string | null;
+}): JSX.Element {
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
       <span className="block text-[11px] font-medium uppercase tracking-wide text-zinc-500">
@@ -888,6 +982,12 @@ function Fact({ label, value }: { label: string; value: string }): JSX.Element {
       <span className="mt-0.5 block truncate text-sm text-zinc-200" title={value}>
         {value}
       </span>
+      {target && (
+        <span className="mt-1 block text-[11px] text-zinc-600">
+          Recipe: {target}
+          {delta && <span className="ml-1.5 font-medium text-zinc-400">{delta}</span>}
+        </span>
+      )}
     </div>
   );
 }
@@ -896,17 +996,28 @@ const FIELD_CLASS =
   'mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none';
 const LABEL_CLASS = 'block text-[11px] font-medium uppercase tracking-wide text-zinc-500';
 
-/** The wrapper every editable figure shares: label, control, and a note under it. */
+/**
+ * The wrapper every editable figure shares: label, control, and — under it — the
+ * recipe's number for the same thing and how far the day landed from it.
+ *
+ * The target line is the point of the card. A brew log is only worth filling in
+ * if the plan and the result can be read together, so the recipe's figure sits
+ * under the box the actual one is typed into rather than in a separate table
+ * the brewer would have to scroll between.
+ */
 function Field({
   label,
   target,
+  delta,
   hint,
   children,
 }: {
   label: string;
   /** What the recipe aimed for, for a figure that has a target to miss. */
   target?: string | null;
-  /** A note in place of the target — what the app worked the figure out to be. */
+  /** How far the measurement landed from that target; null when it hit it. */
+  delta?: string | null;
+  /** A note under the target — what the app worked the figure out to be. */
   hint?: string | null;
   children: React.ReactNode;
 }): JSX.Element {
@@ -914,9 +1025,13 @@ function Field({
     <label className="block rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
       <span className={LABEL_CLASS}>{label}</span>
       {children}
-      {hint
-        ? <span className="mt-1 block text-[11px] text-zinc-500">{hint}</span>
-        : target && <span className="mt-1 block text-[11px] text-zinc-600">Recipe: {target}</span>}
+      {target && (
+        <span className="mt-1 block text-[11px] text-zinc-600">
+          Recipe: {target}
+          {delta && <span className="ml-1.5 font-medium text-zinc-400">{delta}</span>}
+        </span>
+      )}
+      {hint && <span className="mt-1 block text-[11px] text-zinc-500">{hint}</span>}
     </label>
   );
 }
@@ -957,11 +1072,15 @@ function NumberField({
     if (!focused.current) setDraft(value == null ? '' : String(value));
   }, [value]);
 
+  const delta = targetDelta(value, target ?? null, unit);
+
   if (!editable) {
     return (
       <Fact
         label={`${label} (${unit})`}
         value={value == null ? (readOnlyValue ?? '—') : `${value} ${unit}`}
+        target={target}
+        delta={delta}
       />
     );
   }
@@ -982,7 +1101,7 @@ function NumberField({
   }
 
   return (
-    <Field label={`${label} (${unit})`} target={target} hint={hint}>
+    <Field label={`${label} (${unit})`} target={target} delta={delta} hint={hint}>
       <input
         type="text"
         inputMode="decimal"
@@ -1022,10 +1141,14 @@ function GravityField({
     if (!focused.current) setDraft(value);
   }, [value]);
 
-  if (!editable) return <Fact label={label} value={value || '—'} />;
+  const delta = targetDelta(value, target ?? null, 'gravity');
+
+  if (!editable) {
+    return <Fact label={label} value={value || '—'} target={target} delta={delta} />;
+  }
 
   return (
-    <Field label={label} target={target || null}>
+    <Field label={label} target={target || null} delta={delta}>
       <input
         type="text"
         inputMode="decimal"

@@ -206,6 +206,12 @@ describe('which changes are announced', () => {
         'POST /api/brew-sessions': '/brew-sessions',
         'PUT /api/kegs/:id': '/kegs',
         'PUT /api/notifications/settings': '/settings',
+        // A custom rule decides when everyone's phone buzzes, so writing,
+        // rewriting or removing one is a change the brewery should hear about
+        // — the same reason the notification settings beside it are announced.
+        'POST /api/alert-rules': '/settings',
+        'PUT /api/alert-rules/:id': '/settings',
+        'DELETE /api/alert-rules/:id': '/settings',
         'PUT /api/recipe-defaults': '/settings',
         'PUT /api/graph-colors': '/settings',
         'PUT /api/keg-content-colors': '/settings',

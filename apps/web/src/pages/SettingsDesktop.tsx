@@ -27,6 +27,7 @@ import {
   type SystemUpdateStatus,
 } from '../api';
 import { useAuth } from '../auth';
+import { CustomAlertRulesCard } from '../components/CustomAlertRules';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
 import { BATCH_TARGETS, PITCH_RATES } from '../recipeCatalog';
@@ -1340,7 +1341,9 @@ function KegContentColorsSection(): JSX.Element {
  * every toggle below it is meaningless if the hub has no Firebase key or no
  * phone has registered, and those two failures look identical from the outside.
  * Critical alerts then come before routine ones — a fermenter losing pressure is
- * why anyone opens this screen.
+ * why anyone opens this screen — with the brewer's own rules between them, since
+ * those are read as exceptions to the built-in list rather than as a separate
+ * kind of thing.
  *
  * Thresholds are stored in the hub's units (bar, °C) and shown in this
  * browser's, so a brewer who reads pressure in PSI types a threshold in PSI.
@@ -1372,6 +1375,9 @@ function NotificationsSection(): JSX.Element {
     <>
       <PushDeliveryCard />
       <CriticalAlertsCard settings={settings} update={update} />
+      {/* The brewer's own conditions, after the built-in ones: these are the
+          exceptions you add once you know what the hub doesn't already ask. */}
+      <CustomAlertRulesCard />
       <RoutineAlertsCard settings={settings} update={update} />
     </>
   );

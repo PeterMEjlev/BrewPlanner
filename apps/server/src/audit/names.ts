@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import { alertRuleName } from '../alerts/rules.js';
 import { brewSessionName } from '../brewSessions/repo.js';
 import { db } from '../db/index.js';
 import { checklists, recipes, steps, todos, users } from '../db/schema.js';
@@ -32,6 +33,11 @@ export function todoText(id: string): string | null {
 /** A device's display name (the same one shown in the device fleet), or null. */
 export function deviceName(id: string): string | null {
   return getDevice(num(id))?.name ?? null;
+}
+
+/** A custom alert rule's name, so history reads "Deleted alert rule 'BK at boil'". */
+export function alertRuleTitle(id: string): string | null {
+  return alertRuleName(id);
 }
 
 /**

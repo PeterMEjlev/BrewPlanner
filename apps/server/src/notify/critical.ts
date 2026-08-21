@@ -3,13 +3,27 @@ import type {
   CriticalAlertSource,
   DeviceStatus,
   NotificationSettings,
-  Reading,
 } from '@checklist/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import { openAlert, recordAlert, resolveAlerts } from '../alerts/repo.js';
 import { sensorKeyFor } from '../devices/catalog.js';
 import { getHistory, listDeviceStatus } from '../devices/repo.js';
 import { pushToEveryone } from './push.js';
+import type { Verdict } from './signal.js';
+import {
+  CLEAR,
+  HOUR,
+  MIN,
+  UNKNOWN,
+  degrees,
+  history,
+  hours,
+  latest,
+  minutes,
+  pressure,
+  spans,
+  sustained,
+} from './signal.js';
 
 /**
  * The checks that watch for something going wrong in the brewery *right now* —
@@ -37,12 +51,13 @@ import { pushToEveryone } from './push.js';
  * to how fast the thing it watches actually moves — seconds for pressure, an
  * hour for a keg fridge whose door someone just opened.
  *
+ * The three-state {@link Verdict} those rules are expressed in, and the reading
+ * helpers behind them, live in signal.ts — shared with the brewer's own rules
+ * in custom.ts so both judge "long enough to mean something" identically.
+ *
  * A check that throws never stops the others: failures are logged and retried on
  * the next tick.
  */
-
-const MIN = 60_000;
-const HOUR = 3_600_000;
 
 // --- Tuning ----------------------------------------------------------------
 // Timings and hysteresis bands, env-overridable for tuning without a redeploy.
@@ -81,22 +96,6 @@ const STALL_SETPOINT_MARGIN_C = Number(process.env.ALERT_STALL_SETPOINT_C ?? 5);
 const STALL_PROGRESS_C = 0.5;
 /** Deadband the Inkbird idles within, mirroring the agent (see devices/mock.ts). */
 const HVAC_DEADBAND_C = 0.3;
-
-// --- Verdicts ---------------------------------------------------------------
-
-/**
- * What one check concluded this tick. `unknown` deliberately does nothing: it
- * covers a silent sensor, a history too short to judge, and the hysteresis band
- * around a threshold — in all three the honest answer is "no new information",
- * which must not close an alert that is still open.
- */
-type Verdict =
-  | { state: 'firing'; severity: AlertSeverity; title: string; detail: string }
-  | { state: 'clear' }
-  | { state: 'unknown' };
-
-const CLEAR: Verdict = { state: 'clear' };
-const UNKNOWN: Verdict = { state: 'unknown' };
 
 /** Where a critical push lands: the timeline of what the hub noticed. */
 const ALERT_PATH = '/alerts';
@@ -441,69 +440,4 @@ function checkFermenterStalled(device: DeviceStatus, brewery: DeviceStatus | und
       `the same as the brewery (${degrees(ambient)}) and nowhere near the ${degrees(setpoint)} ` +
       `target. Check the fridge's power and the controller's sockets.`,
   };
-}
-
-// --- Reading helpers --------------------------------------------------------
-
-/** The device's most recent value for a metric, or null if it has none. */
-function latest(device: DeviceStatus, metric: string): number | null {
-  const reading = device.latest.find((r) => r.metric === metric);
-  return reading ? reading.value : null;
-}
-
-/** Raw readings for a metric over the last `windowMs`, oldest first. */
-function history(deviceId: number, metric: string, windowMs: number): Reading[] {
-  const rows = getHistory(deviceId, {
-    metric,
-    since: new Date(Date.now() - windowMs).toISOString(),
-    // Newest-first with a cap would silently drop the *oldest* rows — exactly the
-    // ones the span checks below depend on. Agents push at most every 30s, so
-    // this covers a long window with room to spare.
-    limit: 5000,
-  });
-  return rows.slice().reverse();
-}
-
-/** Whether the readings actually cover `windowMs` rather than a recent sliver. */
-function spans(readings: Reading[], windowMs: number): boolean {
-  if (readings.length < 2) return false;
-  const oldest = Date.parse(readings[0]!.recordedAt);
-  const newest = Date.parse(readings[readings.length - 1]!.recordedAt);
-  if (!Number.isFinite(oldest) || !Number.isFinite(newest)) return false;
-  // Allow a little slack: a 5-minute window sampled every 30s starts ~4m30s back.
-  return newest - oldest >= windowMs * 0.8;
-}
-
-/** Whether every reading in a full window satisfies the predicate. */
-function sustained(
-  readings: Reading[],
-  predicate: (r: Reading) => boolean,
-  windowMs: number,
-): boolean {
-  return spans(readings, windowMs) && readings.every(predicate);
-}
-
-// --- Formatting -------------------------------------------------------------
-
-/**
- * Pressure in both units. The hub stores bar and the phone shows whichever the
- * browser is set to, but a notification is plain text with no settings behind
- * it — so it carries both rather than guessing which one the reader thinks in.
- */
-function pressure(bar: number): string {
-  return `${bar.toFixed(2)} bar (${Math.round(bar * 14.5038)} psi)`;
-}
-
-function degrees(c: number): string {
-  return `${c.toFixed(1)} °C`;
-}
-
-function minutes(ms: number): string {
-  const m = Math.round(ms / MIN);
-  return m >= 60 ? hours(ms) : `${m} min`;
-}
-
-function hours(ms: number): string {
-  const h = ms / HOUR;
-  return `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
 }

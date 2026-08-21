@@ -217,6 +217,9 @@ export const brewSessions = sqliteTable(
     preBoilGravity: text('pre_boil_gravity').notNull().default(''),
     /** The kettle volume that pre-boil gravity was read in — mash efficiency needs both. */
     preBoilVolumeL: real('pre_boil_volume_l'),
+    /** The kettle at knockout, before anything was left behind with the trub. */
+    postBoilGravity: text('post_boil_gravity').notNull().default(''),
+    postBoilVolumeL: real('post_boil_volume_l'),
     measuredOg: text('measured_og').notNull().default(''),
     measuredFg: text('measured_fg').notNull().default(''),
     volumeL: real('volume_l'),
@@ -378,6 +381,13 @@ export const alerts = sqliteTable(
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     deviceId: integer('device_id').references(() => devices.id, { onDelete: 'set null' }),
+    /**
+     * The custom rule that raised this, for `source = 'custom'`; null for every
+     * built-in source. Deliberately *not* a foreign key: an alert is history,
+     * and deleting the rule must not delete the record of what it caught. The
+     * rule repo resolves whatever episodes it leaves behind before it goes.
+     */
+    ruleId: text('rule_id'),
     source: text('source').notNull(),
     severity: text('severity').notNull().default('warning'),
     title: text('title').notNull(),
@@ -390,6 +400,37 @@ export const alerts = sqliteTable(
   },
   (t) => [index('alerts_created_idx').on(t.createdAt)],
 );
+
+/**
+ * Alert rules the brewer wrote themselves: "tell me when the fermenter fridge
+ * is over 25 °C", "tell me when the boil kettle reaches 100". Evaluated every
+ * tick by notify/custom.ts against either a registered device's readings or a
+ * live poll of the brewing rig.
+ *
+ * `signal` and `test` are JSON because they are discriminated unions whose
+ * shape depends on their kind — a device signal carries a device and a metric,
+ * a rig signal carries a pot — and columns for the union of every variant would
+ * be mostly null and enforce nothing. Nothing queries inside them: the
+ * evaluator loads the enabled rules and works in memory.
+ */
+export const alertRules = sqliteTable('alert_rules', {
+  id: text('id').primaryKey(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  /** The brewer's own words, used verbatim as the alert's title. */
+  name: text('name').notNull(),
+  /** JSON encoded CustomAlertSignal — which device metric, or which rig pot. */
+  signal: text('signal').notNull(),
+  /** JSON encoded CustomAlertTest — above/below/equals a number, or gone flat. */
+  test: text('test').notNull(),
+  /** Minutes the condition must hold before it counts (and before it clears). */
+  holdMinutes: real('hold_minutes').notNull().default(0),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: text('updated_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
 
 /**
  * Audit log of admin changes. The centralized audit hook (see audit/hook.ts)

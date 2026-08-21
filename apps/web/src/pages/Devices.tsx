@@ -98,8 +98,13 @@ const TYPE_BRIDGE: Partial<Record<DeviceType, BridgeBoard>> = {
   },
 };
 
-/** Generic kind shown as a secondary subtitle next to the location name. */
-const TYPE_LABEL: Record<DeviceType, string> = {
+/**
+ * Generic kind shown as a secondary subtitle next to the location name — and
+ * borrowed by the alert-rule picker, where it is what separates two sensors the
+ * brewery has given the same name (the fermenter's controller and its pressure
+ * sensor are both "Fermenter").
+ */
+export const TYPE_LABEL: Record<DeviceType, string> = {
   pressure_sensor: 'Pressure',
   brew_controller: 'Controller',
   power_meter: 'Power meter',

@@ -9,6 +9,7 @@ import {
 } from '../repo.js';
 import {
   accountName,
+  alertRuleTitle,
   brewSessionRecipeName,
   checklistName,
   deviceName,
@@ -302,6 +303,27 @@ const RULES: Rule[] = [
   // Clearing the whole feed is worth a line in the history; dismissing a single
   // alert is everyday tidying and falls through to the generic entry.
   { method: 'POST', re: /^\/api\/alerts\/clear$/, build: () => ({ entity: 'Alert', action: 'Cleared all alerts' }) },
+
+  // --- Custom alert rules ---------------------------------------------------
+  // A rule decides when the brewery interrupts someone's evening, so who wrote
+  // or removed one is worth keeping. The rule's own name is the whole subject —
+  // the brewer wrote it to say what it watches.
+  { method: 'POST', re: /^\/api\/alert-rules$/, push: '/settings', build: ({ body }) => ({ entity: 'Alert rule', action: `Added alert rule${str(body, 'name') ? ` "${str(body, 'name')}"` : ''}` }) },
+  {
+    method: 'PUT',
+    re: /^\/api\/alert-rules\/([^/]+)$/,
+    push: '/settings',
+    before: (m) => alertRuleTitle(decodeURIComponent(m[1] ?? '')),
+    build: ({ m, body, before }) => {
+      const name = str(body, 'name');
+      // A rename is the one edit the new name alone wouldn't explain.
+      const subject = before && name && before !== name ? `"${before}" to "${name}"` : named(name || before, m[1] ?? '');
+      const enabled = body && typeof body === 'object' ? (body as Record<string, unknown>).enabled : undefined;
+      if (enabled === false) return { entity: 'Alert rule', action: `Switched off alert rule ${subject}` };
+      return { entity: 'Alert rule', action: `Edited alert rule ${subject}` };
+    },
+  },
+  { method: 'DELETE', re: /^\/api\/alert-rules\/([^/]+)$/, push: '/settings', before: (m) => alertRuleTitle(decodeURIComponent(m[1] ?? '')), build: ({ m, before }) => ({ entity: 'Alert rule', action: `Deleted alert rule ${named(before, m[1] ?? '')}` }) },
 
   // --- Active recipe --------------------------------------------------------
   // Costing the sheet in the editor saves nothing — it's a POST only because the

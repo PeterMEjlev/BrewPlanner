@@ -10,7 +10,12 @@ import type {
   RecipeDetail,
   UpdateBrewSessionInput,
 } from '@checklist/shared';
-import { BREW_SESSION_STATUSES, extractPotential, isFermentableLine } from '@checklist/shared';
+import {
+  BREW_SESSION_STATUSES,
+  EMPTY_BREW_SESSION_RECIPE_SNAPSHOT,
+  extractPotential,
+  isFermentableLine,
+} from '@checklist/shared';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { brewSessionRigSamples, brewSessions, recipes } from '../db/schema.js';
@@ -56,6 +61,16 @@ export function recipeSnapshot(recipe: RecipeDetail): BrewSessionRecipeSnapshot 
     abv: recipe.abv,
     ibu: recipe.ibu,
     ebc: recipe.ebc,
+    // The kettle the day gets compared against. The volumes come off the
+    // settings rather than being recalculated here: a sheet is saved with its
+    // automatic boil volumes already resolved, so these are the litres the
+    // brewer was looking at when they decided to brew it.
+    preBoilGravity: recipe.preBoilGravity,
+    postBoilGravity: recipe.postBoilGravity,
+    preBoilVolumeL: recipe.settings.boilSizePreL,
+    postBoilVolumeL: recipe.settings.boilSizePostL,
+    boilTimeMin: recipe.settings.boilTimeMinutes,
+    efficiencyPct: recipe.settings.efficiencyPercent,
     batchSizeL: recipe.batchSizeL,
     mashTemp: recipe.mashTemp,
     fermentationTemp: recipe.fermentationTemp,
@@ -76,33 +91,21 @@ export function recipeSnapshot(recipe: RecipeDetail): BrewSessionRecipeSnapshot 
 }
 
 /**
- * Rebuild the snapshot a row was stored with. A row whose JSON no longer parses
- * still lists — with the little the columns themselves know — rather than taking
- * the whole logbook down with it.
+ * Rebuild the snapshot a row was stored with, merged onto the empty one. The
+ * merge is what lets a field be added to the snapshot later: an entry logged
+ * before it existed reports it as unstated rather than as an `undefined` its
+ * type promises can't happen, and the reader can't tell the difference from a
+ * recipe that never named the figure.
+ *
+ * A row whose JSON no longer parses still lists — with the little the columns
+ * themselves know — rather than taking the whole logbook down with it.
  */
 function rowSnapshot(row: BrewSessionRow): BrewSessionRecipeSnapshot {
   try {
-    return JSON.parse(row.recipeSnapshot) as BrewSessionRecipeSnapshot;
+    const stored = JSON.parse(row.recipeSnapshot) as Partial<BrewSessionRecipeSnapshot>;
+    return { ...EMPTY_BREW_SESSION_RECIPE_SNAPSHOT, ...stored };
   } catch {
-    return {
-      name: 'Unknown recipe',
-      style: '',
-      og: '',
-      fg: '',
-      abv: '',
-      ibu: '',
-      ebc: '',
-      batchSizeL: null,
-      mashTemp: null,
-      fermentationTemp: null,
-      costDkk: null,
-      grainKg: null,
-      hopGrams: null,
-      yeast: '',
-      mashedPointGallons: null,
-      unmashedPointGallons: null,
-      preBoilUnmashedPointGallons: null,
-    };
+    return { ...EMPTY_BREW_SESSION_RECIPE_SNAPSHOT };
   }
 }
 
@@ -164,6 +167,8 @@ function rowToBrewSession(row: BrewSessionRow, brewNumber: number): BrewSession 
     measured: {
       preBoilGravity: row.preBoilGravity,
       preBoilVolumeL: row.preBoilVolumeL,
+      postBoilGravity: row.postBoilGravity,
+      postBoilVolumeL: row.postBoilVolumeL,
       og: row.measuredOg,
       fg: row.measuredFg,
       volumeL: row.volumeL,
@@ -318,6 +323,8 @@ export function updateBrewSession(id: number, input: UpdateBrewSessionInput): Br
   if (m) {
     if (m.preBoilGravity !== undefined) fields.preBoilGravity = m.preBoilGravity;
     if (m.preBoilVolumeL !== undefined) fields.preBoilVolumeL = m.preBoilVolumeL;
+    if (m.postBoilGravity !== undefined) fields.postBoilGravity = m.postBoilGravity;
+    if (m.postBoilVolumeL !== undefined) fields.postBoilVolumeL = m.postBoilVolumeL;
     if (m.og !== undefined) fields.measuredOg = m.og;
     if (m.fg !== undefined) fields.measuredFg = m.fg;
     if (m.volumeL !== undefined) fields.volumeL = m.volumeL;

@@ -187,6 +187,12 @@ test('fruit juice and puree add their fermentable sugar to estimated ABV', () =>
     amount: '5',
     unit: 'kg',
   }], 55) - fruited.fruitAbv) < 0.0001);
+  // Some imported sheets name only the fruit/brand even though the litre unit
+  // makes the juice/puree form unambiguous.
+  assert.ok(Math.abs(estimateFruitAbvContribution([{
+    ...rhapsody.otherIngredients[0]!,
+    name: 'Ponthier Raspberry',
+  }], 55) - fruited.fruitAbv) < 0.0001);
   // Other liquid additions must not be mistaken for fermentable fruit.
   assert.equal(estimateFruitAbvContribution([{
     ...rhapsody.otherIngredients[0]!,

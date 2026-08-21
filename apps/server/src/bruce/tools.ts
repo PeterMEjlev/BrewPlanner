@@ -594,6 +594,16 @@ function statsText(stats: BrewSessionTempStats | null, unit = '°C'): string {
   return `${stats.avg.toFixed(1)} ${unit} average, ${stats.min.toFixed(1)}–${stats.max.toFixed(1)} ${unit} (${stats.count} samples)`;
 }
 
+/**
+ * " against a target of 1.048 at 31 L", for a kettle reading the recipe stated a
+ * figure for. Empty when it didn't — including on an entry logged before the
+ * targets were snapshotted, where inventing one would misreport the day.
+ */
+function against(gravity: string | null, volumeL: number | null): string {
+  const parts = [gravity || null, volumeL == null ? null : `${volumeL} L`].filter(Boolean);
+  return parts.length === 0 ? '' : ` against a target of ${parts.join(' at ')}`;
+}
+
 function brewSessionDetail(entry: BrewSessionDetail): string {
   const { brewhouse, mash } = efficiencies(entry);
   const abv = abvFromGravities(entry.measured.og, entry.measured.fg);
@@ -617,8 +627,15 @@ function brewSessionDetail(entry: BrewSessionDetail): string {
         `OG ${gravityText(m.og)} against a target of ${gravityText(entry.recipe.og)}`,
         `FG ${gravityText(m.fg)} against a target of ${gravityText(entry.recipe.fg)}`,
         abv != null ? `ABV ${abv.toFixed(1)} %${attenuation != null ? `, ${attenuation.toFixed(0)} % apparent attenuation` : ''}` : null,
-        m.preBoilGravity ? `Pre-boil ${gravityText(m.preBoilGravity)}${m.preBoilVolumeL ? ` at ${m.preBoilVolumeL} L` : ''}` : null,
-        m.volumeL != null ? `${m.volumeL} L into the fermenter` : null,
+        m.preBoilGravity
+          ? `Pre-boil ${gravityText(m.preBoilGravity)}${m.preBoilVolumeL ? ` at ${m.preBoilVolumeL} L` : ''}${against(entry.recipe.preBoilGravity, entry.recipe.preBoilVolumeL)}`
+          : null,
+        m.postBoilGravity
+          ? `Post-boil ${gravityText(m.postBoilGravity)}${m.postBoilVolumeL ? ` at ${m.postBoilVolumeL} L` : ''}${against(entry.recipe.postBoilGravity, entry.recipe.postBoilVolumeL)}`
+          : null,
+        m.volumeL != null
+          ? `${m.volumeL} L into the fermenter${entry.recipe.batchSizeL != null ? ` against ${entry.recipe.batchSizeL} L planned` : ''}`
+          : null,
         m.mashTempC != null ? `Mashed at ${m.mashTempC} °C` : null,
         `Brewhouse efficiency ${pct(brewhouse)}${m.efficiencyPct != null ? ' (entered by hand)' : ''}, mash efficiency ${pct(mash)}`,
         m.waterL != null ? `${m.waterL} L of brewing liquor` : null,

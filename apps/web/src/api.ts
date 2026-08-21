@@ -2,6 +2,7 @@ import type {
   ActiveRecipe,
   ActiveState,
   Alert,
+  AlertRuleInput,
   AuditEntry,
   AuditFilters,
   AuditQuery,
@@ -31,6 +32,7 @@ import type {
   ChecklistSummary,
   ChecklistWithSteps,
   DeviceDataSources,
+  CustomAlertRule,
   DeviceStatus,
   FermenterState,
   FermenterStatus,
@@ -551,6 +553,20 @@ export const api = {
   getNotificationStatus: () => request<NotificationStatus>('/notifications/status'),
   sendTestNotification: () =>
     request<{ sent: boolean; devices: number }>('/notifications/test', { method: 'POST' }),
+
+  // The brewer's own alert rules — "tell me when the boil kettle reaches 100".
+  // Saved whole rather than patched: a rule's signal and test are a matched
+  // pair, and half of each would describe a condition nobody asked for.
+  listAlertRules: () => request<CustomAlertRule[]>('/alert-rules'),
+  createAlertRule: (rule: AlertRuleInput) =>
+    request<CustomAlertRule>('/alert-rules', { method: 'POST', body: JSON.stringify(rule) }),
+  updateAlertRule: (id: string, rule: AlertRuleInput) =>
+    request<CustomAlertRule>(`/alert-rules/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(rule),
+    }),
+  deleteAlertRule: (id: string) =>
+    request<void>(`/alert-rules/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   // This phone's Firebase token, so the hub can push other people's changes to
   // it (native app only — see push.ts). `configured` says whether the hub has

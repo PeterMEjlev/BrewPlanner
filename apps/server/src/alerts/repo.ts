@@ -15,6 +15,7 @@ function toPublic(row: typeof alerts.$inferSelect): Alert {
   return {
     id: row.id,
     deviceId: row.deviceId,
+    ruleId: row.ruleId,
     source: row.source as AlertSource,
     severity: row.severity as AlertSeverity,
     title: row.title,
@@ -32,11 +33,14 @@ export function recordAlert(input: {
   title: string;
   detail: string;
   deviceId?: number | null;
+  /** The custom rule behind this alert, for `source: 'custom'`. */
+  ruleId?: string | null;
 }): Alert {
   const row = db
     .insert(alerts)
     .values({
       deviceId: input.deviceId ?? null,
+      ruleId: input.ruleId ?? null,
       source: input.source,
       severity: input.severity,
       title: input.title,
@@ -94,12 +98,19 @@ export function dismissAllAlerts(): number {
 
 /**
  * Narrows to one episode: a given source on a given device (or on no device at
- * all, for conditions that aren't tied to one). `deviceId: null` has to be an
- * `IS NULL` rather than an `= NULL`, which would match nothing.
+ * all, for conditions that aren't tied to one), and — for custom rules — a
+ * given rule. `null` on either side has to be an `IS NULL` rather than an
+ * `= NULL`, which would match nothing.
+ *
+ * The rule is part of the key because `source` alone can't separate custom
+ * episodes: two rules watching the same fridge, or two watching the rig (which
+ * has no device id at all), would otherwise share one episode and the second
+ * would be silently swallowed by the first's dedup.
  */
-function episodeWhere(source: AlertSource, deviceId: number | null) {
+function episodeWhere(source: AlertSource, deviceId: number | null, ruleId: string | null) {
   return and(
     deviceId == null ? isNull(alerts.deviceId) : eq(alerts.deviceId, deviceId),
+    ruleId == null ? isNull(alerts.ruleId) : eq(alerts.ruleId, ruleId),
     eq(alerts.source, source),
     isNull(alerts.resolvedAt),
   );
@@ -111,11 +122,15 @@ function episodeWhere(source: AlertSource, deviceId: number | null) {
  * stays offline, a fridge that stays warm) raises a single alert, not one per
  * tick, and so buzzes the phones once.
  */
-export function openAlert(source: AlertSource, deviceId: number | null): Alert | null {
+export function openAlert(
+  source: AlertSource,
+  deviceId: number | null,
+  ruleId: string | null = null,
+): Alert | null {
   const row = db
     .select()
     .from(alerts)
-    .where(episodeWhere(source, deviceId))
+    .where(episodeWhere(source, deviceId, ruleId))
     .orderBy(desc(alerts.id))
     .get();
   return row ? toPublic(row) : null;
@@ -126,10 +141,28 @@ export function openAlert(source: AlertSource, deviceId: number | null): Alert |
  * device reported again, the pressure recovered). Returns how many it closed, so
  * a caller can log a recovery only when there was something to recover from.
  */
-export function resolveAlerts(source: AlertSource, deviceId: number | null): number {
+export function resolveAlerts(
+  source: AlertSource,
+  deviceId: number | null,
+  ruleId: string | null = null,
+): number {
   return db
     .update(alerts)
     .set({ resolvedAt: nowIso() })
-    .where(episodeWhere(source, deviceId))
+    .where(episodeWhere(source, deviceId, ruleId))
+    .run().changes;
+}
+
+/**
+ * Close every open episode belonging to one custom rule, whatever it was
+ * watching. Used when a rule is deleted or switched off: the condition is no
+ * longer being judged, so leaving its alert open would strand it unresolved
+ * forever with nothing left that could ever clear it.
+ */
+export function resolveRuleAlerts(ruleId: string): number {
+  return db
+    .update(alerts)
+    .set({ resolvedAt: nowIso() })
+    .where(and(eq(alerts.ruleId, ruleId), isNull(alerts.resolvedAt)))
     .run().changes;
 }

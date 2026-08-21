@@ -1,4 +1,5 @@
 import {
+  alertRuleSchema,
   alertsQuerySchema,
   auditQuerySchema,
   createChecklistSchema,
@@ -38,6 +39,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { dismissAlert, dismissAllAlerts, listAlerts } from '../alerts/repo.js';
+import * as alertRules from '../alerts/rules.js';
 import { auditFilters, listAudit } from '../audit/repo.js';
 import * as brewSessions from '../brewSessions/repo.js';
 import { registerAuditHook } from '../audit/hook.js';
@@ -730,6 +732,34 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
     // Merged, not replaced: the critical-alert fields are optional so an older
     // app build can still save the settings it knows about (see the schema).
     return repo.setNotificationSettings({ ...repo.getNotificationSettings(), ...body });
+  });
+
+  // --- Custom alert rules -----------------------------------------------
+  // The brewer's own conditions ("tell me when the boil kettle reaches 100"),
+  // evaluated by notify/custom.ts. Readable by anyone signed in — the Settings
+  // page shows them — and editable by admins, like every other setting.
+  app.get('/alert-rules', async () => alertRules.listAlertRules());
+
+  app.post('/alert-rules', adminOnly, async (req, reply) => {
+    const body = parse(alertRuleSchema, req.body, reply);
+    if (!body) return;
+    return reply.status(201).send(alertRules.createAlertRule(body));
+  });
+
+  app.put('/alert-rules/:id', adminOnly, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = parse(alertRuleSchema, req.body, reply);
+    if (!body) return;
+    const updated = alertRules.updateAlertRule(id, body);
+    return updated ?? reply.status(404).send({ error: 'Alert rule not found' });
+  });
+
+  app.delete('/alert-rules/:id', adminOnly, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!alertRules.deleteAlertRule(id)) {
+      return reply.status(404).send({ error: 'Alert rule not found' });
+    }
+    return reply.status(204).send();
   });
 
   // --- Graph colours ----------------------------------------------------

@@ -7,6 +7,7 @@ import { startBrewSessionSampler } from './brewSessions/sampler.js';
 import { sqlite } from './db/index.js';
 import { RETENTION_DAYS, pruneOldReadings } from './devices/retention.js';
 import { runNotificationChecks } from './notify/checks.js';
+import { runCustomRuleChecks } from './notify/custom.js';
 import { pushConfigError, pushConfigured } from './notify/push.js';
 import { startRecipeBackupScheduler } from './recipeBackup.js';
 
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
     installShutdownHandlers(app);
     startAlertScheduler(app);
     startNotificationScheduler(app);
+    startCustomRuleScheduler(app);
     reportPushStatus(app);
     startRetentionScheduler(app);
     startRecipeBackupScheduler(app.log);
@@ -103,6 +105,27 @@ function startNotificationScheduler(app: FastifyInstance): void {
   // Run once shortly after boot so a due alert doesn't wait a full interval.
   setTimeout(tick, 15_000).unref();
   app.log.info(`Notification checks enabled (checking every ${intervalMs / 1000}s).`);
+}
+
+/**
+ * Evaluate the brewer's own alert rules (see notify/custom.ts).
+ *
+ * A separate, faster loop than the routine checks above, because a custom rule
+ * can watch something that moves in minutes — a kettle coming up to boil — and
+ * learning about it five minutes late would make the rule pointless. Rules that
+ * watch the rig also build their own history from these ticks, so the cadence
+ * is what a rule's hold window is measured in.
+ *
+ * Override with CUSTOM_ALERT_INTERVAL_SECONDS; unref'd like the others so it
+ * never holds the process open on shutdown.
+ */
+function startCustomRuleScheduler(app: FastifyInstance): void {
+  const intervalMs = Number(process.env.CUSTOM_ALERT_INTERVAL_SECONDS ?? 60) * 1000;
+  const tick = () => void runCustomRuleChecks(app.log);
+  setInterval(tick, intervalMs).unref();
+  // Same grace as the offline check: let devices report before judging them.
+  setTimeout(tick, 20_000).unref();
+  app.log.info(`Custom alert rules enabled (checking every ${intervalMs / 1000}s).`);
 }
 
 /**

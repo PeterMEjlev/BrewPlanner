@@ -175,6 +175,63 @@ test('the snapshot carries what efficiency is measured against', async () => {
   assert.equal(brewSessions.getBrewSession(brewSession.id)?.measured.efficiencyPct, null);
 });
 
+test('the snapshot carries the kettle the day is compared against', async () => {
+  const { brewSessions, recipes } = await boot();
+
+  const saved = recipes.createRecipe(recipe('Kettle Pale'));
+  const stored = recipes.getRecipe(saved.id)!;
+  const brewSession = brewSessions.startBrewSession(saved.id, stored);
+  const snapshot = brewSession.recipe;
+
+  // Both sides of the boil, in the units the sheet holds them: the gravities as
+  // text, the volumes as litres already resolved from the automatic boil sizes.
+  assert.equal(snapshot.preBoilGravity, stored.preBoilGravity);
+  assert.equal(snapshot.postBoilGravity, stored.postBoilGravity);
+  assert.equal(snapshot.preBoilVolumeL, stored.settings.boilSizePreL);
+  assert.equal(snapshot.postBoilVolumeL, stored.settings.boilSizePostL);
+  assert.ok(snapshot.preBoilVolumeL != null && snapshot.postBoilVolumeL != null);
+  // The kettle loses volume over the boil, which is the whole reason the two
+  // pre-boil and post-boil figures are different questions.
+  assert.ok(snapshot.preBoilVolumeL > snapshot.postBoilVolumeL);
+  assert.equal(snapshot.boilTimeMin, stored.settings.boilTimeMinutes);
+  assert.equal(snapshot.efficiencyPct, stored.settings.efficiencyPercent);
+
+  // And they are frozen like the rest of the snapshot: shortening the boil on
+  // the sheet afterwards must not change what this batch was brewed to.
+  const edited = recipe('Kettle Pale');
+  edited.settings.boilTimeMinutes = 90;
+  recipes.updateRecipe(saved.id, edited);
+  assert.equal(brewSessions.getBrewSession(brewSession.id)!.recipe.boilTimeMin, 60);
+});
+
+test('a snapshot written before a field existed reads as unstated', async () => {
+  const { brewSessions, recipes } = await boot();
+  const saved = recipes.createRecipe(recipe('Legacy Ale'));
+  const brewSession = brewSessions.startBrewSession(saved.id, recipes.getRecipe(saved.id)!);
+
+  // What an entry logged before the kettle targets were recorded holds: the old
+  // shape, with none of the newer keys present at all.
+  const { sqlite } = await import('./db/index.js');
+  sqlite
+    .prepare('UPDATE brew_sessions SET recipe_snapshot = ? WHERE id = ?')
+    .run(JSON.stringify({ name: 'Legacy Ale', style: 'American IPA', og: '1.060' }), brewSession.id);
+
+  const reread = brewSessions.getBrewSession(brewSession.id)!;
+  assert.equal(reread.recipe.name, 'Legacy Ale');
+  assert.equal(reread.recipe.og, '1.060');
+  // Not undefined — the type says these are always present, and a comparison
+  // against an absent target has to read as "the recipe never said".
+  assert.equal(reread.recipe.preBoilGravity, null);
+  assert.equal(reread.recipe.postBoilVolumeL, null);
+  assert.equal(reread.recipe.boilTimeMin, null);
+  assert.equal(reread.recipe.batchSizeL, null);
+  assert.equal(reread.recipe.yeast, '');
+
+  // And a snapshot that no longer parses still lists rather than throwing.
+  sqlite.prepare('UPDATE brew_sessions SET recipe_snapshot = ? WHERE id = ?').run('{ not json', brewSession.id);
+  assert.equal(brewSessions.getBrewSession(brewSession.id)!.recipe.name, 'Unknown recipe');
+});
+
 test('brews of one recipe are numbered by date, and back-dating renumbers them', async () => {
   const { brewSessions, recipes } = await boot();
   const saved = recipes.createRecipe(recipe('House Bitter'));
@@ -259,6 +316,18 @@ test('an edit writes only what it names, and null clears a measurement', async (
   // otherwise a mistyped figure could only ever be corrected to a zero.
   brewSessions.updateBrewSession(brewSession.id, { measured: { volumeL: null } });
   assert.equal(brewSessions.getBrewSession(brewSession.id)?.measured.volumeL, null);
+
+  // The kettle at knockout is its own reading, kept apart from the OG that
+  // reached the fermenter — the two differ by what was left with the trub.
+  brewSessions.updateBrewSession(brewSession.id, {
+    measured: { postBoilGravity: '1.062', postBoilVolumeL: 23.5 },
+  });
+  const knockout = brewSessions.getBrewSession(brewSession.id)!;
+  assert.equal(knockout.measured.postBoilGravity, '1.062');
+  assert.equal(knockout.measured.postBoilVolumeL, 23.5);
+  assert.equal(knockout.measured.og, '1.058');
+  brewSessions.updateBrewSession(brewSession.id, { measured: { postBoilVolumeL: null } });
+  assert.equal(brewSessions.getBrewSession(brewSession.id)?.measured.postBoilVolumeL, null);
 
   assert.equal(brewSessions.deleteBrewSession(brewSession.id), true);
   assert.equal(brewSessions.getBrewSession(brewSession.id), null);

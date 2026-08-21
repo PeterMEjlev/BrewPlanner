@@ -81,3 +81,47 @@ export function measured(value: number | null, unit: string, decimals = 1): stri
   if (value == null || !Number.isFinite(value)) return '—';
   return `${value.toFixed(decimals).replace(/\.0$/, '')} ${unit}`;
 }
+
+/**
+ * The leading number in a figure the sheet holds as text — "1.048", "28 L",
+ * "67°C" all read. Null for anything that doesn't start with one, so a target
+ * the recipe never stated simply has no comparison rather than a wrong one.
+ */
+function leadingNumber(value: string | number | null | undefined): number | null {
+  if (value == null) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const parsed = Number.parseFloat(value.trim().replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * How far a measurement landed from what the recipe asked for, as the phrase
+ * that goes under the field: "+4 pts", "−1.5 L", "+2 min".
+ *
+ * Gravities are compared in points, because that is the unit brewers actually
+ * discuss a miss in — "four points short", never "0.004 short".
+ *
+ * Null when either side is missing, and null when they agree: a field with no
+ * delta under it already says the day hit the number, and "±0" only adds ink.
+ */
+export function targetDelta(
+  actual: string | number | null,
+  target: string | number | null,
+  /** The unit to say the difference in; 'gravity' switches to points. */
+  unit: string,
+): string | null {
+  const a = leadingNumber(actual);
+  const t = leadingNumber(target);
+  if (a == null || t == null) return null;
+  const gravity = unit === 'gravity';
+  const difference = gravity ? (a - t) * 1000 : a - t;
+  // Below a tenth of a point (or a tenth of a litre, degree, minute) the two
+  // figures are the same reading twice, and rounding would print a signed zero.
+  if (Math.abs(difference) < 0.05) return null;
+  const rounded = gravity ? Math.round(difference) : Math.round(difference * 10) / 10;
+  if (rounded === 0) return null;
+  const sign = rounded > 0 ? '+' : '−';
+  const size = Math.abs(rounded);
+  if (gravity) return `${sign}${size} ${size === 1 ? 'pt' : 'pts'}`;
+  return `${sign}${size} ${unit}`;
+}

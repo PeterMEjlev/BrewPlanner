@@ -42,6 +42,7 @@ const SOURCE_LABEL: Record<AlertSource, string> = {
   fermenter_stalled: 'Fridge not responding',
   kegs_warm: 'Keg fridge warm',
   brewery_cold: 'Brewery cold',
+  custom: 'Custom alert',
 };
 
 /**
@@ -54,6 +55,9 @@ const SOURCE_LABEL: Record<AlertSource, string> = {
 const EPISODE_SOURCES: ReadonlySet<AlertSource> = new Set<AlertSource>([
   'device_offline',
   ...CRITICAL_ALERT_SOURCES,
+  // A rule the brewer wrote is an episode like the built-in ones: raised when
+  // the condition starts, resolved by the hub when the reading comes back.
+  'custom',
 ]);
 
 /**

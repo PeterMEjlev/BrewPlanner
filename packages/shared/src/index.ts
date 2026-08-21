@@ -376,6 +376,22 @@ export interface BrewSessionRecipeSnapshot {
   abv: string;
   ibu: string;
   ebc: string;
+  /**
+   * The kettle the brew day is judged against: the gravities the recipe expects
+   * either side of the boil, the volumes it expects to read them in, the boil it
+   * calls for and the efficiency it assumes. Snapshotted with the rest so a
+   * batch keeps the targets it was actually brewed to after the sheet is edited.
+   *
+   * Null where the recipe states none — and on every entry logged before these
+   * were recorded, which is why the detail page simply omits the comparison
+   * rather than inventing one.
+   */
+  preBoilGravity: string | null;
+  postBoilGravity: string | null;
+  preBoilVolumeL: number | null;
+  postBoilVolumeL: number | null;
+  boilTimeMin: number | null;
+  efficiencyPct: number | null;
   /** Litres into the fermenter the recipe was written for; null if unstated. */
   batchSizeL: number | null;
   /** Pre-formatted mash and fermentation temperatures (e.g. "67°C"); null if unstated. */
@@ -405,6 +421,38 @@ export interface BrewSessionRecipeSnapshot {
 }
 
 /**
+ * What a snapshot reads as when there is nothing to read: the fallback for a
+ * row whose stored JSON no longer parses, and the base every stored snapshot is
+ * merged onto so an entry logged before a field existed reports it as "unstated"
+ * rather than as `undefined` its type says can't happen.
+ */
+export const EMPTY_BREW_SESSION_RECIPE_SNAPSHOT: BrewSessionRecipeSnapshot = {
+  name: 'Unknown recipe',
+  style: '',
+  og: '',
+  fg: '',
+  abv: '',
+  ibu: '',
+  ebc: '',
+  preBoilGravity: null,
+  postBoilGravity: null,
+  preBoilVolumeL: null,
+  postBoilVolumeL: null,
+  boilTimeMin: null,
+  efficiencyPct: null,
+  batchSizeL: null,
+  mashTemp: null,
+  fermentationTemp: null,
+  costDkk: null,
+  grainKg: null,
+  hopGrams: null,
+  yeast: '',
+  mashedPointGallons: null,
+  unmashedPointGallons: null,
+  preBoilUnmashedPointGallons: null,
+};
+
+/**
  * What actually happened, as opposed to what the recipe targeted. Every field is
  * the brewer's own measurement and starts empty — an unmeasured figure stays
  * blank rather than inheriting the recipe's hope for it.
@@ -416,6 +464,14 @@ export interface BrewSessionMeasurements {
   preBoilGravity: string;
   /** Litres in the kettle when that pre-boil gravity was taken. */
   preBoilVolumeL: number | null;
+  /**
+   * The kettle at knockout: what the wort read once the boil had concentrated
+   * it, and how much of it there was. Distinct from the OG below, which is the
+   * gravity that actually reached the fermenter — the two differ by whatever was
+   * left behind with the trub, and by any water added to make the batch up.
+   */
+  postBoilGravity: string;
+  postBoilVolumeL: number | null;
   og: string;
   fg: string;
   /** Litres that actually made it into the fermenter. */
@@ -439,6 +495,8 @@ export interface BrewSessionMeasurements {
 export const EMPTY_BREW_SESSION_MEASUREMENTS: BrewSessionMeasurements = {
   preBoilGravity: '',
   preBoilVolumeL: null,
+  postBoilGravity: '',
+  postBoilVolumeL: null,
   og: '',
   fg: '',
   volumeL: null,
@@ -590,6 +648,8 @@ export const brewSessionMeasurementsSchema = z
   .object({
     preBoilGravity: measuredGravity,
     preBoilVolumeL: measuredNumber(10_000),
+    postBoilGravity: measuredGravity,
+    postBoilVolumeL: measuredNumber(10_000),
     og: measuredGravity,
     fg: measuredGravity,
     volumeL: measuredNumber(10_000),
@@ -1666,7 +1726,13 @@ export type AlertSource =
   | 'fermenter_hot'
   | 'fermenter_stalled'
   | 'kegs_warm'
-  | 'brewery_cold';
+  | 'brewery_cold'
+  /**
+   * A rule the brewer wrote themselves (see {@link CustomAlertRule}). One
+   * source for all of them, because the union is a fixed vocabulary and custom
+   * rules are not — which rule fired is carried on the alert's `ruleId`.
+   */
+  | 'custom';
 
 /**
  * The telemetry conditions that mean something in the brewery is going wrong
@@ -1698,6 +1764,12 @@ export interface Alert {
   id: number;
   /** The device this concerns, or null for alerts not tied to one. */
   deviceId: number | null;
+  /**
+   * The custom rule that raised this, for `source: 'custom'`; null for every
+   * built-in source. Two custom rules can watch the same device, so the rule id
+   * — not the device — is what separates one episode from another.
+   */
+  ruleId: string | null;
   source: AlertSource;
   severity: AlertSeverity;
   title: string;
@@ -2453,6 +2525,80 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 };
 
 // ---------------------------------------------------------------------------
+// Custom alert rules (written by the brewer, evaluated on the server)
+// ---------------------------------------------------------------------------
+
+/**
+ * The brewing rig's three pots. The rig is a separate Pi that the hub polls —
+ * it is not a registered device and its temperatures are never stored in
+ * `readings` — so a rule watching one names the pot rather than a device id.
+ */
+export const RIG_POTS = ['bk', 'mlt', 'hlt'] as const;
+export type RigPot = (typeof RIG_POTS)[number];
+
+export const RIG_POT_LABELS: Record<RigPot, string> = {
+  bk: 'Boil kettle',
+  mlt: 'Mash tun',
+  hlt: 'Hot liquor tank',
+};
+
+/**
+ * What a rule watches: either one metric on one registered device, or one pot
+ * on the brewing rig. Two kinds rather than one because they are read from
+ * genuinely different places — the readings table for a device, a live poll of
+ * the rig for a pot — and a rule has to say which.
+ */
+export type CustomAlertSignal =
+  | { kind: 'device'; deviceId: number; metric: string }
+  | { kind: 'rig'; pot: RigPot };
+
+/**
+ * The test applied to that signal.
+ *
+ * `above`/`below` are the everyday ones — a fridge over a temperature, a kettle
+ * reaching boil. `equals` is for the tri-state metrics that aren't really
+ * numbers (`hvac_state`: -1 cooling, 0 idle, +1 heating), where "above" would
+ * be meaningless. `flat` is the opposite question: not what the value is, but
+ * that it has stopped moving — a gravity that hasn't shifted in two days.
+ */
+export type CustomAlertTest =
+  | { kind: 'above'; value: number }
+  | { kind: 'below'; value: number }
+  | { kind: 'equals'; value: number }
+  | { kind: 'flat'; within: number };
+
+export type CustomAlertTestKind = CustomAlertTest['kind'];
+
+export const CUSTOM_ALERT_TEST_KINDS: CustomAlertTestKind[] = ['above', 'below', 'equals', 'flat'];
+
+/**
+ * One rule the brewer wrote: watch this signal, and tell me when it does this.
+ *
+ * Rules behave as episodes, like the built-in critical checks: one alert when
+ * the condition starts and an automatic resolve when it ends, so a kettle that
+ * sits at boil for an hour buzzes the phone once rather than every tick.
+ *
+ * `holdMinutes` is how long the condition must hold before it counts, and — in
+ * the same measure — how long the opposite must hold before the alert clears.
+ * The symmetry is deliberate: a reading dithering across the threshold never
+ * fills a window in either direction, so it never flaps. Zero means "the moment
+ * it happens", which is what a rule watching for a boil actually wants.
+ */
+export interface CustomAlertRule {
+  id: string;
+  /** Off rules are not evaluated, and resolve anything they left open. */
+  enabled: boolean;
+  /** The brewer's own words — used verbatim as the alert's title. */
+  name: string;
+  signal: CustomAlertSignal;
+  test: CustomAlertTest;
+  /** Minutes the condition must hold. For `flat`, the window it must be still over. */
+  holdMinutes: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Graph colours (server-side, editable from the desktop Settings page)
 // ---------------------------------------------------------------------------
 
@@ -3179,6 +3325,50 @@ export const notificationSettingsSchema = z.object({
   sensorOfflineEnabled: z.boolean().optional(),
 });
 export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchema>;
+
+/** What a custom rule watches (see {@link CustomAlertSignal}). */
+const customAlertSignalSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('device'),
+    deviceId: z.number().int().positive(),
+    metric: z.string().trim().min(1).max(64),
+  }),
+  z.object({ kind: z.literal('rig'), pot: z.enum(['bk', 'mlt', 'hlt']) }),
+]);
+
+/**
+ * The test (see {@link CustomAlertTest}). The bounds are deliberately wide: a
+ * rule can watch anything the fleet reports — bar, °C, kWh, specific gravity —
+ * so this validates the shape and leaves the sense of the number to the brewer.
+ */
+const customAlertTestSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('above'), value: z.number().finite() }),
+  z.object({ kind: z.literal('below'), value: z.number().finite() }),
+  z.object({ kind: z.literal('equals'), value: z.number().finite() }),
+  z.object({ kind: z.literal('flat'), within: z.number().min(0).finite() }),
+]);
+
+/**
+ * Body for `POST /api/alert-rules` and `PUT /api/alert-rules/:id`. The whole
+ * rule travels on every save — the editor holds it all anyway, and a partial
+ * merge would let a rule reach a shape the refinement below rejects.
+ */
+export const alertRuleSchema = z
+  .object({
+    enabled: z.boolean(),
+    name: z.string().trim().min(1).max(80),
+    signal: customAlertSignalSchema,
+    test: customAlertTestSchema,
+    // A week is a generous ceiling and still catches a figure typed in seconds.
+    holdMinutes: z.number().min(0).max(7 * 24 * 60),
+  })
+  .refine((rule) => rule.test.kind !== 'flat' || rule.holdMinutes >= 1, {
+    // "Hasn't moved" is a question about a span of time; over no time at all
+    // every reading is flat, and the rule would fire the instant it was saved.
+    message: 'A “hasn’t moved” rule needs a window to be still over — at least a minute.',
+    path: ['holdMinutes'],
+  });
+export type AlertRuleInput = z.infer<typeof alertRuleSchema>;
 
 /**
  * Body for `POST /api/push/register` and `/api/push/unregister` — the Android
