@@ -79,27 +79,38 @@ export function FitScale({
       // viewport) with no transform, so `scrollHeight` reports the true natural
       // height. Transforms don't affect `scrollHeight`, but width does, so we pin
       // the width while measuring; this read stays accurate while scaled. The
-      // fill height (below) is cleared first, or we'd just read back whatever we
+      // fill floor (below) is cleared first, or we'd just read back whatever we
       // handed the content last time. Both stay imperative: React skips style
       // properties whose value didn't change, which would leave these reset.
       const baseW = Math.min(availW, maxWidth);
       content.style.width = `${baseW}px`;
-      content.style.height = '';
+      content.style.minHeight = '';
       const naturalH = content.scrollHeight;
       if (naturalH <= 0) return;
       // Uniform "contain" fit: the largest scale that fits both axes, clamped to
       // [minScale, maxScale]. ≥1 enlarges to fill a big monitor (capped, so any
       // slack is left as empty space); <1 shrinks to keep one screen. The user's
       // zoom multiplies on top — pushing past one screen then scrolls.
+      // Quantized down, not to nearest: rounding *up* lands the scaled layout a
+      // fraction of a pixel past the locked viewport, which `overflow-hidden`
+      // then shaves off the bottom edge. A thousandth of a scale step the other
+      // way is invisible and always fits.
       const contain = Math.min(availW / baseW, availH / naturalH);
       const auto = Math.min(maxScale, Math.max(minScale, contain));
-      const next = Math.round(auto * zoom * 1000) / 1000;
+      const next = Math.floor(auto * zoom * 1000) / 1000;
       const visualW = baseW * next;
       // `fill`: give the leftover height back to the content rather than
       // centring it as empty margin. The content is laid out before the
       // transform, so it's handed the slack divided by the scale.
+      //
+      // `min-height`, not `height`: a floor the content can still grow past,
+      // rather than a lid it overflows out of. Pinning the height froze this
+      // element's box, which is the one the ResizeObserver below is watching —
+      // so content that grew after the first measure (the brew panel's REG
+      // toggle adds a target row and a slider to a pot card, ~150px) never
+      // reached the scaler and spilled below the fold instead.
       const visualH = fill ? Math.max(naturalH * next, availH) : naturalH * next;
-      if (fill && visualH > naturalH * next) content.style.height = `${visualH / next}px`;
+      if (fill && visualH > naturalH * next) content.style.minHeight = `${visualH / next}px`;
       setScale((prev) => (Math.abs(prev - next) < 0.002 ? prev : next));
       setBox((prev) =>
         prev && Math.abs(prev.w - visualW) < 0.5 && Math.abs(prev.h - visualH) < 0.5
@@ -116,9 +127,17 @@ export function FitScale({
     const ro = new ResizeObserver(schedule);
     ro.observe(outer);
     ro.observe(content);
+    // The floor `fill` puts under the content's height (above) is one-way for
+    // the observer: it sees the box grow past the floor, never shrink back
+    // below it, so a layout that stopped needing the room it was scaled down
+    // for would stay small until the next window resize. Added and removed
+    // nodes — how that room appears and disappears — read the same either way.
+    const mo = fill ? new MutationObserver(schedule) : null;
+    mo?.observe(content, { childList: true, subtree: true });
     measure();
     return () => {
       ro.disconnect();
+      mo?.disconnect();
       cancelAnimationFrame(raf);
     };
   }, [enabled, minScale, maxScale, maxWidth, zoom, fill]);

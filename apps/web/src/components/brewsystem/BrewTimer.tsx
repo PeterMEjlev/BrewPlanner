@@ -52,7 +52,13 @@ function BrewTimer({ timerState }: { timerState: BrewTimerState }): JSX.Element 
 
   const canAdjust = !isRunning && displaySeconds === target;
 
-  // Sync from the backend poll
+  // Sync from the backend poll — including whether the timer is sitting at
+  // zero, i.e. the "Timer Complete" state. The rig's timer is one shared
+  // object, so that flag has to be *mirrored* rather than latched: dismissing
+  // on the rig's own kiosk (or a second browser) resets the timer there, and
+  // this card has to stop flashing when it does. Latching it — setting it on a
+  // finished poll and only ever clearing it from a local tap — left each screen
+  // alarming on its own until somebody dismissed it on that screen too.
   useEffect(() => {
     if (localActionRef.current) {
       localActionRef.current = false;
@@ -61,6 +67,7 @@ function BrewTimer({ timerState }: { timerState: BrewTimerState }): JSX.Element 
     setDisplaySeconds(timerState.seconds);
     setIsRunning(timerState.running);
     setTarget(timerState.target ?? 0);
+    setIsFinished(timerState.target > 0 && timerState.seconds === 0 && !timerState.running);
   }, [timerState]);
 
   // Local tick — keeps the display moving every second between polls; the
@@ -83,13 +90,6 @@ function BrewTimer({ timerState }: { timerState: BrewTimerState }): JSX.Element 
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [isRunning, target]);
-
-  // Detect finished state from the backend poll
-  useEffect(() => {
-    if (timerState.target > 0 && timerState.seconds === 0 && !timerState.running) {
-      setIsFinished(true);
-    }
-  }, [timerState]);
 
   /**
    * The digit pair a press belongs to: the one drawn nearest to it, which puts
