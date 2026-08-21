@@ -882,37 +882,67 @@ export function estimateFermentationDays(input: {
    * falls back to the strain's own range.
    */
   temperatureC: number | string | null;
-  yeast: Array<{ name: string; type: string; minTempC: number | null; maxTempC: number | null }>;
+  yeast: Array<{
+    name: string;
+    type: string;
+    minTempC: number | null;
+    maxTempC: number | null;
+    /** Days after the start that this one goes in; absent or empty means at the start. */
+    addAfterDays?: string | number | null;
+  }>;
 }): FermentationEstimate | null {
   const pitched = input.yeast.filter((line) => line.name.trim() !== '');
   if (pitched.length === 0) return null;
-  // The slowest pitch decides: a mixed-fermentation beer is not done when its
-  // sacch is, and a co-pitch is finished when the last strain is.
   const families = pitched.map(yeastFamily);
-  // Ordered slowest first, so a co-pitch is finished when its last strain is.
-  const family = (['mixed', 'lager', 'sour', 'ale', 'kveik'] as YeastFamily[]).find((candidate) =>
+  // Ordered slowest first. Used for the temperature fallback below, and as the
+  // answer when nothing distinguishes the pitches.
+  const slowest = (['mixed', 'lager', 'sour', 'ale', 'kveik'] as YeastFamily[]).find((candidate) =>
     families.includes(candidate),
   ) ?? 'ale';
-  const profile = YEAST_FAMILIES[family];
 
   const stated = recipeNumber(input.temperatureC);
   const assumed = stated == null;
   const temperatureC = stated
     ?? pitched.map(optimumTemp).find((value): value is number => value != null)
-    ?? profile.refC;
-
-  // Q10 = 2: every 10 °C below the reference roughly doubles the time, and
-  // every 10 above roughly halves it. Bounded because the relationship stops
-  // holding at the edges — a strain pushed far past its range doesn't finish in
-  // an afternoon, and one chilled far below it stalls rather than merely
-  // slowing.
-  const heat = Math.min(4, Math.max(0.35, Math.pow(2, (profile.refC - temperatureC) / 10)));
+    ?? YEAST_FAMILIES[slowest].refC;
 
   const og = recipeNumber(input.og);
   const points = og == null ? REFERENCE_OG_POINTS : Math.max(1, (og - 1) * 1000);
   const work = Math.min(3, Math.max(0.6, Math.pow(points / REFERENCE_OG_POINTS, 0.8)));
 
-  const days = Math.max(1, Math.round(profile.days * heat * work));
+  /** How long one family takes on its own, at this temperature and gravity. */
+  const runFor = (family: YeastFamily): number => {
+    const profile = YEAST_FAMILIES[family];
+    // Q10 = 2: every 10 °C below the reference roughly doubles the time, and
+    // every 10 above roughly halves it. Bounded because the relationship stops
+    // holding at the edges — a strain pushed far past its range doesn't finish
+    // in an afternoon, and one chilled far below it stalls rather than merely
+    // slowing.
+    const heat = Math.min(4, Math.max(0.35, Math.pow(2, (profile.refC - temperatureC) / 10)));
+    return profile.days * heat * work;
+  };
+
+  /**
+   * The fermenter is free when the last strain in it has finished — and a
+   * strain added on day four cannot have finished before day four.
+   *
+   * So each pitch is timed from when it actually goes in, and the latest finish
+   * wins. For a single pitch at the start this is exactly what it always was.
+   * For a staged pitch it is the difference between "the kveik takes three
+   * days" and "the kveik takes three days, starting on day four".
+   */
+  const finishes = pitched.map((line, index) => {
+    const family = families[index] ?? 'ale';
+    const addedOn = Math.max(0, recipeNumber(line.addAfterDays ?? null) ?? 0);
+    return { family, addedOn, finishesOn: addedOn + runFor(family) };
+  });
+  const last = finishes.reduce((latest, candidate) =>
+    candidate.finishesOn > latest.finishesOn ? candidate : latest,
+  );
+  const family = last.family;
+  const staged = finishes.some((pitch) => pitch.addedOn > 0);
+
+  const days = Math.max(1, Math.round(last.finishesOn));
   return {
     days,
     minDays: Math.max(1, Math.round(days * 0.7)),
@@ -921,7 +951,10 @@ export function estimateFermentationDays(input: {
     temperatureAssumed: assumed,
     family,
     note: [
-      `${profile.label} at ${Math.round(temperatureC)} °C`,
+      `${YEAST_FAMILIES[family].label} at ${Math.round(temperatureC)} °C`,
+      staged && last.addedOn > 0
+        ? `(pitched on day ${Math.round(last.addedOn)}, so the count runs from there)`
+        : null,
       assumed ? '(the strain’s own range — the recipe names no fermentation temperature)' : null,
       og == null ? 'on an assumed 1.050 wort' : `on a ${og.toFixed(3)} wort`,
       '— time to terminal gravity, before any diacetyl rest, cold crash or conditioning.',

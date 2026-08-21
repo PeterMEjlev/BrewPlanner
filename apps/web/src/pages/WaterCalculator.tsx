@@ -64,10 +64,10 @@ const STORAGE_KEY = 'brewplanner.watercalc';
 type SourceMode = 'ro' | 'tap';
 
 /**
- * What the grist needs of the water, pH-wise. The first three drive the
- * bicarbonate target, which is why the target grid below has no bicarbonate
- * field: alkalinity is what corrects mash pH, so it's an answer, not a style
- * preference.
+ * What the grist needs of the water, pH-wise. The first three solve the
+ * bicarbonate target the target grid starts from: alkalinity is what corrects
+ * mash pH, so it's an answer before it's a style preference — which is why the
+ * grid's HCO₃ field tracks this model until a brewer types over it.
  *
  * Most brews never touch these — a pale all-malt grist is what the defaults
  * describe, and the pH to aim for barely moves — so they're edited from a
@@ -102,8 +102,19 @@ interface CalcState {
   sourceMode: SourceMode;
   /** The editable tap-water profile, used when sourceMode is 'tap'. */
   source: WaterProfile;
-  /** Flavour ions only — bicarbonate is derived from {@link mash}. */
+  /**
+   * Flavour ions. `target.hco3` is ignored: bicarbonate comes from
+   * {@link mash} unless {@link hco3Override} states otherwise.
+   */
   target: WaterProfile;
+  /**
+   * A hand-typed bicarbonate target, ppm, or null to follow the mash-pH model.
+   * The derived figure is the right answer for a grist whose pH you trust, but
+   * it isn't the only reason to want alkalinity in the water — matching a
+   * published profile, or brewing a grist whose distilled-water pH you haven't
+   * measured — so the field is editable and this remembers the choice.
+   */
+  hco3Override: number | null;
   /** Upper bounds for the "keep it under this" ions, from the chosen preset. */
   limits: IonLimits;
   mash: MashState;
@@ -122,12 +133,17 @@ const DEFAULT_STATE: CalcState = {
   sourceMode: 'ro',
   source: { ...DEFAULT_SOURCE },
   target: { ...TARGET_PRESETS[0]!.profile },
+  hco3Override: null,
   limits: { ...TARGET_PRESETS[0]!.limits },
   mash: { ...DEFAULT_MASH },
   salts: { ...EMPTY_SALTS },
 };
 
-/** The ions a brewer actually picks. Bicarbonate is derived, so it isn't here. */
+/**
+ * The flavour ions, which are all a preset speaks to. Bicarbonate is excluded
+ * because it has its own field below — one that starts from the mash-pH model
+ * rather than from the preset.
+ */
 const TARGET_IONS: Ion[] = IONS.filter((ion) => ion !== 'hco3');
 
 /** Everything the mash-pH model yields for a given state. */
@@ -161,6 +177,7 @@ function loadState(): CalcState {
       ...p,
       source: { ...DEFAULT_STATE.source, ...p.source },
       target: { ...DEFAULT_STATE.target, ...p.target },
+      hco3Override: p.hco3Override ?? null,
       limits: { ...DEFAULT_STATE.limits, ...p.limits },
       mash: { ...DEFAULT_STATE.mash, ...p.mash },
       salts: { ...DEFAULT_STATE.salts, ...p.salts },
@@ -178,9 +195,9 @@ function loadState(): CalcState {
  *
  * Only the ions actually present are applied; anything the recipe leaves blank
  * keeps its saved value rather than silently becoming zero. A recipe's stored
- * bicarbonate is deliberately ignored — alkalinity now comes from the mash-pH
- * model, so accepting a style-picked figure would overwrite a derived answer
- * with a guess. The recipe's mash thickness and grain bill *are* taken: the
+ * bicarbonate becomes the override — the recipe states it deliberately, so it
+ * wins over the model, and the HCO₃ field's Auto button hands the page back to
+ * the mash-pH answer. The recipe's mash thickness and grain bill *are* taken: the
  * first sets how hard the mash resists the pH change, and the two together fix
  * the strike volume an acid correction is metered into.
  *
@@ -216,10 +233,13 @@ function applyQueryParams(base: CalcState, params: URLSearchParams): CalcState {
       : {}),
   };
   const source = base.sourceMode === 'ro' ? EMPTY_PROFILE : base.source;
-  const { hco3 } = mashChemistry(target, mash);
+  const rawHco3 = Number.parseFloat(params.get('hco3') ?? '');
+  const hco3Override = Number.isFinite(rawHco3) && rawHco3 >= 0 ? rawHco3 : null;
+  const hco3 = hco3Override ?? mashChemistry(target, mash).hco3;
   return {
     ...base,
     target,
+    hco3Override,
     mash,
     volumeL,
     // A recipe arrives with no idea which preset it came from, so grade its ions
@@ -248,17 +268,19 @@ export function WaterCalculator(): JSX.Element {
     }
   }, [state]);
 
-  const { volumeL, sourceMode, source, target, limits, mash, salts } = state;
+  const { volumeL, sourceMode, source, target, hco3Override, limits, mash, salts } = state;
 
   // RO/distilled starts from pure water (zero ions); tap uses the editable profile.
   const effectiveSource = sourceMode === 'ro' ? EMPTY_PROFILE : source;
 
-  // Bicarbonate isn't chosen, it's solved for: the mash-pH model says how much
-  // alkalinity this grist needs, and that becomes the sixth target.
-  const { buffer, requiredRA, hco3: targetHco3 } = useMemo(
+  // Bicarbonate is solved rather than styled: the mash-pH model says how much
+  // alkalinity this grist needs, and that's what the sixth target defaults to.
+  // A typed override wins — the model only knows the grist it was told about.
+  const { buffer, requiredRA, hco3: solvedHco3 } = useMemo(
     () => mashChemistry(target, mash),
     [target, mash],
   );
+  const targetHco3 = hco3Override ?? solvedHco3;
   const fullTarget = useMemo(() => ({ ...target, hco3: targetHco3 }), [target, targetHco3]);
 
   const added = useMemo(() => additions(salts, volumeL), [salts, volumeL]);
@@ -289,6 +311,8 @@ export function WaterCalculator(): JSX.Element {
       delete next[ion];
       return { ...s, target: { ...s.target, [ion]: v }, limits: next };
     });
+  const setTargetHco3 = (v: number): void => setState((s) => ({ ...s, hco3Override: v }));
+  const clearTargetHco3 = (): void => setState((s) => ({ ...s, hco3Override: null }));
   const setMash = (patch: Partial<MashState>): void =>
     setState((s) => ({ ...s, mash: { ...s.mash, ...patch } }));
   const setSalt = (id: SaltId, v: number): void =>
@@ -297,8 +321,8 @@ export function WaterCalculator(): JSX.Element {
   const autoSuggest = (): void =>
     setState((s) => {
       const src = s.sourceMode === 'ro' ? EMPTY_PROFILE : s.source;
-      const solved = mashChemistry(s.target, s.mash);
-      return { ...s, salts: suggestSalts(src, { ...s.target, hco3: solved.hco3 }, s.volumeL) };
+      const hco3 = s.hco3Override ?? mashChemistry(s.target, s.mash).hco3;
+      return { ...s, salts: suggestSalts(src, { ...s.target, hco3 }, s.volumeL) };
     });
   const clearSalts = (): void => setState((s) => ({ ...s, salts: { ...EMPTY_SALTS } }));
 
@@ -402,6 +426,9 @@ export function WaterCalculator(): JSX.Element {
                       setState((s) => ({
                         ...s,
                         target: { ...preset.profile },
+                        // A preset states flavour ions and leaves alkalinity to
+                        // the mash, so picking one drops a typed HCO₃.
+                        hco3Override: null,
                         limits: { ...preset.limits },
                       }))
                     }
@@ -417,16 +444,54 @@ export function WaterCalculator(): JSX.Element {
               })}
             </div>
             <IonGrid profile={target} onChange={setTargetIon} idPrefix="tgt" ions={TARGET_IONS} limits={limits} />
-            {/* Bicarbonate is conspicuously absent, so say why rather than
-                leaving it looking like an oversight. Naming the derived figure
-                here would be worse than saying nothing: for any grist that
-                starts above its target pH — every pale one — it is structurally
-                zero, and a permanent "0 ppm HCO₃⁻" reads as a broken readout
-                rather than as the answer it is. */}
-            <p className="mt-3 border-t border-zinc-800/60 pt-3 text-xs leading-snug text-zinc-500">
-              No bicarbonate here: alkalinity corrects mash pH rather than setting flavour, so it's
-              worked out from what the grist needs — see Predicted mash pH. A range shown under an
-              ion is an upper bound, not something to dose up to.
+            {/* Bicarbonate sits apart from the five flavour ions because it
+                behaves differently: it arrives already answered by the mash-pH
+                model, and typing here is an override rather than a first
+                choice. Showing it as a filled field beats hiding it — the
+                figure drives the Resulting water table's HCO₃ target either
+                way, so a brewer who disagrees with it needs somewhere to say
+                so. */}
+            <div className="mt-4 border-t border-zinc-800/60 pt-3">
+              <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+                <label className="block" htmlFor="tgt-hco3">
+                  <span className="block text-xs font-medium text-zinc-400">
+                    {ION_META.hco3.label} <span className="text-zinc-600">{ION_META.hco3.symbol}</span>
+                  </span>
+                  <span className="mt-1 flex items-center">
+                    <NumField
+                      id="tgt-hco3"
+                      // Rounded only while the model owns it: rounding a typed
+                      // value would snap "105.5" back to 106 mid-keystroke.
+                      value={hco3Override ?? Math.round(solvedHco3)}
+                      min={0}
+                      step={1}
+                      ariaLabel="Bicarbonate target"
+                      onChange={setTargetHco3}
+                    />
+                    <UnitSuffix>ppm</UnitSuffix>
+                  </span>
+                </label>
+                {/* Only offered once there's something to undo: on the derived
+                    figure the button would do nothing and read as a mode the
+                    page isn't in. */}
+                {hco3Override != null && (
+                  <button
+                    type="button"
+                    onClick={clearTargetHco3}
+                    className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:bg-zinc-800"
+                  >
+                    Auto ({Math.round(solvedHco3)} ppm)
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-xs leading-snug text-zinc-500">
+                {hco3Override == null
+                  ? 'Set from what the grist needs to hit its mash pH, not from the style — see Predicted mash pH. Type over it to state your own.'
+                  : `Your figure, overriding the ${Math.round(solvedHco3)} ppm the mash-pH model asks for. Predicted mash pH still grades the water you actually build.`}
+              </p>
+            </div>
+            <p className="mt-3 text-xs leading-snug text-zinc-500">
+              A range shown under an ion is an upper bound, not something to dose up to.
             </p>
           </Card>
 
@@ -561,7 +626,7 @@ export function WaterCalculator(): JSX.Element {
             </p>
             <p className="mt-1 text-xs text-zinc-600">
               All values ppm (mg/L). Salts only add ions — to lower one, start from RO water. The
-              HCO₃⁻ target comes from the mash-pH model, not from the style.
+              HCO₃⁻ target comes from the mash-pH model unless you've set it yourself.
             </p>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
@@ -690,9 +755,11 @@ export function WaterCalculator(): JSX.Element {
                   <p className="mt-3 text-xs leading-snug text-zinc-500">
                     This grist starts below its target, so the water should carry{' '}
                     <span className="font-medium text-zinc-300">
-                      {Math.round(targetHco3)} ppm HCO₃⁻
+                      {Math.round(solvedHco3)} ppm HCO₃⁻
                     </span>{' '}
                     — Auto-suggest doses that as Baking Soda, which brings sodium with it.
+                    {hco3Override != null &&
+                      ` Your Target profile overrides this with ${Math.round(hco3Override)} ppm, which is what gets dosed.`}
                   </p>
                 )}
               </div>
@@ -713,8 +780,9 @@ export function WaterCalculator(): JSX.Element {
 
 /**
  * A 2/3-column grid of ion inputs, each labelled with its symbol + unit. The
- * source grid takes all six; the target grid takes five, bicarbonate being
- * derived. `limits` annotates the ions whose target is an upper bound.
+ * source grid takes all six; the target grid takes the five flavour ions, since
+ * bicarbonate gets its own field with an Auto affordance the others don't need.
+ * `limits` annotates the ions whose target is an upper bound.
  */
 function IonGrid({
   profile,

@@ -1336,6 +1336,16 @@ function HopRow({
  * range matters most (it's the number you set the fermenter's Inkbird to), so it
  * gets its own line rather than being buried in the meta list.
  */
+/**
+ * When a pitch goes in, for a line that doesn't simply go in at the start.
+ * Empty for the ordinary single pitch, which needs no saying.
+ */
+function pitchTiming(yeast: RecipeYeast): string {
+  const days = Number.parseFloat(String(yeast.addAfterDays ?? '').replace(',', '.'));
+  if (!Number.isFinite(days) || days <= 0) return '';
+  return `pitched day ${days % 1 === 0 ? days : days.toFixed(1)}`;
+}
+
 function YeastRow({
   yeast: y,
   editable,
@@ -1356,6 +1366,9 @@ function YeastRow({
     y.lab,
     y.form,
     y.type,
+    // Only when it isn't the ordinary case: every line saying "at the start"
+    // would be noise on the recipes that have nothing staged about them.
+    pitchTiming(y),
     y.attenuation && `${y.attenuation}% attenuation`,
     y.flocculation && `${y.flocculation} flocculation`,
     y.alcoholTolerance && `${y.alcoholTolerance} alcohol tolerance`,

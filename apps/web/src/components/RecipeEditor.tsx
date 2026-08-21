@@ -1030,6 +1030,21 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
                     <SelectField label="Unit" value={line.amountUnit} options={options([...COUNT_UNITS, ...WEIGHT_UNITS])} onChange={(amountUnit) => updateYeast(index, { amountUnit })} />
                     <Field label="Attenuation" value={line.attenuation} suffix="%" disabled={isLocked('yeast', index)} onChange={(attenuation) => updateYeast(index, { attenuation })} />
                   </div>
+                  {/* When it goes in. Never locked — a staged pitch is the
+                      recipe's own decision, and no catalogue has an opinion
+                      about it. Blank is the ordinary case, so the placeholder
+                      says what blank means rather than leaving it to be
+                      guessed. */}
+                  <Field
+                    label="Pitched"
+                    value={line.addAfterDays}
+                    suffix="days in"
+                    type="number"
+                    step="any"
+                    placeholder="At the start"
+                    className="sm:max-w-[14rem]"
+                    onChange={(addAfterDays) => updateYeast(index, { addAfterDays })}
+                  />
                   <div className="grid gap-3 sm:grid-cols-2">
                     <SelectField label="Form" value={line.form} options={options(YEAST_FORMS)} disabled={isLocked('yeast', index)} onChange={(form) => updateYeast(index, { form })} />
                     <SelectField label="Flocculation" value={line.flocculation} options={options(FLOCCULATION_OPTIONS)} disabled={isLocked('yeast', index)} onChange={(flocculation) => updateYeast(index, { flocculation })} />
@@ -1947,7 +1962,7 @@ function blankHop(): RecipeHopEdit {
   return { name: '', amount: '', unit: 'g', use: 'Boil', stage: 'Boil', time: '', timeUnit: 'min', aa: '', ibu: '', form: 'Pellet', utilization: '', temp: '' };
 }
 function blankYeast(): RecipeYeastEdit {
-  return { name: '', lab: '', attenuation: '', amount: '1', amountUnit: 'each', type: 'Ale', form: 'Dry', flocculation: '', minTempC: null, maxTempC: null, alcoholTolerance: '', starter: false };
+  return { name: '', lab: '', attenuation: '', amount: '1', amountUnit: 'each', type: 'Ale', form: 'Dry', flocculation: '', minTempC: null, maxTempC: null, alcoholTolerance: '', starter: false, addAfterDays: '' };
 }
 function blankOther(): RecipeOtherIngredientEdit {
   return { name: '', amount: '', unit: 'g', use: 'Boil', time: '', timeUnit: 'min', type: 'Flavor' };

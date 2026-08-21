@@ -82,6 +82,8 @@ const EMPTY_RECIPE: RecipeDetail = {
     maxTempC: null,
     alcoholTolerance: '',
     starter: false,
+    // Blank: the ordinary case is one pitch, at the start.
+    addAfterDays: '',
     grams: null,
     units: 1,
     price: null,

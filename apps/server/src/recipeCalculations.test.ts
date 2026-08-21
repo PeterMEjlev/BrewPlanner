@@ -310,6 +310,7 @@ function pitch(line: Partial<RecipeYeastEdit>): RecipeYeastEdit {
     maxTempC: null,
     alcoholTolerance: '',
     starter: false,
+    addAfterDays: '',
     ...line,
   };
 }
@@ -368,6 +369,40 @@ test('fermentation time follows the strain, the temperature and the gravity', ()
     assert.equal(souring!.family, 'sour', `${name} is a souring yeast, not a mixed culture`);
     assert.ok(souring!.days <= 10, `${name} should finish in about a week, got ${souring!.days}`);
   }
+
+  // A staged pitch is timed from when it actually goes in. This is the real
+  // shape of a modern sour: a souring yeast first, a finishing strain days
+  // later, and the fermenter is not free until that second one is done.
+  const together = estimateFermentationDays({
+    og: 1.045,
+    temperatureC: 22,
+    yeast: [
+      pitch({ name: 'WildBrew Philly Sour', type: 'Sour' }),
+      pitch({ name: 'Lallemand Voss Kveik' }),
+    ],
+  });
+  const staged = estimateFermentationDays({
+    og: 1.045,
+    temperatureC: 22,
+    yeast: [
+      pitch({ name: 'WildBrew Philly Sour', type: 'Sour' }),
+      pitch({ name: 'Lallemand Voss Kveik', addAfterDays: '4' }),
+    ],
+  });
+  assert.ok(
+    staged!.days > together!.days,
+    'a strain added on day four cannot have finished when one pitched at the start has',
+  );
+  assert.equal(staged!.family, 'kveik', 'the pitch that finishes last is the one reported');
+  assert.match(staged!.note, /day 4/, 'the note should say what the count runs from');
+  // Four days later in, four days later out — the delay is added, not absorbed.
+  assert.equal(staged!.days - together!.days, 4);
+
+  // A pitch at the start is unchanged by the feature existing.
+  assert.equal(
+    estimateFermentationDays({ og: 1.05, temperatureC: '20', yeast: [pitch({ addAfterDays: '' })] })!.days,
+    ale.days,
+  );
 
   // A true blended culture is still the slow one, and still wins a co-pitch.
   const blend = estimateFermentationDays({

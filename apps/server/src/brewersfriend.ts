@@ -909,6 +909,9 @@ function yeasts(r: BrewersFriendRecipe): RecipeYeast[] {
       alcoholTolerance: str(y.alcoholtolerance) || str(y.attenuationtolerance),
       // The API sends this as a 0/1 flag or a boolean depending on the field.
       starter: str(y.starter) === '1' || str(y.starter).toLowerCase() === 'true',
+      // Brewer's Friend has no staged-pitch field, so an import is always
+      // "pitched at the start" until the brewery says otherwise here.
+      addAfterDays: '',
     };
   });
 }

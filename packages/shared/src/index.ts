@@ -952,6 +952,17 @@ export interface RecipeYeast {
   alcoholTolerance: string;
   /** Whether the recipe calls for a starter. */
   starter: boolean;
+  /**
+   * When this pitch goes in, as whole days after the start of fermentation.
+   * Empty — the overwhelming majority of recipes — means at the start.
+   *
+   * A staged pitch is a real technique rather than an edge case: a souring
+   * yeast is given a few days to drop the pH before a finishing strain is added
+   * on top of it, and the sheet has to be able to say so. Kept as a bare number
+   * string like every other figure on a recipe, so a value that cannot be
+   * parsed still displays instead of becoming NaN.
+   */
+  addAfterDays: string;
   /** Weight in grams, normalized from `amount`/`amountUnit`; null if unreadable. */
   grams: number | null;
   /**
@@ -2813,6 +2824,9 @@ const recipeYeastEditSchema = z.object({
   maxTempC: z.number().min(-20).max(100).nullable(),
   alcoholTolerance: shortRecipeText,
   starter: z.boolean(),
+  // Defaulted: every yeast line stored before staged pitches existed is
+  // re-parsed through this schema on read, and must come back as "at the start".
+  addAfterDays: amountText.default(''),
 });
 
 const recipeOtherIngredientEditSchema = z.object({
