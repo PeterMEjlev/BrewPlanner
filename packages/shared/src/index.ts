@@ -1131,6 +1131,8 @@ export interface RecipeDetail {
   /** Final gravity. */
   fg: string;
   abv: string;
+  /** Internal compatibility marker: the stored ABV already includes fruit sugar. */
+  fruitAbvIncluded?: boolean;
   /** Tinseth IBU. */
   ibu: string;
   /** Colour in EBC. */
@@ -1191,6 +1193,8 @@ export interface RecipeEditInput {
   postBoilGravity: string | null;
   fg: string;
   abv: string;
+  /** Internal compatibility marker for recipes saved before fruit ABV estimates. */
+  fruitAbvIncluded?: boolean;
   ibu: string;
   ebc: string;
   /** Preserves the caveat when the displayed colour came from the grain bill. */
@@ -2975,6 +2979,7 @@ const recipeEditFields = {
   postBoilGravity: amountText.nullable(),
   fg: amountText,
   abv: amountText,
+  fruitAbvIncluded: z.boolean().default(false),
   ibu: amountText,
   ebc: amountText,
   ebcEstimated: z.boolean(),

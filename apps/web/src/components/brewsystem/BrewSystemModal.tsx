@@ -280,6 +280,7 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
           <div className="flex items-center gap-1">
             <Link
               to="/brew-system"
+              onClick={onClose}
               className="rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
             >
               Controls ↗

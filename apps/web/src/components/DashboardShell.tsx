@@ -8,7 +8,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
@@ -26,6 +26,7 @@ import {
   BookIcon,
   BrewKettleIcon,
   ChecklistIcon,
+  ChevronRightIcon,
   ChipIcon,
   ClockIcon,
   CloseIcon,
@@ -38,11 +39,16 @@ import {
   SettingsIcon,
   SlidersIcon,
   ThinkingDots,
+  ThermometerIcon,
   TodoIcon,
   UserIcon,
   WrenchIcon,
 } from './icons';
 import { relativeTime } from '../util';
+
+// Recharts stays out of the global navigation bundle until the active Brew
+// System submenu actually asks for its temperature-history view.
+const BrewSystemModal = lazy(() => import('./brewsystem/BrewSystemModal'));
 
 /** Which Overview-shell page is currently showing (drives nav highlight). */
 export type ShellPage =
@@ -492,6 +498,7 @@ function Sidebar({
   const navItems = useNavItems();
   const { navOrder } = useSettings();
   const [reordering, setReordering] = useState(false);
+  const [brewGraphOpen, setBrewGraphOpen] = useState(false);
   const hold = useHoldToReorder(() => setReordering(true));
 
   // Leaving the mode: Escape, or a press anywhere outside the rail. Escape
@@ -565,22 +572,43 @@ function Sidebar({
     // A drag that ends over an <a> still lets the browser follow the href —
     // suppressing the click doesn't cancel that — so the rail would navigate on
     // every drop. No anchor, no navigation to suppress.
-    return reordering ? (
+    if (reordering) return (
       <SortableNavRow key={item.key} id={item.key}>
         {row}
       </SortableNavRow>
-    ) : (
+    );
+
+    const link = (
       <Link key={item.key} to={item.to} draggable={false} className="block" {...hold}>
         {row}
       </Link>
     );
+    if (item.key !== 'brewSystem' || !isActive) return link;
+
+    return (
+      <div key={item.key}>
+        {link}
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={brewGraphOpen}
+          onClick={() => setBrewGraphOpen(true)}
+          className="group ml-8 mt-1 flex w-[calc(100%_-_2rem)] items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs font-medium text-zinc-400 transition hover:bg-zinc-800/60 hover:text-zinc-100"
+        >
+          <ThermometerIcon className="h-3.5 w-3.5 shrink-0" />
+          <span className="flex-1">Temperature graph</span>
+          <ChevronRightIcon className="h-3.5 w-3.5 text-zinc-600 transition group-hover:text-zinc-400" />
+        </button>
+      </div>
+    );
   });
 
   return (
-    <aside
-      ref={asideRef}
-      className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/95 md:flex"
-    >
+    <>
+      <aside
+        ref={asideRef}
+        className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950/95 md:flex"
+      >
       <div className="flex items-center gap-2.5 px-5 py-5">
         <Link
           to="/"
@@ -637,7 +665,13 @@ function Sidebar({
           </div>
         )}
       </div>
-    </aside>
+      </aside>
+      {brewGraphOpen && (
+        <Suspense fallback={null}>
+          <BrewSystemModal onClose={() => setBrewGraphOpen(false)} />
+        </Suspense>
+      )}
+    </>
   );
 }
 

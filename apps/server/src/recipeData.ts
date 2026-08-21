@@ -177,6 +177,7 @@ export function editableRecipe(recipe: RecipeDetail): RecipeEditInput {
     postBoilGravity: recipe.postBoilGravity,
     fg: recipe.fg,
     abv: recipe.abv,
+    fruitAbvIncluded: recipe.fruitAbvIncluded,
     ibu: recipe.ibu,
     ebc: recipe.ebc,
     ebcEstimated: recipe.ebcEstimated,

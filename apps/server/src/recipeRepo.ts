@@ -9,7 +9,11 @@ import type {
   RecipeStats,
   RecipeVersionSummary,
 } from '@checklist/shared';
-import { applyRecipeCalculations, recipeEditSchema } from '@checklist/shared';
+import {
+  applyRecipeCalculations,
+  estimateFruitAbvContribution,
+  recipeEditSchema,
+} from '@checklist/shared';
 import { desc, eq } from 'drizzle-orm';
 import { db } from './db/index.js';
 import { recipes } from './db/schema.js';
@@ -52,7 +56,24 @@ function familyOf(row: Pick<RecipeRow, 'id' | 'familyId'>): string {
 }
 
 function rowInput(row: RecipeRow): RecipeEditInput {
-  return recipeEditSchema.parse(JSON.parse(row.recipe));
+  const input = recipeEditSchema.parse(JSON.parse(row.recipe));
+  if (input.fruitAbvIncluded) return input;
+
+  // Recipes written before fruit sugar was part of the calculator (including
+  // the one-time Brewer's Friend import) carry the base beer's ABV. Bring those
+  // forward on read so an existing fruited sour benefits immediately, without
+  // waiting for somebody to open and re-save every old sheet. New writes set
+  // the marker in applyRecipeCalculations and therefore never add this twice.
+  const fruitAbv = estimateFruitAbvContribution(input.otherIngredients, input.batchSizeL);
+  const baseAbv = Number.parseFloat(input.abv.replace(',', '.'));
+  return {
+    ...input,
+    abv:
+      fruitAbv > 0 && Number.isFinite(baseAbv)
+        ? (baseAbv + fruitAbv).toFixed(2)
+        : input.abv,
+    fruitAbvIncluded: true,
+  };
 }
 
 function rowToSummary(row: RecipeRow, versionCount = 1): Recipe {

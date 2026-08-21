@@ -15,6 +15,8 @@ export interface RecipeCalculationResult {
   postBoilGravity: number | null;
   finalGravity: number | null;
   abv: number | null;
+  /** Percentage points of the ABV estimated to come from fruit juice/puree. */
+  fruitAbv: number;
   ibu: number | null;
   ebc: number | null;
   mashPh: number | null;
@@ -25,6 +27,124 @@ export interface RecipeCalculationResult {
 }
 
 const LITRES_PER_GALLON = 3.78541;
+
+/**
+ * Approximate soluble-sugar content (degrees Brix) of common unsweetened fruit
+ * juices and purees. Recipe rows do not carry a producer's nutrition panel or
+ * measured Brix, so these deliberately stay broad estimates; the generic
+ * fallbacks below cover fruit that is not named here.
+ */
+const FRUIT_BRIX: Array<[RegExp, number]> = [
+  [/blackcurrant|black currant|cassis|solbaer/, 15],
+  [/passionfruit|passion fruit|passionsfrugt|maracuja/, 13],
+  [/pomegranate|granataeble/, 14],
+  [/raspberry|raspberries|hindbaer/, 9],
+  [/blackberry|blackberries|brombaer/, 10],
+  [/strawberry|strawberries|jordbaer/, 8],
+  [/blueberry|blueberries|blabaer|blaabaer/, 14],
+  [/cranberry|cranberries|tranebaer/, 4],
+  [/cherry|cherries|morello|kirsebaer|kriek/, 14],
+  [/pineapple|ananas/, 13],
+  [/apricot|abrikos/, 11],
+  [/peach|fersken|nectarine/, 10],
+  [/grapefruit|grapefrugt/, 10],
+  [/grape|drue/, 17],
+  [/mango/, 14],
+  [/banana|banan/, 20],
+  [/lychee|litchi/, 15],
+  [/pear|paere/, 12],
+  [/apple|aeble/, 11],
+  [/plum|blomme|mirabelle/, 12],
+  [/orange|appelsin|mandarin|clementine|tangerine/, 11],
+  [/lemon|citron|lime|yuzu/, 8],
+  [/guava/, 9],
+  [/papaya/, 11],
+  [/watermelon|vandmelon/, 6],
+  [/rhubarb|rabarber/, 2],
+  [/coconut|kokos/, 6],
+];
+
+/** Potential ABV of a fully fermented one-degree-Brix fruit product. */
+const ABV_PER_BRIX = 0.59;
+
+/** Fold ingredient names so Danish compounds and accented "puree" spellings match. */
+function foldIngredientName(name: string): string {
+  return name
+    .toLocaleLowerCase()
+    .replace(/ø/g, 'o')
+    .replace(/æ/g, 'ae')
+    .replace(/å/g, 'a')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * Only liquid fruit products belong in this estimate. A few grams of orange
+ * peel or dried berries are flavour additions, not a juice volume whose sugar
+ * can be inferred. The alternatives also cover Danish recipe names and words
+ * glued directly to the fruit (for example "hindbaerpure").
+ */
+function isFruitProduct(name: string): boolean {
+  return /(?:frugt)?puree|juice|saft|most|pulp|nectar|koncentrat|concentrate/.test(name)
+    || /(?:frugt)?pure$/.test(name);
+}
+
+/** Treat puree density as 1 kg/L, matching recipe costing and colour prediction. */
+function fruitProductLitres(amount: string, unit: string): number | null {
+  const value = recipeNumber(amount);
+  if (value == null || value <= 0) return null;
+  switch (unit.trim().toLocaleLowerCase()) {
+    case 'l':
+    case 'liter':
+    case 'litre':
+    case 'liters':
+    case 'litres':
+      return value;
+    case 'ml':
+      return value / 1000;
+    case 'kg':
+      return value;
+    case 'g':
+      return value / 1000;
+    case 'lb':
+    case 'lbs':
+      return value * 0.45359237;
+    case 'oz':
+      return value * 0.028349523125;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Estimate the ABV percentage points supplied by fermentable fruit sugars.
+ *
+ * Fruit rows have no Brix field, so a named fruit uses a typical unsweetened
+ * value and an unknown puree/juice uses 10/11 Brix respectively. Concentrate
+ * uses 65 Brix. The result assumes the sugar ferments dry and that batch size
+ * is the finished recipe volume, the same volume convention used by the rest
+ * of the recipe calculator.
+ */
+export function estimateFruitAbvContribution(
+  additions: RecipeEditInput['otherIngredients'],
+  batchSizeL: number | null,
+): number {
+  if (batchSizeL == null || batchSizeL <= 0) return 0;
+  let abv = 0;
+  for (const addition of additions) {
+    const name = foldIngredientName(addition.name);
+    if (!isFruitProduct(name)) continue;
+    const litres = fruitProductLitres(addition.amount, addition.unit);
+    if (litres == null) continue;
+    const known = FRUIT_BRIX.find(([pattern]) => pattern.test(name));
+    const brix = known?.[1]
+      ?? (/koncentrat|concentrate/.test(name) ? 65 : /juice|saft|most|nectar/.test(name) ? 11 : 10);
+    abv += (litres / batchSizeL) * brix * ABV_PER_BRIX;
+  }
+  return abv;
+}
 
 function recipeNumber(value: string | number | null | undefined): number | null {
   const parsed = typeof value === 'number'
@@ -560,9 +680,16 @@ export function calculateRecipe(recipe: RecipeEditInput): RecipeCalculationResul
     ? null
     : 1 + unfermentablePoints
       + Math.max(0, originalGravity - 1 - unfermentablePoints) * (1 - yeastAttenuation / 100);
-  const abv = originalGravity == null || finalGravity == null
+  const baseAbv = originalGravity == null || finalGravity == null
     ? null
     : (originalGravity - finalGravity) * 131.25;
+  // Fruit juice/puree is stored under "Other ingredients", not in the grain
+  // bill, so its simple sugars are absent from the gravity calculation above.
+  // Add its alcohol potential explicitly: this keeps kettle gravities honest
+  // for a product normally added in primary/secondary while making the saved
+  // target ABV include what ferments after it is added.
+  const fruitAbv = estimateFruitAbvContribution(recipe.otherIngredients, recipe.batchSizeL);
+  const abv = baseAbv == null ? null : baseAbv + fruitAbv;
   // Never the OG: that one counts the late additions the boil never saw.
   const gravityForHops = preBoilGravity ?? postBoilGravity ?? 1;
   const hopIbus = recipe.hops.map((hop) => hopIbu(recipe, hop, gravityForHops));
@@ -577,6 +704,7 @@ export function calculateRecipe(recipe: RecipeEditInput): RecipeCalculationResul
     postBoilGravity,
     finalGravity,
     abv,
+    fruitAbv,
     ibu,
     ebc: recipeColor(recipe),
     mashPh: recipeMashPh(recipe),
@@ -1076,6 +1204,7 @@ export function applyRecipeCalculations(input: RecipeEditInput): RecipeEditInput
     postBoilGravity: result.postBoilGravity == null ? null : calculatedText(result.postBoilGravity, 3),
     fg: calculatedText(result.finalGravity, 3),
     abv: calculatedText(result.abv, 2),
+    fruitAbvIncluded: true,
     ibu: calculatedText(result.ibu, 2),
     ebc: calculatedText(result.ebc, 1),
     ebcEstimated: result.ebc != null,

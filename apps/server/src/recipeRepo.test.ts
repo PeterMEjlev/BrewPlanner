@@ -238,6 +238,38 @@ test('recipe library supports local CRUD and non-destructive legacy imports', as
     assert.equal(repo.getRecipe('42')?.name, 'Legacy local edit');
     assert.equal(repo.getRecipe('42')?.url, importedSheet.url);
 
+    // Imported sheets predate the fruit-ABV marker. They gain the contribution
+    // on read, so an existing sour is corrected without a manual re-save.
+    const fruitSheet = data.hydrateRecipe(
+      {
+        id: '43',
+        origin: 'brewersfriend',
+        url: 'https://www.brewersfriend.com/homebrew/recipe/view/43',
+        familyId: '43',
+        version: 1,
+        versionNote: '',
+        versions: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-02T00:00:00.000Z',
+      },
+      {
+        ...recipe("Charlotte's Rhapsody Sour"),
+        abv: '3.00',
+        batchSizeL: 55,
+        otherIngredients: [{
+          name: 'Raspberry puree',
+          amount: '5',
+          unit: 'L',
+          use: 'Primary',
+          time: '5',
+          timeUnit: 'day',
+          type: 'Flavor',
+        }],
+      },
+    );
+    assert.equal(repo.importBrewersFriendRecipe(fruitSheet), true);
+    assert.equal(repo.getRecipe('43')?.abv, '3.48');
+
     // Re-importing never overwrites app state.
     assert.equal(repo.updateRecipe('42', recipe('Kept app edit'))?.name, 'Kept app edit');
     assert.equal(repo.importBrewersFriendRecipe(importedSheet), false);

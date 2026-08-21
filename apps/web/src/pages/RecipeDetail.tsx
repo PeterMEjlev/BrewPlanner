@@ -20,6 +20,7 @@ import {
   aromaHopRate,
   ebcColor,
   estimateFermentationDays,
+  estimateFruitAbvContribution,
   gristDistilledMashPh,
   isFermentableLine,
   predictBeerColor,
@@ -485,6 +486,7 @@ export function RecipeDetailPage(): JSX.Element {
   });
   const color = predicted?.hex ?? ebcColor(recipe.ebc);
   const colorTitle = predicted?.fruit?.note;
+  const fruitAbv = estimateFruitAbvContribution(recipe.otherIngredients, recipe.batchSizeL);
   const sorted = [...recipe.fermentables].sort(
     (a, b) => toKg(b.amount, b.unit) - toKg(a.amount, a.unit),
   );
@@ -621,7 +623,12 @@ export function RecipeDetailPage(): JSX.Element {
           )}
           <Stat label="OG" value={fmt(recipe.og, 3)} />
           <Stat label="FG" value={fmt(recipe.fg, 3)} />
-          <Stat label="ABV" value={`${fmt(recipe.abv, 1)}%`} />
+          <Stat
+            label="ABV"
+            value={`${fmt(recipe.abv, 1)}%`}
+            detail={fruitAbv > 0 ? `+${fruitAbv.toFixed(2)}% from fruit` : undefined}
+            title={fruitAbv > 0 ? 'Fruit contribution assumes a typical unsweetened Brix for the named juice or puree and that its sugar ferments dry.' : undefined}
+          />
           <Stat label="IBU" value={fmt(recipe.ibu, 1)} />
           {/* Brewer's Friend reports 0 for this account's recipes, so the server
               falls back to calculating from the grain bill — flagged as "est."
@@ -921,6 +928,7 @@ function Stat({
   swatch,
   ebc,
   title,
+  detail,
   swatchTitle,
 }: {
   label: string;
@@ -929,6 +937,8 @@ function Stat({
   ebc?: string;
   /** Tooltip, for a figure that needs a caveat. */
   title?: string;
+  /** Extra breakdown beneath the headline figure. */
+  detail?: string;
   /** Tooltip for the swatch alone, when it says more than the figure does. */
   swatchTitle?: string;
 }): JSX.Element {
@@ -941,6 +951,7 @@ function Stat({
           <Swatch color={swatch} ebc={ebc ?? null} className="h-3.5 w-3.5" title={swatchTitle} />
         )}
       </div>
+      {detail && <div className="mt-0.5 text-[10px] font-medium text-zinc-400">{detail}</div>}
     </div>
   );
 }

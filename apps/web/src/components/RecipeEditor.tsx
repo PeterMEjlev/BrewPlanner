@@ -305,6 +305,7 @@ function editable(recipe: RecipeDetail): RecipeEditInput {
     postBoilGravity: recipe.postBoilGravity,
     fg: recipe.fg,
     abv: recipe.abv,
+    fruitAbvIncluded: recipe.fruitAbvIncluded,
     ibu: recipe.ibu,
     ebc: recipe.ebc,
     ebcEstimated: recipe.ebcEstimated,
@@ -1292,7 +1293,17 @@ export function RecipeEditor({ recipe, saving, error, onSave, onCancel, catalogu
             <CalculatedStat label="Post-boil gravity" value={calculation.postBoilGravity} decimals={3} emptyNote={missing('postBoilGravity')} />
             <CalculatedStat label="Original gravity" value={calculation.originalGravity} decimals={3} emptyNote={missing('originalGravity')} />
             <CalculatedStat label="Final gravity" value={calculation.finalGravity} decimals={3} emptyNote={missing('finalGravity')} />
-            <CalculatedStat label="ABV" value={calculation.abv} decimals={2} suffix="%" range={styleRange?.abv} compareToStyle emptyNote={missing('abv')} />
+            <CalculatedStat
+              label="ABV"
+              value={calculation.abv}
+              decimals={2}
+              suffix="%"
+              range={styleRange?.abv}
+              compareToStyle
+              emptyNote={missing('abv')}
+              detail={calculation.fruitAbv > 0 ? `+${calculation.fruitAbv.toFixed(2)}% from fruit` : undefined}
+              title={calculation.fruitAbv > 0 ? 'Fruit contribution assumes a typical unsweetened Brix for the named juice or puree and that its sugar ferments dry.' : undefined}
+            />
             <CalculatedStat label="IBU" value={calculation.ibu} decimals={1} range={styleRange?.ibu} compareToStyle emptyNote={missing('ibu')} />
             {/* The colour that number means, which is what a brewer actually
                 pictures when reading an EBC. */}
@@ -1894,7 +1905,7 @@ function ReadOnlyField({ label, value, decimals, suffix, className = '' }: { lab
   );
 }
 
-function CalculatedStat({ label, value, decimals, prefix = '', suffix = '', range, compareToStyle = false, swatch, note, emptyNote, title }: { label: string; value: number | null; decimals: number; /** Sits in front of the figure — "≈" for a figure that is openly approximate. */ prefix?: string; suffix?: string; range?: [number, number]; compareToStyle?: boolean; /** Colour the figure stands for, shown as a dot beside it. */ swatch?: string | null; /** Replaces the style-range line, for a figure no style has a range for. */ note?: string; /** What this particular figure is still waiting for, in place of the generic "needs more inputs". */ emptyNote?: string | null; /** Tooltip, for a figure that needs its caveats spelled out. */ title?: string }): JSX.Element {
+function CalculatedStat({ label, value, decimals, prefix = '', suffix = '', range, compareToStyle = false, swatch, note, detail, emptyNote, title }: { label: string; value: number | null; decimals: number; /** Sits in front of the figure — "≈" for a figure that is openly approximate. */ prefix?: string; suffix?: string; range?: [number, number]; compareToStyle?: boolean; /** Colour the figure stands for, shown as a dot beside it. */ swatch?: string | null; /** Replaces the style-range line, for a figure no style has a range for. */ note?: string; /** An extra calculation breakdown shown without replacing the style comparison. */ detail?: string; /** What this particular figure is still waiting for, in place of the generic "needs more inputs". */ emptyNote?: string | null; /** Tooltip, for a figure that needs its caveats spelled out. */ title?: string }): JSX.Element {
   const status = note != null
     ? { text: note, className: 'text-zinc-500' }
     : value == null
@@ -1923,6 +1934,7 @@ function CalculatedStat({ label, value, decimals, prefix = '', suffix = '', rang
           />
         )}
       </div>
+      {detail != null && <div className="mt-1 text-[10px] text-zinc-400">{detail}</div>}
       {(compareToStyle || note != null || value == null) && <div className={`mt-1 text-[10px] ${status.className}`}>{status.text}</div>}
     </div>
   );

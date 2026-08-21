@@ -3,13 +3,13 @@
 
 - Remove left-over bruce logic in BrewSystem3.0 repo
 
-- Temperature graph page (from the brewing system) isnt viewable from konfus. when "Brew System" tab is active in the sidebar add a small dropdown button under it that allows the user to view the temp graph of the brewing system
+
 
 - ## Add support for
   - Electricity (Watt) usage
   - Water usage 
 
-
+- 
 
 
 

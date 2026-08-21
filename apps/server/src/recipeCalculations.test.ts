@@ -6,6 +6,7 @@ import {
   DEFAULT_RECIPE_SETTINGS,
   estimateFermentablePpg,
   estimateFermentationDays,
+  estimateFruitAbvContribution,
   fermentableExtract,
   isFermentableLine,
   withAutoBoilVolumes,
@@ -136,6 +137,61 @@ test('lactose lifts the FG and costs ABV instead of turning into alcohol', () =>
   });
   assert.equal(overridden.finalGravity, overridden.originalGravity);
   assert.equal(overridden.abv, 0);
+});
+
+test('fruit juice and puree add their fermentable sugar to estimated ABV', () => {
+  const yeast = [{
+    name: 'US-05',
+    lab: '',
+    attenuation: '75',
+    amount: '1',
+    amountUnit: 'pkg',
+    type: 'Ale',
+    form: 'Dry',
+    flocculation: '',
+    minTempC: null,
+    maxTempC: null,
+    alcoholTolerance: '',
+    starter: false,
+    addAfterDays: '',
+    heldAtC: '',
+  }];
+  const base = { ...grainBill({ amount: '7', name: 'Pale Malt' }), batchSizeL: 55, yeast };
+  const rhapsody = {
+    ...base,
+    otherIngredients: [{
+      name: 'Raspberry puree',
+      amount: '5',
+      unit: 'L',
+      use: 'Primary',
+      time: '5',
+      timeUnit: 'day' as const,
+      type: 'Flavor',
+    }],
+  };
+  const plain = calculateRecipe(base);
+  const fruited = calculateRecipe(rhapsody);
+
+  // Typical unsweetened raspberry puree is estimated at 9 Brix. Five litres
+  // in a 55 L batch contribute about 0.48 percentage points when fermented dry.
+  assert.ok(Math.abs(fruited.fruitAbv - (5 / 55) * 9 * 0.59) < 0.0001);
+  assert.ok(Math.abs((fruited.abv! - plain.abv!) - fruited.fruitAbv) < 0.0001);
+  // It is a post-kettle alcohol contribution, not an invented boil gravity.
+  assert.equal(fruited.originalGravity, plain.originalGravity);
+  assert.equal(fruited.finalGravity, plain.finalGravity);
+
+  // Danish compounds and weight-entered puree use the same 1 kg/L convention.
+  assert.ok(Math.abs(estimateFruitAbvContribution([{
+    ...rhapsody.otherIngredients[0]!,
+    name: 'Hindbærpuré',
+    amount: '5',
+    unit: 'kg',
+  }], 55) - fruited.fruitAbv) < 0.0001);
+  // Other liquid additions must not be mistaken for fermentable fruit.
+  assert.equal(estimateFruitAbvContribution([{
+    ...rhapsody.otherIngredients[0]!,
+    name: 'Lactic acid',
+  }], 55), 0);
 });
 
 test('a late addition stays out of the boil gravity but still counts in the OG', () => {
