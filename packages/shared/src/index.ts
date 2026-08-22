@@ -3686,6 +3686,33 @@ export interface BrewTimerState {
   target: number;
 }
 
+/**
+ * One stage the brew entered, and when. `index` points into the same response's
+ * `stages`, so a marker carries its own label without a second copy of the list.
+ */
+export interface BrewStageMarker {
+  index: number;
+  /** Epoch ms, stamped by the rig's clock. */
+  ts: number;
+}
+
+/**
+ * Where the brew day has got to (brew-system-v3's brew stages).
+ *
+ * The rig owns this the way it owns the timer, so a kiosk reload — or this
+ * dashboard from the other end of the brewery — finds the brew on the stage it
+ * is really on. `index` is -1 before the first stage and `stages.length` once
+ * the brew is finished; `markers` is always a prefix of the stage list, since
+ * stepping back drops the mark for the stage being left, so its last entry is
+ * the stage now showing.
+ */
+export interface BrewStageState {
+  /** The rig's stage names, in order — sent with the state so labels can't drift. */
+  stages: string[];
+  index: number;
+  markers: BrewStageMarker[];
+}
+
 /** The rig's GET /api/hardware/state response. Temperatures are null when a sensor fails. */
 export interface BrewSystemState {
   temperatures: { bk: number | null; mlt: number | null; hlt: number | null };
@@ -3694,6 +3721,8 @@ export interface BrewSystemState {
     pumps: Record<BrewPump, BrewPumpControl>;
   };
   timer: BrewTimerState;
+  /** Absent on a rig that predates brew-system-v3's stage tracking. */
+  brewStage?: BrewStageState;
 }
 
 export interface BrewAutoEfficiencyStep {
@@ -3771,6 +3800,13 @@ export const brewTimerActionSchema = z.object({
   seconds: z.coerce.number().int().min(0).optional(),
 });
 export type BrewTimerActionInput = z.infer<typeof brewTimerActionSchema>;
+/**
+ * Body for POST /api/brew-system/stage — mirrors the rig's stage actions. One
+ * step at a time, since the rig deliberately offers no way to jump; `reset` is
+ * its "back to before the first stage", which also clears the markers.
+ */
+export const brewStageActionSchema = z.object({ action: z.enum(['next', 'back', 'reset']) });
+export type BrewStageActionInput = z.infer<typeof brewStageActionSchema>;
 
 // ---------------------------------------------------------------------------
 // Hosts (the two Raspberry Pis the brewery runs on)
