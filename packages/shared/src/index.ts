@@ -507,6 +507,26 @@ export const EMPTY_BREW_SESSION_MEASUREMENTS: BrewSessionMeasurements = {
   energyKwh: null,
 };
 
+/**
+ * A recipe's headline figures as the sheet reads *now* — read straight off the
+ * stored recipe, with no ingredient hydration or pricing behind it.
+ *
+ * What a list needs in order to describe a recipe it isn't showing in full. The
+ * brew-session log carries one per entry so a batch is described by the sheet it
+ * was brewed to rather than by the copy frozen onto it: rename a recipe, or
+ * correct its target ABV, and the log says so.
+ */
+export interface RecipeHeadline {
+  name: string;
+  style: string;
+  og: string;
+  fg: string;
+  abv: string;
+  ibu: string;
+  ebc: string;
+  batchSizeL: number | null;
+}
+
 /** One brew session in the log — what the Brew Sessions list shows per row. */
 export interface BrewSession {
   id: number;
@@ -520,6 +540,12 @@ export interface BrewSession {
    */
   recipeVersion?: number;
   recipe: BrewSessionRecipeSnapshot;
+  /**
+   * The same recipe as it reads today — the version this batch was brewed to,
+   * not the beer's newest. Null once that recipe has been deleted, which is the
+   * only case where {@link recipe}'s frozen copy is all there is to go on.
+   */
+  recipeNow: RecipeHeadline | null;
   status: BrewSessionStatus;
   /** The brew session itself. Editable, so a batch can be logged after the fact. */
   brewedAt: string;

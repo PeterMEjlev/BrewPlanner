@@ -8,6 +8,7 @@ import type {
   BrewSessionTempStats,
   RecipeBrewCount,
   RecipeDetail,
+  RecipeHeadline,
   UpdateBrewSessionInput,
 } from '@checklist/shared';
 import {
@@ -19,7 +20,7 @@ import {
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { brewSessionRigSamples, brewSessions, recipes } from '../db/schema.js';
-import { recipeFamilyId } from '../recipeRepo.js';
+import { recipeFamilyId, recipeHeadlines } from '../recipeRepo.js';
 import { fermentationSummary } from './telemetry.js';
 
 /**
@@ -153,11 +154,26 @@ function brewNumbers(): Map<number, number> {
   return numbers;
 }
 
-function rowToBrewSession(row: BrewSessionRow, brewNumber: number): BrewSession {
+/** One lookup of the live recipes behind a set of rows, however many there are. */
+function liveRecipes(rows: { recipeId: string | null }[]): Map<string, RecipeHeadline> {
+  return recipeHeadlines(rows.map((row) => row.recipeId).filter((id): id is string => id != null));
+}
+
+function rowToBrewSession(
+  row: BrewSessionRow,
+  brewNumber: number,
+  /**
+   * The recipe as it reads now, for the entries whose recipe still exists. The
+   * frozen snapshot stays on the row either way — it is what a batch whose
+   * recipe has been deleted has left, and nothing else can describe that one.
+   */
+  headlines: Map<string, RecipeHeadline>,
+): BrewSession {
   return {
     id: row.id,
     recipeId: row.recipeId,
     recipe: rowSnapshot(row),
+    recipeNow: (row.recipeId == null ? null : headlines.get(row.recipeId)) ?? null,
     status: rowStatus(row.status),
     brewedAt: row.brewedAt,
     durationMinutes: row.durationMinutes,
@@ -189,12 +205,13 @@ function rowToBrewSession(row: BrewSessionRow, brewNumber: number): BrewSession 
 /** The whole log, newest brew session first. */
 export function listBrewSessions(): BrewSession[] {
   const numbers = brewNumbers();
-  return db
+  const rows = db
     .select()
     .from(brewSessions)
     .orderBy(desc(brewSessions.brewedAt), desc(brewSessions.id))
-    .all()
-    .map((row) => rowToBrewSession(row, numbers.get(row.id) ?? 1));
+    .all();
+  const headlines = liveRecipes(rows);
+  return rows.map((row) => rowToBrewSession(row, numbers.get(row.id) ?? 1, headlines));
 }
 
 /**
@@ -215,24 +232,25 @@ export function listRecipeBrewSessions(recipeId: string): BrewSession[] {
   const family = recipeFamilyId(recipeId);
   if (family == null) return [];
   const numbers = brewNumbers();
-  return db
+  const rows = db
     .select({ session: brewSessions, version: recipes.version })
     .from(brewSessions)
     .innerJoin(recipes, eq(recipes.id, brewSessions.recipeId))
     .where(eq(recipes.familyId, family))
     .orderBy(desc(brewSessions.brewedAt), desc(brewSessions.id))
-    .all()
-    .map(({ session, version }) => ({
-      ...rowToBrewSession(session, numbers.get(session.id) ?? 1),
-      recipeVersion: version,
-    }));
+    .all();
+  const headlines = liveRecipes(rows.map(({ session }) => session));
+  return rows.map(({ session, version }) => ({
+    ...rowToBrewSession(session, numbers.get(session.id) ?? 1, headlines),
+    recipeVersion: version,
+  }));
 }
 
 /** One brew session with its logged rig temperatures and derived fermentation figures. */
 export function getBrewSession(id: number): BrewSessionDetail | null {
   const row = db.select().from(brewSessions).where(eq(brewSessions.id, id)).get();
   if (!row) return null;
-  const brewSession = rowToBrewSession(row, brewNumbers().get(row.id) ?? 1);
+  const brewSession = rowToBrewSession(row, brewNumbers().get(row.id) ?? 1, liveRecipes([row]));
   const rigSamples = listRigSamples(id);
   return {
     ...brewSession,
@@ -337,7 +355,7 @@ export function updateBrewSession(id: number, input: UpdateBrewSessionInput): Br
   const result = db.update(brewSessions).set(fields).where(eq(brewSessions.id, id)).run();
   if (result.changes === 0) return null;
   const row = db.select().from(brewSessions).where(eq(brewSessions.id, id)).get()!;
-  return rowToBrewSession(row, brewNumbers().get(row.id) ?? 1);
+  return rowToBrewSession(row, brewNumbers().get(row.id) ?? 1, liveRecipes([row]));
 }
 
 export function deleteBrewSession(id: number): boolean {

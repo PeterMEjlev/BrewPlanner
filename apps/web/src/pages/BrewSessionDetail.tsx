@@ -3,6 +3,7 @@ import type {
   BrewSessionRigSample,
   BrewSessionStatus,
   BrewSessionTempStats,
+  RecipeDetail,
   UpdateBrewSessionInput,
 } from '@checklist/shared';
 import {
@@ -10,7 +11,6 @@ import {
   BREW_SESSION_STATUS_LABELS,
   abvFromGravities,
   apparentAttenuation,
-  ebcColor,
   measuredEfficiency,
 } from '@checklist/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -39,6 +39,8 @@ import { Select } from '../components/Select';
 import { SheetSection } from '../components/SheetSection';
 import { timeAxis } from '../components/timeAxis';
 import { kr } from '../money';
+import { figuresFromRecipe, figuresFromSnapshot, fmt } from '../recipeFigures';
+import { loadRecipeDetail } from '../recipeStore';
 import { asCleanMessage, clockTime, dateTime } from '../util';
 
 /**
@@ -63,7 +65,7 @@ const POT_LINES = [
 ];
 
 /** The page's cards, in the order they appear. */
-type SectionKey = 'stage' | 'brewSession' | 'rig' | 'fermentation' | 'recipe' | 'notes';
+type SectionKey = 'stage' | 'brewSession' | 'rig' | 'fermentation' | 'notes';
 
 const COLLAPSE_KEY = 'brewplanner.brewSessionSections';
 
@@ -73,7 +75,6 @@ const ALL_OPEN: Record<SectionKey, boolean> = {
   brewSession: false,
   rig: false,
   fermentation: false,
-  recipe: false,
   notes: false,
 };
 
@@ -129,6 +130,7 @@ export function BrewSessionDetailPage(): JSX.Element {
   const controllable = canControl(auth);
 
   const [brewSession, setBrewSession] = useState<BrewSessionDetail | null>(null);
+  const [sheet, setSheet] = useState<RecipeDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -160,6 +162,40 @@ export function BrewSessionDetailPage(): JSX.Element {
   }, [load]);
 
   /**
+   * The brew sheet this batch was brewed to, read live rather than from the copy
+   * frozen onto the entry.
+   *
+   * `recipeId` points at the exact version that was brewed, not at the beer's
+   * newest one, so a revision made since sits in a version this log never
+   * mentions. What that leaves is the case worth following: a correction to the
+   * version that *was* brewed — a mistyped pre-boil target, a re-costed grain
+   * bill — should read the same here as it does on the sheet, which is the whole
+   * reason the recipe column exists. Anything bigger than a correction becomes a
+   * new version, and this batch stays where it is.
+   *
+   * Cached by recipeStore, so arriving here from the brew sheet costs nothing.
+   */
+  const recipeId = brewSession?.recipeId ?? null;
+  useEffect(() => {
+    if (recipeId == null) {
+      setSheet(null);
+      return;
+    }
+    let current = true;
+    void loadRecipeDetail(recipeId)
+      .then((detail) => {
+        if (current) setSheet(detail);
+      })
+      .catch(() => {
+        // The frozen snapshot covers this. A brew log that renders every figure
+        // it has is not worth an error banner over the sheet behind it.
+      });
+    return () => {
+      current = false;
+    };
+  }, [recipeId]);
+
+  /**
    * Save one edit. The response carries the row's own fields, which are merged
    * straight in; a change that moves the window the *derived* figures are read
    * over (the dates, and the status that ends the rig log) is followed by a
@@ -189,9 +225,10 @@ export function BrewSessionDetailPage(): JSX.Element {
 
   async function remove(): Promise<void> {
     if (!brewSession || deleting) return;
+    const name = sheet?.name ?? brewSession.recipe.name;
     if (
       !window.confirm(
-        `Delete the brew session for “${brewSession.recipe.name}” on ${brewDate(brewSession.brewedAt)}? This cannot be undone.`,
+        `Delete the brew session for “${name}” on ${brewDate(brewSession.brewedAt)}? This cannot be undone.`,
       )
     ) {
       return;
@@ -227,29 +264,35 @@ export function BrewSessionDetailPage(): JSX.Element {
     );
   }
 
-  const { recipe, measured } = brewSession;
+  const { measured } = brewSession;
+  // Every recipe figure on the page comes from one place, so the brew sheet and
+  // the log beside it cannot print different numbers for the same beer. The
+  // frozen snapshot is the fallback and nothing more: it is all that survives a
+  // recipe that has since been deleted.
+  const plan = sheet ? figuresFromRecipe(sheet) : figuresFromSnapshot(brewSession.recipe);
   const abv = abvFromGravities(measured.og, measured.fg);
   const attenuation = apparentAttenuation(measured.og, measured.fg);
-  const pour = ebcColor(recipe.ebc);
+  const targetAttenuation = apparentAttenuation(plan.og, plan.fg);
+  const pour = plan.pourHex;
 
   // What the brewhouse managed, worked back from the gravities the brewer took
-  // against the grain bill snapshotted on the day. Two figures, because they
-  // answer different questions: brewhouse efficiency is everything the day lost
-  // between mash and fermenter, mash efficiency only the conversion — so a
-  // disappointing OG with a healthy mash figure was the kettle's doing.
+  // against the recipe's grain bill. Two figures, because they answer different
+  // questions: brewhouse efficiency is everything the day lost between mash and
+  // fermenter, mash efficiency only the conversion — so a disappointing OG with
+  // a healthy mash figure was the kettle's doing.
   const brewhouse = measuredEfficiency({
     gravity: measured.og,
     litres: measured.volumeL,
-    mashedPointGallons: recipe.mashedPointGallons,
-    unmashedPointGallons: recipe.unmashedPointGallons,
+    mashedPointGallons: plan.mashedPointGallons,
+    unmashedPointGallons: plan.unmashedPointGallons,
   });
   const mash = measuredEfficiency({
     gravity: measured.preBoilGravity,
     litres: measured.preBoilVolumeL,
-    mashedPointGallons: recipe.mashedPointGallons,
+    mashedPointGallons: plan.mashedPointGallons,
     // Only the sugars already in the kettle at that reading — a late addition
     // isn't in the wort yet, and crediting the mash with either would flatter it.
-    unmashedPointGallons: recipe.preBoilUnmashedPointGallons,
+    unmashedPointGallons: plan.preBoilUnmashedPointGallons,
   });
   const pct = (value: number): string => `${value.toFixed(0)}%`;
 
@@ -270,7 +313,7 @@ export function BrewSessionDetailPage(): JSX.Element {
                   aria-hidden
                 />
               )}
-              <h1 className="truncate text-xl font-semibold text-zinc-100">{recipe.name}</h1>
+              <h1 className="truncate text-xl font-semibold text-zinc-100">{plan.name}</h1>
               <span
                 className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                   STATUS_CHIP[brewSession.status]
@@ -281,7 +324,7 @@ export function BrewSessionDetailPage(): JSX.Element {
             </div>
             <p className="mt-1 text-sm text-zinc-500">
               {[
-                recipe.style,
+                plan.style,
                 brewSession.brewNumber > 1 ? `brew #${brewSession.brewNumber} of this recipe` : null,
                 `brewed ${brewDate(brewSession.brewedAt)}`,
               ]
@@ -328,119 +371,158 @@ export function BrewSessionDetailPage(): JSX.Element {
 
           <Section
             section="brewSession"
-            title="The brew session"
+            title="Recipe and brew session"
             icon="🔥"
-            meta={formatDuration(brewSession.durationMinutes)}
+            meta={[
+              plan.style,
+              brewSession.durationMinutes != null
+                ? formatDuration(brewSession.durationMinutes)
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
             collapsed={collapsed}
             onToggle={toggle}
           >
-            <div className="space-y-4">
-              <Stage title="Mash and run-off">
-                <NumberField
-                  label="Mash temperature"
-                  unit="°C"
-                  value={measured.mashTempC}
-                  target={recipe.mashTemp}
-                  editable={controllable}
-                  onSave={(mashTempC) => save({ measured: { mashTempC } })}
-                />
-                <GravityField
-                  label="Pre-boil gravity"
-                  value={measured.preBoilGravity}
-                  target={recipe.preBoilGravity}
-                  editable={controllable}
-                  onSave={(preBoilGravity) => save({ measured: { preBoilGravity } })}
-                />
-                <NumberField
-                  label="Pre-boil volume"
-                  unit="L"
-                  value={measured.preBoilVolumeL}
-                  target={litres(recipe.preBoilVolumeL)}
-                  hint={
-                    measured.preBoilGravity && measured.preBoilVolumeL == null
-                      ? 'Add this and the mash efficiency follows'
-                      : null
-                  }
-                  editable={controllable}
-                  onSave={(preBoilVolumeL) => save({ measured: { preBoilVolumeL } })}
-                />
-              </Stage>
+            {/* Plan against result, one figure per line, in the order the brew
+                day actually happens. The two used to be separate cards — the
+                recipe's numbers in one, the day's in another — which made the
+                only question worth asking ("how far off was I?") a matter of
+                scrolling between them and doing the subtraction yourself. */}
+            <Comparison>
+              <GroupHeader title="Mash and run-off" />
+              <NumberRow
+                label="Mash temperature"
+                unit="°C"
+                plan={plan.mashTemp}
+                value={measured.mashTempC}
+                editable={controllable}
+                onSave={(mashTempC) => save({ measured: { mashTempC } })}
+              />
+              <GravityRow
+                label="Pre-boil gravity"
+                plan={gravity(plan.preBoilGravity)}
+                value={measured.preBoilGravity}
+                editable={controllable}
+                onSave={(preBoilGravity) => save({ measured: { preBoilGravity } })}
+              />
+              <NumberRow
+                label="Pre-boil volume"
+                unit="L"
+                plan={litres(plan.preBoilVolumeL)}
+                value={measured.preBoilVolumeL}
+                hint={
+                  measured.preBoilGravity && measured.preBoilVolumeL == null
+                    ? 'Add this and the mash efficiency follows'
+                    : null
+                }
+                editable={controllable}
+                onSave={(preBoilVolumeL) => save({ measured: { preBoilVolumeL } })}
+              />
 
-              <Stage title="Boil">
-                <NumberField
-                  label="Boil"
-                  unit="min"
-                  value={measured.boilTimeMin}
-                  target={recipe.boilTimeMin != null ? `${recipe.boilTimeMin} min` : null}
-                  editable={controllable}
-                  onSave={(boilTimeMin) => save({ measured: { boilTimeMin } })}
-                />
-                <GravityField
-                  label="Post-boil gravity"
-                  value={measured.postBoilGravity}
-                  target={recipe.postBoilGravity}
-                  editable={controllable}
-                  onSave={(postBoilGravity) => save({ measured: { postBoilGravity } })}
-                />
-                <NumberField
-                  label="Post-boil volume"
-                  unit="L"
-                  value={measured.postBoilVolumeL}
-                  target={litres(recipe.postBoilVolumeL)}
-                  editable={controllable}
-                  onSave={(postBoilVolumeL) => save({ measured: { postBoilVolumeL } })}
-                />
-              </Stage>
+              <GroupHeader title="Boil" />
+              <NumberRow
+                label="Boil"
+                unit="min"
+                plan={plan.boilTimeMin != null ? `${plan.boilTimeMin} min` : null}
+                value={measured.boilTimeMin}
+                editable={controllable}
+                onSave={(boilTimeMin) => save({ measured: { boilTimeMin } })}
+              />
+              <GravityRow
+                label="Post-boil gravity"
+                plan={gravity(plan.postBoilGravity)}
+                value={measured.postBoilGravity}
+                editable={controllable}
+                onSave={(postBoilGravity) => save({ measured: { postBoilGravity } })}
+              />
+              <NumberRow
+                label="Post-boil volume"
+                unit="L"
+                plan={litres(plan.postBoilVolumeL)}
+                value={measured.postBoilVolumeL}
+                editable={controllable}
+                onSave={(postBoilVolumeL) => save({ measured: { postBoilVolumeL } })}
+              />
 
-              <Stage title="Into the fermenter">
-                <GravityField
-                  label="Original gravity"
-                  value={measured.og}
-                  target={recipe.og}
-                  editable={controllable}
-                  onSave={(og) => save({ measured: { og } })}
-                />
-                <NumberField
-                  label="Volume"
-                  unit="L"
-                  value={measured.volumeL}
-                  target={litres(recipe.batchSizeL)}
-                  editable={controllable}
-                  onSave={(volumeL) => save({ measured: { volumeL } })}
-                />
-                {/* Calculated from the OG and volume, and only typed into when
-                    the brewer knows the arithmetic is wrong — an eyeballed volume
-                    moves this figure several points, and they were there. */}
-                <NumberField
-                  label="Efficiency"
-                  unit="%"
-                  value={measured.efficiencyPct}
-                  target={recipe.efficiencyPct != null ? `${recipe.efficiencyPct}%` : null}
-                  placeholder={brewhouse != null ? pct(brewhouse) : '—'}
-                  readOnlyValue={brewhouse != null ? `${pct(brewhouse)} (calculated)` : null}
-                  hint={
-                    brewhouse == null
-                      ? 'Measure the OG and the volume into the fermenter to calculate it'
-                      : measured.efficiencyPct == null
-                        ? `Calculated ${pct(brewhouse)} from the OG and volume`
-                        : `Overriding the calculated ${pct(brewhouse)} — clear to use it`
-                  }
-                  editable={controllable}
-                  onSave={(efficiencyPct) => save({ measured: { efficiencyPct } })}
-                />
-              </Stage>
+              <GroupHeader title="Into the fermenter" />
+              <GravityRow
+                label="Original gravity"
+                plan={gravity(plan.og)}
+                value={measured.og}
+                editable={controllable}
+                onSave={(og) => save({ measured: { og } })}
+              />
+              <NumberRow
+                label="Volume"
+                unit="L"
+                plan={litres(plan.batchSizeL)}
+                value={measured.volumeL}
+                editable={controllable}
+                onSave={(volumeL) => save({ measured: { volumeL } })}
+              />
+              {/* Calculated from the OG and volume, and only typed into when
+                  the brewer knows the arithmetic is wrong — an eyeballed volume
+                  moves this figure several points, and they were there. */}
+              <NumberRow
+                label="Efficiency"
+                unit="%"
+                plan={plan.efficiencyPct != null ? `${plan.efficiencyPct}%` : null}
+                value={measured.efficiencyPct}
+                placeholder={brewhouse != null ? pct(brewhouse) : '—'}
+                readOnlyValue={brewhouse != null ? pct(brewhouse) : null}
+                hint={
+                  brewhouse == null
+                    ? 'Measure the OG and the volume into the fermenter to calculate it'
+                    : measured.efficiencyPct == null
+                      ? `Calculated ${pct(brewhouse)} from the OG and volume`
+                      : `Overriding the calculated ${pct(brewhouse)} — clear to use it`
+                }
+                editable={controllable}
+                onSave={(efficiencyPct) => save({ measured: { efficiencyPct } })}
+              />
 
-              <Stage title="Out of the fermenter">
-                <GravityField
-                  label="Final gravity"
-                  value={measured.fg}
-                  target={recipe.fg}
-                  editable={controllable}
-                  onSave={(fg) => save({ measured: { fg } })}
-                />
-              </Stage>
+              <GroupHeader title="Out of the fermenter" />
+              <GravityRow
+                label="Final gravity"
+                plan={gravity(plan.fg)}
+                value={measured.fg}
+                editable={controllable}
+                onSave={(fg) => save({ measured: { fg } })}
+              />
+              {/* Neither of these is stored: both are one arithmetic step from
+                  the gravities above, so recomputing them is cheaper and more
+                  honest than keeping a copy a corrected reading would strand. */}
+              <DerivedRow
+                label="ABV"
+                unit="%"
+                plan={plan.abv ? `${fmt(plan.abv, 1)}%` : null}
+                actual={abv != null ? `${abv.toFixed(1)}%` : null}
+                hint={
+                  plan.fruitAbv > 0
+                    ? `Recipe: malt ${Math.max(0, Number(plan.abv) - plan.fruitAbv).toFixed(2)}% + fruit additions ${plan.fruitAbv.toFixed(2)}%`
+                    : null
+                }
+                hintTitle={
+                  plan.fruitAbv > 0
+                    ? 'Fruit contribution assumes a typical unsweetened Brix for the named juice or puree and that its sugar ferments dry.'
+                    : undefined
+                }
+              />
+              <DerivedRow
+                label="Apparent attenuation"
+                unit="%"
+                plan={targetAttenuation != null ? `${targetAttenuation.toFixed(0)}%` : null}
+                actual={attenuation != null ? `${attenuation.toFixed(0)}%` : null}
+              />
+            </Comparison>
 
-              <Stage title="What the day cost">
+            <DerivedFigures brewhouse={brewhouse} mash={mash} />
+
+            {/* No recipe column: nothing here is something a brew sheet asks
+                for, only something the day spent. */}
+            <Block title="What the day cost">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <DurationField
                   minutes={brewSession.durationMinutes}
                   editable={controllable}
@@ -460,15 +542,50 @@ export function BrewSessionDetailPage(): JSX.Element {
                   editable={controllable}
                   onSave={(energyKwh) => save({ measured: { energyKwh } })}
                 />
-              </Stage>
-            </div>
-            <DerivedFigures
-              abv={abv}
-              attenuation={attenuation}
-              brewhouse={brewhouse}
-              mash={mash}
-              targetAbv={recipe.abv}
-            />
+              </div>
+            </Block>
+
+            {/* The other half of the sheet — the figures a brew day never
+                measures back, so they stand alone rather than as half a row. */}
+            <Block title="The recipe’s own figures">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Fact label="Bitterness" value={plan.ibu ? `${fmt(plan.ibu, 1)} IBU` : '—'} />
+                <Fact
+                  label={plan.ebcEstimated ? 'Colour (est.)' : 'Colour'}
+                  value={plan.ebc ? `${fmt(plan.ebc, 1)} EBC` : '—'}
+                  swatch={pour}
+                  // The figure is the malt's EBC; the swatch beside it is the
+                  // pour, fruit included, so it says so on hover rather than
+                  // reading as a swatch that disagrees with its own number.
+                  swatchTitle={plan.pourNote}
+                />
+                <Fact
+                  label="Grain bill"
+                  value={plan.grainKg != null ? `${plan.grainKg.toFixed(2)} kg` : '—'}
+                />
+                <Fact
+                  label="Hops"
+                  value={plan.hopGrams != null ? `${plan.hopGrams.toFixed(0)} g` : '—'}
+                />
+                <Fact label="Yeast" value={plan.yeast || '—'} />
+                <Fact label="Fermentation" value={plan.fermentationTemp ?? '—'} />
+                <Fact
+                  label="Ingredient cost"
+                  value={plan.costDkk != null ? kr(plan.costDkk, 0) : '—'}
+                />
+              </div>
+            </Block>
+
+            <p className="mt-4 text-xs text-zinc-600">
+              {/* Keyed off the row, not off `plan`, which still reads from the
+                  snapshot for the moment before the sheet arrives — long enough
+                  to accuse a perfectly live recipe of having been deleted. */}
+              {brewSession.recipeId == null
+                ? 'The recipe this batch came from has since been deleted, so the recipe column is the copy taken when the brew session started — all that is left of the sheet.'
+                : `The recipe column is read live from the brew sheet this batch was brewed to${
+                    sheet && sheet.versions.length > 1 ? ` (v${sheet.version})` : ''
+                  }, so the log and the sheet can never disagree. A change big enough to matter belongs in a new version, which this batch would not be brewed to.`}
+            </p>
           </Section>
 
           <RigTemperatures
@@ -479,47 +596,6 @@ export function BrewSessionDetailPage(): JSX.Element {
           />
 
           <FermentationCard brewSession={brewSession} collapsed={collapsed} onToggle={toggle} />
-
-          <Section
-            section="recipe"
-            title="The recipe, as it read that day"
-            icon="📖"
-            meta={recipe.style || undefined}
-            collapsed={collapsed}
-            onToggle={toggle}
-          >
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Fact label="Target OG → FG" value={recipe.og && recipe.fg ? `${recipe.og} → ${recipe.fg}` : recipe.og || '—'} />
-              <Fact label="Target ABV" value={recipe.abv ? `${recipe.abv}%` : '—'} />
-              <Fact label="Bitterness" value={recipe.ibu ? `${recipe.ibu} IBU` : '—'} />
-              <Fact label="Colour" value={recipe.ebc ? `${recipe.ebc} EBC` : '—'} />
-              <Fact
-                label="Target pre-boil"
-                value={kettleTarget(recipe.preBoilGravity, recipe.preBoilVolumeL)}
-              />
-              <Fact
-                label="Target post-boil"
-                value={kettleTarget(recipe.postBoilGravity, recipe.postBoilVolumeL)}
-              />
-              <Fact label="Boil" value={recipe.boilTimeMin != null ? `${recipe.boilTimeMin} min` : '—'} />
-              <Fact
-                label="Assumed efficiency"
-                value={recipe.efficiencyPct != null ? `${recipe.efficiencyPct}%` : '—'}
-              />
-              <Fact label="Batch size" value={recipe.batchSizeL != null ? `${recipe.batchSizeL} L` : '—'} />
-              <Fact label="Grain bill" value={recipe.grainKg != null ? `${recipe.grainKg} kg` : '—'} />
-              <Fact label="Hops" value={recipe.hopGrams != null ? `${recipe.hopGrams} g` : '—'} />
-              <Fact label="Ingredient cost" value={recipe.costDkk != null ? kr(recipe.costDkk, 0) : '—'} />
-              <Fact label="Yeast" value={recipe.yeast || '—'} />
-              <Fact label="Mash" value={recipe.mashTemp ?? '—'} />
-              <Fact label="Fermentation" value={recipe.fermentationTemp ?? '—'} />
-            </div>
-            <p className="mt-3 text-xs text-zinc-600">
-              Copied onto this entry when the brew session started, so it still says what was
-              actually brewed after the recipe is edited or re-costed.
-              {!brewSession.recipeId && ' The recipe it came from has since been deleted.'}
-            </p>
-          </Section>
 
           <Section
             section="notes"
@@ -564,50 +640,38 @@ export function BrewSessionDetailPage(): JSX.Element {
 }
 
 /**
- * Everything the measured figures add up to, under the fields they came from.
- * Nothing here is stored: they are all one arithmetic step from what the brewer
- * typed, so recomputing them is both cheaper and more honest than keeping a copy
- * that a corrected gravity would leave stale.
+ * The one measured figure with no recipe number to sit beside — mash efficiency
+ * is about the conversion, which a brew sheet states nothing about — and the
+ * warning for when the arithmetic has come out impossible.
  *
- * Silent until there is something to say — a half-filled brew session shows the
+ * Everything else the measurements add up to (ABV, attenuation, brewhouse
+ * efficiency) now has a row of its own in the comparison above, where it can be
+ * read against what the recipe asked for.
+ *
+ * Silent until there is something to say: a half-filled brew session shows the
  * figures it has earned and no placeholders for the rest.
  */
 function DerivedFigures({
-  abv,
-  attenuation,
   brewhouse,
   mash,
-  targetAbv,
 }: {
-  abv: number | null;
-  attenuation: number | null;
   brewhouse: number | null;
   mash: number | null;
-  targetAbv: string;
 }): JSX.Element | null {
-  const parts: string[] = [];
-  if (abv != null) parts.push(`${abv.toFixed(1)}% ABV`);
-  if (attenuation != null) parts.push(`${attenuation.toFixed(0)}% apparent attenuation`);
-  if (brewhouse != null) parts.push(`${brewhouse.toFixed(0)}% brewhouse efficiency`);
-  if (mash != null) parts.push(`${mash.toFixed(0)}% mash efficiency`);
-  if (parts.length === 0) return null;
+  // An efficiency over 100 is arithmetic, not brewing: something measured is
+  // wrong, and saying so beats quietly showing an impossible number.
+  const impossible = (brewhouse != null && brewhouse > 100) || (mash != null && mash > 100);
+  if (mash == null && !impossible) return null;
   return (
     <p className="mt-3 text-xs text-zinc-500">
-      Worked out from what you measured:{' '}
-      {parts.map((part, index) => (
-        <span key={part}>
-          {index > 0 && ' · '}
-          <span className="text-zinc-300">{part}</span>
-        </span>
-      ))}
-      {abv != null && targetAbv && ` (the recipe targets ${targetAbv}%)`}
-      {/* An efficiency over 100 is arithmetic, not brewing: something measured
-          is wrong, and saying so beats quietly showing an impossible number. */}
-      {((brewhouse != null && brewhouse > 100) || (mash != null && mash > 100)) && (
-        <span className="text-amber-300/90">
-          {' '}
-          — over 100% means a volume or a gravity is off.
-        </span>
+      {mash != null && (
+        <>
+          Mash efficiency <span className="text-zinc-300">{mash.toFixed(0)}%</span> — the conversion
+          alone, before whatever the kettle and the trub took after it.
+        </>
+      )}
+      {impossible && (
+        <span className="text-amber-300/90"> Over 100% means a volume or a gravity is off.</span>
       )}
     </p>
   );
@@ -926,68 +990,145 @@ function FermentationCard({
 }
 
 /**
- * One part of the brew day and the figures taken during it. The card is grouped
- * in the order the day actually happens — mash, boil, fermenter — so filling the
- * log in is working down the page rather than hunting for the right box, and a
- * gravity always sits beside the volume it was read in.
+ * The comparison grid: four columns — the figure, what the recipe asks for, what
+ * the day measured, and how far apart the two landed.
+ *
+ * A grid rather than a stack of self-contained cards because the point of the
+ * card is reading *down* a column. A brew session's story is which numbers
+ * drifted and by how much, and that is only legible when every recipe figure
+ * lines up under the one above it.
+ *
+ * Rows are fragments of four cells rather than wrappers of their own, so the
+ * grid can align across every group in the card. The columns stay narrow enough
+ * for a phone; the label is the only one that can give, and it wraps.
  */
-function Stage({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+function Comparison({ children }: { children: React.ReactNode }): JSX.Element {
   return (
-    <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-        {title}
-      </h3>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
+    <div className="grid grid-cols-[minmax(0,1fr)_3.25rem_5.25rem_3rem] gap-x-2 sm:grid-cols-[minmax(0,1fr)_6rem_7.5rem_4.5rem] sm:gap-x-3">
+      {children}
     </div>
   );
 }
 
-/** A litre target for a field, or null when the recipe never stated one. */
+/** A stage of the brew day, carrying the column headings for the rows under it. */
+function GroupHeader({ title }: { title: string }): JSX.Element {
+  const head = 'pb-1.5 pt-4 text-[10px] font-medium uppercase tracking-wide text-zinc-600';
+  return (
+    <>
+      <h3 className="pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-wider text-zinc-300">
+        {title}
+      </h3>
+      <span className={`${head} text-right`}>Recipe</span>
+      <span className={head}>Actual</span>
+      <span className={`${head} text-right`}>&Delta;</span>
+    </>
+  );
+}
+
+/** A titled block under the comparison grid, for figures that aren't a comparison. */
+function Block({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+  return (
+    <div className="mt-5">
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-300">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * One figure across both columns. The delta only appears when there is one:
+ * a row with nothing in that column already says the day hit the number, and
+ * "±0" would be ink for nothing.
+ */
+function Row({
+  label,
+  plan,
+  delta,
+  hint,
+  hintTitle,
+  children,
+}: {
+  label: string;
+  /** What the recipe asks for, formatted; null when it asks for nothing. */
+  plan: string | null;
+  /** How far the measurement landed from that; null when it hit it. */
+  delta?: string | null;
+  /** A note under the label — a breakdown, or what the app worked the figure out to be. */
+  hint?: string | null;
+  /** Tooltip for that note, when the figure behind it needs a caveat. */
+  hintTitle?: string;
+  children: React.ReactNode;
+}): JSX.Element {
+  const cell = 'border-t border-zinc-800/70 py-2';
+  return (
+    <>
+      <div className={`${cell} min-w-0 pr-1`}>
+        <span className="block text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+          {label}
+        </span>
+        {hint && (
+          <span className="mt-0.5 block text-[10px] leading-snug text-zinc-600" title={hintTitle}>
+            {hint}
+          </span>
+        )}
+      </div>
+      <div className={`${cell} truncate text-right text-sm tabular-nums text-zinc-400`}>
+        {plan ?? '—'}
+      </div>
+      <div className={cell}>{children}</div>
+      <div className={`${cell} text-right text-xs font-medium tabular-nums text-zinc-400`}>
+        {delta}
+      </div>
+    </>
+  );
+}
+
+/** A litre figure for the recipe column, or null when the recipe never stated one. */
 function litres(value: number | null): string | null {
   return value == null ? null : `${value} L`;
 }
 
-/**
- * A kettle target as the recipe stated it: "1.048 at 31 L", or whichever half it
- * knows. An entry logged before these were snapshotted knows neither and reads
- * as a dash, like every other figure the day never recorded.
- */
-function kettleTarget(gravity: string | null, volumeL: number | null): string {
-  const parts = [gravity || null, volumeL == null ? null : `${volumeL} L`].filter(Boolean);
-  if (parts.length === 0) return '—';
-  return parts.join(' at ');
+/** A gravity as the brew sheet prints it — three places, or nothing at all. */
+function gravity(value: string | null): string | null {
+  return value ? fmt(value, 3) : null;
 }
 
 /**
- * A read-only figure with its label, and optionally the recipe's number for the
- * same thing — so a viewer who can't edit the log still reads plan against
- * result, which is the whole reason the figures are recorded.
+ * A read-only figure with its label — for the figures that stand on their own,
+ * outside the comparison grid: the recipe's own numbers, the day's dates, and
+ * what a viewer who can't edit the log sees in place of a field.
  */
 function Fact({
   label,
   value,
-  target,
-  delta,
+  swatch,
+  swatchTitle,
 }: {
   label: string;
   value: string;
-  target?: string | null;
-  delta?: string | null;
+  /** The beer's colour, for the figure that describes it. */
+  swatch?: string | null;
+  /** Tooltip for the swatch, when it says more than the figure does. */
+  swatchTitle?: string | null;
 }): JSX.Element {
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
       <span className="block text-[11px] font-medium uppercase tracking-wide text-zinc-500">
         {label}
       </span>
-      <span className="mt-0.5 block truncate text-sm text-zinc-200" title={value}>
-        {value}
+      <span className="mt-0.5 flex items-center gap-2 text-sm text-zinc-200" title={value}>
+        <span className="min-w-0 truncate">{value}</span>
+        {swatch && (
+          <span
+            className="h-3 w-3 shrink-0 rounded-full ring-1 ring-black/40"
+            style={{ backgroundColor: swatch }}
+            title={swatchTitle ?? undefined}
+            aria-hidden
+          />
+        )}
       </span>
-      {target && (
-        <span className="mt-1 block text-[11px] text-zinc-600">
-          Recipe: {target}
-          {delta && <span className="ml-1.5 font-medium text-zinc-400">{delta}</span>}
-        </span>
-      )}
     </div>
   );
 }
@@ -996,55 +1137,20 @@ const FIELD_CLASS =
   'mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none';
 const LABEL_CLASS = 'block text-[11px] font-medium uppercase tracking-wide text-zinc-500';
 
-/**
- * The wrapper every editable figure shares: label, control, and — under it — the
- * recipe's number for the same thing and how far the day landed from it.
- *
- * The target line is the point of the card. A brew log is only worth filling in
- * if the plan and the result can be read together, so the recipe's figure sits
- * under the box the actual one is typed into rather than in a separate table
- * the brewer would have to scroll between.
- */
-function Field({
-  label,
-  target,
-  delta,
-  hint,
-  children,
-}: {
-  label: string;
-  /** What the recipe aimed for, for a figure that has a target to miss. */
-  target?: string | null;
-  /** How far the measurement landed from that target; null when it hit it. */
-  delta?: string | null;
-  /** A note under the target — what the app worked the figure out to be. */
-  hint?: string | null;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <label className="block rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
-      <span className={LABEL_CLASS}>{label}</span>
-      {children}
-      {target && (
-        <span className="mt-1 block text-[11px] text-zinc-600">
-          Recipe: {target}
-          {delta && <span className="ml-1.5 font-medium text-zinc-400">{delta}</span>}
-        </span>
-      )}
-      {hint && <span className="mt-1 block text-[11px] text-zinc-500">{hint}</span>}
-    </label>
-  );
-}
+/** The input inside a comparison row's Actual cell. */
+const CELL_CLASS =
+  'w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm tabular-nums text-zinc-100 focus:border-zinc-500 focus:outline-none';
 
 /**
- * A measured number that saves on blur. Empty clears it back to unmeasured —
- * the log's "we didn't take this reading", which is not the same as zero.
+ * A measured number, in a comparison row against what the recipe asks for.
+ * Saves on blur; empty clears it back to unmeasured — the log's "we didn't take
+ * this reading", which is not the same as zero.
  */
-function NumberField({
+function NumberRow({
   label,
   unit,
+  plan,
   value,
-  target,
   hint,
   placeholder = '—',
   readOnlyValue,
@@ -1053,9 +1159,10 @@ function NumberField({
 }: {
   label: string;
   unit: string;
+  /** The recipe's figure for the same thing, as the sheet states it. */
+  plan: string | null;
   value: number | null;
-  target?: string | null;
-  /** A note under the field, in place of the recipe's target. */
+  /** A note under the label — what the app worked the figure out to be. */
   hint?: string | null;
   /** Greyed text in an empty field — where a figure the app calculates shows. */
   placeholder?: string;
@@ -1072,18 +1179,8 @@ function NumberField({
     if (!focused.current) setDraft(value == null ? '' : String(value));
   }, [value]);
 
-  const delta = targetDelta(value, target ?? null, unit);
-
-  if (!editable) {
-    return (
-      <Fact
-        label={`${label} (${unit})`}
-        value={value == null ? (readOnlyValue ?? '—') : `${value} ${unit}`}
-        target={target}
-        delta={delta}
-      />
-    );
-  }
+  const delta = targetDelta(value, plan, unit);
+  const heading = `${label} (${unit})`;
 
   function commit(): void {
     focused.current = false;
@@ -1100,11 +1197,22 @@ function NumberField({
     if (parsed !== value) void onSave(parsed);
   }
 
+  if (!editable) {
+    return (
+      <Row label={heading} plan={plan} delta={delta} hint={hint}>
+        <span className="block text-sm tabular-nums text-zinc-100">
+          {value == null ? (readOnlyValue ?? '—') : String(value)}
+        </span>
+      </Row>
+    );
+  }
+
   return (
-    <Field label={`${label} (${unit})`} target={target} delta={delta} hint={hint}>
+    <Row label={heading} plan={plan} delta={delta} hint={hint}>
       <input
         type="text"
         inputMode="decimal"
+        aria-label={heading}
         value={draft}
         placeholder={placeholder}
         onFocus={() => {
@@ -1115,23 +1223,23 @@ function NumberField({
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
         }}
-        className={FIELD_CLASS}
+        className={CELL_CLASS}
       />
-    </Field>
+    </Row>
   );
 }
 
 /** A measured gravity. Text, like the recipe's own, so "1.058" survives as typed. */
-function GravityField({
+function GravityRow({
   label,
+  plan,
   value,
-  target,
   editable,
   onSave,
 }: {
   label: string;
+  plan: string | null;
   value: string;
-  target?: string | null;
   editable: boolean;
   onSave: (value: string) => Promise<void>;
 }): JSX.Element {
@@ -1141,17 +1249,22 @@ function GravityField({
     if (!focused.current) setDraft(value);
   }, [value]);
 
-  const delta = targetDelta(value, target ?? null, 'gravity');
+  const delta = targetDelta(value, plan, 'gravity');
 
   if (!editable) {
-    return <Fact label={label} value={value || '—'} target={target} delta={delta} />;
+    return (
+      <Row label={label} plan={plan} delta={delta}>
+        <span className="block text-sm tabular-nums text-zinc-100">{value || '—'}</span>
+      </Row>
+    );
   }
 
   return (
-    <Field label={label} target={target || null} delta={delta}>
+    <Row label={label} plan={plan} delta={delta}>
       <input
         type="text"
         inputMode="decimal"
+        aria-label={label}
         value={draft}
         placeholder="—"
         maxLength={20}
@@ -1167,9 +1280,110 @@ function GravityField({
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
         }}
+        className={CELL_CLASS}
+      />
+    </Row>
+  );
+}
+
+/**
+ * A row whose Actual column is worked out rather than typed — ABV, attenuation.
+ * Both sides are already formatted; the delta is read back off them, so the two
+ * figures and the gap between them can never describe different arithmetic.
+ */
+function DerivedRow({
+  label,
+  unit,
+  plan,
+  actual,
+  hint,
+  hintTitle,
+}: {
+  label: string;
+  unit: string;
+  plan: string | null;
+  actual: string | null;
+  hint?: string | null;
+  hintTitle?: string;
+}): JSX.Element {
+  return (
+    <Row
+      label={`${label} (${unit})`}
+      plan={plan}
+      delta={targetDelta(actual, plan, unit)}
+      hint={hint}
+      hintTitle={hintTitle}
+    >
+      <span className="block text-sm tabular-nums text-zinc-100">{actual ?? '—'}</span>
+    </Row>
+  );
+}
+
+/**
+ * A measured number with nothing to compare it against — what the day drew and
+ * burned, which no brew sheet states a target for. A card of its own rather than
+ * a row in the grid above, so an empty Recipe column never implies the recipe
+ * forgot to say.
+ */
+function NumberField({
+  label,
+  unit,
+  value,
+  editable,
+  onSave,
+}: {
+  label: string;
+  unit: string;
+  value: number | null;
+  editable: boolean;
+  onSave: (value: number | null) => Promise<void>;
+}): JSX.Element {
+  const [draft, setDraft] = useState(value == null ? '' : String(value));
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDraft(value == null ? '' : String(value));
+  }, [value]);
+
+  const heading = `${label} (${unit})`;
+
+  function commit(): void {
+    focused.current = false;
+    const trimmed = draft.trim().replace(',', '.');
+    if (trimmed === '') {
+      if (value != null) void onSave(null);
+      return;
+    }
+    const parsed = Number.parseFloat(trimmed);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setDraft(value == null ? '' : String(value));
+      return;
+    }
+    if (parsed !== value) void onSave(parsed);
+  }
+
+  if (!editable) {
+    return <Fact label={heading} value={value == null ? '—' : `${value} ${unit}`} />;
+  }
+
+  return (
+    <label className="block rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
+      <span className={LABEL_CLASS}>{heading}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        placeholder="—"
+        onFocus={() => {
+          focused.current = true;
+        }}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
         className={FIELD_CLASS}
       />
-    </Field>
+    </label>
   );
 }
 

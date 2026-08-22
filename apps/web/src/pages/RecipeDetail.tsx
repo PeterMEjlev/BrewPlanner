@@ -41,6 +41,7 @@ import { Select } from '../components/Select';
 import { SheetSection } from '../components/SheetSection';
 import { UnpricedIngredientsDialog } from '../components/UnpricedIngredients';
 import { kr } from '../money';
+import { fmt, toG, toKg } from '../recipeFigures';
 import { invalidateRecipes, loadRecipeDetail } from '../recipeStore';
 import { asCleanMessage } from '../util';
 
@@ -87,43 +88,6 @@ function loadCollapsed(): Record<SectionKey, boolean> {
     return { ...ALL_OPEN, ...(JSON.parse(raw) as Partial<Record<SectionKey, boolean>>) };
   } catch {
     return ALL_OPEN;
-  }
-}
-
-/** Round for display, leaving a value we can't parse to show as-is. */
-function fmt(value: string | number | null | undefined, decimals: number): string {
-  const n = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
-  return Number.isFinite(n) ? n.toFixed(decimals) : String(value ?? '—');
-}
-
-/** Fermentable amounts, normalized to kg so the grain bill can be totalled. */
-function toKg(amount: string, unit: string): number {
-  const n = Number.parseFloat(amount);
-  if (!Number.isFinite(n)) return 0;
-  switch (unit.toLowerCase()) {
-    case 'g':
-      return n / 1000;
-    case 'lb':
-    case 'lbs':
-      return n * 0.453592;
-    case 'oz':
-      return n * 0.0283495;
-    default:
-      return n;
-  }
-}
-
-/** Hop amounts, normalized to grams. */
-function toG(amount: string, unit: string): number {
-  const n = Number.parseFloat(amount);
-  if (!Number.isFinite(n)) return 0;
-  switch (unit.toLowerCase()) {
-    case 'oz':
-      return n * 28.3495;
-    case 'kg':
-      return n * 1000;
-    default:
-      return n;
   }
 }
 

@@ -3,6 +3,7 @@ import type {
   Recipe,
   RecipeDetail,
   RecipeEditInput,
+  RecipeHeadline,
   IngredientKind,
   RecipeOrigin,
   RecipeIngredientOption,
@@ -14,7 +15,7 @@ import {
   estimateFruitAbvContribution,
   recipeEditSchema,
 } from '@checklist/shared';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import { db } from './db/index.js';
 import { recipes } from './db/schema.js';
 import { editableRecipe, hydrateRecipe, recipeStats } from './recipeData.js';
@@ -74,6 +75,34 @@ function rowInput(row: RecipeRow): RecipeEditInput {
         : input.abv,
     fruitAbvIncluded: true,
   };
+}
+
+/**
+ * The headline figures of particular recipe rows — no ingredient hydration, no
+ * pricing, just the sheet's own numbers with the fruit-ABV migration applied.
+ *
+ * Cheap enough to call once per list: the brew-session log uses it so every
+ * entry is described by the recipe as it stands rather than by the copy frozen
+ * onto it when the batch started. Ids with no row left simply do not appear.
+ */
+export function recipeHeadlines(ids: string[]): Map<string, RecipeHeadline> {
+  const wanted = [...new Set(ids)];
+  const headlines = new Map<string, RecipeHeadline>();
+  if (wanted.length === 0) return headlines;
+  for (const row of db.select().from(recipes).where(inArray(recipes.id, wanted)).all()) {
+    const input = rowInput(row);
+    headlines.set(row.id, {
+      name: input.name,
+      style: input.style,
+      og: input.og,
+      fg: input.fg,
+      abv: input.abv,
+      ibu: input.ibu,
+      ebc: input.ebc,
+      batchSizeL: input.batchSizeL,
+    });
+  }
+  return headlines;
 }
 
 function rowToSummary(row: RecipeRow, versionCount = 1): Recipe {

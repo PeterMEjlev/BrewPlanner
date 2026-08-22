@@ -15,6 +15,7 @@ import {
 } from '../brewSessions';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
+import { fmt } from '../recipeFigures';
 import { loadRecipes } from '../recipeStore';
 import { asCleanMessage, relativeTime } from '../util';
 
@@ -178,19 +179,23 @@ function FinishedLog({ brewSessions }: { brewSessions: BrewSession[] }): JSX.Ele
  * haven't yet.
  */
 function BrewSessionRow({ brewSession }: { brewSession: BrewSession }): JSX.Element {
-  const pour = ebcColor(brewSession.recipe.ebc);
-  const og = brewSession.measured.og || brewSession.recipe.og;
-  const fg = brewSession.measured.fg || brewSession.recipe.fg;
+  // The recipe as it reads now, so a row describes the same beer the library
+  // does — renamed, re-costed, ABV corrected. The copy frozen onto the entry is
+  // the fallback for a batch whose recipe has since been deleted, and only then.
+  const recipe = brewSession.recipeNow ?? brewSession.recipe;
+  const pour = ebcColor(recipe.ebc);
+  const og = brewSession.measured.og || recipe.og;
+  const fg = brewSession.measured.fg || recipe.fg;
   const abv = abvFromGravities(brewSession.measured.og, brewSession.measured.fg);
   const facts: string[] = [];
   if (brewSession.durationMinutes != null) facts.push(formatDuration(brewSession.durationMinutes));
-  if (og) facts.push(fg ? `${og} → ${fg}` : `OG ${og}`);
+  if (og) facts.push(fg ? `${fmt(og, 3)} → ${fmt(fg, 3)}` : `OG ${fmt(og, 3)}`);
   // The measured ABV when both gravities are in, so the log shows what the beer
   // actually came out at rather than what the recipe hoped for.
   if (abv != null) facts.push(`${abv.toFixed(1)}%`);
-  else if (brewSession.recipe.abv) facts.push(`${brewSession.recipe.abv}% target`);
+  else if (recipe.abv) facts.push(`${fmt(recipe.abv, 1)}% target`);
   if (brewSession.measured.volumeL != null) facts.push(`${brewSession.measured.volumeL} L`);
-  else if (brewSession.recipe.batchSizeL != null) facts.push(`${brewSession.recipe.batchSizeL} L`);
+  else if (recipe.batchSizeL != null) facts.push(`${recipe.batchSizeL} L`);
 
   return (
     <Link
@@ -200,7 +205,7 @@ function BrewSessionRow({ brewSession }: { brewSession: BrewSession }): JSX.Elem
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="min-w-0 flex-1 truncate font-medium text-zinc-100">
-          {brewSession.recipe.name}
+          {recipe.name}
         </span>
         {brewSession.brewNumber > 1 && (
           <span
