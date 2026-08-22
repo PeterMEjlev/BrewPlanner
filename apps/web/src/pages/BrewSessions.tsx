@@ -1,5 +1,10 @@
 import type { BrewSession, Recipe } from '@checklist/shared';
-import { BREW_SESSION_STATUS_LABELS, abvFromGravities, ebcColor } from '@checklist/shared';
+import {
+  BREW_SESSION_STATUS_LABELS,
+  abvFromGravities,
+  ebcColor,
+  getRecipeColor,
+} from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
@@ -16,6 +21,7 @@ import {
 } from '../brewSessions';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
+import { useKegContentColors } from '../kegContentColors';
 import { fmt } from '../recipeFigures';
 import { loadRecipes } from '../recipeStore';
 import { asCleanMessage, relativeTime } from '../util';
@@ -180,16 +186,21 @@ function FinishedLog({ brewSessions }: { brewSessions: BrewSession[] }): JSX.Ele
  * haven't yet.
  */
 function BrewSessionRow({ brewSession }: { brewSession: BrewSession }): JSX.Element {
+  const colors = useKegContentColors();
   // The recipe as it reads now, so a row describes the same beer the library
   // does — renamed, re-costed, ABV corrected. The copy frozen onto the entry is
   // the fallback for a batch whose recipe has since been deleted, and only then.
   const live = brewSession.recipeNow;
   const recipe = live ?? brewSession.recipe;
-  // What the beer actually pours, fruit staining and all — the same reading the
-  // recipe library's dot shows. `ebc` alone is the *malt* colour, which paints a
-  // raspberry Berliner Weisse the straw its grain bill implies. Only a batch
-  // whose recipe was deleted has to fall back to that.
+  // Two colours, answering two questions — the same pairing the recipe grid uses.
+  //
+  // The dot is what the beer pours, fruit staining and all: `ebc` alone is the
+  // *malt* colour, which paints a raspberry Berliner Weisse the straw its grain
+  // bill implies. The card's left edge is the beer *style*'s palette colour, so
+  // a sour is the palette's pink on every board it appears on whatever this
+  // particular one came out looking like.
   const pour = live?.pourHex ?? ebcColor(recipe.ebc);
+  const styleColor = getRecipeColor({ name: recipe.name, style: recipe.style }, colors);
   const og = gravityText(brewSession.measured.og || recipe.og);
   const fg = gravityText(brewSession.measured.fg || recipe.fg);
   const abv = abvFromGravities(
@@ -209,7 +220,7 @@ function BrewSessionRow({ brewSession }: { brewSession: BrewSession }): JSX.Elem
   return (
     <Link
       to={`/brew-sessions/${brewSession.id}`}
-      style={pour ? { borderLeftColor: pour, borderLeftWidth: 3 } : undefined}
+      style={styleColor ? { borderLeftColor: styleColor, borderLeftWidth: 3 } : undefined}
       className="block rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 transition hover:border-zinc-700 hover:bg-zinc-800/60"
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
