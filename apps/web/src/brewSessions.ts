@@ -83,6 +83,27 @@ export function measured(value: number | null, unit: string, decimals = 1): stri
 }
 
 /**
+ * A gravity as a brewer actually types it, read back as the reading they meant.
+ *
+ * "1.037" is itself. "1037" is the same reading with the point left out, which
+ * is how a hydrometer gets typed in on a wet brew day — and taken literally it
+ * is not a gravity at all but a thousand of them, which is how a four-point miss
+ * came to read as "+1032963 pts". A comma decimal is accepted the same way the
+ * numeric fields accept one.
+ *
+ * Deliberately narrow: only a bare 3–4 digit integer that lands in the band real
+ * gravities live in is rewritten. "48" could be a lot of things; 1037 can only
+ * be 1.037. Everything else survives exactly as typed, which is the whole reason
+ * these are held as text.
+ */
+export function gravityText(value: string): string {
+  const trimmed = value.trim().replace(',', '.');
+  if (!/^\d{3,4}$/.test(trimmed)) return trimmed;
+  const points = Number.parseInt(trimmed, 10) / 1000;
+  return points >= 0.95 && points <= 1.2 ? points.toFixed(3) : trimmed;
+}
+
+/**
  * The leading number in a figure the sheet holds as text — "1.048", "28 L",
  * "67°C" all read. Null for anything that doesn't start with one, so a target
  * the recipe never stated simply has no comparison rather than a wrong one.

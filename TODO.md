@@ -3,7 +3,9 @@
 
 - Remove left-over bruce logic in BrewSystem3.0 repo
 
+- Brew Session page: The efficiency should be auto calculated from the other values the user inputs
 
+- Brew system page: The brew stage card is missing (new feature from brew system 3.0)
 
 - ## Add support for
   - Electricity (Watt) usage

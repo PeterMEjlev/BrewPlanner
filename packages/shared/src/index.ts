@@ -525,6 +525,16 @@ export interface RecipeHeadline {
   ibu: string;
   ebc: string;
   batchSizeL: number | null;
+  /**
+   * What the beer actually pours, fruit staining included, #rrggbb — the same
+   * reading the recipe library's dot shows. Null when the sheet states no
+   * colour at all. Carried here because {@link ebc} is the *malt* colour, and a
+   * fruited sour whose swatch went by that alone reads as the straw its grain
+   * bill implies rather than the red it is.
+   */
+  pourHex: string | null;
+  /** Why that colour, for the swatch's tooltip. Null when no fruit shifted it. */
+  pourNote: string | null;
 }
 
 /** One brew session in the log — what the Brew Sessions list shows per row. */

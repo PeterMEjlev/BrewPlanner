@@ -32,6 +32,7 @@ import {
   dateInputToIso,
   dateInputValue,
   formatDuration,
+  gravityText,
   targetDelta,
 } from '../brewSessions';
 import { DashboardShell } from '../components/DashboardShell';
@@ -270,8 +271,15 @@ export function BrewSessionDetailPage(): JSX.Element {
   // frozen snapshot is the fallback and nothing more: it is all that survives a
   // recipe that has since been deleted.
   const plan = sheet ? figuresFromRecipe(sheet) : figuresFromSnapshot(brewSession.recipe);
-  const abv = abvFromGravities(measured.og, measured.fg);
-  const attenuation = apparentAttenuation(measured.og, measured.fg);
+  // Every gravity is read through the same normalizer the fields display
+  // through, so a reading typed without its decimal point is the one the brewer
+  // meant everywhere it is used — the ABV, the attenuation and both
+  // efficiencies, not only the delta beside the box it was typed into.
+  const og = gravityText(measured.og);
+  const fg = gravityText(measured.fg);
+  const preBoil = gravityText(measured.preBoilGravity);
+  const abv = abvFromGravities(og, fg);
+  const attenuation = apparentAttenuation(og, fg);
   const targetAttenuation = apparentAttenuation(plan.og, plan.fg);
   const pour = plan.pourHex;
 
@@ -281,13 +289,13 @@ export function BrewSessionDetailPage(): JSX.Element {
   // fermenter, mash efficiency only the conversion — so a disappointing OG with
   // a healthy mash figure was the kettle's doing.
   const brewhouse = measuredEfficiency({
-    gravity: measured.og,
+    gravity: og,
     litres: measured.volumeL,
     mashedPointGallons: plan.mashedPointGallons,
     unmashedPointGallons: plan.unmashedPointGallons,
   });
   const mash = measuredEfficiency({
-    gravity: measured.preBoilGravity,
+    gravity: preBoil,
     litres: measured.preBoilVolumeL,
     mashedPointGallons: plan.mashedPointGallons,
     // Only the sugars already in the kettle at that reading — a late addition
@@ -1243,18 +1251,23 @@ function GravityRow({
   editable: boolean;
   onSave: (value: string) => Promise<void>;
 }): JSX.Element {
-  const [draft, setDraft] = useState(value);
+  // The reading, not the keystrokes: a value stored before this was normalized
+  // — or typed as "1037" a moment ago — shows and compares as the 1.037 it is.
+  // The correction is written back the next time the field is left, so the log
+  // converges on one way of writing a gravity rather than two.
+  const reading = gravityText(value);
+  const [draft, setDraft] = useState(reading);
   const focused = useRef(false);
   useEffect(() => {
-    if (!focused.current) setDraft(value);
-  }, [value]);
+    if (!focused.current) setDraft(reading);
+  }, [reading]);
 
-  const delta = targetDelta(value, plan, 'gravity');
+  const delta = targetDelta(reading, plan, 'gravity');
 
   if (!editable) {
     return (
       <Row label={label} plan={plan} delta={delta}>
-        <span className="block text-sm tabular-nums text-zinc-100">{value || '—'}</span>
+        <span className="block text-sm tabular-nums text-zinc-100">{reading || '—'}</span>
       </Row>
     );
   }
@@ -1274,8 +1287,8 @@ function GravityRow({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
           focused.current = false;
-          const trimmed = draft.trim();
-          if (trimmed !== value) void onSave(trimmed);
+          const next = gravityText(draft);
+          if (next !== value) void onSave(next);
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();

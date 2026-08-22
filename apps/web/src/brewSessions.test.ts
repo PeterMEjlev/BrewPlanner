@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { targetDelta } from './brewSessions';
+import { gravityText, targetDelta } from './brewSessions';
 
 /**
  * The one line the brew log is really for: how far the day landed from what the
@@ -40,5 +40,38 @@ describe('targetDelta', () => {
 
   it('reads a comma decimal, which a Danish keyboard types', () => {
     expect(targetDelta('1,052', '1.048', 'gravity')).toBe('+4 pts');
+  });
+});
+
+/**
+ * A gravity typed without its decimal point is the mistake this exists for: read
+ * literally, "1037" against a 1.041 target reported a miss of 1,035,959 points.
+ */
+describe('gravityText', () => {
+  it('reads a gravity typed without its point as the one that was meant', () => {
+    expect(gravityText('1037')).toBe('1.037');
+    expect(gravityText('1034')).toBe('1.034');
+    expect(gravityText('998')).toBe('0.998');
+    expect(gravityText(' 1043 ')).toBe('1.043');
+    // Which makes the delta the four points it always was.
+    expect(targetDelta(gravityText('1037'), '1.041', 'gravity')).toBe('−4 pts');
+    expect(targetDelta(gravityText('1034'), '1.037', 'gravity')).toBe('−3 pts');
+  });
+
+  it('leaves a gravity that is already one alone, comma decimals included', () => {
+    expect(gravityText('1.037')).toBe('1.037');
+    expect(gravityText('1,037')).toBe('1.037');
+    expect(gravityText('')).toBe('');
+  });
+
+  it('rewrites nothing it would have to guess at', () => {
+    // Two digits could be points shorthand or a Plato reading; a number outside
+    // the band gravities live in is not a gravity with its point left out.
+    expect(gravityText('48')).toBe('48');
+    expect(gravityText('100')).toBe('100');
+    expect(gravityText('9999')).toBe('9999');
+    // Text the field is deliberately allowed to hold survives as typed.
+    expect(gravityText('1.0435')).toBe('1.0435');
+    expect(gravityText('n/a')).toBe('n/a');
   });
 });

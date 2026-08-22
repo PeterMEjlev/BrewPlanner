@@ -11,6 +11,7 @@ import {
   dateInputToIso,
   dateInputValue,
   formatDuration,
+  gravityText,
   isInProgress,
 } from '../brewSessions';
 import { DashboardShell } from '../components/DashboardShell';
@@ -182,11 +183,19 @@ function BrewSessionRow({ brewSession }: { brewSession: BrewSession }): JSX.Elem
   // The recipe as it reads now, so a row describes the same beer the library
   // does — renamed, re-costed, ABV corrected. The copy frozen onto the entry is
   // the fallback for a batch whose recipe has since been deleted, and only then.
-  const recipe = brewSession.recipeNow ?? brewSession.recipe;
-  const pour = ebcColor(recipe.ebc);
-  const og = brewSession.measured.og || recipe.og;
-  const fg = brewSession.measured.fg || recipe.fg;
-  const abv = abvFromGravities(brewSession.measured.og, brewSession.measured.fg);
+  const live = brewSession.recipeNow;
+  const recipe = live ?? brewSession.recipe;
+  // What the beer actually pours, fruit staining and all — the same reading the
+  // recipe library's dot shows. `ebc` alone is the *malt* colour, which paints a
+  // raspberry Berliner Weisse the straw its grain bill implies. Only a batch
+  // whose recipe was deleted has to fall back to that.
+  const pour = live?.pourHex ?? ebcColor(recipe.ebc);
+  const og = gravityText(brewSession.measured.og || recipe.og);
+  const fg = gravityText(brewSession.measured.fg || recipe.fg);
+  const abv = abvFromGravities(
+    gravityText(brewSession.measured.og),
+    gravityText(brewSession.measured.fg),
+  );
   const facts: string[] = [];
   if (brewSession.durationMinutes != null) facts.push(formatDuration(brewSession.durationMinutes));
   if (og) facts.push(fg ? `${fmt(og, 3)} → ${fmt(fg, 3)}` : `OG ${fmt(og, 3)}`);
@@ -204,9 +213,17 @@ function BrewSessionRow({ brewSession }: { brewSession: BrewSession }): JSX.Elem
       className="block rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 transition hover:border-zinc-700 hover:bg-zinc-800/60"
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="min-w-0 flex-1 truncate font-medium text-zinc-100">
-          {recipe.name}
-        </span>
+        {/* The pale ring is what makes a stout legible: near-black on a
+            near-black card is otherwise a hole rather than a swatch. */}
+        <span
+          className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+            pour ? 'ring-1 ring-white/20' : 'border border-zinc-600'
+          }`}
+          style={pour ? { backgroundColor: pour } : undefined}
+          title={live?.pourNote ?? (recipe.ebc ? `${recipe.ebc} EBC` : 'Colour unknown')}
+          aria-hidden
+        />
+        <span className="min-w-0 flex-1 truncate font-medium text-zinc-100">{recipe.name}</span>
         {brewSession.brewNumber > 1 && (
           <span
             className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-400"

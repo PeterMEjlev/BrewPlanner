@@ -18,7 +18,7 @@ import {
 import { desc, eq, inArray } from 'drizzle-orm';
 import { db } from './db/index.js';
 import { recipes } from './db/schema.js';
-import { editableRecipe, hydrateRecipe, recipeStats } from './recipeData.js';
+import { editableRecipe, hydrateRecipe, pourColor, recipeStats } from './recipeData.js';
 import { getSetting } from './repo.js';
 
 type RecipeRow = typeof recipes.$inferSelect;
@@ -91,6 +91,7 @@ export function recipeHeadlines(ids: string[]): Map<string, RecipeHeadline> {
   if (wanted.length === 0) return headlines;
   for (const row of db.select().from(recipes).where(inArray(recipes.id, wanted)).all()) {
     const input = rowInput(row);
+    const pour = pourColor(input);
     headlines.set(row.id, {
       name: input.name,
       style: input.style,
@@ -100,6 +101,8 @@ export function recipeHeadlines(ids: string[]): Map<string, RecipeHeadline> {
       ibu: input.ibu,
       ebc: input.ebc,
       batchSizeL: input.batchSizeL,
+      pourHex: pour?.hex ?? null,
+      pourNote: pour?.fruit?.note ?? null,
     });
   }
   return headlines;
