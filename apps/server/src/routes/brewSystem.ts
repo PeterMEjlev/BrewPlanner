@@ -5,7 +5,13 @@ import type {
   BrewSystemState,
   BrewTemperatureRow,
 } from '@checklist/shared';
-import { brewEnabledSchema, brewOnSchema, brewTimerActionSchema, brewValueSchema } from '@checklist/shared';
+import {
+  brewEnabledSchema,
+  brewOnSchema,
+  brewStageActionSchema,
+  brewTimerActionSchema,
+  brewValueSchema,
+} from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { registerAuditHook } from '../audit/hook.js';
@@ -217,4 +223,8 @@ export async function brewSystemRoutes(app: FastifyInstance): Promise<void> {
   control('/pump/:pump/power', pumpParamSchema, brewOnSchema, (p) => `/api/hardware/pump/${p.pump as BrewPump}/power`);
   control('/pump/:pump/speed', pumpParamSchema, brewValueSchema, (p) => `/api/hardware/pump/${p.pump}/speed`);
   control('/timer', z.object({}), brewTimerActionSchema, () => '/api/hardware/timer');
+  // Which part of the brew day is running. The rig clamps a step at either
+  // end rather than refusing it, so pressing "back" before the brew started
+  // is a no-op here too.
+  control('/stage', z.object({}), brewStageActionSchema, () => '/api/hardware/stage');
 }

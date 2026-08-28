@@ -3,7 +3,7 @@
 
 - Remove left-over bruce logic in BrewSystem3.0 repo
 
-
+- Brew Session page: The efficiency should be auto calculated from the other values the user inputs
 
 - ## Add support for
   - Electricity (Watt) usage

@@ -3,12 +3,15 @@ import type {
   BrewPot,
   BrewPotAutoEfficiency,
   BrewPump,
+  BrewStageState,
   BrewSystemAppSettings,
   BrewTimerState,
 } from '@checklist/shared';
 import { api } from '../../api';
 import { clockTime } from '../../util';
+import { stepStage } from './brewStage';
 import styles from './BrewingPanel.module.css';
+import BrewStageCard from './BrewStageCard';
 import BrewTimer from './BrewTimer';
 import PotCard, { type PotCardState, type PotUpdate } from './PotCard';
 import PumpCard, { type PumpUpdate } from './PumpCard';
@@ -88,6 +91,9 @@ function quiet(p: Promise<unknown>): void {
 export function BrewingPanel(): JSX.Element {
   const [states, setStates] = useState<PanelStates>(INITIAL_STATES);
   const [timerState, setTimerState] = useState<BrewTimerState>({ running: false, seconds: 0, target: 0 });
+  // Which part of the brew day is running. null until the rig says — and on a
+  // rig too old to track stages it stays null, and the card stays away.
+  const [stage, setStage] = useState<BrewStageState | null>(null);
   const [priorityPot, setPriorityPot] = useState<BrewPot>('BK');
   // null = we don't know yet (first poll pending); false = server has no BREW_SYSTEM_URL.
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -197,6 +203,7 @@ export function BrewingPanel(): JSX.Element {
           },
         }));
         if (state.timer) setTimerState(state.timer);
+        setStage(state.brewStage ?? null);
       } else {
         // Rig unreachable (or our server didn't answer) — after a few misses,
         // warn loudly instead of silently showing frozen readings.
@@ -308,6 +315,12 @@ export function BrewingPanel(): JSX.Element {
     [debouncedApi],
   );
 
+  const handleStageStep = useCallback((delta: 1 | -1) => {
+    lastCommandTime.current = Date.now();
+    quiet(api.brewStageAction(delta > 0 ? 'next' : 'back'));
+    setStage((prev) => (prev ? stepStage(prev, delta) : prev));
+  }, []);
+
   const handlePumpUpdate = useCallback(
     (pumpName: BrewPump, updates: PumpUpdate) => {
       lastCommandTime.current = Date.now();
@@ -418,17 +431,23 @@ export function BrewingPanel(): JSX.Element {
             accentBlue={rigTheme.accentBlue}
             onUpdate={onUpdateBK}
           />
-          <PotCard
-            name="MLT"
-            type="MLT"
-            potState={states.pots.MLT}
-            regulationConfig={bkRegConfig}
-            effectiveEfficiency={0}
-            potMaxWatts={0}
-            efficiencyCap={100}
-            accentBlue={rigTheme.accentBlue}
-            onUpdate={onUpdateMLT}
-          />
+          {/* MLT carries no heater controls, so its column is the short one —
+              which is the room the stage card takes on the rig's own panel,
+              rather than a new row that would push the pumps and timer down. */}
+          <div className={styles.mltColumn}>
+            <PotCard
+              name="MLT"
+              type="MLT"
+              potState={states.pots.MLT}
+              regulationConfig={bkRegConfig}
+              effectiveEfficiency={0}
+              potMaxWatts={0}
+              efficiencyCap={100}
+              accentBlue={rigTheme.accentBlue}
+              onUpdate={onUpdateMLT}
+            />
+            {stage && <BrewStageCard stage={stage} onStep={handleStageStep} />}
+          </div>
           <PotCard
             name="HLT"
             type="HLT"

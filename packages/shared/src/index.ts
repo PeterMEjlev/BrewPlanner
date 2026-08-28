@@ -522,6 +522,36 @@ export const EMPTY_BREW_SESSION_MEASUREMENTS: BrewSessionMeasurements = {
   energyKwh: null,
 };
 
+/**
+ * A recipe's headline figures as the sheet reads *now* — read straight off the
+ * stored recipe, with no ingredient hydration or pricing behind it.
+ *
+ * What a list needs in order to describe a recipe it isn't showing in full. The
+ * brew-session log carries one per entry so a batch is described by the sheet it
+ * was brewed to rather than by the copy frozen onto it: rename a recipe, or
+ * correct its target ABV, and the log says so.
+ */
+export interface RecipeHeadline {
+  name: string;
+  style: string;
+  og: string;
+  fg: string;
+  abv: string;
+  ibu: string;
+  ebc: string;
+  batchSizeL: number | null;
+  /**
+   * What the beer actually pours, fruit staining included, #rrggbb — the same
+   * reading the recipe library's dot shows. Null when the sheet states no
+   * colour at all. Carried here because {@link ebc} is the *malt* colour, and a
+   * fruited sour whose swatch went by that alone reads as the straw its grain
+   * bill implies rather than the red it is.
+   */
+  pourHex: string | null;
+  /** Why that colour, for the swatch's tooltip. Null when no fruit shifted it. */
+  pourNote: string | null;
+}
+
 /** One brew session in the log — what the Brew Sessions list shows per row. */
 export interface BrewSession {
   id: number;
@@ -535,6 +565,12 @@ export interface BrewSession {
    */
   recipeVersion?: number;
   recipe: BrewSessionRecipeSnapshot;
+  /**
+   * The same recipe as it reads today — the version this batch was brewed to,
+   * not the beer's newest. Null once that recipe has been deleted, which is the
+   * only case where {@link recipe}'s frozen copy is all there is to go on.
+   */
+  recipeNow: RecipeHeadline | null;
   status: BrewSessionStatus;
   /** The brew session itself. Editable, so a batch can be logged after the fact. */
   brewedAt: string;
@@ -3684,6 +3720,33 @@ export interface BrewTimerState {
   target: number;
 }
 
+/**
+ * One stage the brew entered, and when. `index` points into the same response's
+ * `stages`, so a marker carries its own label without a second copy of the list.
+ */
+export interface BrewStageMarker {
+  index: number;
+  /** Epoch ms, stamped by the rig's clock. */
+  ts: number;
+}
+
+/**
+ * Where the brew day has got to (brew-system-v3's brew stages).
+ *
+ * The rig owns this the way it owns the timer, so a kiosk reload — or this
+ * dashboard from the other end of the brewery — finds the brew on the stage it
+ * is really on. `index` is -1 before the first stage and `stages.length` once
+ * the brew is finished; `markers` is always a prefix of the stage list, since
+ * stepping back drops the mark for the stage being left, so its last entry is
+ * the stage now showing.
+ */
+export interface BrewStageState {
+  /** The rig's stage names, in order — sent with the state so labels can't drift. */
+  stages: string[];
+  index: number;
+  markers: BrewStageMarker[];
+}
+
 /** The rig's GET /api/hardware/state response. Temperatures are null when a sensor fails. */
 export interface BrewSystemState {
   temperatures: { bk: number | null; mlt: number | null; hlt: number | null };
@@ -3692,6 +3755,8 @@ export interface BrewSystemState {
     pumps: Record<BrewPump, BrewPumpControl>;
   };
   timer: BrewTimerState;
+  /** Absent on a rig that predates brew-system-v3's stage tracking. */
+  brewStage?: BrewStageState;
 }
 
 export interface BrewAutoEfficiencyStep {
@@ -3769,6 +3834,13 @@ export const brewTimerActionSchema = z.object({
   seconds: z.coerce.number().int().min(0).optional(),
 });
 export type BrewTimerActionInput = z.infer<typeof brewTimerActionSchema>;
+/**
+ * Body for POST /api/brew-system/stage — mirrors the rig's stage actions. One
+ * step at a time, since the rig deliberately offers no way to jump; `reset` is
+ * its "back to before the first stage", which also clears the markers.
+ */
+export const brewStageActionSchema = z.object({ action: z.enum(['next', 'back', 'reset']) });
+export type BrewStageActionInput = z.infer<typeof brewStageActionSchema>;
 
 // ---------------------------------------------------------------------------
 // Hosts (the two Raspberry Pis the brewery runs on)

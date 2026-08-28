@@ -152,6 +152,17 @@
   flex-grow: 1;
 }
 
+/* MLT's column: the read-only pot card, and under it the brew-stage card in the
+   room MLT's missing heater controls leave — the rig's own arrangement, which
+   keeps the stage off a row of its own. */
+.mltColumn {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 20px;
+  min-width: 300px;
+  align-content: start;
+}
+
 .pumpRow {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -212,9 +223,12 @@
        can't overflow; the two readings that answer the extra room by growing
        rather than by floating in it are scaled from this instead, so on a phone
        with nothing to spare they stay exactly the size they are today.
-       620px is the screen this layout fills with nothing left over: ~535px of
-       cards, the bottom bar, and the page's gutter. */
-    --slack: max(0px, 100dvh - 620px);
+       700px is the screen this layout fills with nothing left over: ~535px of
+       cards, the stage card and its gap, the bottom bar, and the page's gutter.
+       A rig too old to report a stage doesn't draw that card, and then the
+       claim is 76px short — which only costs the MLT reading a few pixels it
+       could have grown by, never a layout that overflows. */
+    --slack: max(0px, 100dvh - 700px);
 
     --font-size-xs: 11px;
     --font-size-sm: 13px;
@@ -253,6 +267,15 @@
     flex-direction: column;
     align-items: stretch;
     flex-grow: 3; /* one per pot card */
+  }
+
+  /* Stacked, MLT's column is just two more cards in the one column the row has
+     become — so it stops being a box and lets them join it directly, which also
+     hands them the row's 8px gap instead of nesting a second one. The stage
+     card doesn't grow (see BrewStageCard.module.css), so the row's three shares
+     still go one to each pot card. */
+  .mltColumn {
+    display: contents;
   }
 
   /* The pumps and the timer share one wrapper on the kiosk (pump | timer |

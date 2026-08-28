@@ -762,6 +762,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(seconds === undefined ? { action } : { action, seconds }),
     }),
+  /** Step the brew day's stage on the rig. The panel's card sends next/back. */
+  brewStageAction: (action: 'next' | 'back' | 'reset') =>
+    request<void>('/brew-system/stage', { method: 'POST', body: JSON.stringify({ action }) }),
 
   // Bruce, the voice assistant (apps/bruce), proxied server-side from his
   // loopback API. Status answers `{ online: false }` when the service is down;

@@ -183,16 +183,23 @@ legacy library has been brought across.
 ### Brew System page
 
 `/brew-system` mirrors the brewing rig's (the separate brew-system-v3 Pi) main
-screen — three pot cards, two pumps, and the brew timer — and controls it
-remotely. The server proxies `/api/brew-system/*` to the rig's FastAPI over the
-LAN (`BREW_SYSTEM_URL` in `/etc/brewplanner.env`, e.g. `http://192.168.1.60:8000`
-— give that Pi a DHCP reservation). The rig's API is unauthenticated by design
-(LAN-only), so this proxy is its only remote door: reads need a session,
-controls need the admin role, and heater/pump commands land in the change
-history. The rig is normally powered off between brew sessions — the page shows an
-offline card and reconnects automatically. The rig's backend keeps running the
-regulation loop, power limit, and safety watchdog itself, so a dropped remote
-connection can never leave a heater unmanaged.
+screen — three pot cards, two pumps, the brew-stage card, and the brew timer —
+and controls it remotely. The server proxies `/api/brew-system/*` to the rig's
+FastAPI over the LAN (`BREW_SYSTEM_URL` in `/etc/brewplanner.env`, e.g.
+`http://192.168.1.60:8000` — give that Pi a DHCP reservation). The rig's API is
+unauthenticated by design (LAN-only), so this proxy is its only remote door:
+reads need a session, controls need the admin role, and heater/pump commands
+land in the change history. The rig is normally powered off between brew
+sessions — the page shows an offline card and reconnects automatically. The
+rig's backend keeps running the regulation loop, power limit, and safety
+watchdog itself, so a dropped remote connection can never leave a heater
+unmanaged.
+
+The rig owns which part of the brew day is running (its brew stages), so the
+card under MLT steps the same state the brewery touchscreen does and the two
+screens can't disagree. Those steps stay out of the change history on purpose:
+most of them are pressed on the rig itself and never reach this server, so a log
+of only the remote ones would read as a brew day skipping stages.
 
 The rig also owns how it *looks*. `GET /api/brew-system/config` carries its power
 limits, auto-efficiency curves and theme colours, so recolouring a vessel on the

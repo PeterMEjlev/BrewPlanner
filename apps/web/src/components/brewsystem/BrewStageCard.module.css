@@ -1,0 +1,142 @@
+/* Ported from brew-system-v3 (BrewStageCard.module.css). One row: chevron,
+   stage, chevron. The card sits under MLT in the room its missing heater
+   controls leave, so it stays short — the 64px touch targets set its height,
+   and only the long stage names ("Heat water (for mash)") on a narrow column
+   wrap past them, by a line. */
+.stageCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-secondary);
+  box-shadow: var(--shadow-card);
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.eyebrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.step {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-numeric);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.heading {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  line-height: 1.15;
+}
+
+.headingIdle {
+  color: var(--color-text-muted);
+}
+
+/* The stage ahead, and when the current one was entered. The name is what
+   gives when the column is narrow — it is repeated in full as the heading the
+   moment the forward chevron is pressed. */
+.meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dark);
+  min-height: 1.2em;
+}
+
+.ahead {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.since {
+  font-family: var(--font-numeric);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.backBtn,
+.forwardBtn {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-border-light);
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  touch-action: manipulation;
+}
+
+.backBtn:active:not(:disabled),
+.forwardBtn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.backBtn:disabled,
+.forwardBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Forward is the one being pressed all day, so it gets the warm fill every
+   other "this does something" control on the panel uses. */
+.forwardBtn {
+  background: var(--gradient-warm);
+  border-color: transparent;
+  color: white;
+}
+
+/* Phone. The card is already one row, so only the chevrons and the padding
+   shrink — to 48px, still above the 44px floor the rest of the panel keeps for
+   a wet hand, which is what sets the card's height here. */
+@media (max-width: 640px) {
+  .stageCard {
+    gap: 10px;
+    padding: 10px 12px;
+    /* Content height only: the pot cards and the pumps take the spare screen
+       (see BrewingPanel.module.css), and this card is read, not worked. */
+    flex: 0 0 auto;
+  }
+
+  .backBtn,
+  .forwardBtn {
+    width: 48px;
+    height: 48px;
+    font-size: var(--font-size-xl);
+  }
+}

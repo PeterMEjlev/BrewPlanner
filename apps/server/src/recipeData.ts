@@ -5,6 +5,7 @@ import type {
   RecipeHop,
   RecipeOrigin,
   RecipeOtherIngredient,
+  PredictedColor,
   RecipeStats,
   RecipeVersionSummary,
   RecipeWaterProfile,
@@ -115,6 +116,24 @@ function resolveWaterProfile(profile: RecipeWaterProfile | null): RecipeWaterPro
     // to whatever the grist needs, which the water calculator solves per brew.
     bicarbonate: saved.hco3 == null ? null : String(saved.hco3),
   };
+}
+
+/**
+ * What a stored sheet's beer pours, fruit included — without hydrating the rest
+ * of it. Only the other-ingredients' weights are needed, and those are pure
+ * arithmetic on what the sheet already says, so a list can afford this per row
+ * where a full {@link hydrateRecipe} (catalogue matching, pricing) would cost
+ * far more than a swatch is worth.
+ */
+export function pourColor(input: RecipeEditInput): PredictedColor | null {
+  return predictBeerColor({
+    ebc: input.ebc,
+    batchSizeL: input.batchSizeL,
+    additions: input.otherIngredients.map((line) => ({
+      name: line.name,
+      grams: toOtherGrams(line.amount, line.unit),
+    })),
+  });
 }
 
 /** Rebuild weights, catalogue matches and totals from a stored editable sheet. */

@@ -583,6 +583,11 @@ const RULES: Rule[] = [
   { method: 'POST', re: /^\/api\/brew-system\/pot\/[A-Z]+\/efficiency$/, build: () => null },
   { method: 'POST', re: /^\/api\/brew-system\/pump\/[A-Z0-9]+\/speed$/, build: () => null },
   { method: 'POST', re: /^\/api\/brew-system\/timer$/, build: () => null },
+  // Brew stages are a record, but not one this server can keep honestly: most
+  // of the steps are pressed on the rig's own touchscreen and never come past
+  // here, so a log of only the remote ones would read as the brew day skipping
+  // stages. The rig timestamps every stage it enters; that is the log.
+  { method: 'POST', re: /^\/api\/brew-system\/stage$/, build: () => null },
 
   // --- Bruce (voice assistant) ----------------------------------------------
   { method: 'POST', re: /^\/api\/bruce\/speak$/, build: ({ body }) => ({ entity: 'Bruce', action: `Sent Bruce a message to speak${str(body, 'message') ? `: "${str(body, 'message')}"` : ''}` }) },

@@ -1,5 +1,10 @@
 import type { BrewSession, Recipe } from '@checklist/shared';
-import { BREW_SESSION_STATUS_LABELS, abvFromGravities, ebcColor } from '@checklist/shared';
+import {
+  BREW_SESSION_STATUS_LABELS,
+  abvFromGravities,
+  ebcColor,
+  getRecipeColor,
+} from '@checklist/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
@@ -11,10 +16,13 @@ import {
   dateInputToIso,
   dateInputValue,
   formatDuration,
+  gravityText,
   isInProgress,
 } from '../brewSessions';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
+import { useKegContentColors } from '../kegContentColors';
+import { fmt } from '../recipeFigures';
 import { loadRecipes } from '../recipeStore';
 import { asCleanMessage, relativeTime } from '../util';
 
@@ -178,30 +186,55 @@ function FinishedLog({ brewSessions }: { brewSessions: BrewSession[] }): JSX.Ele
  * haven't yet.
  */
 function BrewSessionRow({ brewSession }: { brewSession: BrewSession }): JSX.Element {
-  const pour = ebcColor(brewSession.recipe.ebc);
-  const og = brewSession.measured.og || brewSession.recipe.og;
-  const fg = brewSession.measured.fg || brewSession.recipe.fg;
-  const abv = abvFromGravities(brewSession.measured.og, brewSession.measured.fg);
+  const colors = useKegContentColors();
+  // The recipe as it reads now, so a row describes the same beer the library
+  // does — renamed, re-costed, ABV corrected. The copy frozen onto the entry is
+  // the fallback for a batch whose recipe has since been deleted, and only then.
+  const live = brewSession.recipeNow;
+  const recipe = live ?? brewSession.recipe;
+  // Two colours, answering two questions — the same pairing the recipe grid uses.
+  //
+  // The dot is what the beer pours, fruit staining and all: `ebc` alone is the
+  // *malt* colour, which paints a raspberry Berliner Weisse the straw its grain
+  // bill implies. The card's left edge is the beer *style*'s palette colour, so
+  // a sour is the palette's pink on every board it appears on whatever this
+  // particular one came out looking like.
+  const pour = live?.pourHex ?? ebcColor(recipe.ebc);
+  const styleColor = getRecipeColor({ name: recipe.name, style: recipe.style }, colors);
+  const og = gravityText(brewSession.measured.og || recipe.og);
+  const fg = gravityText(brewSession.measured.fg || recipe.fg);
+  const abv = abvFromGravities(
+    gravityText(brewSession.measured.og),
+    gravityText(brewSession.measured.fg),
+  );
   const facts: string[] = [];
   if (brewSession.durationMinutes != null) facts.push(formatDuration(brewSession.durationMinutes));
-  if (og) facts.push(fg ? `${og} → ${fg}` : `OG ${og}`);
+  if (og) facts.push(fg ? `${fmt(og, 3)} → ${fmt(fg, 3)}` : `OG ${fmt(og, 3)}`);
   // The measured ABV when both gravities are in, so the log shows what the beer
   // actually came out at rather than what the recipe hoped for.
   if (abv != null) facts.push(`${abv.toFixed(1)}%`);
-  else if (brewSession.recipe.abv) facts.push(`${brewSession.recipe.abv}% target`);
+  else if (recipe.abv) facts.push(`${fmt(recipe.abv, 1)}% target`);
   if (brewSession.measured.volumeL != null) facts.push(`${brewSession.measured.volumeL} L`);
-  else if (brewSession.recipe.batchSizeL != null) facts.push(`${brewSession.recipe.batchSizeL} L`);
+  else if (recipe.batchSizeL != null) facts.push(`${recipe.batchSizeL} L`);
 
   return (
     <Link
       to={`/brew-sessions/${brewSession.id}`}
-      style={pour ? { borderLeftColor: pour, borderLeftWidth: 3 } : undefined}
+      style={styleColor ? { borderLeftColor: styleColor, borderLeftWidth: 3 } : undefined}
       className="block rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 transition hover:border-zinc-700 hover:bg-zinc-800/60"
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="min-w-0 flex-1 truncate font-medium text-zinc-100">
-          {brewSession.recipe.name}
-        </span>
+        {/* The pale ring is what makes a stout legible: near-black on a
+            near-black card is otherwise a hole rather than a swatch. */}
+        <span
+          className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+            pour ? 'ring-1 ring-white/20' : 'border border-zinc-600'
+          }`}
+          style={pour ? { backgroundColor: pour } : undefined}
+          title={live?.pourNote ?? (recipe.ebc ? `${recipe.ebc} EBC` : 'Colour unknown')}
+          aria-hidden
+        />
+        <span className="min-w-0 flex-1 truncate font-medium text-zinc-100">{recipe.name}</span>
         {brewSession.brewNumber > 1 && (
           <span
             className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-400"
