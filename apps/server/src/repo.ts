@@ -16,6 +16,7 @@ import type {
   SavedWaterProfile,
   Step,
   Todo,
+  TodoCategory,
 } from '@checklist/shared';
 import {
   DEFAULT_DEVICE_DATA_SOURCES,
@@ -26,7 +27,15 @@ import {
 } from '@checklist/shared';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from './db/index.js';
-import { checklists, runSteps, runs, settings, steps, todos } from './db/schema.js';
+import {
+  checklists,
+  runSteps,
+  runs,
+  settings,
+  steps,
+  todoCategories,
+  todos,
+} from './db/schema.js';
 
 const now = () => new Date().toISOString();
 
@@ -291,13 +300,54 @@ export function listTodos(): Todo[] {
   return db.select().from(todos).orderBy(asc(todos.position), asc(todos.id)).all();
 }
 
-export function createTodo(text: string): Todo {
+export function createTodo(text: string, categoryId: number | null = null): Todo {
   const maxPos = db
     .select({ max: sql<number | null>`max(${todos.position})` })
     .from(todos)
     .get();
   const position = (maxPos?.max ?? -1) + 1;
-  return db.insert(todos).values({ text, position }).returning().get();
+  return db.insert(todos).values({ text, position, categoryId }).returning().get();
+}
+
+// --- Categories ------------------------------------------------------------
+// Sections on the To-Do page. Ordered by position like the tasks themselves so
+// the page has a stable order to render; there is no reordering UI yet, so in
+// practice that is creation order.
+
+export function listTodoCategories(): TodoCategory[] {
+  return db
+    .select()
+    .from(todoCategories)
+    .orderBy(asc(todoCategories.position), asc(todoCategories.id))
+    .all();
+}
+
+export function createTodoCategory(name: string): TodoCategory {
+  const maxPos = db
+    .select({ max: sql<number | null>`max(${todoCategories.position})` })
+    .from(todoCategories)
+    .get();
+  const position = (maxPos?.max ?? -1) + 1;
+  return db.insert(todoCategories).values({ name, position }).returning().get();
+}
+
+export function renameTodoCategory(id: number, name: string): TodoCategory | null {
+  const updated = db
+    .update(todoCategories)
+    .set({ name, updatedAt: now() })
+    .where(eq(todoCategories.id, id))
+    .returning()
+    .get();
+  return updated ?? null;
+}
+
+/**
+ * Delete a category. Its tasks are kept and fall back to "Uncategorised" —
+ * the `set null` on todos.category_id does that, with `foreign_keys = ON`
+ * (see db/index.ts) making the database honour it.
+ */
+export function deleteTodoCategory(id: number): boolean {
+  return db.delete(todoCategories).where(eq(todoCategories.id, id)).run().changes > 0;
 }
 
 /** Reorder the whole to-do list to match the given id order. */
@@ -318,7 +368,12 @@ export function reorderTodos(todoIds: number[]): Todo[] | null {
 
 export function updateTodo(
   id: number,
-  fields: { text?: string; done?: boolean; description?: string | null },
+  fields: {
+    text?: string;
+    done?: boolean;
+    description?: string | null;
+    categoryId?: number | null;
+  },
 ): Todo | null {
   const updated = db
     .update(todos)
@@ -327,6 +382,7 @@ export function updateTodo(
       ...(fields.description !== undefined
         ? { description: cleanDescription(fields.description) }
         : {}),
+      ...(fields.categoryId !== undefined ? { categoryId: fields.categoryId } : {}),
       ...(fields.done !== undefined
         ? { done: fields.done, doneAt: fields.done ? now() : null }
         : {}),

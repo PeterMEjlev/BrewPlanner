@@ -17,6 +17,7 @@ import {
   recipeSheet,
   recipeSheetName,
   stepText,
+  todoCategoryName,
   todoText,
 } from './names.js';
 import type { FieldLabel } from './details.js';
@@ -298,6 +299,11 @@ const RULES: Rule[] = [
     },
   },
   { method: 'DELETE', re: /^\/api\/todos\/(\d+)$/, before: (m) => todoText(m[1] ?? ''), push: '/todos', build: ({ m, before }) => ({ entity: 'To-do', action: `Deleted to-do ${named(before, m[1] ?? '')}` }) },
+  { method: 'POST', re: /^\/api\/todo-categories$/, build: ({ body }) => ({ entity: 'To-do category', action: str(body, 'name') ? `Added to-do category "${str(body, 'name')}"` : 'Added a to-do category' }) },
+  { method: 'PATCH', re: /^\/api\/todo-categories\/(\d+)$/, before: (m) => todoCategoryName(m[1] ?? ''), build: ({ m, body, before }) => ({ entity: 'To-do category', action: `Renamed to-do category ${named(before, m[1] ?? '')}${str(body, 'name') ? ` to "${str(body, 'name')}"` : ''}` }) },
+  // Worth spelling out that the tasks survive — the history is where someone
+  // checks after a category vanishes and they want to know what went with it.
+  { method: 'DELETE', re: /^\/api\/todo-categories\/(\d+)$/, before: (m) => todoCategoryName(m[1] ?? ''), build: ({ m, before }) => ({ entity: 'To-do category', action: `Deleted to-do category ${named(before, m[1] ?? '')} (its tasks moved to Uncategorised)` }) },
 
   // --- Alerts ---------------------------------------------------------------
   // Clearing the whole feed is worth a line in the history; dismissing a single

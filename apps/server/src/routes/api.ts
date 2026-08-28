@@ -4,6 +4,7 @@ import {
   auditQuerySchema,
   createChecklistSchema,
   createStepSchema,
+  createTodoCategorySchema,
   createTodoSchema,
   deviceDataSourcesSchema,
   fermenterStateSchema,
@@ -34,6 +35,7 @@ import {
   updateChecklistSchema,
   updateKegSchema,
   updateStepSchema,
+  updateTodoCategorySchema,
   updateTodoSchema,
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -253,10 +255,39 @@ export async function apiRoutes(app: FastifyInstance): Promise<void> {
   // --- Brewery to-do list ----------------------------------------------
   app.get('/todos', async () => repo.listTodos());
 
+  // Categories are the collapsible sections on the To-Do page. Deleting one
+  // keeps its tasks and drops them back to "Uncategorised".
+  app.get('/todo-categories', async () => repo.listTodoCategories());
+
+  app.post('/todo-categories', adminOnly, async (req, reply) => {
+    const body = parse(createTodoCategorySchema, req.body, reply);
+    if (!body) return;
+    return reply.status(201).send(repo.createTodoCategory(body.name));
+  });
+
+  app.patch('/todo-categories/:id', adminOnly, async (req, reply) => {
+    const params = parse(idParamSchema, req.params, reply);
+    if (!params) return;
+    const body = parse(updateTodoCategorySchema, req.body, reply);
+    if (!body) return;
+    const updated = repo.renameTodoCategory(params.id, body.name);
+    if (!updated) return reply.status(404).send({ error: 'Category not found' });
+    return updated;
+  });
+
+  app.delete('/todo-categories/:id', adminOnly, async (req, reply) => {
+    const params = parse(idParamSchema, req.params, reply);
+    if (!params) return;
+    if (!repo.deleteTodoCategory(params.id)) {
+      return reply.status(404).send({ error: 'Category not found' });
+    }
+    return reply.status(204).send();
+  });
+
   app.post('/todos', adminOnly, async (req, reply) => {
     const body = parse(createTodoSchema, req.body, reply);
     if (!body) return;
-    return reply.status(201).send(repo.createTodo(body.text));
+    return reply.status(201).send(repo.createTodo(body.text, body.categoryId ?? null));
   });
 
   app.patch('/todos/:id', adminOnly, async (req, reply) => {

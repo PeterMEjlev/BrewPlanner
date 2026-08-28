@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { alertRuleName } from '../alerts/rules.js';
 import { brewSessionName } from '../brewSessions/repo.js';
 import { db } from '../db/index.js';
-import { checklists, recipes, steps, todos, users } from '../db/schema.js';
+import { checklists, recipes, steps, todoCategories, todos, users } from '../db/schema.js';
 import { getDevice, getDeviceStatus } from '../devices/repo.js';
 
 /**
@@ -28,6 +28,17 @@ export function stepText(id: string): string | null {
 /** A to-do's text, or null if it's gone. */
 export function todoText(id: string): string | null {
   return db.select({ text: todos.text }).from(todos).where(eq(todos.id, num(id))).get()?.text ?? null;
+}
+
+/** A to-do category's name, or null if it's gone. */
+export function todoCategoryName(id: string): string | null {
+  return (
+    db
+      .select({ name: todoCategories.name })
+      .from(todoCategories)
+      .where(eq(todoCategories.id, num(id)))
+      .get()?.name ?? null
+  );
 }
 
 /** A device's display name (the same one shown in the device fleet), or null. */

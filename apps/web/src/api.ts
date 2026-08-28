@@ -67,6 +67,7 @@ import type {
   RecipeStatsResponse,
   Step,
   Todo,
+  TodoCategory,
   UpdateBrewSessionInput,
   User,
   UserRole,
@@ -336,13 +337,26 @@ export const api = {
 
   // Brewery to-do list
   listTodos: () => request<Todo[]>('/todos'),
-  createTodo: (text: string) =>
-    request<Todo>('/todos', { method: 'POST', body: JSON.stringify({ text }) }),
+  createTodo: (text: string, categoryId: number | null = null) =>
+    request<Todo>('/todos', { method: 'POST', body: JSON.stringify({ text, categoryId }) }),
   updateTodo: (
     id: number,
-    fields: { text?: string; done?: boolean; description?: string | null },
+    fields: { text?: string; done?: boolean; description?: string | null; categoryId?: number | null },
   ) =>
     request<Todo>(`/todos/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+
+  // To-do categories — the collapsible sections on the To-Do page. Deleting one
+  // keeps its tasks; they reappear under "Uncategorised".
+  listTodoCategories: () => request<TodoCategory[]>('/todo-categories'),
+  createTodoCategory: (name: string) =>
+    request<TodoCategory>('/todo-categories', { method: 'POST', body: JSON.stringify({ name }) }),
+  renameTodoCategory: (id: number, name: string) =>
+    request<TodoCategory>(`/todo-categories/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+  deleteTodoCategory: (id: number) =>
+    request<void>(`/todo-categories/${id}`, { method: 'DELETE' }),
   deleteTodo: (id: number) => request<void>(`/todos/${id}`, { method: 'DELETE' }),
   reorderTodos: (todoIds: number[]) =>
     request<Todo[]>('/todos/reorder', { method: 'POST', body: JSON.stringify({ todoIds }) }),

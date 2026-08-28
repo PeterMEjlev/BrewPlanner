@@ -67,9 +67,24 @@ export interface Todo {
   description: string | null;
   done: boolean;
   position: number;
+  /** Which collapsible section this sits in; null is "Uncategorised". */
+  categoryId: number | null;
   createdAt: string;
   updatedAt: string;
   doneAt: string | null;
+}
+
+/**
+ * A collapsible section on the To-Do page. Purely a grouping label — tasks
+ * survive their category being deleted and revert to "Uncategorised", which is
+ * not a row here but the absence of one.
+ */
+export interface TodoCategory {
+  id: number;
+  name: string;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -2722,8 +2737,12 @@ export const reorderStepsSchema = z.object({
 });
 export type ReorderStepsInput = z.infer<typeof reorderStepsSchema>;
 
+/** Null is a real choice here — it files the task under "Uncategorised". */
+const categoryIdField = z.number().int().positive().nullable();
+
 export const createTodoSchema = z.object({
   text: z.string().trim().min(1, 'To-do text is required').max(500),
+  categoryId: categoryIdField.optional(),
 });
 export type CreateTodoInput = z.infer<typeof createTodoSchema>;
 
@@ -2732,12 +2751,27 @@ export const updateTodoSchema = z
     text: z.string().trim().min(1, 'To-do text is required').max(500).optional(),
     done: z.boolean().optional(),
     description: descriptionField.optional(),
+    categoryId: categoryIdField.optional(),
   })
   .refine(
-    (v) => v.text !== undefined || v.done !== undefined || v.description !== undefined,
+    (v) =>
+      v.text !== undefined ||
+      v.done !== undefined ||
+      v.description !== undefined ||
+      v.categoryId !== undefined,
     { message: 'Provide at least one field to update' },
   );
 export type UpdateTodoInput = z.infer<typeof updateTodoSchema>;
+
+export const createTodoCategorySchema = z.object({
+  name: z.string().trim().min(1, 'Category name is required').max(80),
+});
+export type CreateTodoCategoryInput = z.infer<typeof createTodoCategorySchema>;
+
+export const updateTodoCategorySchema = z.object({
+  name: z.string().trim().min(1, 'Category name is required').max(80),
+});
+export type UpdateTodoCategoryInput = z.infer<typeof updateTodoCategorySchema>;
 
 export const reorderTodosSchema = z.object({
   todoIds: z.array(z.number().int().positive()).min(1),

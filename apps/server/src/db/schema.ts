@@ -109,6 +109,25 @@ export const runs = sqliteTable('runs', {
 });
 
 /**
+ * Optional grouping for the to-do list — the collapsible sections on the To-Do
+ * page. Categories are a filing convenience, not a container: deleting one
+ * leaves its tasks alone and they fall back to "Uncategorised" (see the
+ * `set null` below), because losing a task to a tidy-up would be far worse
+ * than losing the label on it.
+ */
+export const todoCategories = sqliteTable('todo_categories', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  position: integer('position').notNull().default(0),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: text('updated_at')
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+/**
  * Brewery to-do list: a single ongoing list of ad-hoc tasks, deliberately
  * unrelated to checklists/runs so the two never get mixed up.
  */
@@ -118,6 +137,10 @@ export const todos = sqliteTable('todos', {
   description: text('description'),
   done: integer('done', { mode: 'boolean' }).notNull().default(false),
   position: integer('position').notNull().default(0),
+  /** Null means "Uncategorised" — the state every existing task starts in. */
+  categoryId: integer('category_id').references(() => todoCategories.id, {
+    onDelete: 'set null',
+  }),
   doneAt: text('done_at'),
   createdAt: text('created_at')
     .notNull()

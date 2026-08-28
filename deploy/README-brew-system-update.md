@@ -90,3 +90,14 @@ on the Pi), so both survive a rebuild.
   `config.json` was lost once already.
 - **Rig unreachable** → the button refuses rather than guessing, because it
   can't confirm the heaters are off.
+- **Run succeeded but the panel still shows the old UI** → this script restarts
+  `brew-system.service`, which is the backend only; the Electron kiosk is a
+  separate process and is never touched. It is meant to notice on its own — the
+  backend restart drops its WebSocket, and on reconnect it compares the UI build
+  being served against the one it is running and reloads if they differ. If it
+  did not, check in this order: `git log --oneline -1` and
+  `cat dist/.brewplanner-build-commit` on the rig should both be the new commit
+  (if the stamp is older, `npm run build` failed and the log will say so), then
+  `grep -c "<something new>" dist/assets/*.js` to confirm the change is in the
+  bundle. If all of that is right, it is the kiosk's own cache — see "Picking up
+  a deploy" in the brew-system README for how to clear it.
