@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -20,11 +20,19 @@ import {
   stateTick,
 } from '../pages/Dashboard';
 import { useSettings } from '../settings';
-import { RANGES, cumulativeMetricOf, useDeviceData, useDeviceTotal } from '../useDeviceData';
+import {
+  RANGES,
+  type SetpointMarker,
+  cumulativeMetricOf,
+  useDeviceData,
+  useDeviceTotal,
+  useSetpointChanges,
+} from '../useDeviceData';
 import { dateTime } from '../util';
 import { formatAxisValue, niceRange, withMinSpan } from './charts';
 import { type Span, useChartZoom } from './chartZoom';
 import { type ThinMode, thinForPlot } from './decimate';
+import { setpointChangeLines } from './setpointMarkers';
 import { timeAxis } from './timeAxis';
 
 function isBreweryTempDevice(device: { name: string; type: string }): boolean {
@@ -87,6 +95,7 @@ export default function MetricChart({
   initialMetric,
   chartHeight = 320,
   targetC: targetOverride,
+  targetDeviceId,
 }: {
   deviceId: number;
   initialMetric?: string;
@@ -97,6 +106,12 @@ export default function MetricChart({
    * when the device does carry one.
    */
   targetC?: number;
+  /**
+   * The controller that target belongs to, so the chart can also mark where it
+   * was *changed* (see setpointMarkers.tsx). Same story as {@link targetC}: only
+   * needed for a chart whose own device has no setpoint.
+   */
+  targetDeviceId?: number;
 }): JSX.Element {
   // When rendered inside the dashboard's range provider, the selected window is
   // shared with the matching sparkline preview (keyed by device+metric); on the
@@ -156,6 +171,26 @@ export default function MetricChart({
   // Only on `temp_c`: on the setpoint's own chart the plotted line *is* the target.
   const targetC =
     chartMetric === 'temp_c' ? (setpointReading?.value ?? targetOverride ?? null) : null;
+
+  // Where that target was moved, marked with a vertical line each. Read from
+  // the controller — this device when it is one, otherwise the one holding it
+  // (a Tilt's beer temp is governed by the Inkbird beside it). Only on the temp
+  // chart: on the setpoint's own chart the steps are already the plotted line.
+  const setpointDeviceId = supportsSetpoint ? deviceId : (targetDeviceId ?? null);
+  const setpointChanges = useSetpointChanges(
+    chartMetric === 'temp_c' ? setpointDeviceId : null,
+    rangeMs,
+  );
+  const [hoveredChange, setHoveredChange] = useState<SetpointMarker | null>(null);
+
+  // A marker that slides out of the window (or off a metric switch) is unmounted
+  // without ever firing a pointer-leave, and a hover left set would keep the
+  // data tooltip suppressed for good. Let go of one that no longer exists.
+  useEffect(() => {
+    setHoveredChange((cur) =>
+      cur && setpointChanges.some((c) => c.t === cur.t) ? cur : null,
+    );
+  }, [setpointChanges]);
 
   // Full extent of the loaded window — both the unzoomed view and the floor that
   // zooming out returns to.
@@ -403,6 +438,10 @@ export default function MetricChart({
                     it keeps the drag cheaper. */}
                 {!zoom.dragging && (
                   <Tooltip
+                    // Two tooltips over one marker is one too many: while a
+                    // setpoint marker's badge is up, it *is* the answer to
+                    // "what happened here".
+                    active={hoveredChange ? false : undefined}
                     contentStyle={{
                       background: '#0f172a',
                       border: '1px solid #1e293b',
@@ -449,6 +488,14 @@ export default function MetricChart({
                   dot={false}
                   isAnimationActive={false}
                 />
+                {/* After the Line, so a marker paints over the trace it
+                    explains and reliably wins the pointer at a crossing. */}
+                {setpointChangeLines({
+                  changes: setpointChanges,
+                  color: colors.setpoint,
+                  hovered: hoveredChange,
+                  onHover: setHoveredChange,
+                })}
               </LineChart>
             </ResponsiveContainer>
           )}

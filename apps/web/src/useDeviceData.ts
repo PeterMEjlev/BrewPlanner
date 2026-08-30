@@ -1,4 +1,10 @@
-import type { DeviceStatus, HostStatus, LatestReading, Reading } from '@checklist/shared';
+import type {
+  DeviceStatus,
+  HostStatus,
+  LatestReading,
+  Reading,
+  SetpointChange,
+} from '@checklist/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { SHARED, type SharedState, useShared } from './sharedPoll';
@@ -348,9 +354,20 @@ export interface MetricSeries {
    * anything sizing an axis to the drawn line wants `values`.
    */
   extremes: { min: number; max: number } | null;
+  /**
+   * When the first and last plotted points were recorded.
+   *
+   * Not the same thing as the requested window: a sensor that started reporting
+   * an hour into a 24h range still has its points stretched across the whole
+   * width of a preview, because a sparkline spaces them by index. Anything
+   * placing something on the chart *by time* — the event markers — has to line
+   * up against what was actually drawn, not against what was asked for. Null
+   * when there is too little to draw.
+   */
+  window: { start: number; end: number } | null;
 }
 
-const EMPTY_SERIES: MetricSeries = { values: [], extremes: null };
+const EMPTY_SERIES: MetricSeries = { values: [], extremes: null, window: null };
 
 /** Widest span across a bucketed response, falling back to a raw row's value. */
 function extremesOf(history: Reading[]): { min: number; max: number } | null {
@@ -358,6 +375,15 @@ function extremesOf(history: Reading[]): { min: number; max: number } | null {
   return {
     min: Math.min(...history.map((r) => r.min ?? r.value)),
     max: Math.max(...history.map((r) => r.max ?? r.value)),
+  };
+}
+
+/** Time span covered by a newest-first history response. */
+function windowOf(history: Reading[]): { start: number; end: number } | null {
+  if (history.length < 2) return null;
+  return {
+    start: Date.parse(history[history.length - 1]!.recordedAt),
+    end: Date.parse(history[0]!.recordedAt),
   };
 }
 
@@ -405,6 +431,7 @@ export function useMetricSeriesFull(
           const next: MetricSeries = {
             values: [...history].reverse().map((r) => r.value),
             extremes: extremesOf(history),
+            window: windowOf(history),
           };
           seriesCache.set(seriesKey(deviceId, metric, rangeMs), next);
           setSeries(next);
@@ -481,6 +508,73 @@ export function useMetricSeriesT(
   );
 
   return series;
+}
+
+/**
+ * A target-temperature change placed on a chart's time axis — {@link
+ * SetpointChange} with its timestamp already parsed, since every consumer needs
+ * it as a number to position a marker.
+ */
+export interface SetpointMarker {
+  /** Epoch milliseconds. */
+  t: number;
+  from: number;
+  to: number;
+}
+
+/**
+ * Module-level cache of the last successful change fetch, keyed like the series
+ * caches above so navigating back repaints the markers immediately.
+ */
+const setpointChangeCache = new Map<string, SetpointMarker[]>();
+
+/**
+ * The controller's target changes across a window, oldest first — the vertical
+ * markers the temperature charts draw (see {@link SetpointChange}).
+ *
+ * Polled at the preview cadence rather than the device's own: a change is an
+ * event a brewer makes a handful of times per batch, not a sample, and it can't
+ * surface any faster than the controller's next push anyway. Pass `null` (a
+ * chart with no controller behind it) to disable; the last set is kept through a
+ * transient fetch error, like the series hooks.
+ */
+export function useSetpointChanges(deviceId: number | null, rangeMs: number): SetpointMarker[] {
+  const key = deviceId == null ? '' : `${deviceId}:${rangeMs}`;
+  const [changes, setChanges] = useState<SetpointMarker[]>(
+    () => setpointChangeCache.get(key) ?? [],
+  );
+
+  useEffect(() => {
+    if (deviceId == null) {
+      setChanges([]);
+      return;
+    }
+    const cached = setpointChangeCache.get(key);
+    if (cached) setChanges(cached);
+  }, [deviceId, key]);
+
+  usePoll(
+    async (isStale) => {
+      if (deviceId == null) return;
+      try {
+        const since = new Date(Date.now() - rangeMs).toISOString();
+        const rows = await api.getSetpointChanges(deviceId, { since });
+        if (isStale()) return;
+        // The API answers newest first; charts read left to right.
+        const next = rows
+          .map((c) => ({ t: Date.parse(c.at), from: c.from, to: c.to }))
+          .sort((a, b) => a.t - b.t);
+        setpointChangeCache.set(key, next);
+        setChanges(next);
+      } catch {
+        // Keep the last known changes through a transient failure.
+      }
+    },
+    SERIES_POLL_MS,
+    [deviceId, key, rangeMs],
+  );
+
+  return changes;
 }
 
 /** Cumulative meter metrics whose lifetime total ("all-time consumption") we surface. */

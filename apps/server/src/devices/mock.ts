@@ -1,4 +1,11 @@
-import type { Device, DeviceStatus, DeviceType, LatestReading, Reading } from '@checklist/shared';
+import type {
+  Device,
+  DeviceStatus,
+  DeviceType,
+  LatestReading,
+  Reading,
+  SetpointChange,
+} from '@checklist/shared';
 
 const MOCK_ID_BASE = 900_000;
 const MOCK_DEVICE_AGE_DAYS = 21;
@@ -150,8 +157,23 @@ interface PendingSetpoint {
   at: number;
 }
 
+/**
+ * A mock setpoint the operator has changed and the fake agent has "applied".
+ * Synthesized history is generated from the *current* target, so the change is
+ * kept as an event as well — otherwise a mock controller's history would show
+ * the new target as though it had always been held, and the charts' change
+ * markers (see {@link mockSetpointChanges}) would have nothing to draw.
+ */
+interface AppliedSetpoint {
+  value: number;
+  /** Target it replaced, so the marker can read "18.0° -> 20.0°". */
+  from: number;
+  /** When the fake agent applied it (epoch ms). */
+  at: number;
+}
+
 const pendingSetpoints = new Map<number, PendingSetpoint>();
-const appliedSetpoints = new Map<number, number>();
+const appliedSetpoints = new Map<number, AppliedSetpoint>();
 
 export function mockDeviceId(profile: MockProfile): number {
   return MOCK_ID_BASE + profile.id;
@@ -208,7 +230,7 @@ export function mockStatus(
     latest: latestReadings(profile, id, nowIso),
     reportingIntervalSec: MOCK_PUSH_INTERVAL_SEC,
     readingCount: mockReadingCount(profile),
-    pendingSetpointC: resolvePendingSetpoint(id),
+    pendingSetpointC: resolvePendingSetpoint(id, profile.base.setpoint_c ?? 0),
   };
 }
 
@@ -278,11 +300,12 @@ function currentValue(metric: string, base: number): number {
   return base + wander(metric, WANDER[metric] ?? 0);
 }
 
-function resolvePendingSetpoint(deviceId: number): number | null {
+function resolvePendingSetpoint(deviceId: number, base: number): number | null {
   const pending = pendingSetpoints.get(deviceId);
   if (!pending) return null;
   if (Date.now() - pending.at >= APPLY_LATENCY_MS) {
-    appliedSetpoints.set(deviceId, pending.value);
+    const from = appliedSetpoints.get(deviceId)?.value ?? base;
+    appliedSetpoints.set(deviceId, { value: pending.value, from, at: Date.now() });
     pendingSetpoints.delete(deviceId);
     return null;
   }
@@ -290,8 +313,28 @@ function resolvePendingSetpoint(deviceId: number): number | null {
 }
 
 function effectiveSetpoint(deviceId: number, base: number): number {
-  resolvePendingSetpoint(deviceId);
-  return appliedSetpoints.get(deviceId) ?? base;
+  resolvePendingSetpoint(deviceId, base);
+  return appliedSetpoints.get(deviceId)?.value ?? base;
+}
+
+/**
+ * Target changes for a synthesized controller: the ones made in this session
+ * through the mock setpoint control, so changing a mock fridge's target puts a
+ * marker on its charts the way a real one would. A freshly started server has
+ * none — there is no invented history of dial-turning to report.
+ */
+export function mockSetpointChanges(
+  profile: MockProfile,
+  deviceId: number,
+  opts: { since?: string } = {},
+): SetpointChange[] {
+  if (profile.type !== 'brew_controller') return [];
+  resolvePendingSetpoint(deviceId, profile.base.setpoint_c ?? 0);
+  const applied = appliedSetpoints.get(deviceId);
+  if (!applied || Math.abs(applied.value - applied.from) < 0.05) return [];
+  const at = new Date(applied.at).toISOString();
+  if (opts.since && at < opts.since) return [];
+  return [{ at, from: applied.from, to: applied.value }];
 }
 
 function latestReadings(profile: MockProfile, deviceId: number, nowIso: string): LatestReading[] {

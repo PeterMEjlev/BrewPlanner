@@ -65,6 +65,7 @@ import type {
   RecipeImportResult,
   RecipeIngredientOption,
   RecipeStatsResponse,
+  SetpointChange,
   Step,
   Todo,
   TodoCategory,
@@ -386,6 +387,16 @@ export const api = {
   },
   getDeviceTotal: (id: number, metric: string) =>
     request<MetricTotal>(`/devices/${id}/total?metric=${encodeURIComponent(metric)}`),
+  // Where a brew controller's target temperature stepped, newest first — the
+  // vertical change markers on the temperature charts. Derived server-side from
+  // the logged setpoint series, so it covers history this client never saw.
+  getSetpointChanges: (id: number, opts: { since?: string; limit?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.since) params.set('since', opts.since);
+    if (opts.limit) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    return request<SetpointChange[]>(`/devices/${id}/setpoint-changes${qs ? `?${qs}` : ''}`);
+  },
   // Queue a new target setpoint (°C) for a brew controller. The change is
   // applied asynchronously by the device's agent; the response echoes the
   // now-pending target (surfaced on the device's status as pendingSetpointC).

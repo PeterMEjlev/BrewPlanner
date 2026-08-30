@@ -1632,6 +1632,30 @@ export interface MetricTotal {
 }
 
 /**
+ * One step in a brew controller's target temperature — the brewer moving the
+ * fermenter from, say, 18 °C to 20 °C for a diacetyl rest.
+ *
+ * Derived from the controller's own logged `setpoint_c` readings rather than
+ * from a record of who pressed what, which is what makes it trustworthy: the
+ * agent reports the target the hardware is actually holding on every push, so a
+ * change made on the Inkbird's own panel shows up here exactly like one made
+ * from BrewPlanner, and the whole retained history can be read back for windows
+ * long predating any given client.
+ *
+ * The cost of deriving it is that there is no author and no exact instant: `at`
+ * is the first reading carrying the new target, so it lags the actual turn of
+ * the dial by up to one reporting interval.
+ */
+export interface SetpointChange {
+  /** When the new target first appears in the readings (ISO-8601). */
+  at: string;
+  /** The target it replaced (°C). */
+  from: number;
+  /** The target held from `at` onwards (°C). */
+  to: number;
+}
+
+/**
  * A device enriched for the dashboard: whether it is currently considered online
  * and its latest value per metric. `online` is derived server-side from the
  * freshness of the device's most recent *reading* — it flips offline only after
@@ -2925,6 +2949,22 @@ export const metricTotalQuerySchema = z.object({
   metric: z.string().trim().min(1).max(64),
 });
 export type MetricTotalQuery = z.infer<typeof metricTotalQuerySchema>;
+
+/**
+ * Query for `GET /api/devices/:id/setpoint-changes` — the window to look for
+ * target-temperature steps in (see {@link SetpointChange}), and a cap on how
+ * many come back.
+ *
+ * Unlike history, this needs no `buckets` companion: a step is an event, not a
+ * sample, so a month's window yields a handful of rows however dense the
+ * underlying readings are. `limit` is a guard against a controller whose target
+ * is being driven by something automated, not an expected shape.
+ */
+export const setpointChangesQuerySchema = z.object({
+  since: z.string().datetime({ offset: true }).optional(),
+  limit: z.coerce.number().int().positive().max(500).default(200),
+});
+export type SetpointChangesQuery = z.infer<typeof setpointChangesQuerySchema>;
 
 /**
  * Body for `POST /api/devices/:id/setpoint` — the new target temperature (°C)

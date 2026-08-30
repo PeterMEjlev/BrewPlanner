@@ -15,6 +15,7 @@ export function MetricModal({
   metric,
   title,
   targetC,
+  targetDeviceId,
   onClose,
 }: {
   deviceId: number;
@@ -22,6 +23,8 @@ export function MetricModal({
   title: string;
   /** Target temp for a chart whose device has no setpoint of its own. */
   targetC?: number;
+  /** The controller that target belongs to, for its change markers. */
+  targetDeviceId?: number;
   onClose: () => void;
 }): JSX.Element {
   useEffect(() => {
@@ -86,6 +89,7 @@ export function MetricModal({
               initialMetric={metric}
               chartHeight={300}
               targetC={targetC}
+              targetDeviceId={targetDeviceId}
             />
           </Suspense>
         </div>

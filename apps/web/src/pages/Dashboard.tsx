@@ -20,6 +20,7 @@ import {
   Sparkline,
   withMinSpan,
 } from '../components/charts';
+import { setpointChangeLabel } from '../components/eventMarkers';
 import { DashboardShell } from '../components/DashboardShell';
 import { FitScale } from '../components/FitScale';
 import { useGraphColors, withAlpha } from '../graphColors';
@@ -66,10 +67,11 @@ import {
   useMetricSeries,
   useMetricSeriesFull,
   useMetricSeriesT,
+  useSetpointChanges,
 } from '../useDeviceData';
 import { useIsMobile } from '../useIsMobile';
 import { usePoll } from '../usePoll';
-import { relativeTime } from '../util';
+import { dateTime, relativeTime } from '../util';
 
 // recharts lives behind this lazy boundary, so the brew-system chart is only
 // pulled in when the card is actually opened.
@@ -300,6 +302,11 @@ interface ChartTarget {
    * carries its own setpoint don't need this.
    */
   targetC?: number;
+  /**
+   * The controller {@link targetC} came from, so the chart can also mark where
+   * that target was changed. Same cases as `targetC`.
+   */
+  targetDeviceId?: number;
 }
 
 /** Opens the enlarge-on-click chart overlay for a metric. */
@@ -502,6 +509,7 @@ export function DashboardPage(): JSX.Element {
           metric={chart.metric}
           title={chart.title}
           targetC={chart.targetC}
+          targetDeviceId={chart.targetDeviceId}
           onClose={() => setChart(null)}
         />
       )}
@@ -666,12 +674,27 @@ function FermenterCommandCenter({
   const pressureRangeMs = useChartRange(pressure?.deviceId ?? null, 'pressure_bar');
   const tempRangeMs = useChartRange((fridge ?? beer)?.deviceId ?? null, 'temp_c');
   const pressureSeries = useMetricSeries(pressure?.deviceId ?? null, 'pressure_bar', pressureRangeMs);
-  const tempSeries = useMetricSeries(beer?.deviceId ?? null, 'temp_c', tempRangeMs);
+  const beerFull = useMetricSeriesFull(beer?.deviceId ?? null, 'temp_c', tempRangeMs);
+  const tempSeries = beerFull.values;
   // The fridge line is the one whose extremes get spelled out below, so it takes
   // the full series — the plotted values are bucket averages and understate how
   // far the fridge actually travelled.
   const fridgeFull = useMetricSeriesFull(fridge?.deviceId ?? null, 'temp_c', tempRangeMs);
   const fridgeSeries = fridgeFull.values;
+  // Where the brewer moved the target, as vertical lines across the temp chart.
+  // Placed against the fridge line's own time span when there is one: that line
+  // is the controller's own trace, so it is the one the marks belong to.
+  const setpointChanges = useSetpointChanges(setpoint?.deviceId ?? null, tempRangeMs);
+  const tempMarkers = useMemo(
+    () =>
+      setpointChanges.map((c) => ({
+        t: c.t,
+        label: setpointChangeLabel(c),
+        detail: dateTime(c.t),
+      })),
+    [setpointChanges],
+  );
+  const tempWindow = (fridge ? fridgeFull.window : beerFull.window) ?? undefined;
 
   // Fit a decay curve to the gravity history and project it forward, so the
   // gravity card can show a dashed forecast and an estimated finish (using the
@@ -985,6 +1008,9 @@ function FermenterCommandCenter({
                           ...(fridge ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dashed: true }] : []),
                         ]}
                         refLine={setpoint ? { value: setpoint.reading.value, stroke: colors.setpoint } : undefined}
+                        markers={tempMarkers}
+                        markerStroke={colors.setpoint}
+                        timeWindow={tempWindow}
                         grow
                         minSpan={tempMinSpanC}
                       />
@@ -1177,8 +1203,11 @@ function FermenterCommandCenter({
                       metric: 'temp_c',
                       title: `${name} · Beer temperature`,
                       // The Tilt has no setpoint of its own; hand it the
-                      // controller's so the chart can still draw the target.
-                      ...(setpoint ? { targetC: setpoint.reading.value } : {}),
+                      // controller's so the chart can still draw the target —
+                      // and the controller itself, so it can mark the changes.
+                      ...(setpoint
+                        ? { targetC: setpoint.reading.value, targetDeviceId: setpoint.deviceId }
+                        : {}),
                     })
                   }
                 >
@@ -1258,6 +1287,9 @@ function FermenterCommandCenter({
                         ...(fridge ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dashed: true }] : []),
                       ]}
                       refLine={setpoint ? { value: setpoint.reading.value, stroke: colors.setpoint } : undefined}
+                      markers={tempMarkers}
+                      markerStroke={colors.setpoint}
+                      timeWindow={tempWindow}
                       grow
                       minSpan={tempMinSpanC}
                     />

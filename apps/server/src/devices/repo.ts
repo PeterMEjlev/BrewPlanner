@@ -5,6 +5,7 @@ import type {
   DeviceType,
   LatestReading,
   Reading,
+  SetpointChange,
 } from '@checklist/shared';
 import { SET_SETPOINT_COMMAND } from '@checklist/shared';
 import { createHash, randomBytes } from 'node:crypto';
@@ -647,6 +648,72 @@ export function getHistory(
     .orderBy(desc(readings.recordedAt))
     .limit(opts.limit ?? 1000)
     .all();
+}
+
+/** The metric a brew controller reports its current target temperature under. */
+const SETPOINT_METRIC = 'setpoint_c';
+
+/**
+ * Smallest move in the target worth calling a change (°C). A controller is set
+ * in tenths at finest and the agent rounds to two decimals before pushing, so
+ * anything under this is float noise rather than someone turning a dial.
+ */
+const SETPOINT_STEP_C = 0.05;
+
+/**
+ * Every point where a controller's target temperature stepped, newest first —
+ * the events the temperature charts mark with a vertical line (see
+ * {@link SetpointChange} for why they're derived rather than logged).
+ *
+ * A step is "this reading's target differs from the one before it", so the row
+ * immediately *preceding* the window has to be in scope too — otherwise a
+ * change made a minute before `since` would either be missed or, worse, the
+ * window's first reading would be reported as a change in its own right. The
+ * `prior` CTE fetches exactly that one row, and dropping every row whose LAG is
+ * null then discards the one point in the series that has nothing to compare
+ * against.
+ *
+ * Both bounds are plain text comparisons on the ISO-8601 `recorded_at` column,
+ * as everywhere else here, so an absent `since` can be spelled as the empty
+ * string: every timestamp sorts after it (whole history in the window) and none
+ * before it (no prior row, correctly — there is nothing earlier).
+ */
+export function getSetpointChanges(
+  deviceId: number,
+  opts: { since?: string; limit?: number } = {},
+): SetpointChange[] {
+  const since = opts.since ?? '';
+  const limit = opts.limit ?? 200;
+  const rows = db.all<{ at: string; prevValue: number; newValue: number }>(sql`
+    WITH prior AS (
+      SELECT ${readings.recordedAt} AS at, ${readings.value} AS value
+      FROM ${readings}
+      WHERE ${readings.deviceId} = ${deviceId}
+        AND ${readings.metric} = ${SETPOINT_METRIC}
+        AND ${readings.recordedAt} < ${since}
+      ORDER BY ${readings.recordedAt} DESC
+      LIMIT 1
+    ),
+    win AS (
+      SELECT at, value FROM prior
+      UNION ALL
+      SELECT ${readings.recordedAt} AS at, ${readings.value} AS value
+      FROM ${readings}
+      WHERE ${readings.deviceId} = ${deviceId}
+        AND ${readings.metric} = ${SETPOINT_METRIC}
+        AND ${readings.recordedAt} >= ${since}
+    ),
+    stepped AS (
+      SELECT at, value AS newValue, LAG(value) OVER (ORDER BY at) AS prevValue FROM win
+    )
+    SELECT at, prevValue, newValue
+    FROM stepped
+    WHERE prevValue IS NOT NULL
+      AND ABS(newValue - prevValue) >= ${SETPOINT_STEP_C}
+    ORDER BY at DESC
+    LIMIT ${limit}
+  `);
+  return rows.map((r) => ({ at: r.at, from: r.prevValue, to: r.newValue }));
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { DeviceDataSources, DeviceStatus, Reading } from '@checklist/shared';
+import type { DeviceDataSources, DeviceStatus, Reading, SetpointChange } from '@checklist/shared';
 import { getDeviceDataSources } from '../repo.js';
 import * as mock from './mock.js';
 import * as real from './repo.js';
@@ -117,6 +117,34 @@ export function getHistory(
   if (!profile) return null;
   // A real-pinned placeholder has no real device behind it, so no history.
   return isReal(profile, sources) ? [] : mock.mockHistory(profile, id, opts);
+}
+
+/**
+ * Target-temperature steps for a controller, resolved through the same
+ * mock/real choice as {@link getHistory}: a sensor actually reporting gets the
+ * changes derived from its own logged setpoints, a synthesized one gets
+ * whatever was changed through the mock control this session.
+ *
+ * Null means "no such device", which the route turns into a 404; an empty array
+ * means the controller's target simply hasn't moved in the window.
+ */
+export function getSetpointChanges(
+  id: number,
+  opts: { since?: string; limit?: number },
+): SetpointChange[] | null {
+  const sources = getDeviceDataSources();
+  const realStatus = real.getDeviceStatus(id);
+  if (realStatus) {
+    const profile = mock.findProfileForDevice(realStatus);
+    if (!profile || isReal(profile, sources)) return real.getSetpointChanges(id, opts);
+    if (hasRealSensorData(realStatus)) return real.getSetpointChanges(id, opts);
+    return mock.mockSetpointChanges(profile, id, opts);
+  }
+
+  const profile = mock.profileByMockDeviceId(id);
+  if (!profile) return null;
+  // A real-pinned placeholder has no real device behind it, so no history.
+  return isReal(profile, sources) ? [] : mock.mockSetpointChanges(profile, id, opts);
 }
 
 export function getMetricTotal(id: number, metric: string): number | null {

@@ -5,6 +5,7 @@ import {
   idParamSchema,
   ingestSchema,
   metricTotalQuerySchema,
+  setpointChangesQuerySchema,
   setReportingIntervalSchema,
   setSetpointSchema,
 } from '@checklist/shared';
@@ -96,6 +97,19 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const history = deviceFallback.getHistory(params.id, query);
     if (!history) return reply.status(404).send({ error: 'Device not found' });
     return history;
+  });
+
+  // Where a brew controller's target temperature stepped, for the vertical
+  // change markers on the temperature charts. Derived from the logged setpoint
+  // series rather than kept as a log of its own — see SetpointChange.
+  app.get('/:id/setpoint-changes', async (req, reply) => {
+    const params = parse(idParamSchema, req.params, reply);
+    if (!params) return;
+    const query = parse(setpointChangesQuerySchema, req.query, reply);
+    if (!query) return;
+    const changes = deviceFallback.getSetpointChanges(params.id, query);
+    if (!changes) return reply.status(404).send({ error: 'Device not found' });
+    return changes;
   });
 
   // All-time total for a cumulative metric (e.g. total energy / water used).

@@ -6,7 +6,9 @@
  * numbers, so it renders the same against mock and live telemetry.
  */
 
+import { useState } from 'react';
 import type { Span } from './chartZoom';
+import { cardShift, markerFraction } from './eventMarkers';
 
 /**
  * Widen a value range so it spans at least `minSpan`, keeping the data centred.
@@ -305,13 +307,35 @@ export interface SparkSeries {
 }
 
 /**
+ * A moment worth marking with a vertical line across a mini chart — today, the
+ * brewer changing a fermenter's target temperature.
+ */
+export interface SparkMarker {
+  /** Epoch milliseconds. */
+  t: number;
+  /** Headline on hover, e.g. "18.0 -> 20.0". */
+  label: string;
+  /** Second, quieter line on hover — normally when it happened. */
+  detail?: string;
+}
+
+/**
  * A mini multi-series line chart sharing one Y-scale, plus an optional dotted
- * horizontal reference line (e.g. the setpoint). Like {@link Sparkline} but for
+ * horizontal reference line (e.g. the setpoint) and optional vertical event
+ * markers (e.g. where that setpoint was changed). Like {@link Sparkline} but for
  * comparing a couple of series at a glance; no area fill.
+ *
+ * Markers need `timeWindow` to place them, and hovering one shows a small card
+ * naming the event. That card is HTML rather than SVG because the plot is drawn
+ * with `preserveAspectRatio="none"` — text inside it would be stretched by
+ * whatever aspect the parent happens to give the chart.
  */
 export function MultiLineSparkline({
   series,
   refLine,
+  markers,
+  markerStroke = '#f59e0b',
+  timeWindow,
   height = 44,
   grow = false,
   minSpan,
@@ -320,12 +344,20 @@ export function MultiLineSparkline({
   series: SparkSeries[];
   /** A constant horizontal line, e.g. the target temperature. */
   refLine?: { value: number; stroke: string };
+  /** Vertical event lines; ignored without a `timeWindow` to place them in. */
+  markers?: SparkMarker[];
+  markerStroke?: string;
+  /** The time span the plot covers, needed to position {@link markers}. */
+  timeWindow?: { start: number; end: number };
   height?: number;
   grow?: boolean;
   /** Floor on the Y-span (see {@link withMinSpan}) so a tiny swing stays small. */
   minSpan?: number;
   className?: string;
 }): JSX.Element {
+  // Keyed by the marker's timestamp rather than its index: a poll that adds an
+  // older change would shift every index under a pointer that hasn't moved.
+  const [hovered, setHovered] = useState<number | null>(null);
   const w = 100;
   const renderedHeight = grow ? '100%' : height;
   const allValues = series.flatMap((s) => s.data);
@@ -346,40 +378,89 @@ export function MultiLineSparkline({
       )
       .join(' ');
 
+  const placed = timeWindow
+    ? (markers ?? []).flatMap((m) => {
+        const frac = markerFraction(m.t, timeWindow);
+        return frac == null ? [] : [{ marker: m, frac }];
+      })
+    : [];
+  const open = placed.find((p) => p.marker.t === hovered);
+
   return (
-    <svg
-      viewBox={`0 0 ${w} ${height}`}
-      preserveAspectRatio="none"
-      className={className}
-      style={{ height: renderedHeight, width: '100%', display: 'block' }}
-      aria-hidden
-    >
-      {refLine && (
-        <line
-          x1={0}
-          x2={w}
-          y1={toY(refLine.value)}
-          y2={toY(refLine.value)}
-          stroke={refLine.stroke}
-          strokeWidth={1.2}
-          strokeDasharray="1 2.5"
-          vectorEffect="non-scaling-stroke"
-        />
+    <div className={className} style={{ height: renderedHeight, position: 'relative' }}>
+      <svg
+        viewBox={`0 0 ${w} ${height}`}
+        preserveAspectRatio="none"
+        style={{ height: '100%', width: '100%', display: 'block' }}
+        aria-hidden
+      >
+        {refLine && (
+          <line
+            x1={0}
+            x2={w}
+            y1={toY(refLine.value)}
+            y2={toY(refLine.value)}
+            stroke={refLine.stroke}
+            strokeWidth={1.2}
+            strokeDasharray="1 2.5"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+        {drawable.map((s, i) => (
+          <path
+            key={i}
+            d={pathFor(s.data)}
+            fill="none"
+            stroke={s.stroke}
+            strokeWidth={1.5}
+            strokeDasharray={s.dashed ? '4 3' : undefined}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        {/* Over the traces, so a marker stays visible where a line crosses it
+            and wins the pointer at that crossing. */}
+        {placed.map(({ marker, frac }) => (
+          <g key={marker.t}>
+            <line
+              x1={frac * w}
+              x2={frac * w}
+              y1={0}
+              y2={height}
+              stroke={markerStroke}
+              strokeWidth={hovered === marker.t ? 2 : 1.2}
+              strokeOpacity={hovered === marker.t ? 1 : 0.75}
+              strokeDasharray="2 2"
+              vectorEffect="non-scaling-stroke"
+            />
+            {/* Hit area: the line itself is a hair wide, and on a phone this is
+                the whole target. */}
+            <rect
+              x={frac * w - 2}
+              y={0}
+              width={4}
+              height={height}
+              fill="transparent"
+              pointerEvents="all"
+              onPointerEnter={() => setHovered(marker.t)}
+              onPointerLeave={() => setHovered((cur) => (cur === marker.t ? null : cur))}
+            />
+          </g>
+        ))}
+      </svg>
+      {open && (
+        <div
+          className="pointer-events-none absolute z-10 whitespace-nowrap rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-[11px] leading-tight shadow-lg shadow-black/40"
+          style={{ left: `${open.frac * 100}%`, top: 2, transform: cardShift(open.frac) }}
+        >
+          <span className="font-semibold" style={{ color: markerStroke }}>
+            {open.marker.label}
+          </span>
+          {open.marker.detail && <span className="block text-zinc-400">{open.marker.detail}</span>}
+        </div>
       )}
-      {drawable.map((s, i) => (
-        <path
-          key={i}
-          d={pathFor(s.data)}
-          fill="none"
-          stroke={s.stroke}
-          strokeWidth={1.5}
-          strokeDasharray={s.dashed ? '4 3' : undefined}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
-    </svg>
+    </div>
   );
 }
 
