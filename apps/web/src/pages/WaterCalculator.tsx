@@ -12,6 +12,8 @@ import {
   UnitSuffix,
   trimNum,
 } from '../components/CalcUi';
+import { MoreIcon } from '../components/icons';
+import { Popover } from '../components/Popover';
 import {
   DEFAULT_DISTILLED_MASH_PH,
   DEFAULT_GRAIN_KG,
@@ -161,6 +163,27 @@ const DEFAULT_STATE: CalcState = {
  */
 const TARGET_IONS: Ion[] = IONS.filter((ion) => ion !== 'hco3');
 
+/** Per-browser: which built-in style presets are hidden from the button row. */
+const HIDDEN_PRESETS_KEY = 'water.hiddenPresets';
+
+function loadHiddenPresets(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDDEN_PRESETS_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function rememberHiddenPresets(next: Set<string>): Set<string> {
+  try {
+    localStorage.setItem(HIDDEN_PRESETS_KEY, JSON.stringify([...next]));
+  } catch {
+    // A hide list that doesn't stick isn't worth failing the page over.
+  }
+  return next;
+}
+
 /** Everything the mash-pH model yields for a given state. */
 function mashChemistry(target: WaterProfile, mash: MashState) {
   const buffer = mashBufferCapacity(mash.gristRatioLPerKg);
@@ -290,6 +313,10 @@ export function WaterCalculator(): JSX.Element {
   const [saved, setSaved] = useState<SavedWaterProfile[]>([]);
   const [savingName, setSavingName] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Which built-in style presets the brewer has hidden from the row — a view
+  // preference, not brewery data, so it lives per-browser rather than on the
+  // server the way a saved profile does.
+  const [hiddenPresets, setHiddenPresets] = useState<Set<string>>(loadHiddenPresets);
   const { auth } = useAuth();
   const mayEditProfiles = canControl(auth);
   useEffect(() => {
@@ -365,6 +392,15 @@ export function WaterCalculator(): JSX.Element {
     setState((s) => ({ ...s, mash: { ...s.mash, ...patch } }));
   const setSalt = (id: SaltId, v: number): void =>
     setState((s) => ({ ...s, salts: { ...s.salts, [id]: v } }));
+
+  const toggleHiddenPreset = (name: string): void =>
+    setHiddenPresets((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return rememberHiddenPresets(next);
+    });
+  const showAllPresets = (): void => setHiddenPresets(rememberHiddenPresets(new Set()));
 
   const autoSuggest = (): void =>
     setState((s) => {
@@ -526,9 +562,18 @@ export function WaterCalculator(): JSX.Element {
             </Card>
           </div>
 
-          <Card title="Target profile" hint="The flavour ions you want to brew with. Pick a preset to start, then tweak.">
-            <div className="mb-4 flex flex-wrap gap-1.5">
-              {TARGET_PRESETS.map((preset) => {
+          <Card
+            title="Target profile"
+            actions={
+              <TargetPresetMenu
+                hiddenPresets={hiddenPresets}
+                onToggle={toggleHiddenPreset}
+                onShowAll={showAllPresets}
+              />
+            }
+          >
+            <div className="mb-4 flex flex-wrap items-center gap-1.5">
+              {TARGET_PRESETS.filter((preset) => !hiddenPresets.has(preset.name)).map((preset) => {
                 const active = TARGET_IONS.every((ion) => target[ion] === preset.profile[ion]);
                 return (
                   <button
@@ -556,6 +601,22 @@ export function WaterCalculator(): JSX.Element {
                   </button>
                 );
               })}
+              {/* Every preset hidden reads as a bug unless the way back is right
+                  here — the ⋮ menu that hid them is easy to forget once the row
+                  it emptied is gone. */}
+              {hiddenPresets.size === TARGET_PRESETS.length && (
+                <span className="text-xs text-zinc-500">
+                  All style presets hidden —{' '}
+                  <button
+                    type="button"
+                    onClick={showAllPresets}
+                    className="font-medium text-zinc-300 underline-offset-2 hover:underline"
+                  >
+                    show them again
+                  </button>
+                  .
+                </span>
+              )}
             </div>
             {/* The brewery's own profiles, kept in a row of their own below the
                 style presets rather than mixed in with them. They're a
@@ -665,7 +726,14 @@ export function WaterCalculator(): JSX.Element {
                 {saveError && <p className="mt-2 text-xs text-red-400">{saveError}</p>}
               </div>
             )}
-            <IonGrid profile={target} onChange={setTargetIon} idPrefix="tgt" ions={TARGET_IONS} limits={limits} />
+            <IonGrid
+              profile={target}
+              onChange={setTargetIon}
+              idPrefix="tgt"
+              ions={TARGET_IONS}
+              limits={limits}
+              compact
+            />
             {/* Bicarbonate sits apart from the five flavour ions because it
                 behaves differently: it arrives already answered by the mash-pH
                 model, and typing here is an override rather than a first
@@ -689,6 +757,7 @@ export function WaterCalculator(): JSX.Element {
                       step={1}
                       ariaLabel="Bicarbonate target"
                       onChange={setTargetHco3}
+                      compact
                     />
                     <UnitSuffix>ppm</UnitSuffix>
                   </span>
@@ -706,15 +775,12 @@ export function WaterCalculator(): JSX.Element {
                   </button>
                 )}
               </div>
-              <p className="mt-2 text-xs leading-snug text-zinc-500">
-                {hco3Override == null
-                  ? 'Set from what the grist needs to hit its mash pH, not from the style — see Predicted mash pH. Type over it to state your own.'
-                  : `Your figure, overriding the ${Math.round(solvedHco3)} ppm the mash-pH model asks for. Predicted mash pH still grades the water you actually build.`}
-              </p>
+              {hco3Override != null && (
+                <p className="mt-2 text-xs leading-snug text-zinc-500">
+                  {`Your figure, overriding the ${Math.round(solvedHco3)} ppm the mash-pH model asks for. Predicted mash pH still grades the water you actually build.`}
+                </p>
+              )}
             </div>
-            <p className="mt-3 text-xs leading-snug text-zinc-500">
-              A range shown under an ion is an upper bound, not something to dose up to.
-            </p>
           </Card>
 
           <Card title="Salt additions">
@@ -733,7 +799,6 @@ export function WaterCalculator(): JSX.Element {
               >
                 Clear
               </button>
-              <span className="text-xs text-zinc-500">Best-fit for the target — review and adjust.</span>
             </div>
             <div className="divide-y divide-zinc-800/70">
               {SALTS.map((salt) => (
@@ -794,7 +859,7 @@ export function WaterCalculator(): JSX.Element {
             )}
           </Card>
 
-          <Card title="Resulting water" hint="Source + salts, compared to your target.">
+          <Card title="Resulting water">
             <div className="overflow-x-auto">
               <table className="w-full text-sm tabular-nums">
                 <thead>
@@ -846,11 +911,6 @@ export function WaterCalculator(): JSX.Element {
               <span className="text-zinc-600"> · </span>
               <span className="text-red-400">↑ above (can't reduce)</span>
             </p>
-            <p className="mt-1 text-xs text-zinc-600">
-              All values ppm (mg/L). Salts only add ions — to lower one, start from RO water. The
-              HCO₃⁻ target comes from the mash-pH model unless you've set it yourself.
-            </p>
-
             <div className="mt-4 grid grid-cols-2 gap-3">
               <Metric label="Hardness" value={`${Math.round(hardnessCaCO3(result))}`} unit={`ppm · ${caco3ToDH(hardnessCaCO3(result)).toFixed(1)} °dH`} />
               <Metric label="Alkalinity" value={`${Math.round(alkalinityCaCO3(result))}`} unit="ppm CaCO₃" />
@@ -1006,21 +1066,90 @@ export function WaterCalculator(): JSX.Element {
  * bicarbonate gets its own field with an Auto affordance the others don't need.
  * `limits` annotates the ions whose target is an upper bound.
  */
+/**
+ * The Target profile card's ⋮ menu: which built-in style presets show in the
+ * button row above. Only the six style presets are listed here — the
+ * brewery's own saved profiles already carry their own delete button, so a
+ * second hide control for those would just be two ways to do one thing.
+ */
+function TargetPresetMenu({
+  hiddenPresets,
+  onToggle,
+  onShowAll,
+}: {
+  hiddenPresets: Set<string>;
+  onToggle: (name: string) => void;
+  onShowAll: () => void;
+}): JSX.Element {
+  return (
+    <Popover
+      title="Show or hide style presets"
+      align="right"
+      width="w-56"
+      chevron={false}
+      triggerClassName="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"
+      label={<MoreIcon className="h-4 w-4 rotate-90" />}
+    >
+      {() => (
+        <>
+          <div className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+            Style presets
+          </div>
+          {TARGET_PRESETS.map((preset) => {
+            const hidden = hiddenPresets.has(preset.name);
+            return (
+              <label
+                key={preset.name}
+                className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm transition hover:bg-zinc-800"
+              >
+                <input
+                  type="checkbox"
+                  checked={!hidden}
+                  onChange={() => onToggle(preset.name)}
+                  className="h-3.5 w-3.5 shrink-0 rounded border-zinc-600 bg-zinc-950 accent-[#f87a68]"
+                />
+                <span className={hidden ? 'text-zinc-500' : 'text-zinc-300'}>{preset.name}</span>
+              </label>
+            );
+          })}
+          {hiddenPresets.size > 0 && (
+            <>
+              <div className="my-1 border-t border-zinc-800" />
+              <button
+                type="button"
+                onClick={onShowAll}
+                className="block w-full rounded-lg px-3 py-1.5 text-left text-sm text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+              >
+                Show all
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </Popover>
+  );
+}
+
 function IonGrid({
   profile,
   onChange,
   idPrefix,
   ions = IONS,
   limits,
+  compact = false,
 }: {
   profile: WaterProfile;
   onChange: (ion: Ion, value: number) => void;
   idPrefix: string;
   ions?: Ion[];
   limits?: IonLimits;
+  /** Narrower fields, packed into more columns — see {@link NumField}'s `compact`. */
+  compact?: boolean;
 }): JSX.Element {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+    <div
+      className={`grid gap-3 ${compact ? 'grid-cols-3 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3'}`}
+    >
       {ions.map((ion) => (
         <label key={ion} className="block" htmlFor={`${idPrefix}-${ion}`}>
           <span className="block text-xs font-medium text-zinc-400">
@@ -1034,6 +1163,7 @@ function IonGrid({
               step={1}
               ariaLabel={ION_META[ion].label}
               onChange={(v) => onChange(ion, v)}
+              compact={compact}
             />
             <UnitSuffix>ppm</UnitSuffix>
           </span>

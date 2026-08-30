@@ -11,15 +11,21 @@ import { useEffect, useState } from 'react';
 export function Card({
   title,
   hint,
+  actions,
   children,
 }: {
   title: string;
   hint?: string;
+  /** Rendered top-right of the title row — a menu button and the like. */
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }): JSX.Element {
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-300">{title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-300">{title}</h2>
+        {actions}
+      </div>
       {hint && <p className="mt-1 text-xs leading-snug text-zinc-500">{hint}</p>}
       <div className="mt-4">{children}</div>
     </section>
@@ -28,6 +34,14 @@ export function Card({
 
 export const fieldClass =
   'w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-right text-sm tabular-nums text-zinc-100 outline-none transition focus:border-[#f87a68]';
+
+/**
+ * A narrow variant for a field that only ever holds a few digits — a ppm
+ * target capped around 999, say. Same look as {@link fieldClass}, just not
+ * claiming the full width of whatever grid column it sits in.
+ */
+const compactFieldClass =
+  'w-16 rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-right text-sm tabular-nums text-zinc-100 outline-none transition focus:border-[#f87a68]';
 
 /** A label/hint stacked over a control (control passed as children). */
 export function Field({
@@ -101,6 +115,7 @@ export function NumField({
   max,
   ariaLabel,
   id,
+  compact = false,
 }: {
   value: number;
   onChange?: (value: number) => void;
@@ -109,6 +124,8 @@ export function NumField({
   max?: number;
   ariaLabel?: string;
   id?: string;
+  /** Narrower box — see {@link compactFieldClass}. */
+  compact?: boolean;
 }): JSX.Element {
   const [text, setText] = useState(() => trimNum(value));
   useEffect(() => {
@@ -135,7 +152,7 @@ export function NumField({
         const n = parseFloat(raw);
         onChange?.(Number.isFinite(n) ? Math.max(min, n) : 0);
       }}
-      className={fieldClass}
+      className={compact ? compactFieldClass : fieldClass}
     />
   );
 }

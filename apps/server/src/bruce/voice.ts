@@ -31,7 +31,7 @@
 import type { BrucePhase } from '@checklist/shared';
 import { pageLabel } from '../knowledge/chunk.js';
 import { embedQuery } from '../knowledge/embed.js';
-import { search } from '../knowledge/store.js';
+import { balanceSources, search } from '../knowledge/store.js';
 import { OpenAIError, openaiPost } from '../openai.js';
 import { BREWERY_PROMPT, libraryBlock, RECIPES_PROMPT } from './chat.js';
 import { recipeShelf } from './recipes.js';
@@ -137,6 +137,10 @@ with \`search_library\`.
   what the brewery tools below are for.
 - Say which book an answer came from, in passing: "Palmer puts it at about
   five point four". Do not read page numbers out loud unless asked.
+- The books answer the question; an exBEERiment is one split batch and a small
+  tasting panel. Mention one only when it changes what you would say — because
+  it contradicts you, or because it says a worry isn't worth acting on — and
+  never more than one in an answer.
 - If the search comes back empty, say the books don't cover it and answer from
   general brewing knowledge, marked as such.`;
 
@@ -149,6 +153,15 @@ const VOICE_RETRIEVE_K = 4;
 
 /** Same relevance floor as the written chat — see chat.ts's MIN_SCORE. */
 const MIN_SCORE = 0.25;
+
+/** Wider pool to balance from — see chat.ts's RETRIEVE_POOL. */
+const VOICE_RETRIEVE_POOL = 16;
+
+/**
+ * Tighter than the written chat's cap: a spoken answer has no room to set out
+ * what a triangle test is worth, so at most one exBEERiment reaches it.
+ */
+const MAX_EXBEERIMENT_PASSAGES = 1;
 
 const SEARCH_LIBRARY_TOOL = {
   type: 'function',
@@ -183,7 +196,11 @@ function renderPassage(chunk: {
 }
 
 async function searchLibrary(query: string): Promise<string> {
-  const hits = search(await embedQuery(query), VOICE_RETRIEVE_K, MIN_SCORE);
+  const hits = balanceSources(
+    search(await embedQuery(query), VOICE_RETRIEVE_POOL, MIN_SCORE),
+    VOICE_RETRIEVE_K,
+    MAX_EXBEERIMENT_PASSAGES,
+  );
   if (hits.length === 0) {
     return 'Nothing in the library matched that. Say the books do not cover it, then answer from general brewing knowledge and make clear that is what you are doing.';
   }

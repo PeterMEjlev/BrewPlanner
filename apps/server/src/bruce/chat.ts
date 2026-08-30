@@ -29,7 +29,7 @@ import type {
 import { MAX_TOOL_RESULT_CHARS } from '@checklist/shared';
 import { pageLabel } from '../knowledge/chunk.js';
 import { embedQuery } from '../knowledge/embed.js';
-import { knowledgeDir, libraryOutline, search } from '../knowledge/store.js';
+import { balanceSources, knowledgeDir, libraryOutline, search } from '../knowledge/store.js';
 import type { StreamEvent } from '../openai.js';
 import { openaiKey, OpenAIError, openaiGet, openaiPost, openaiStream } from '../openai.js';
 import { getSetting, setSetting } from '../repo.js';
@@ -207,6 +207,19 @@ export async function listChatModels(): Promise<BruceChatModel[]> {
 const RETRIEVE_K = 6;
 
 /**
+ * Candidates fetched before balancing. Wider than RETRIEVE_K so there are book
+ * passages left to promote when the top of the list is all exBEERiments.
+ */
+const RETRIEVE_POOL = 24;
+
+/**
+ * How many of the six slots exBEERiments may take. Two is enough to answer "has
+ * anyone actually tested this" without the passages themselves pushing the
+ * answer into a survey of them.
+ */
+const MAX_EXBEERIMENT_PASSAGES = 2;
+
+/**
  * Relevance floor. Without one, a question the books don't cover still returns
  * the six least-irrelevant paragraphs and the model builds an answer from
  * them. 0.25 cosine is well below anything genuinely on-topic for this
@@ -248,9 +261,15 @@ Don't bold everything: if half the answer is bold, none of it is.
 You have been given passages from this brewery's library. It holds two kinds of
 source, and they carry different weight:
 
-- Brewing books, transcribed with their page numbers.
+- Brewing books, transcribed with their page numbers. These are the backbone of
+  an answer: mechanism, targets, and process that hold across brew days.
 - Brülosophy exBEERiment catalogues — one entry per experiment, each with its
   purpose, its result and the triangle-test p-value, and a link to the article.
+  Supporting evidence, and a narrow kind of it.
+
+Most of the shelf is exBEERiments, so one will often be among the passages you
+are handed whether or not the question calls for it. A retrieved passage is not
+an obligation to cite it.
 
 Answer from those passages.
 
@@ -266,8 +285,17 @@ Answer from those passages.
   brewing advice is fine — just don't attribute it to the library.
 - Never invent a page number, a chapter, a p-value, or a quotation.
 
-An exBEERiment is evidence of a particular shape, so say what it actually
-shows rather than reporting it as a finding:
+Bring in an exBEERiment only where it changes the answer. It earns its place
+when the brewer asks what a variable does in practice, when a test contradicts
+the received wisdom you were about to state, or when it says a worry they hold
+is not worth acting on. Leave it out when the books already answer the
+question, when it would only restate a recommendation you have made anyway, or
+when the match is loose — a different beer, a different scale, a neighbouring
+variable. Most answers need none, and an answer rarely needs more than one.
+Don't open with one, and don't stack several to show the ground was covered.
+
+An exBEERiment is evidence of a particular shape, so when you do use one, say
+what it actually shows rather than reporting it as a finding:
 
 - One brewer, one split batch, a small tasting panel. A significant result means
   that panel could tell the two beers apart — not that either was better, and
@@ -875,7 +903,11 @@ export async function answerQuestion(
     reportTool(call);
   };
   onPhase({ phase: 'library' });
-  const hits = search(await embedQuery(question), RETRIEVE_K, MIN_SCORE);
+  const hits = balanceSources(
+    search(await embedQuery(question), RETRIEVE_POOL, MIN_SCORE),
+    RETRIEVE_K,
+    MAX_EXBEERIMENT_PASSAGES,
+  );
 
   const sources: BruceChatSource[] = [];
   const seen = new Set<string>();

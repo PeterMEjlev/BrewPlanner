@@ -458,6 +458,33 @@ export function search(query: Float32Array, k: number, minScore = 0): SearchHit[
   return best;
 }
 
+/** exBEERiment catalogues are the `brulosophy_*` files; everything else is a book. */
+function isExbeeriment(chunk: KnowledgeChunk): boolean {
+  return /^brulosophy[_-]/i.test(chunk.file);
+}
+
+/**
+ * Trim `hits` to `k`, limiting how many slots exBEERiments may take.
+ *
+ * The shelf is lopsided — fourteen exBEERiment catalogues against two books —
+ * so an unweighted top-k is usually all exBEERiments, and an answer grounded in
+ * it becomes a run-through of split-batch tests whether or not the question
+ * wanted one. Capping leaves room for the books to be heard.
+ *
+ * The surplus is not thrown away while slots are empty: when the books have
+ * nothing above the relevance floor, the capped exBEERiments fill in rather
+ * than handing the model less to answer from.
+ */
+export function balanceSources(hits: SearchHit[], k: number, maxExbeeriments: number): SearchHit[] {
+  const experiments = hits.filter((hit) => isExbeeriment(hit.chunk));
+  const books = hits.filter((hit) => !isExbeeriment(hit.chunk));
+  const kept = [...books, ...experiments.slice(0, maxExbeeriments)];
+  if (kept.length < k) {
+    kept.push(...experiments.slice(maxExbeeriments, maxExbeeriments + (k - kept.length)));
+  }
+  return kept.sort((a, b) => b.score - a.score).slice(0, k);
+}
+
 /** Scale a vector to unit length in place, so dot product == cosine similarity. */
 export function normalize(vector: Float32Array): Float32Array {
   let sum = 0;

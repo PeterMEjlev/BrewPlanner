@@ -193,21 +193,6 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }): JS
 
   return (
     <>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-sm font-semibold text-amber-300">
-          {open.length} open
-        </span>
-        <TodoPageMenu
-          controllable={controllable}
-          hasOpen={open.length > 0}
-          hasCompleted={completed.length > 0}
-          onExpandAll={() => setAllCollapsed(false)}
-          onCollapseAll={() => setAllCollapsed(true)}
-          onMarkAllDone={markAllDone}
-          onClearCompleted={clearCompleted}
-        />
-      </div>
-
       {controllable && (
         <Card>
           <CardHead icon={PlusCircleIcon} title="Add task" divider={false} />
@@ -244,9 +229,24 @@ function TodoManager({ onError }: { onError: (msg: string | null) => void }): JS
         </Card>
       )}
 
-      <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_23rem]">
+      <div
+        className={`grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_23rem] ${controllable ? 'mt-4' : ''}`}
+      >
         <Card>
-          <CardHead icon={TodoIcon} title="Open tasks" />
+          <CardHead icon={TodoIcon} title="Open tasks">
+            <span className="shrink-0 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-300">
+              {open.length} open
+            </span>
+            <TodoPageMenu
+              controllable={controllable}
+              hasOpen={open.length > 0}
+              hasCompleted={completed.length > 0}
+              onExpandAll={() => setAllCollapsed(false)}
+              onCollapseAll={() => setAllCollapsed(true)}
+              onMarkAllDone={markAllDone}
+              onClearCompleted={clearCompleted}
+            />
+          </CardHead>
           <div className="flex flex-col gap-6 p-4">
             {filled.length === 0 ? (
               <p className="py-8 text-center text-sm text-zinc-500">
