@@ -4,6 +4,7 @@ import type {
   BrewSessionRecipeSnapshot,
   BrewSessionRigSample,
   BrewSessionRigStats,
+  BrewSessionStageMarker,
   BrewSessionStatus,
   BrewSessionTempStats,
   RecipeBrewCount,
@@ -19,7 +20,12 @@ import {
 } from '@checklist/shared';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { brewSessionRigSamples, brewSessions, recipes } from '../db/schema.js';
+import {
+  brewSessionRigSamples,
+  brewSessionStageMarkers,
+  brewSessions,
+  recipes,
+} from '../db/schema.js';
 import { recipeFamilyId, recipeHeadlines } from '../recipeRepo.js';
 import { fermentationSummary } from './telemetry.js';
 
@@ -256,6 +262,7 @@ export function getBrewSession(id: number): BrewSessionDetail | null {
     ...brewSession,
     rigSamples,
     rigStats: rigStats(rigSamples),
+    stageMarkers: listStageMarkers(id),
     // Derived on read rather than stored: the readings are the record, and the
     // window moves whenever the brewer corrects the pitch/package dates.
     fermentation: fermentationSummary(brewSession),
@@ -275,6 +282,53 @@ export function listRigSamples(brewSessionId: number): BrewSessionRigSample[] {
     .where(eq(brewSessionRigSamples.brewSessionId, brewSessionId))
     .orderBy(asc(brewSessionRigSamples.recordedAt))
     .all();
+}
+
+/** The brew stages this session passed through, oldest first. */
+export function listStageMarkers(brewSessionId: number): BrewSessionStageMarker[] {
+  return db
+    .select({
+      index: brewSessionStageMarkers.stageIndex,
+      name: brewSessionStageMarkers.name,
+      at: brewSessionStageMarkers.recordedAt,
+    })
+    .from(brewSessionStageMarkers)
+    .where(eq(brewSessionStageMarkers.brewSessionId, brewSessionId))
+    .orderBy(asc(brewSessionStageMarkers.recordedAt))
+    .all();
+}
+
+/**
+ * Record the stages the rig says this brew has entered.
+ *
+ * Called on every sampler sweep with the rig's whole marker list, so it has to
+ * be idempotent: a stage already recorded is left alone unless the rig now
+ * reports it differently, which happens when the brewer steps back out of a
+ * stage and into it again and the rig re-stamps the mark.
+ *
+ * Only ever adds and corrects, never removes. The rig drops its markers when it
+ * reboots or when a new brew starts, and a mid-brew-day power cycle must not
+ * take the morning's stages with it — an extra line for a stage the brewer
+ * stepped back out of is a far smaller loss than the record of the brew day.
+ */
+export function recordStageMarkers(
+  brewSessionId: number,
+  markers: BrewSessionStageMarker[],
+): void {
+  for (const marker of markers) {
+    db.insert(brewSessionStageMarkers)
+      .values({
+        brewSessionId,
+        stageIndex: marker.index,
+        name: marker.name,
+        recordedAt: marker.at,
+      })
+      .onConflictDoUpdate({
+        target: [brewSessionStageMarkers.brewSessionId, brewSessionStageMarkers.stageIndex],
+        set: { name: marker.name, recordedAt: marker.at },
+      })
+      .run();
+  }
 }
 
 /** Min/mean/max over one pot's samples, or null when that pot logged nothing. */

@@ -299,6 +299,36 @@ export const brewSessionRigSamples = sqliteTable(
 );
 
 /**
+ * Which brew stage the rig was on, and when it got there, over a brew session
+ * (see brewSessions/sampler.ts). Alongside the temperature samples rather than
+ * folded into them: a stage change is an event a few times a brew day, not a
+ * reading every thirty seconds, and it has to survive a sweep where every
+ * sensor failed.
+ *
+ * One row per stage, not per transition — the rig's markers are a prefix of its
+ * stage list, so stepping back out of a stage and into it again re-stamps the
+ * same mark rather than adding a second one, and the unique key below is what
+ * makes the sampler's repeated writes idempotent.
+ */
+export const brewSessionStageMarkers = sqliteTable(
+  'brew_session_stage_markers',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    brewSessionId: integer('brew_session_id')
+      .notNull()
+      .references(() => brewSessions.id, { onDelete: 'cascade' }),
+    /** The rig's index into its stage list; its length for the "brew finished" mark. */
+    stageIndex: integer('stage_index').notNull(),
+    /** The rig's name for the stage, snapshotted so a later rename can't rewrite history. */
+    name: text('name').notNull(),
+    recordedAt: text('recorded_at').notNull(),
+  },
+  (t) => [
+    unique('brew_session_stage_markers_session_stage_unique').on(t.brewSessionId, t.stageIndex),
+  ],
+);
+
+/**
  * Satellite devices that push telemetry to the hub (fermentation-pressure Pi,
  * brew controller, …). Each device authenticates with its own API key; only a
  * SHA-256 hash of that key is stored. The key is high-entropy and random, so an

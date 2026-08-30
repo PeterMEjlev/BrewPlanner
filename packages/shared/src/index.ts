@@ -599,6 +599,29 @@ export interface BrewSessionRigSample {
   hlt: number | null;
 }
 
+/**
+ * A brew stage the rig entered during this brew session — "Mash in" at 09:12,
+ * "Boil" at 11:40 — kept so the session's temperature curve can say what the
+ * brewer was doing at each turn in it.
+ *
+ * Copied off the rig as it happens (see brewSessions/sampler.ts) rather than
+ * read back later: the rig's stage markers belong to its *current* session and
+ * are wiped when the next brew starts, so a marker not captured on the day is
+ * gone. A session brewed with the rig off, logged after the fact, or brewed
+ * before the hub started recording these simply has none.
+ */
+export interface BrewSessionStageMarker {
+  /**
+   * The rig's position in its stage list. Equal to the list's length for the
+   * marker it writes when the brew is finished, which has no stage of its own.
+   */
+  index: number;
+  /** The rig's own name for the stage, snapshotted so a later rename can't rewrite history. */
+  name: string;
+  /** When the stage was entered (ISO-8601), from the rig's clock. */
+  at: string;
+}
+
 /** Min/mean/max over a logged series. Null series are reported as null, not zeroes. */
 export interface BrewSessionTempStats {
   min: number;
@@ -643,6 +666,8 @@ export interface BrewSessionDetail extends BrewSession {
   /** The rig's pot temperatures, logged while the brew session was in progress. */
   rigSamples: BrewSessionRigSample[];
   rigStats: BrewSessionRigStats;
+  /** Stage changes over the brew day, oldest first; empty when none were captured. */
+  stageMarkers: BrewSessionStageMarker[];
   fermentation: BrewSessionFermentation;
 }
 

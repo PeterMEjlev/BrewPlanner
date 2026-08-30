@@ -366,6 +366,61 @@ test('the rig log follows the brew session, and stops when the batch moves on', 
   assert.equal(inProgress().includes(brewSession.id), false);
 });
 
+test('the brew stages the rig stepped through are kept with the entry', async () => {
+  const { brewSessions, recipes } = await boot();
+  const saved = recipes.createRecipe(recipe('Stage Marks'));
+  const brewSession = brewSessions.startBrewSession(saved.id, recipes.getRecipe(saved.id)!);
+
+  const at = (minute: number): string =>
+    new Date(Date.parse('2026-07-14T08:00:00.000Z') + minute * 60_000).toISOString();
+
+  brewSessions.recordStageMarkers(brewSession.id, [
+    { index: 0, name: 'Heating', at: at(0) },
+    { index: 1, name: 'Mash', at: at(30) },
+  ]);
+
+  // The sampler hands over the rig's whole marker list on every sweep, so
+  // re-recording what is already there must not multiply it.
+  brewSessions.recordStageMarkers(brewSession.id, [
+    { index: 0, name: 'Heating', at: at(0) },
+    { index: 1, name: 'Mash', at: at(30) },
+    { index: 2, name: 'Boil', at: at(95) },
+  ]);
+
+  assert.deepEqual(
+    brewSessions.getBrewSession(brewSession.id)!.stageMarkers,
+    [
+      { index: 0, name: 'Heating', at: at(0) },
+      { index: 1, name: 'Mash', at: at(30) },
+      { index: 2, name: 'Boil', at: at(95) },
+    ],
+  );
+
+  // Stepping back out of a stage and into it again re-stamps the rig's mark;
+  // the entry follows it rather than keeping the first, wrong attempt.
+  brewSessions.recordStageMarkers(brewSession.id, [{ index: 2, name: 'Boil', at: at(101) }]);
+  const restamped = brewSessions.getBrewSession(brewSession.id)!.stageMarkers;
+  assert.equal(restamped.length, 3);
+  assert.equal(restamped[2]!.at, at(101));
+
+  // A rig that reboots mid-brew comes back with an empty marker list. The
+  // morning's stages are not the rig's to forget on the entry's behalf.
+  brewSessions.recordStageMarkers(brewSession.id, []);
+  assert.equal(brewSessions.getBrewSession(brewSession.id)!.stageMarkers.length, 3);
+
+  // And they belong to this entry alone.
+  const other = brewSessions.startBrewSession(saved.id, recipes.getRecipe(saved.id)!);
+  assert.deepEqual(brewSessions.getBrewSession(other.id)!.stageMarkers, []);
+});
+
+test('a brew session with no rig stages reports none rather than failing', async () => {
+  const { brewSessions, recipes } = await boot();
+  const saved = recipes.createRecipe(recipe('No Stages'));
+  const brewSession = brewSessions.startBrewSession(saved.id, recipes.getRecipe(saved.id)!);
+  // Every entry brewed before the hub started recording these is this case.
+  assert.deepEqual(brewSessions.getBrewSession(brewSession.id)!.stageMarkers, []);
+});
+
 test('fermentation figures are read from the fermenter over the batch window', async () => {
   const { brewSessions, recipes, devices } = await boot();
   const saved = recipes.createRecipe(recipe('Kveik Pale'));

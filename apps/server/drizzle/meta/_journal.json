@@ -218,6 +218,13 @@
       "when": 1787921461292,
       "tag": "0030_tense_mephisto",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1788120776686,
+      "tag": "0031_mean_white_tiger",
+      "breakpoints": true
     }
   ]
 }

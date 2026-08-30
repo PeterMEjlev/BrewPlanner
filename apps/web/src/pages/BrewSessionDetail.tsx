@@ -1,6 +1,7 @@
 import type {
   BrewSessionDetail,
   BrewSessionRigSample,
+  BrewSessionStageMarker,
   BrewSessionStatus,
   BrewSessionTempStats,
   RecipeDetail,
@@ -19,6 +20,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -35,6 +37,8 @@ import {
   gravityText,
   targetDelta,
 } from '../brewSessions';
+import { useRigTheme } from '../components/brewsystem/rigTheme';
+import { VESSELS, vesselColor } from '../components/brewsystem/vessels';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
 import { SheetSection } from '../components/SheetSection';
@@ -55,15 +59,15 @@ import { asCleanMessage, clockTime, dateTime } from '../util';
  */
 
 /**
- * The rig's three pots, coloured as the rig's own touchscreen colours them (see
- * components/brewsystem/theme.ts) so a curve here reads as the same vessel the
- * Brew System page shows.
+ * Colour for the vertical stage marks. Deliberately not one of the rig's
+ * themeable colours: the three vessel traces own the palette here, and a stage
+ * line is an annotation on them rather than a fourth thing being measured.
  */
-const POT_LINES = [
-  { key: 'bk' as const, label: 'Boil kettle', color: '#ef4444' },
-  { key: 'mlt' as const, label: 'Mash tun', color: '#f97316' },
-  { key: 'hlt' as const, label: 'Hot liquor', color: '#3b82f6' },
-];
+const STAGE_MARK = '#a1a1aa';
+
+/** Font size of a stage mark's label, and the rough per-character width at it. */
+const STAGE_LABEL_FONT = 11;
+const STAGE_LABEL_CHAR = STAGE_LABEL_FONT * 0.55;
 
 /** The page's cards, in the order they appear. */
 type SectionKey = 'stage' | 'brewSession' | 'rig' | 'fermentation' | 'notes';
@@ -599,6 +603,7 @@ export function BrewSessionDetailPage(): JSX.Element {
           <RigTemperatures
             samples={brewSession.rigSamples}
             stats={brewSession.rigStats}
+            stageMarkers={brewSession.stageMarkers}
             collapsed={collapsed}
             onToggle={toggle}
           />
@@ -808,14 +813,20 @@ function nextStage(status: BrewSessionStatus): BrewSessionStatus | null {
 function RigTemperatures({
   samples,
   stats,
+  stageMarkers,
   collapsed,
   onToggle,
 }: {
   samples: BrewSessionRigSample[];
   stats: BrewSessionDetail['rigStats'];
+  stageMarkers: BrewSessionStageMarker[];
   collapsed: Record<SectionKey, boolean>;
   onToggle: (section: SectionKey) => void;
 }): JSX.Element | null {
+  // The vessels' own names and the rig's own colours, from the same source the
+  // Overview card and the Brew System panel read — so MLT is the green it is
+  // everywhere else, and stays that colour if the rig is re-themed.
+  const theme = useRigTheme();
   const data = useMemo(
     () =>
       samples.map((sample) => ({
@@ -832,6 +843,21 @@ function RigTemperatures({
     return { min: data[0]!.t, max: data[data.length - 1]!.t };
   }, [data]);
   const axis = useMemo(() => timeAxis(span), [span]);
+
+  // Only the marks that fall inside the logged curve can be drawn against it.
+  // A stage entered before the rig started logging (or after the batch moved on
+  // to fermenting) has no x to sit at, and recharts would pin it to an axis edge
+  // where it would read as a stage that began at the very start of the brew.
+  const marks = useMemo(
+    () =>
+      span == null
+        ? []
+        : stageMarkers.flatMap((marker) => {
+            const t = Date.parse(marker.at);
+            return t >= span.min && t <= span.max ? [{ ...marker, t }] : [];
+          }),
+    [stageMarkers, span],
+  );
 
   if (samples.length === 0) return null;
 
@@ -878,13 +904,13 @@ function RigTemperatures({
                 return [Number.isFinite(n) ? `${n.toFixed(1)} °C` : '—', name];
               }}
             />
-            {POT_LINES.map((pot) => (
+            {VESSELS.map((vessel) => (
               <Line
-                key={pot.key}
+                key={vessel.key}
                 type="monotone"
-                dataKey={pot.key}
-                name={pot.label}
-                stroke={pot.color}
+                dataKey={vessel.key}
+                name={vessel.label}
+                stroke={vesselColor(theme, vessel)}
                 strokeWidth={2}
                 dot={false}
                 // A sensor that dropped out leaves a gap rather than a straight
@@ -893,28 +919,103 @@ function RigTemperatures({
                 isAnimationActive={false}
               />
             ))}
+            {/* After the traces, so a stage mark reads over the curve it
+                annotates rather than under it. */}
+            {marks.map((mark) => (
+              <ReferenceLine
+                key={`${mark.index}:${mark.at}`}
+                x={mark.t}
+                stroke={STAGE_MARK}
+                strokeWidth={1}
+                strokeDasharray="4 4"
+                label={<StageMarkLabel mark={mark} />}
+              />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
-        {POT_LINES.map((pot) => (
-          <PotStats key={pot.key} label={pot.label} color={pot.color} stats={stats[pot.key]} />
+        {VESSELS.map((vessel) => (
+          <PotStats
+            key={vessel.key}
+            label={vessel.label}
+            name={vessel.name}
+            color={vesselColor(theme, vessel)}
+            stats={stats[vessel.key]}
+          />
         ))}
       </div>
       <p className="mt-3 text-xs text-zinc-600">
         Logged from the rig while this was in its brew session. Kept with the entry rather than with
         the fleet's telemetry, so the curve is still here years later.
+        {marks.length > 0 &&
+          ' The dashed marks are the brew stages the rig stepped through, at the times it stepped.'}
       </p>
     </Section>
   );
 }
 
+/**
+ * A stage mark's name and the time it was entered, written up the line.
+ *
+ * Rotated rather than laid across the top because stages cluster — mash out and
+ * sparge can be minutes apart on a five-hour chart — and horizontal labels would
+ * overlap exactly where the brew day is busiest. Vertical ones can't collide
+ * however close two marks fall.
+ *
+ * Handed to ReferenceLine as an element, not a render function: recharts treats
+ * a function label as a component type, and a fresh closure each render would
+ * remount the label every time.
+ */
+function StageMarkLabel({
+  viewBox,
+  mark,
+}: {
+  /** The reference line's box, supplied by recharts: zero-width, plot-tall. */
+  viewBox?: { x: number; y: number; height: number };
+  mark: BrewSessionStageMarker & { t: number };
+}): JSX.Element | null {
+  if (!viewBox) return null;
+  const { x, y, height } = viewBox;
+  // Anchored at the top of the plot and ending there: rotating -90° about the
+  // anchor turns "extends left" into "extends down", so the text hangs below the
+  // top edge and reads upward, whatever its length.
+  const px = x + 11;
+  const py = y + 4;
+  // A rotated label's length is spent on the plot's *height*, and the rig's
+  // stage names are the brewer's own words. Clip one that would otherwise run
+  // out through the time axis.
+  const label = fitStageLabel(`${mark.name} · ${clockTime(mark.at)}`, height - 8);
+  return (
+    <text
+      x={px}
+      y={py}
+      transform={`rotate(-90 ${px} ${py})`}
+      textAnchor="end"
+      fontSize={STAGE_LABEL_FONT}
+      fill={STAGE_MARK}
+    >
+      {label}
+    </text>
+  );
+}
+
+/** Trim a stage label to what the plot is tall enough to seat, ellipsis and all. */
+function fitStageLabel(label: string, available: number): string {
+  const max = Math.floor(available / STAGE_LABEL_CHAR);
+  if (max < 2) return '';
+  return label.length <= max ? label : `${label.slice(0, max - 1).trimEnd()}…`;
+}
+
 function PotStats({
   label,
+  name,
   color,
   stats,
 }: {
   label: string;
+  /** Spelled out under the short name, since the card has room for it. */
+  name: string;
   color: string;
   stats: BrewSessionTempStats | null;
 }): JSX.Element {
@@ -922,7 +1023,8 @@ function PotStats({
     <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} aria-hidden />
-        <span className="text-xs font-medium text-zinc-400">{label}</span>
+        <span className="text-xs font-medium text-zinc-300">{label}</span>
+        <span className="truncate text-xs text-zinc-500">{name}</span>
       </div>
       <p className="mt-1 text-sm text-zinc-200">
         {stats
