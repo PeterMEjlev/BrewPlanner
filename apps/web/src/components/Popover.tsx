@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
+/** The field-shaped trigger most callers want. */
+const DEFAULT_TRIGGER =
+  'flex max-w-[13rem] items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 transition hover:border-zinc-600 hover:text-zinc-100';
+
 /**
  * A small anchored popover: a trigger button and a panel that closes on
  * Escape, on a click outside, or when the caller says so.
@@ -14,6 +18,8 @@ export function Popover({
   title,
   align = 'left',
   width = 'w-72',
+  chevron = true,
+  triggerClassName = DEFAULT_TRIGGER,
   children,
 }: {
   /** Trigger contents. */
@@ -22,6 +28,14 @@ export function Popover({
   title: string;
   align?: 'left' | 'right';
   width?: string;
+  /**
+   * Whether the trigger carries the little "opens a menu" arrow. An icon-only
+   * trigger (the To-Do page's ⋮ button) reads as a menu already, and the arrow
+   * only crowds it.
+   */
+  chevron?: boolean;
+  /** Trigger styling, for a menu that isn't shaped like a field. */
+  triggerClassName?: string;
   /** Panel contents. Receives `close` so a row can dismiss the menu. */
   children: (close: () => void) => ReactNode;
 }): JSX.Element {
@@ -52,10 +66,10 @@ export function Popover({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex max-w-[13rem] items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 transition hover:border-zinc-600 hover:text-zinc-100"
+        className={triggerClassName}
       >
         {label}
-        <span className="text-zinc-600">▾</span>
+        {chevron && <span className="text-zinc-600">▾</span>}
       </button>
       {open && (
         <div

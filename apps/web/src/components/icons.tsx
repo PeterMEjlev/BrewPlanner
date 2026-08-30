@@ -472,6 +472,59 @@ export function CarbonationIcon(props: IconProps): JSX.Element {
   );
 }
 
+// --- Card headers and row actions -------------------------------------------
+
+/** A folder — the To-Do page's category card. */
+export function FolderIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M3 7a2 2 0 0 1 2-2h3.6a2 2 0 0 1 1.5.7L11.5 7H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </Svg>
+  );
+}
+
+/** A ticked circle — the "done" half of a list. */
+export function CheckCircleIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.2 12.3 2.6 2.6 5-5.4" />
+    </Svg>
+  );
+}
+
+/** A plus in a circle — "add one of these" above a form. */
+export function PlusCircleIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8.5v7M8.5 12h7" />
+    </Svg>
+  );
+}
+
+/** A pencil — put a row into edit mode. */
+export function PencilIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="m16.6 4.4 3 3L8.4 18.6 4.5 19.5l.9-3.9z" />
+      <path d="m14.2 6.8 3 3" />
+    </Svg>
+  );
+}
+
+/** A waste bin — delete a row for good. */
+export function TrashIcon(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M4 7h16" />
+      <path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7" />
+      <path d="M6.5 7 7.4 19a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4L17.5 7" />
+      <path d="M10.5 10.5v6M13.5 10.5v6" />
+    </Svg>
+  );
+}
+
 // --- Music (brewery speaker) ------------------------------------------------
 
 /** A musical note — the kiosk home shortcut into the now-playing screen. */
