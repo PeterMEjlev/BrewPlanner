@@ -20,6 +20,7 @@ import {
   pricingInfo,
   recipeCost,
 } from './prices.js';
+import { countUnits, weightToGrams } from './ingredientUnits.js';
 
 /**
  * Brewer's Friend integration. The user's read-only API key is held server-side
@@ -718,65 +719,10 @@ function lovibondToEbc(lovibond: unknown): number | null {
   return Math.max(0, Math.round((l * 1.3546 - 0.76) * 1.97 * 10) / 10);
 }
 
-/**
- * An ingredient weight in grams, for costing. Returns null for an amount we
- * can't read, which leaves that line unpriced rather than free.
- */
-function toGrams(amount: unknown, unit: unknown): number | null {
-  const n = Number(str(amount));
-  if (!Number.isFinite(n) || n <= 0) return null;
-  switch (str(unit).toLowerCase()) {
-    case 'g':
-    case 'gram':
-    case 'grams':
-      return n;
-    case 'kg':
-      return n * 1000;
-    case 'oz':
-      return n * 28.3495;
-    case 'lb':
-    case 'lbs':
-      return n * 453.592;
-    case 'mg':
-      return n / 1000;
-    // Countable units (packets, vials) can't be converted to a weight — see
-    // toUnits, which costs them per pack instead.
-    case 'pkg':
-    case 'pkgs':
-    case 'each':
-    case 'items':
-    case 'vial':
-      return null;
-    default:
-      // Brewer's Friend defaults these recipes to metric weights.
-      return str(unit) === '' ? n : null;
-  }
-}
-
-/**
- * A count of packs, for a recipe that measures an ingredient in whole units
- * rather than grams — "1 pkg" of liquid yeast, which the shop also sells without
- * a stated weight. Null for anything expressed as a weight.
- */
-function toUnits(amount: unknown, unit: unknown): number | null {
-  const n = Number(str(amount));
-  if (!Number.isFinite(n) || n <= 0) return null;
-  switch (str(unit).toLowerCase()) {
-    case 'pkg':
-    case 'pkgs':
-    case 'each':
-    case 'items':
-    case 'vial':
-      return n;
-    default:
-      return null;
-  }
-}
-
 function fermentables(r: BrewersFriendRecipe): RecipeFermentable[] {
   return (r.fermentables ?? []).map((f) => {
     const name = str(f.name);
-    const grams = toGrams(f.amount, f.unit);
+    const grams = weightToGrams(str(f.amount), str(f.unit), 'assume-grams');
     const ebc = lovibondToEbc(f.lovibond);
     const directPpg = numberOrNull(f.ppg ?? f.ppg_points ?? f.points ?? f.potential);
     const yieldPercent = numberOrNull(f.yield);
@@ -848,7 +794,7 @@ function hops(r: BrewersFriendRecipe): RecipeHop[] {
     const stage = hopStage(use);
     const time = str(h.hoptime);
     const name = str(h.name);
-    const grams = toGrams(h.amount, h.unit);
+    const grams = weightToGrams(str(h.amount), str(h.unit), 'assume-grams');
     return {
       grams,
       price: grams == null ? null : priceHop(name, grams),
@@ -888,8 +834,8 @@ function yeasts(r: BrewersFriendRecipe): RecipeYeast[] {
     const tempUnit = (str(y.temperatureunit) || str(y.tempunit) || str(y.unittemp))
       .toLowerCase();
     const name = str(y.name);
-    const grams = toGrams(y.amount, y.unit);
-    const units = toUnits(y.amount, y.unit);
+    const grams = weightToGrams(str(y.amount), str(y.unit), 'assume-grams');
+    const units = countUnits(str(y.amount), str(y.unit));
     return {
       grams,
       units,
@@ -934,7 +880,7 @@ function otherIngredients(r: BrewersFriendRecipe): RecipeOtherIngredient[] {
     .map((m) => {
       const name = str(m.name);
       const grams = otherGrams(m.amount, m.unit);
-      const units = toUnits(m.amount, m.unit);
+      const units = countUnits(str(m.amount), str(m.unit));
       return {
         name,
         amount: str(m.amount),
@@ -964,7 +910,7 @@ function otherIngredients(r: BrewersFriendRecipe): RecipeOtherIngredient[] {
  * sells by weight but the recipe measures by the spoonful stays unconvertible.
  */
 function otherGrams(amount: unknown, unit: unknown): number | null {
-  const direct = toGrams(amount, unit);
+  const direct = weightToGrams(str(amount), str(unit), 'assume-grams');
   if (direct != null) return direct;
   const n = Number(str(amount));
   if (!Number.isFinite(n) || n <= 0) return null;

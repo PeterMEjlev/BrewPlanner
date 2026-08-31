@@ -123,7 +123,11 @@ export function SelectionSummary({
   view: Span | null;
   inset: PlotInset;
   stats: SelectionSeriesStats[];
-  formatValue: (value: number) => string;
+  /**
+   * Given the trace as well as the number, so a card summarising overlaid
+   * metrics can put each row in its own unit rather than all of them in one.
+   */
+  formatValue: (value: number, series: SelectionSeriesStats) => string;
   formatTime: (t: number) => string;
   onClear: () => void;
 }): JSX.Element {
@@ -168,9 +172,9 @@ export function SelectionSummary({
               />
               <span className="shrink-0 truncate font-medium text-zinc-400">{s.label}</span>
               <span className="text-zinc-300">
-                {formatValue(s.min)} – {formatValue(s.max)}
+                {formatValue(s.min, s)} – {formatValue(s.max, s)}
               </span>
-              <span className="ml-auto shrink-0 text-zinc-400">avg {formatValue(s.avg)}</span>
+              <span className="ml-auto shrink-0 text-zinc-400">avg {formatValue(s.avg, s)}</span>
             </div>
           ))}
         </div>

@@ -1,5 +1,4 @@
 import {
-  REPORTING_INTERVAL_OPTIONS,
   isMockDeviceId,
   type DeviceStatus,
   type DeviceType,
@@ -15,7 +14,7 @@ import rpiIcon from '../assets/rpi.png';
 import tiltIcon from '../assets/tilt.png';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
-import { Select } from '../components/Select';
+import { IntervalSelect, intervalLabel } from '../components/intervalPicker';
 import {
   isBreweryTempDevice,
   isFermenterDevice,
@@ -162,10 +161,7 @@ function formatAbsolute(iso: string): string {
 
 /** A push cadence as "every 30s" / "every 5m" / "every 2h", or "—" when unknown. */
 function formatInterval(sec: number | null | undefined): string {
-  if (sec == null) return '—';
-  if (sec < 90) return `every ${sec}s`;
-  if (sec < 3600) return `every ${Math.round(sec / 60)}m`;
-  return `every ${Math.round(sec / 3600)}h`;
+  return sec == null ? '—' : `every ${intervalLabel(sec)}`;
 }
 
 /** A reading count with thousands separators, or "—" when not reported. */
@@ -694,10 +690,6 @@ function IntervalRow({
   onChange: (seconds: number) => void;
 }): JSX.Element {
   if (!editable) return <InfoRow label="Interval" value={formatInterval(seconds)} />;
-  // Always include the current value so a custom/legacy cadence still shows.
-  const options = Array.from(new Set<number>([...REPORTING_INTERVAL_OPTIONS, seconds])).sort(
-    (a, b) => a - b,
-  );
   return (
     <div className="flex items-baseline justify-between gap-2 border-b border-zinc-800/60 py-0.5">
       <dt className="text-xs font-medium uppercase tracking-wider text-zinc-500">Interval</dt>
@@ -713,13 +705,11 @@ function IntervalRow({
             e.preventDefault();
           }}
         >
-          <Select
-            value={seconds}
-            aria-label="Logging interval"
+          <IntervalSelect
+            seconds={seconds}
             onChange={onChange}
             align="right"
             className="rounded-md border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-sm text-zinc-200 transition hover:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            options={options.map((s) => ({ value: s, label: formatInterval(s) }))}
           />
         </span>
       </dd>

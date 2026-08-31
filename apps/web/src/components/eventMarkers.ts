@@ -26,6 +26,48 @@ export interface SetpointStep {
 }
 
 /**
+ * The changes worth mounting a hover marker for, given the window on screen and
+ * how wide the plot is.
+ *
+ * A window's worth of changes is bounded by the query (200), not by the width it
+ * has to fit into, and a long range reaches that bound easily: a fermentation
+ * programme steps its target all the way down, so a 30-day view can carry a
+ * marker every few pixels. Two markers closer together than one hit area can't
+ * be hovered separately — the front one takes every pointer — so drawing both
+ * costs a component and buys nothing. Thinning to one per `minGapPx` therefore
+ * loses no marker the brewer could have reached, and bounds the count by the
+ * width of the chart instead of by the length of the range.
+ *
+ * Buckets are counted from the epoch rather than from the window's edge, so
+ * which member of a cluster survives doesn't change as the chart is panned —
+ * a marker that flickered in and out under the cursor would be worse than one
+ * that was never there.
+ */
+export function visibleSetpointChanges<T extends { t: number }>(
+  changes: readonly T[],
+  view: { min: number; max: number } | null,
+  plotWidth: number | null,
+  minGapPx: number,
+): T[] {
+  const span = view ? view.max - view.min : 0;
+  // Unmeasured or degenerate: keep the lot and let the chart clip them.
+  const minGap =
+    view && span > 0 && plotWidth != null && plotWidth > 0 ? (minGapPx / plotWidth) * span : 0;
+  const out: T[] = [];
+  let lastBucket: number | null = null;
+  for (const change of changes) {
+    if (view && (change.t < view.min || change.t > view.max)) continue;
+    if (minGap > 0) {
+      const bucket = Math.floor(change.t / minGap);
+      if (bucket === lastBucket) continue;
+      lastBucket = bucket;
+    }
+    out.push(change);
+  }
+  return out;
+}
+
+/**
  * The target in force at each of `times` — a step function, sampled onto
  * whatever grid the chart plots on. `times` must be ascending.
  *

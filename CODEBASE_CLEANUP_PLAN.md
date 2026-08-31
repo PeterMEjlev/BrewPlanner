@@ -14,8 +14,7 @@ The best remaining consolidation opportunities are:
 2. Extract the common Google service-account JWT/token implementation used by Drive and FCM.
 3. Extract the common lifecycle used by the five Python sensor agents without erasing their hardware-specific behavior.
 4. Centralize update-status wire contracts and status-file/log reading while leaving local and remote update triggers separate.
-5. Consolidate server ingredient unit conversion.
-6. Decompose Dashboard and Settings along stable feature boundaries after their shared logic has moved out.
+5. Decompose Dashboard and Settings along stable feature boundaries after their shared logic has moved out.
 
 The remaining confirmed deletions are mostly binary artifacts and unused public/type surface. The checked-in recipe backups, legacy environment alias, CommonJS aliases, and any shared exports potentially consumed by an external brew-system repository still require external verification.
 
@@ -122,15 +121,7 @@ The server modules repeat status shapes, status-file parsing, and log-tail assem
 
 Move wire response types into `@checklist/shared`. Extract only a server-internal status-file/log utility parameterized by paths and state validation. Keep both trigger workflows and safety rules in their existing modules. Risk: **Medium**.
 
-## 5.5 Ingredient-unit conversion
-
-**Locations:** `apps/server/src/brewersfriend.ts` and `recipeData.ts`.
-
-Both define grams/count conversion with slightly different accepted types and missing-unit behavior. `recipeData.ts` also supports ml/l conversion for miscellaneous ingredients.
-
-Extract a common server utility for normalized weight-to-grams and unit/count conversion with an explicit missing-unit policy. Keep miscellaneous volume conversion and import-specific validation in their callers. Test imported and stored recipes across kg/g/lb/oz/count/blank units before deleting local functions. Risk: **Medium**.
-
-## 5.6 Password-visibility icons
+## 5.5 Password-visibility icons
 
 **Locations:** `apps/web/src/pages/Login.tsx` and `SettingsDesktop.tsx`.
 
@@ -229,15 +220,7 @@ The lockfile still contains deprecated transitive packages, including `@esbuild-
 - **Risk:** Medium.
 - **Verify:** fake-timer tests, device-change/remount/failure cases, manual offline/online/fermenting/complete checks.
 
-### Step 2.2 — Consolidate ingredient conversions
-
-- **Files affected:** `brewersfriend.ts`, `recipeData.ts`, new server helper/tests.
-- **Change:** share normalized weight/count conversion; preserve caller-specific missing-unit and volume semantics.
-- **Dependencies:** none.
-- **Risk:** Medium.
-- **Verify:** imported and stored recipe fixtures across every supported unit.
-
-### Step 2.3 — Share password visibility icons
+### Step 2.2 — Share password visibility icons
 
 - **Files affected:** Login, Settings, `components/icons.tsx`.
 - **Change:** move identical SVGs to the icon module and update imports.
@@ -343,7 +326,7 @@ Current green baseline:
 - Normal and strict TypeScript checks pass.
 - Shared: 34 tests passed.
 - Bruce: 24 test groups passed.
-- Server: 222 tests passed, zero failures or cancellations.
+- Server: 225 tests passed, zero failures or cancellations.
 - Web: 122 tests passed.
 - All production builds pass.
 - Vite reports an existing large-chunk warning; treat code splitting as performance work, not dead-code removal.
@@ -362,7 +345,6 @@ Current green baseline:
 | Google service auth | Drive and FCM | Consolidate | Scope-aware shared token helper | High | High |
 | Sensor runtime | five Python agents | Consolidate | Shared lifecycle, local hardware reads | High | High |
 | Update status/contracts | two server modules and web API | Consolidate | Shared wire types and status reader only | High | Medium |
-| Ingredient conversions | Brewer's Friend and recipe data | Consolidate | Shared server weight/count core | Medium | Medium |
 | Password icons | Login and Settings | Merge | Canonical icon components if equivalent | High | Low |
 | Dashboard panels | `Dashboard.tsx` | Simplify | Extract stable feature panels | High | Medium |
 | Settings domains | `SettingsDesktop.tsx` | Simplify | Extract stable settings sections | High | Medium |

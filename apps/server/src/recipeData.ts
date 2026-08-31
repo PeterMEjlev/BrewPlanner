@@ -21,6 +21,7 @@ import {
   recipeCost,
 } from './prices.js';
 import { getWaterProfiles } from './repo.js';
+import { countUnits, weightToGrams } from './ingredientUnits.js';
 
 export interface RecipeMetadata {
   id: string;
@@ -36,38 +37,11 @@ export interface RecipeMetadata {
   updatedAt: string;
 }
 
-function positiveNumber(value: string): number | null {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-function toGrams(amount: string, unit: string): number | null {
-  const n = positiveNumber(amount);
-  if (n == null) return null;
-  switch (unit.toLowerCase()) {
-    case 'g':
-    case 'gram':
-    case 'grams':
-      return n;
-    case 'kg':
-      return n * 1_000;
-    case 'oz':
-      return n * 28.3495;
-    case 'lb':
-    case 'lbs':
-      return n * 453.592;
-    case 'mg':
-      return n / 1_000;
-    default:
-      return unit === '' ? n : null;
-  }
-}
-
 function toOtherGrams(amount: string, unit: string): number | null {
-  const direct = toGrams(amount, unit);
+  const direct = weightToGrams(amount, unit, 'assume-grams');
   if (direct != null) return direct;
-  const n = positiveNumber(amount);
-  if (n == null) return null;
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) return null;
   switch (unit.toLowerCase()) {
     case 'ml':
       return n;
@@ -78,12 +52,6 @@ function toOtherGrams(amount: string, unit: string): number | null {
     default:
       return null;
   }
-}
-
-function toUnits(amount: string, unit: string): number | null {
-  const n = positiveNumber(amount);
-  if (n == null) return null;
-  return ['pkg', 'pkgs', 'each', 'items', 'vial'].includes(unit.toLowerCase()) ? n : null;
 }
 
 /**
@@ -139,7 +107,7 @@ export function pourColor(input: RecipeEditInput): PredictedColor | null {
 /** Rebuild weights, catalogue matches and totals from a stored editable sheet. */
 export function hydrateRecipe(meta: RecipeMetadata, input: RecipeEditInput): RecipeDetail {
   const fermentables: RecipeFermentable[] = input.fermentables.map((line) => {
-    const grams = toGrams(line.amount, line.unit);
+    const grams = weightToGrams(line.amount, line.unit, 'assume-grams');
     return {
       ...line,
       grams,
@@ -147,12 +115,12 @@ export function hydrateRecipe(meta: RecipeMetadata, input: RecipeEditInput): Rec
     };
   });
   const hops: RecipeHop[] = input.hops.map((line) => {
-    const grams = toGrams(line.amount, line.unit);
+    const grams = weightToGrams(line.amount, line.unit, 'assume-grams');
     return { ...line, grams, price: grams == null ? null : priceHop(line.name, grams) };
   });
   const yeast: RecipeYeast[] = input.yeast.map((line) => {
-    const grams = toGrams(line.amount, line.amountUnit);
-    const units = toUnits(line.amount, line.amountUnit);
+    const grams = weightToGrams(line.amount, line.amountUnit, 'assume-grams');
+    const units = countUnits(line.amount, line.amountUnit);
     return {
       ...line,
       grams,
@@ -162,7 +130,7 @@ export function hydrateRecipe(meta: RecipeMetadata, input: RecipeEditInput): Rec
   });
   const otherIngredients: RecipeOtherIngredient[] = input.otherIngredients.map((line) => {
     const grams = toOtherGrams(line.amount, line.unit);
-    const units = toUnits(line.amount, line.unit);
+    const units = countUnits(line.amount, line.unit);
     return {
       ...line,
       grams,

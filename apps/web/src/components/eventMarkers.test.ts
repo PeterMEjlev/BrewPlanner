@@ -6,6 +6,7 @@ import {
   setpointChangeLabel,
   setpointTargetSeries,
   setpointTargetSpan,
+  visibleSetpointChanges,
 } from './eventMarkers';
 
 describe('setpointChangeLabel', () => {
@@ -149,5 +150,63 @@ describe('setpointTargetSpan', () => {
 
   it('is null when there is no target at all', () => {
     expect(setpointTargetSpan([], null)).toBeNull();
+  });
+});
+
+
+describe('visibleSetpointChanges', () => {
+  // A 30-day window reaches the query's 200-change cap easily, and every one of
+  // them is a recharts component with a store subscription. These are the two
+  // things that bound them: the window on screen, and the hit width.
+  const at = (...times: number[]) => times.map((t) => ({ t, from: 18, to: 20 }));
+  const view = { min: 0, max: 1000 };
+
+  it('drops changes outside the window on screen', () => {
+    const kept = visibleSetpointChanges(at(-50, 200, 800, 1500), view, 1000, 18);
+    expect(kept.map((c) => c.t)).toEqual([200, 800]);
+  });
+
+  it('thins changes that land closer than one hit area apart', () => {
+    // 1000px across 1000 units: one unit a pixel, so an 18px hit area is 18
+    // units. 0/10/20 collapse to two, not three.
+    const kept = visibleSetpointChanges(at(0, 10, 20, 500), view, 1000, 18);
+    expect(kept.map((c) => c.t)).toEqual([0, 20, 500]);
+  });
+
+  it('keeps changes that are far enough apart', () => {
+    const times = [0, 100, 200, 300];
+    expect(visibleSetpointChanges(at(...times), view, 1000, 18).map((c) => c.t)).toEqual(times);
+  });
+
+  it('thins harder as the same window is drawn narrower', () => {
+    const changes = at(0, 30, 60, 90);
+    // 1000px: 30 units apart is 30px, all four survive.
+    expect(visibleSetpointChanges(changes, view, 1000, 18)).toHaveLength(4);
+    // 200px: the same 30 units is 6px, so they collapse.
+    expect(visibleSetpointChanges(changes, view, 200, 18).length).toBeLessThan(4);
+  });
+
+  it('picks the same survivors as the window pans across them', () => {
+    // Buckets counted from the epoch, not from the window's edge — a marker that
+    // flickered in and out under the cursor would be worse than none at all.
+    const changes = at(100, 105, 110, 300, 305);
+    const a = visibleSetpointChanges(changes, { min: 0, max: 1000 }, 1000, 18);
+    const b = visibleSetpointChanges(changes, { min: 50, max: 1050 }, 1000, 18);
+    expect(b.map((c) => c.t)).toEqual(a.map((c) => c.t));
+  });
+
+  it('keeps everything in view before the plot has been measured', () => {
+    const changes = at(100, 105, 110);
+    expect(visibleSetpointChanges(changes, view, null, 18)).toHaveLength(3);
+    expect(visibleSetpointChanges(changes, view, 0, 18)).toHaveLength(3);
+  });
+
+  it('keeps everything when there is no window yet', () => {
+    const changes = at(100, 105);
+    expect(visibleSetpointChanges(changes, null, 1000, 18)).toHaveLength(2);
+  });
+
+  it('has nothing to show for no changes', () => {
+    expect(visibleSetpointChanges([], view, 1000, 18)).toEqual([]);
   });
 });

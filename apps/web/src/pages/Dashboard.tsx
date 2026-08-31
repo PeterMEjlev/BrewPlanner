@@ -2527,6 +2527,15 @@ export function metricLabel(metric: string): string {
 }
 
 /**
+ * The unit a metric is measured in, or null when it has none (gravity, the HVAC
+ * state). Two metrics sharing a unit can share a chart axis; two that don't need
+ * an axis each — see `axisOf` in MetricChart.
+ */
+export function metricUnit(metric: string): string | null {
+  return splitMetric(metric).unit;
+}
+
+/**
  * Split a reading into its display number and unit so callers can lay the two
  * out separately. {@link formatValue} joins them back into one string.
  */

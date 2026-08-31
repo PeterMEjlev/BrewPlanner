@@ -2,7 +2,6 @@ import {
   BRUCE_WAKE_WORD_GAIN,
   DEFAULT_DEVICE_DATA_SOURCES,
   DEFAULT_NOTIFICATION_SETTINGS,
-  REPORTING_INTERVAL_OPTIONS,
   SENSOR_CATALOG,
   isMockDeviceId,
   type BruceServiceStatus,
@@ -30,6 +29,7 @@ import { useAuth } from '../auth';
 import { CustomAlertRulesCard } from '../components/CustomAlertRules';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
+import { IntervalSelect } from '../components/intervalPicker';
 import { BATCH_TARGETS, PITCH_RATES } from '../recipeCatalog';
 import {
   resetRecipeDefaults,
@@ -739,13 +739,6 @@ const DEVICE_KIND_LABEL: Record<string, string> = {
   other: 'Sensor',
 };
 
-/** A cadence as "30s" / "5m" / "1h" for the interval picker. */
-function intervalLabel(sec: number): string {
-  if (sec < 90) return `${sec}s`;
-  if (sec < 3600) return `${Math.round(sec / 60)}m`;
-  return `${Math.round(sec / 3600)}h`;
-}
-
 function LoggingIntervalSection(): JSX.Element {
   const [devices, setDevices] = useState<DeviceStatus[] | null>(null);
 
@@ -783,22 +776,16 @@ function LoggingIntervalSection(): JSX.Element {
         <p className="text-sm text-zinc-500">No registered devices yet.</p>
       ) : (
         <div className="divide-y divide-zinc-800/70">
-          {real.map((d) => {
-            const options = Array.from(
-              new Set<number>([...REPORTING_INTERVAL_OPTIONS, d.reportingIntervalSec]),
-            ).sort((a, b) => a - b);
-            return (
-              <Row key={d.id} label={d.name} hint={DEVICE_KIND_LABEL[d.type] ?? d.type}>
-                <Select
-                  value={d.reportingIntervalSec}
-                  aria-label={`Logging interval for ${d.name}`}
-                  onChange={(seconds) => update(d.id, seconds)}
-                  className={`${inputClass} tabular-nums`}
-                  options={options.map((s) => ({ value: s, label: intervalLabel(s) }))}
-                />
-              </Row>
-            );
-          })}
+          {real.map((d) => (
+            <Row key={d.id} label={d.name} hint={DEVICE_KIND_LABEL[d.type] ?? d.type}>
+              <IntervalSelect
+                seconds={d.reportingIntervalSec}
+                label={`Logging interval for ${d.name}`}
+                onChange={(seconds) => update(d.id, seconds)}
+                className={`${inputClass} tabular-nums`}
+              />
+            </Row>
+          ))}
         </div>
       )}
     </Card>

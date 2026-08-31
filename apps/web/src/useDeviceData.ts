@@ -111,14 +111,35 @@ export function historyWindowQuery(rangeMs: number): { limit: number; buckets?: 
     : { limit: HISTORY_LIMIT };
 }
 
+/** A chart point: epoch milliseconds and the reading at it. */
+export interface TimePoint {
+  t: number;
+  value: number;
+}
+
 export interface DeviceDataState {
   device: DeviceStatus | null;
+  /**
+   * The primary metric — the head of {@link metrics}. It owns the big value, the
+   * left axis and the zoom; the rest are overlaid on it.
+   */
   metric: string | null;
+  /** Collapse the selection to this metric alone. */
   setMetric: (m: string) => void;
+  /** Every metric currently loaded, primary first. */
+  metrics: string[];
+  /**
+   * Draw one more metric alongside the others, or stop drawing it. The last
+   * remaining metric can't be removed — a chart has to plot something.
+   */
+  toggleMetric: (m: string) => void;
+  /** Chart points per loaded metric, oldest→newest. */
+  series: Record<string, TimePoint[]>;
   rangeMs: number;
   setRangeMs: (ms: number) => void;
-  /** Chart points, oldest→newest with numeric timestamps for the time axis. */
-  chartData: { t: number; value: number }[];
+  /** Chart points for the primary metric — `series[metric]`, for the many
+   * callers that only ever draw one. */
+  chartData: TimePoint[];
   /** Latest reading for the selected metric (falls back to the first metric). */
   latest: LatestReading | undefined;
   /** Force an immediate device-status refetch (e.g. after changing a setpoint). */
@@ -149,20 +170,32 @@ export function useDeviceData(
   rangeControl?: RangeControl,
 ): DeviceDataState {
   const [device, setDevice] = useState<DeviceStatus | null>(null);
-  const [metric, setMetric] = useState<string | null>(lockedMetric ?? null);
+  // The drawn set, primary first. One entry is the ordinary case; a second joins
+  // it when the brewer overlays another metric on the same chart.
+  const [selected, setSelected] = useState<string[]>(lockedMetric ? [lockedMetric] : []);
   const [internalRangeMs, setInternalRangeMs] = useState<number>(DEFAULT_RANGE_MS);
-  const [history, setHistory] = useState<Reading[]>([]);
+  const [history, setHistory] = useState<Record<string, Reading[]>>({});
   const [error, setError] = useState<string | null>(null);
-  // Where the last successful history fetch got to, so the next one can ask for
-  // the tail instead of the whole window. `key` pins it to the series it was
-  // read for — a different device/metric/range invalidates it; `anchor` is the
-  // newest reading held; `appendable` goes false for a series that turned out
-  // not to support tailing at all. See loadHistory.
-  const cursor = useRef<{ key: string; anchor: Reading | null; appendable: boolean }>({
-    key: '',
-    anchor: null,
-    appendable: true,
-  });
+  // Where the last successful history fetch got to, per metric, so the next one
+  // can ask for the tail instead of the whole window. `key` pins each entry to
+  // the series it was read for — a different device/metric/range invalidates it;
+  // `anchor` is the newest reading held; `appendable` goes false for a series
+  // that turned out not to support tailing at all. See loadHistory.
+  const cursors = useRef<Map<string, { key: string; anchor: Reading | null; appendable: boolean }>>(
+    new Map(),
+  );
+
+  const metric = selected[0] ?? null;
+
+  const setMetric = useCallback((m: string): void => {
+    setSelected([m]);
+  }, []);
+
+  const toggleMetric = useCallback((m: string): void => {
+    setSelected((cur) =>
+      cur.includes(m) ? (cur.length > 1 ? cur.filter((x) => x !== m) : cur) : [...cur, m],
+    );
+  }, []);
 
   const rangeMs = rangeControl ? rangeControl.get(metric) : internalRangeMs;
   const setRangeMs = useCallback(
@@ -177,7 +210,11 @@ export function useDeviceData(
     try {
       const d = await api.getDevice(deviceId);
       setDevice(d);
-      setMetric((cur) => cur ?? d.latest[0]?.metric ?? null);
+      setSelected((cur) => {
+        if (cur.length > 0) return cur;
+        const first = d.latest[0]?.metric;
+        return first ? [first] : cur;
+      });
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load device');
@@ -201,30 +238,34 @@ export function useDeviceData(
    * window rather than building on a series with a hole in it.
    */
   const loadHistory = useCallback(async (isStale: () => boolean) => {
-    if (!metric) return;
-    const key = `${deviceId}:${metric}:${rangeMs}`;
+    if (selected.length === 0) return;
     const windowStartMs = Date.now() - rangeMs;
-    const { anchor, appendable } = cursor.current.key === key
-      ? cursor.current
-      : { anchor: null, appendable: true };
     // A window too wide to fetch raw comes back averaged (see
     // historyWindowQuery), and an average has nothing to append to: every poll
     // re-buckets the whole window, so its trailing point moves rather than a new
     // one arriving after it. Those windows always re-read in full.
     const windowQuery = historyWindowQuery(rangeMs);
     const bucketed = windowQuery.buckets != null;
-    // An anchor that has aged out of the window has nothing left to append to.
-    const tailing =
-      !bucketed && appendable && anchor != null && Date.parse(anchor.recordedAt) >= windowStartMs;
 
-    const fetchSince = (sinceMs: number): Promise<Reading[]> =>
-      api.getDeviceHistory(deviceId, {
-        metric,
-        since: new Date(sinceMs).toISOString(),
-        ...windowQuery,
-      });
+    // One metric's slice of the poll. Each keeps its own cursor, so adding a
+    // second metric to a chart re-reads only the newcomer's window — the one
+    // already drawn keeps tailing.
+    const loadOne = async (m: string): Promise<{ metric: string; page: Reading[]; append: boolean }> => {
+      const key = `${deviceId}:${m}:${rangeMs}`;
+      const held = cursors.current.get(m);
+      const { anchor, appendable } =
+        held && held.key === key ? held : { anchor: null, appendable: true };
+      // An anchor that has aged out of the window has nothing left to append to.
+      const tailing =
+        !bucketed && appendable && anchor != null && Date.parse(anchor.recordedAt) >= windowStartMs;
 
-    try {
+      const fetchSince = (sinceMs: number): Promise<Reading[]> =>
+        api.getDeviceHistory(deviceId, {
+          metric: m,
+          since: new Date(sinceMs).toISOString(),
+          ...windowQuery,
+        });
+
       let page = await fetchSince(tailing ? Date.parse(anchor!.recordedAt) : windowStartMs);
       let append = false;
       let stillAppendable = appendable;
@@ -235,27 +276,47 @@ export function useDeviceData(
           page = await fetchSince(windowStartMs);
         }
       }
-      if (isStale()) return;
       // The API answers newest-first, so page[0] is the new high-water mark —
       // except on a bucketed window, where it's an average that will be
       // recomputed next poll and so is no anchor at all.
-      cursor.current = {
+      cursors.current.set(m, {
         key,
         anchor: bucketed ? null : page[0] ?? null,
         appendable: stillAppendable,
-      };
+      });
+      return { metric: m, page, append };
+    };
+
+    try {
+      const loaded = await Promise.all(selected.map(loadOne));
+      if (isStale()) return;
       setHistory((prev) => {
-        const kept = append ? prev : [];
-        const seen = new Set(kept.map((r) => r.id));
-        const fresh = page.filter((r) => !seen.has(r.id));
-        const merged = fresh.length ? [...fresh, ...kept] : kept;
-        return merged.filter((r) => Date.parse(r.recordedAt) >= windowStartMs);
+        // Rebuilt from the drawn set rather than merged into it, so a metric the
+        // brewer switched off stops being held in memory.
+        const next: Record<string, Reading[]> = {};
+        for (const { metric: m, page, append } of loaded) {
+          const kept = append ? prev[m] ?? [] : [];
+          const seen = new Set(kept.map((r) => r.id));
+          const fresh = page.filter((r) => !seen.has(r.id));
+          const merged = fresh.length ? [...fresh, ...kept] : kept;
+          next[m] = merged.filter((r) => Date.parse(r.recordedAt) >= windowStartMs);
+        }
+        return next;
       });
     } catch (e) {
-      cursor.current = { key, anchor: null, appendable };
+      // Drop every anchor: one failed leg leaves the whole poll unapplied, and
+      // building on a series with a hole in it is worse than re-reading it.
+      for (const m of selected) {
+        const held = cursors.current.get(m);
+        cursors.current.set(m, {
+          key: `${deviceId}:${m}:${rangeMs}`,
+          anchor: null,
+          appendable: held?.appendable ?? true,
+        });
+      }
       setError(e instanceof Error ? e.message : 'Failed to load history');
     }
-  }, [deviceId, metric, rangeMs]);
+  }, [deviceId, selected, rangeMs]);
 
   // Poll this device at its own configured logging cadence — no point refetching
   // faster than the agent logs. Falls back to a default until the first status
@@ -274,10 +335,18 @@ export function useDeviceData(
   usePoll(loadDevice, pollMs, [loadDevice]);
   usePoll(loadHistory, historyPollMs, [loadHistory]);
 
-  const chartData = useMemo(
-    () => [...history].reverse().map((r) => ({ t: Date.parse(r.recordedAt), value: r.value })),
-    [history],
-  );
+  const series = useMemo(() => {
+    const out: Record<string, TimePoint[]> = {};
+    for (const [m, rows] of Object.entries(history)) {
+      out[m] = [...rows].reverse().map((r) => ({ t: Date.parse(r.recordedAt), value: r.value }));
+    }
+    return out;
+  }, [history]);
+
+  const chartData = useMemo(() => (metric ? series[metric] ?? NO_POINTS : NO_POINTS), [
+    series,
+    metric,
+  ]);
 
   const latest = device?.latest.find((r) => r.metric === metric) ?? device?.latest[0];
 
@@ -285,6 +354,9 @@ export function useDeviceData(
     device,
     metric,
     setMetric,
+    metrics: selected,
+    toggleMetric,
+    series,
     rangeMs,
     setRangeMs,
     chartData,
@@ -293,6 +365,9 @@ export function useDeviceData(
     error,
   };
 }
+
+/** Shared empty series, so a metric with no rows yet keeps a stable identity. */
+const NO_POINTS: TimePoint[] = [];
 
 /** How often the lightweight Overview sparklines refetch their short history. */
 const SERIES_POLL_MS = 60_000;

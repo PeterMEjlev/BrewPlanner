@@ -179,6 +179,13 @@ export interface ChartZoom {
   selection: Span | null;
   /** True while the band is being painted — same reason as `dragging`. */
   selecting: boolean;
+  /**
+   * Width of the plot area in px, or null before it has been measured. Only
+   * changes when the chart is resized, so anything that has to reason in pixels
+   * per frame — how far apart two markers land, say — can read it for free
+   * rather than measuring the element mid-gesture.
+   */
+  plotWidth: number | null;
   clearSelection: () => void;
   reset: () => void;
 }
@@ -211,6 +218,22 @@ export function useChartZoom({
   const [dragging, setDragging] = useState(false);
   const [selection, setSelection] = useState<Span | null>(null);
   const [selecting, setSelecting] = useState(false);
+  const [wrapperWidth, setWrapperWidth] = useState<number | null>(null);
+
+  // Measured once and then only on resize, so it costs nothing per frame. A
+  // sub-pixel change is ignored: a ResizeObserver reporting fractional widths
+  // would otherwise re-render the chart for a difference nobody can see.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width == null) return;
+      setWrapperWidth((cur) => (cur != null && Math.abs(cur - width) < 1 ? cur : width));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const clearSelection = useCallback((): void => {
     setSelection(null);
@@ -439,6 +462,10 @@ export function useChartZoom({
     dragging,
     selection,
     selecting,
+    plotWidth:
+      wrapperWidth == null
+        ? null
+        : Math.max(0, wrapperWidth - plotInset.left - plotInset.right),
     clearSelection,
     reset,
   };
