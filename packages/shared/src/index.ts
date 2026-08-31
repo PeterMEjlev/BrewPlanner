@@ -1615,10 +1615,12 @@ export interface Reading {
   value: number;
   recordedAt: string;
   /**
-   * The extremes averaged into this point — set only on a bucketed response
-   * (see `buckets` on {@link historyQuerySchema}), where `value` is a mean and
-   * these are the real readings behind it. Absent on raw rows, where `value`
-   * *is* the reading.
+   * The extremes summarized into this point — set only on a bucketed response
+   * (see `buckets` on {@link historyQuerySchema}), where `value` stands for a
+   * span of readings and these are the real ones behind it. Absent on raw rows,
+   * where `value` *is* the reading. (`value` is the span's mean, except for a
+   * state metric, where it is the level the span mostly sat at — see
+   * {@link isStateMetric}.)
    *
    * Smoothing a line shouldn't cost the operator the true spread: a fridge drawn
    * as the steady 34.5 °C it averages is the honest picture of what it holds,
@@ -1627,6 +1629,21 @@ export interface Reading {
    */
   min?: number;
   max?: number;
+}
+
+/**
+ * Metrics that are a *state* rather than a quantity: a small set of labelled
+ * levels, drawn as a status pill and a stepped line instead of a curve. Today
+ * that is `hvac_state`, encoded -1 = cooling, 0 = idle, +1 = heating.
+ *
+ * Shared rather than a UI detail because it changes how the *server* summarizes
+ * a window: averaging a state invents levels that never occurred — half-way
+ * between cooling and idle is not a thing a relay ever did — so a bucketed
+ * response reports the level each bucket actually spent most of its time in.
+ * See `buckets` on {@link historyQuerySchema}.
+ */
+export function isStateMetric(metric: string): boolean {
+  return metric === 'hvac_state';
 }
 
 /** The most recent value for one metric on a device. */

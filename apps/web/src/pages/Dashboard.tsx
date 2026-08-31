@@ -4,7 +4,12 @@ import type {
   LatestReading,
   Recipe,
 } from '@checklist/shared';
-import { getRecipeColor, isDirtyContents, matchContentOption } from '@checklist/shared';
+import {
+  getRecipeColor,
+  isDirtyContents,
+  isStateMetric,
+  matchContentOption,
+} from '@checklist/shared';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -2548,12 +2553,12 @@ function capitalize(s: string): string {
 // --- HVAC state metric (cooling / idle / heating) ---------------------------
 
 /**
- * Tri-state metrics rendered as a labelled status pill instead of a raw number.
- * Today that is `hvac_state`, encoded -1 = cooling, 0 = idle, +1 = heating.
+ * Tri-state metrics rendered as a labelled status pill instead of a raw number
+ * (see {@link isStateMetric}). Re-exported from here because every chart module
+ * reads its metric vocabulary off this file; the predicate itself is shared with
+ * the server, which has to summarize those metrics differently.
  */
-export function isStateMetric(metric: string): boolean {
-  return metric === 'hvac_state';
-}
+export { isStateMetric };
 
 interface StateLook {
   label: string;

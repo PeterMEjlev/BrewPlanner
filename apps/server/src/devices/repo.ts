@@ -7,7 +7,7 @@ import type {
   Reading,
   SetpointChange,
 } from '@checklist/shared';
-import { SET_SETPOINT_COMMAND } from '@checklist/shared';
+import { SET_SETPOINT_COMMAND, isStateMetric } from '@checklist/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, like, ne, or, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
@@ -568,6 +568,11 @@ function storedDeltaSum(deviceId: number, metric: string): number {
  * response is a summary and not a row anyone can fetch back. Each point also
  * carries the true `min`/`max` it averaged over, so a caller that draws the
  * smoothed line can still report the real spread.
+ *
+ * A state metric is summarized by its most common level per bucket rather than
+ * averaged (see {@link isStateMetric}): the mean of a relay that cooled for
+ * twenty minutes of an hour is -0.33, which the chart draws as a line wandering
+ * between Cool and Idle — states the hardware was never in.
  */
 function getBucketedHistory(
   deviceId: number,
@@ -591,13 +596,55 @@ function getBucketedHistory(
   // parameters arrive as REAL — without it every reading divides to its own
   // fractional key and lands in a bucket of one. Truncation is floor here, since
   // the WHERE clause keeps the difference non-negative.
+  const bucketOf = sql`CAST(
+      (CAST(strftime('%s', ${readings.recordedAt}) AS INTEGER) - ${startSec}) / ${bucketSec}
+      AS INTEGER
+    )`;
+  const where = sql`${readings.deviceId} = ${deviceId}
+      AND ${readings.metric} = ${metric}
+      AND ${readings.recordedAt} >= ${since}`;
   const rows = db.all<{
     value: number;
     recordedAt: number;
     id: number;
     min: number;
     max: number;
-  }>(sql`
+  }>(
+    isStateMetric(metric)
+      ? // A state has no mean (see isStateMetric): each bucket reports the level
+        // it actually spent most of its readings at. `points` is the same scan
+        // as below, grouped twice — once for the bucket's span, once per level
+        // to count them.
+        sql`
+    WITH points AS (
+      SELECT ${bucketOf} AS bucket,
+             ${readings.value} AS value,
+             CAST(strftime('%s', ${readings.recordedAt}) AS INTEGER) AS ts,
+             ${readings.id} AS id
+      FROM ${readings}
+      WHERE ${where}
+    ),
+    spans AS (
+      SELECT bucket, AVG(ts) AS recordedAt, MAX(id) AS id, MIN(value) AS min, MAX(value) AS max
+      FROM points GROUP BY bucket
+    ),
+    levels AS (
+      SELECT bucket, value,
+             -- Ties go to the level furthest from idle, then to the higher one:
+             -- an hour split evenly between working and resting is worth drawing
+             -- as work, and the order has to be total so a re-poll can't redraw
+             -- the same bucket differently.
+             ROW_NUMBER() OVER (
+               PARTITION BY bucket ORDER BY COUNT(*) DESC, ABS(value) DESC, value DESC
+             ) AS rank
+      FROM points GROUP BY bucket, value
+    )
+    SELECT levels.value AS value, spans.min AS min, spans.max AS max,
+           spans.recordedAt AS recordedAt, spans.id AS id
+    FROM spans JOIN levels ON levels.bucket = spans.bucket AND levels.rank = 1
+    ORDER BY spans.recordedAt DESC
+  `
+      : sql`
     SELECT
       AVG(${readings.value}) AS value,
       MIN(${readings.value}) AS min,
@@ -605,15 +652,11 @@ function getBucketedHistory(
       AVG(CAST(strftime('%s', ${readings.recordedAt}) AS INTEGER)) AS recordedAt,
       MAX(${readings.id}) AS id
     FROM ${readings}
-    WHERE ${readings.deviceId} = ${deviceId}
-      AND ${readings.metric} = ${metric}
-      AND ${readings.recordedAt} >= ${since}
-    GROUP BY CAST(
-      (CAST(strftime('%s', ${readings.recordedAt}) AS INTEGER) - ${startSec}) / ${bucketSec}
-      AS INTEGER
-    )
+    WHERE ${where}
+    GROUP BY ${bucketOf}
     ORDER BY recordedAt DESC
-  `);
+  `,
+  );
   return rows.map((r) => ({
     id: r.id,
     deviceId,
