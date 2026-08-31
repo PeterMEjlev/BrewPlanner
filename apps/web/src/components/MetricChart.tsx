@@ -3,7 +3,6 @@ import {
   CartesianGrid,
   Line,
   LineChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -30,6 +29,7 @@ import {
 } from '../useDeviceData';
 import { dateTime } from '../util';
 import { formatAxisValue, niceRange, withMinSpan } from './charts';
+import { setpointTargetSeries, setpointTargetSpan } from './eventMarkers';
 import { type Span, useChartZoom } from './chartZoom';
 import { type ThinMode, thinForPlot } from './decimate';
 import { setpointChangeLines } from './setpointMarkers';
@@ -165,17 +165,16 @@ export default function MetricChart({
   const stateMetric = !!chartMetric && isStateMetric(chartMetric);
   const tempMetric = !!chartMetric && isTempMetric(chartMetric);
 
-  // The target the controller is holding to, drawn as a dotted line across the
-  // temp chart — the Overview sparkline carries it, so an enlarged chart without
-  // it lost the one reference that says whether the curve is where it should be.
-  // Only on `temp_c`: on the setpoint's own chart the plotted line *is* the target.
+  // What the controller is holding to *now*. Only the tail of the target line
+  // below, and the whole of it when nothing moved across the window. Only on
+  // `temp_c`: on the setpoint's own chart the plotted line *is* the target.
   const targetC =
     chartMetric === 'temp_c' ? (setpointReading?.value ?? targetOverride ?? null) : null;
 
-  // Where that target was moved, marked with a vertical line each. Read from
-  // the controller — this device when it is one, otherwise the one holding it
-  // (a Tilt's beer temp is governed by the Inkbird beside it). Only on the temp
-  // chart: on the setpoint's own chart the steps are already the plotted line.
+  // Where that target was moved, which is what turns it from a flat reference
+  // line into a line through time. Read from the controller — this device when
+  // it is one, otherwise the one holding it (a Tilt's beer temp is governed by
+  // the Inkbird beside it).
   const setpointDeviceId = supportsSetpoint ? deviceId : (targetDeviceId ?? null);
   const setpointChanges = useSetpointChanges(
     chartMetric === 'temp_c' ? setpointDeviceId : null,
@@ -202,6 +201,14 @@ export default function MetricChart({
   // A temperature chart honours the brewer's "Temp chart min span" here too, so
   // an enlarged chart frames a tight-holding fridge just like its Overview
   // sparkline does instead of stretching a fraction of a degree to full height.
+  // Everywhere the target line goes, so the axis can hold all of it. Computed
+  // from the changes rather than from the drawn series, which is downstream of
+  // the zoom this feeds.
+  const targetSpan = useMemo(
+    () => (chartMetric === 'temp_c' ? setpointTargetSpan(setpointChanges, targetC) : null),
+    [chartMetric, setpointChanges, targetC],
+  );
+
   const yExtent = useMemo<Span | null>(() => {
     if (stateMetric || chartData.length === 0) return null;
     const values = chartData.map((d) => d.value);
@@ -209,11 +216,14 @@ export default function MetricChart({
     const max = Math.max(...values);
     if (!tempMetric) return { min, max };
     // The target has to be inside the domain or its line falls off the chart —
-    // exactly the case where it matters most, a fridge sitting well off setpoint.
+    // exactly the case where it matters most, a fridge sitting well off setpoint,
+    // and now for every level it held rather than only the current one.
     const withTarget =
-      targetC == null ? { min, max } : { min: Math.min(min, targetC), max: Math.max(max, targetC) };
+      targetSpan == null
+        ? { min, max }
+        : { min: Math.min(min, targetSpan.min), max: Math.max(max, targetSpan.max) };
     return niceRange(withMinSpan(withTarget.min, withTarget.max, tempMinSpanC));
-  }, [chartData, stateMetric, tempMetric, tempMinSpanC, targetC]);
+  }, [chartData, stateMetric, tempMetric, tempMinSpanC, targetSpan]);
 
   const zoom = useChartZoom({
     xExtent,
@@ -269,6 +279,22 @@ export default function MetricChart({
       ),
     [chartData, zoom.xDomain, thinMode],
   );
+
+  // The target at each plotted moment, as a column on the rows themselves —
+  // recharts draws a line from a dataKey, and `stepAfter` then holds each level
+  // flat until the moment it changed rather than sloping between them.
+  const plotRows = useMemo(() => {
+    if (targetSpan == null) return plotData;
+    const target = setpointTargetSeries(
+      setpointChanges,
+      plotData.map((p) => p.t),
+      targetC,
+    );
+    if (target.length !== plotData.length) return plotData;
+    return plotData.map((point, i) => ({ ...point, target: target[i]! }));
+  }, [plotData, setpointChanges, targetC, targetSpan]);
+
+  const hasTarget = plotRows.length > 0 && 'target' in plotRows[0]!;
 
   useEffect(() => {
     if (breweryTempOnly && metric !== 'temp_c') {
@@ -400,7 +426,7 @@ export default function MetricChart({
             <p className="py-20 text-center text-sm text-zinc-500">No readings in this range.</p>
           ) : (
             <ResponsiveContainer width="100%" height={chartHeight}>
-              <LineChart data={plotData} margin={CHART_MARGIN}>
+              <LineChart data={plotRows} margin={CHART_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis
                   dataKey="t"
@@ -452,44 +478,44 @@ export default function MetricChart({
                     itemStyle={{ color: '#e2e8f0' }}
                     cursor={{ stroke: '#334155' }}
                     labelFormatter={(t) => dateTime(t as number, true)}
-                    formatter={(value) => {
+                    // Two lines now, so each is named from its own series
+                    // rather than everything being labelled with the metric.
+                    formatter={(value, name) => {
                       const num = typeof value === 'number' ? value : Number(value);
                       return [
                         chartMetric
                           ? formatValue({ metric: chartMetric, value: num, recordedAt: '' })
                           : num,
-                        chartMetric ? metricLabel(chartMetric) : 'value',
+                        name,
                       ];
                     }}
                   />
                 )}
-                {targetC != null && (
-                  <ReferenceLine
-                    y={targetC}
+                {hasTarget && (
+                  <Line
+                    // Held flat until the moment it moved: a target does not
+                    // drift between two settings, it is one until it is the other.
+                    type="stepAfter"
+                    dataKey="target"
+                    name="Target"
                     stroke={colors.setpoint}
                     strokeDasharray="2 4"
                     strokeWidth={1.5}
-                    // Clipped rather than domain-extending: a zoom into a slice
-                    // that excludes the target must stay where the user put it.
-                    ifOverflow="hidden"
-                    label={{
-                      value: `Target ${targetC.toFixed(1)}°C`,
-                      position: 'insideTopRight',
-                      fill: colors.setpoint,
-                      fontSize: 11,
-                    }}
+                    dot={false}
+                    isAnimationActive={false}
                   />
                 )}
                 <Line
                   type={stateMetric ? 'stepAfter' : 'monotone'}
                   dataKey="value"
+                  name={chartMetric ? metricLabel(chartMetric) : 'Value'}
                   stroke={chartMetric ? metricColor(chartMetric, colors) : '#3b82f6'}
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
                 />
-                {/* After the Line, so a marker paints over the trace it
-                    explains and reliably wins the pointer at a crossing. */}
+                {/* After the lines, so a marker's hover region wins the pointer
+                    at a crossing. */}
                 {setpointChangeLines({
                   changes: setpointChanges,
                   color: colors.setpoint,

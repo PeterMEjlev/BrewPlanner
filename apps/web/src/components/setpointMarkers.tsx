@@ -4,31 +4,31 @@ import { dateTime } from '../util';
 import { BADGE_FONT, badgeBox, setpointChangeLabel } from './eventMarkers';
 
 /**
- * The vertical "the brewer moved the target here" markers on the enlarged
- * temperature chart (see `SetpointChange` in @checklist/shared for where they
+ * Hover regions over the moments the brewer moved the target on the enlarged
+ * temperature chart (see `SetpointChange` in @checklist/shared for where those
  * come from).
  *
- * A temperature curve on its own can't distinguish a fridge that drifted from a
- * fridge that was *told* to go somewhere else: both look like the line leaving
- * its old level. Marking the moment the target changed is what separates the
- * two, and it is usually the more interesting of the pair — a cold crash, a
- * diacetyl rest, a correction after a stuck ferment.
+ * They draw no mark of their own. The target is plotted as a stepped line, so a
+ * change is already visible as the corner where that line leaves one level for
+ * the next — a vertical rule through it would be the same fact drawn twice.
+ * What the corner can't say is what the two levels were and exactly when it
+ * turned, and that is what hovering one of these gets you.
  *
- * This module owns the recharts flavour; the Overview's mini charts draw their
- * own from the same data and the same maths (see `markers` on
- * MultiLineSparkline in charts.tsx, and eventMarkers.ts).
+ * This module owns the recharts flavour; the Overview's mini charts do the same
+ * from the same data (see `markers` on MultiLineSparkline in charts.tsx).
  */
 
 /**
- * One marker: a dashed vertical line, a small pin at the top to aim at, and —
- * while the pointer is over it — a badge naming the change and when it happened.
+ * One marker: a transparent column over the moment, and — while the pointer is
+ * inside it — a badge naming the change and when it happened.
  *
- * Rendered through ReferenceLine's `label`, which clones it with the line's own
- * geometry as `viewBox`, so the marker never has to work out where recharts put
- * it. It has to be handed over as an *element* rather than a render function:
- * recharts turns a function label into a component type, and since that type
- * would be a fresh closure on every render, React would tear the marker down and
- * rebuild it each time — losing the pointer that was hovering it.
+ * The column rides on an invisible ReferenceLine, which is what gives it a
+ * position: recharts clones the label with the line's own geometry as `viewBox`,
+ * so the marker never has to work out where the chart put its x. It has to be
+ * handed over as an *element* rather than a render function: recharts turns a
+ * function label into a component type, and since that type would be a fresh
+ * closure on every render, React would tear the marker down and rebuild it each
+ * time — losing the pointer that was hovering it.
  */
 function SetpointChangeMarker({
   viewBox,
@@ -52,7 +52,8 @@ function SetpointChangeMarker({
 
   return (
     <g>
-      {/* Hit area: wider than the line, because a 1.5px target is not one. */}
+      {/* Wide enough to catch a pointer aimed at the step in the target line,
+          which is the only thing visible here to aim at. */}
       <rect
         x={x - 9}
         y={y}
@@ -63,8 +64,6 @@ function SetpointChangeMarker({
         onPointerEnter={() => onHover(change)}
         onPointerLeave={() => onHover(null)}
       />
-      {/* Pin at the top, so the marker is findable without hunting for the line. */}
-      <path d={`M${x - 4.5},${y} L${x + 4.5},${y} L${x},${y + 7} Z`} fill={color} />
       {active && (
         // Pointer-transparent: the badge overlaps the hit area it was opened
         // from, and capturing the pointer would make it flicker itself away.
@@ -101,10 +100,11 @@ function SetpointChangeMarker({
  * component so the ReferenceLines land as direct children of the chart, which is
  * what recharts wants; spread the result into the chart's JSX.
  *
- * `ifOverflow="discard"` drops a marker whose moment has been zoomed or panned
- * off screen — with `hidden` the line would be clipped but its pin and hit area
- * would still sit on the plot's edge, offering a tooltip for a change that isn't
- * in view.
+ * The lines themselves are drawn with no stroke — they exist to place their
+ * labels, which carry the hover region. `ifOverflow="discard"` then drops a
+ * marker whose moment has been zoomed or panned off screen; with `hidden` the
+ * hit area would still sit on the plot's edge, offering a tooltip for a change
+ * that isn't in view.
  */
 export function setpointChangeLines({
   changes,
@@ -124,10 +124,7 @@ export function setpointChangeLines({
       <ReferenceLine
         key={change.t}
         x={change.t}
-        stroke={color}
-        strokeWidth={active ? 2 : 1.5}
-        strokeOpacity={active ? 1 : 0.7}
-        strokeDasharray="3 4"
+        stroke="none"
         ifOverflow="discard"
         label={
           <SetpointChangeMarker

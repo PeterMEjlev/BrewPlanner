@@ -447,15 +447,6 @@ export function useMetricSeriesFull(
   return series;
 }
 
-/** {@link useMetricSeriesFull} for the callers that only draw the line. */
-export function useMetricSeries(
-  deviceId: number | null,
-  metric: string,
-  rangeMs = 24 * 60 * 60 * 1000,
-): number[] {
-  return useMetricSeriesFull(deviceId, metric, rangeMs).values;
-}
-
 /**
  * Like {@link useMetricSeries} but keeps timestamps — `{ t, value }` points,
  * oldest→newest — for views that need a real time axis (e.g. the gravity

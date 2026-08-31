@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { badgeBox, cardShift, markerFraction, setpointChangeLabel } from './eventMarkers';
+import {
+  badgeBox,
+  cardShift,
+  markerFraction,
+  setpointChangeLabel,
+  setpointTargetSeries,
+  setpointTargetSpan,
+} from './eventMarkers';
 
 describe('setpointChangeLabel', () => {
   it('reads as the move it describes', () => {
@@ -72,5 +79,75 @@ describe('badgeBox', () => {
 
   it('falls back to the right side before the plot has been measured', () => {
     expect(badgeBox(100, 0, ['x'], null).x).toBeGreaterThan(100);
+  });
+});
+
+describe('setpointTargetSeries', () => {
+  const times = [0, 10, 20, 30, 40];
+
+  it('holds the current target flat when nothing moved', () => {
+    // The common case, and the one the old flat reference line drew.
+    expect(setpointTargetSeries([], times, 18)).toEqual([18, 18, 18, 18, 18]);
+  });
+
+  it('has no line to draw with neither a change nor a current target', () => {
+    expect(setpointTargetSeries([], times, null)).toEqual([]);
+  });
+
+  it('steps at the change and holds each level either side of it', () => {
+    expect(setpointTargetSeries([{ t: 20, from: 18, to: 20 }], times, 20)).toEqual([
+      18, 18, 20, 20, 20,
+    ]);
+  });
+
+  it('reads the pre-window target off the first change, not off the current one', () => {
+    // Before the first change the controller was already holding something, and
+    // `from` is the only record of what — the current value is what it became.
+    expect(setpointTargetSeries([{ t: 30, from: 18, to: 4 }], times, 4)[0]).toBe(18);
+  });
+
+  it('follows several changes in order', () => {
+    const changes = [
+      { t: 10, from: 18, to: 20 },
+      { t: 30, from: 20, to: 4 },
+    ];
+    expect(setpointTargetSeries(changes, times, 4)).toEqual([18, 20, 20, 4, 4]);
+  });
+
+  it('does not depend on the changes arriving in order', () => {
+    const changes = [
+      { t: 30, from: 20, to: 4 },
+      { t: 10, from: 18, to: 20 },
+    ];
+    expect(setpointTargetSeries(changes, times, 4)).toEqual([18, 20, 20, 4, 4]);
+  });
+
+  it('stays on the last logged target rather than jumping to a newer current', () => {
+    // A current that disagrees means a change the readings haven't caught up
+    // with; stepping to it would invent a moment that never happened.
+    expect(setpointTargetSeries([{ t: 10, from: 18, to: 20 }], times, 22).at(-1)).toBe(20);
+  });
+
+  it('has nothing to sample onto an empty grid', () => {
+    expect(setpointTargetSeries([{ t: 10, from: 18, to: 20 }], [], 20)).toEqual([]);
+  });
+});
+
+describe('setpointTargetSpan', () => {
+  it('covers every level the target visited, not just the current one', () => {
+    // A cold crash leaves the axis having to hold 4° as well as 20°.
+    const changes = [
+      { t: 10, from: 18, to: 20 },
+      { t: 30, from: 20, to: 4 },
+    ];
+    expect(setpointTargetSpan(changes, 4)).toEqual({ min: 4, max: 20 });
+  });
+
+  it('is the current target alone when nothing moved', () => {
+    expect(setpointTargetSpan([], 18)).toEqual({ min: 18, max: 18 });
+  });
+
+  it('is null when there is no target at all', () => {
+    expect(setpointTargetSpan([], null)).toBeNull();
   });
 });

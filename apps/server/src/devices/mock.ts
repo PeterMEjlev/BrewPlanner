@@ -139,6 +139,33 @@ function hvacStateFor(tempC: number, setpointC: number, heatOnly = false): numbe
   return 0; // idle
 }
 
+/**
+ * The mock fermenter's target programme: what its Inkbird is "set to" over time.
+ *
+ * A synthesized target used to be one number for all of history, which drew the
+ * charts' target line as a flat rule and left the change markers with nothing to
+ * point at — the one part of the fermenter card that could not be developed
+ * against mock data. The phases below are a fermentation schedule in miniature:
+ * primary, a diacetyl rest, then cooling toward a crash.
+ *
+ * It cycles rather than running once, so every window has steps in it whenever
+ * you look. Keyed off epoch time (not the clock or the server's start) so it is
+ * a pure function of the moment: the history, the live value and the change list
+ * are three views of the same schedule and cannot drift apart, and a poll five
+ * seconds later redraws the same line rather than sliding it.
+ */
+const FERMENT_PROGRAMME: readonly { holdHours: number; targetC: number }[] = [
+  { holdHours: 10, targetC: 18 },
+  { holdHours: 6, targetC: 20 },
+  { holdHours: 8, targetC: 12 },
+];
+
+const HOUR_MS = 60 * 60 * 1000;
+const PROGRAMME_MS = FERMENT_PROGRAMME.reduce((total, p) => total + p.holdHours * HOUR_MS, 0);
+
+/** How long the mock fridge takes to travel to a new target, for the temp curve. */
+const FERMENT_PULL_MS = 45 * 60 * 1000;
+
 const FERMENT_FG = 1.01;
 const FERMENT_K = 0.12;
 const FERMENT_AGE_DAYS = 14;
@@ -230,7 +257,7 @@ export function mockStatus(
     latest: latestReadings(profile, id, nowIso),
     reportingIntervalSec: MOCK_PUSH_INTERVAL_SEC,
     readingCount: mockReadingCount(profile),
-    pendingSetpointC: resolvePendingSetpoint(id, profile.base.setpoint_c ?? 0),
+    pendingSetpointC: resolvePendingSetpoint(profile, id),
   };
 }
 
@@ -240,8 +267,10 @@ export function mockHistory(
   opts: { metric?: string; since?: string; limit?: number; buckets?: number } = {},
 ): Reading[] {
   const metric = opts.metric ?? Object.keys(profile.base)[0]!;
-  const baseFromProfile = profile.base[metric] ?? 0;
-  const base = metric === 'setpoint_c' ? effectiveSetpoint(deviceId, baseFromProfile) : baseFromProfile;
+  // The target and the temperature are both functions of the moment now (see
+  // FERMENT_PROGRAMME), so they read the profile per point rather than taking
+  // one value for the whole window as everything else here does.
+  const base = profile.base[metric] ?? 0;
   const end = Date.now();
   const start = opts.since ? Date.parse(opts.since) : end - 24 * 60 * 60 * 1000;
   const spanMs = Math.max(end - start, 60 * 1000);
@@ -300,28 +329,90 @@ function currentValue(metric: string, base: number): number {
   return base + wander(metric, WANDER[metric] ?? 0);
 }
 
-function resolvePendingSetpoint(deviceId: number, base: number): number | null {
+/**
+ * Only the fermenter's controller runs a programme. The brewery's freeze-safety
+ * Inkbird and the keg fridge are both set once and left there for the year, so a
+ * target that wandered would be a worse mock, not a livelier one.
+ */
+function hasTargetProgramme(profile: MockProfile): boolean {
+  return profile.key === 'fermenter_controller';
+}
+
+/** Where `t` falls in {@link FERMENT_PROGRAMME}: its target, and its two ends. */
+function programmePhaseAt(t: number): { targetC: number; startedAt: number; endsAt: number } {
+  let startedAt = Math.floor(t / PROGRAMME_MS) * PROGRAMME_MS;
+  for (const phase of FERMENT_PROGRAMME) {
+    const endsAt = startedAt + phase.holdHours * HOUR_MS;
+    if (t < endsAt) return { targetC: phase.targetC, startedAt, endsAt };
+    startedAt = endsAt;
+  }
+  // Unreachable — the phases sum to PROGRAMME_MS — but a total is cheaper to
+  // guard than to prove at every call site.
+  const last = FERMENT_PROGRAMME[FERMENT_PROGRAMME.length - 1]!;
+  return { targetC: last.targetC, startedAt, endsAt: startedAt + last.holdHours * HOUR_MS };
+}
+
+/**
+ * The target a mock controller was holding at `t`.
+ *
+ * A setpoint the operator changed through the UI wins from the moment it was
+ * applied onward: taking manual control of a mock fridge and then watching the
+ * schedule quietly undo it a few hours later would be a worse lie than the
+ * schedule itself.
+ */
+function mockTargetAt(profile: MockProfile, deviceId: number, t: number): number {
+  const applied = appliedSetpoints.get(deviceId);
+  if (applied && t >= applied.at) return applied.value;
+  if (hasTargetProgramme(profile)) return programmePhaseAt(t).targetC;
+  return profile.base.setpoint_c ?? 0;
+}
+
+/** Every programme step in (`from`, `to`], oldest first. */
+function programmeStepsBetween(from: number, to: number): { at: number; from: number; to: number }[] {
+  const steps: { at: number; from: number; to: number }[] = [];
+  // Walk the phase boundaries from the one containing `from`; a window wider
+  // than a cycle simply yields more of them.
+  let phase = programmePhaseAt(from);
+  let previous = phase.targetC;
+  while (phase.endsAt <= to) {
+    const next = programmePhaseAt(phase.endsAt);
+    if (phase.endsAt > from && Math.abs(next.targetC - previous) >= 0.05) {
+      steps.push({ at: phase.endsAt, from: previous, to: next.targetC });
+    }
+    previous = next.targetC;
+    phase = next;
+  }
+  return steps;
+}
+
+function resolvePendingSetpoint(profile: MockProfile, deviceId: number): number | null {
   const pending = pendingSetpoints.get(deviceId);
   if (!pending) return null;
   if (Date.now() - pending.at >= APPLY_LATENCY_MS) {
-    const from = appliedSetpoints.get(deviceId)?.value ?? base;
-    appliedSetpoints.set(deviceId, { value: pending.value, from, at: Date.now() });
+    const at = Date.now();
+    // What it was holding a moment before the change — the programme's value
+    // when nothing has been set by hand yet.
+    const from = mockTargetAt(profile, deviceId, at - 1);
+    appliedSetpoints.set(deviceId, { value: pending.value, from, at });
     pendingSetpoints.delete(deviceId);
     return null;
   }
   return pending.value;
 }
 
-function effectiveSetpoint(deviceId: number, base: number): number {
-  resolvePendingSetpoint(deviceId, base);
-  return appliedSetpoints.get(deviceId)?.value ?? base;
+function effectiveSetpoint(profile: MockProfile, deviceId: number): number {
+  resolvePendingSetpoint(profile, deviceId);
+  return mockTargetAt(profile, deviceId, Date.now());
 }
 
 /**
- * Target changes for a synthesized controller: the ones made in this session
- * through the mock setpoint control, so changing a mock fridge's target puts a
- * marker on its charts the way a real one would. A freshly started server has
- * none — there is no invented history of dial-turning to report.
+ * Target changes for a synthesized controller: the steps its programme took
+ * across the window (see {@link FERMENT_PROGRAMME}), plus any change the
+ * operator made through the mock setpoint control this session.
+ *
+ * The two are read from the same schedule the history is drawn from, so a
+ * marker always lands on the step in the target line rather than beside it.
+ * Programme steps stop at a hand-set change, which holds from then on.
  */
 export function mockSetpointChanges(
   profile: MockProfile,
@@ -329,12 +420,27 @@ export function mockSetpointChanges(
   opts: { since?: string } = {},
 ): SetpointChange[] {
   if (profile.type !== 'brew_controller') return [];
-  resolvePendingSetpoint(deviceId, profile.base.setpoint_c ?? 0);
+  resolvePendingSetpoint(profile, deviceId);
   const applied = appliedSetpoints.get(deviceId);
-  if (!applied || Math.abs(applied.value - applied.from) < 0.05) return [];
-  const at = new Date(applied.at).toISOString();
-  if (opts.since && at < opts.since) return [];
-  return [{ at, from: applied.from, to: applied.value }];
+  const now = Date.now();
+  const from = opts.since ? Date.parse(opts.since) : now - 30 * 24 * HOUR_MS;
+  if (!Number.isFinite(from)) return [];
+
+  const changes: SetpointChange[] = [];
+  if (hasTargetProgramme(profile)) {
+    for (const step of programmeStepsBetween(from, Math.min(applied?.at ?? now, now))) {
+      changes.push({ at: new Date(step.at).toISOString(), from: step.from, to: step.to });
+    }
+  }
+  if (applied && applied.at >= from && Math.abs(applied.value - applied.from) >= 0.05) {
+    changes.push({
+      at: new Date(applied.at).toISOString(),
+      from: applied.from,
+      to: applied.value,
+    });
+  }
+  // The API answers newest first, like the real query does.
+  return changes.reverse();
 }
 
 function latestReadings(profile: MockProfile, deviceId: number, nowIso: string): LatestReading[] {
@@ -351,13 +457,43 @@ function latestValue(
   metric: string,
   base: number,
 ): number {
-  if (metric === 'setpoint_c') return effectiveSetpoint(deviceId, base);
+  if (metric === 'setpoint_c') return effectiveSetpoint(profile, deviceId);
+  if (metric === 'temp_c') return mockTempAt(profile, deviceId, Date.now(), base);
   if (metric === 'hvac_state') {
-    const temp = currentValue('temp_c', profile.base.temp_c ?? 0);
-    const setpoint = effectiveSetpoint(deviceId, profile.base.setpoint_c ?? temp);
-    return hvacStateFor(temp, setpoint, profile.heatOnly);
+    const temp = mockTempAt(profile, deviceId, Date.now(), profile.base.temp_c ?? 0);
+    return hvacStateFor(temp, effectiveSetpoint(profile, deviceId), profile.heatOnly);
   }
   return currentValue(metric, base);
+}
+
+/** When the target in force at `t` was set — a programme boundary, or a hand-set change. */
+function targetSetAt(profile: MockProfile, deviceId: number, t: number): number {
+  const applied = appliedSetpoints.get(deviceId);
+  if (applied && t >= applied.at) return applied.at;
+  return programmePhaseAt(t).startedAt;
+}
+
+/**
+ * A controller's own temperature at `t`: for one running a programme, the target
+ * it was chasing then, eased across each step and wobbling around it the way a
+ * hysteresis controller does. Anything else keeps its flat base value.
+ *
+ * Without this the mock fermenter would sit at one temperature while its target
+ * stepped away from it — a fridge permanently failing to reach a setpoint, which
+ * is a strange thing for the demo fleet to be showing.
+ */
+function mockTempAt(profile: MockProfile, deviceId: number, t: number, base: number): number {
+  if (!hasTargetProgramme(profile)) return currentValue('temp_c', base);
+  const target = mockTargetAt(profile, deviceId, t);
+  // Ease from the target this one replaced, so a step reads as a fridge
+  // travelling to it rather than teleporting — including one set by hand.
+  const setAt = targetSetAt(profile, deviceId, t);
+  const previous = mockTargetAt(profile, deviceId, setAt - 1);
+  const progress = Math.min(1, Math.max(0, (t - setAt) / FERMENT_PULL_MS));
+  const held = previous + (target - previous) * progress;
+  // The compressor cycling around it — the same sort of ±0.4 °C swing the
+  // previews are built to smooth (see SERIES_BUCKETS in the web app).
+  return held + Math.sin(t / (7 * 60 * 1000)) * 0.4;
 }
 
 function historyValue(
@@ -369,13 +505,17 @@ function historyValue(
   profile: MockProfile,
   deviceId: number,
 ): number {
-  if (metric === 'setpoint_c') return base;
+  if (metric === 'setpoint_c') return mockTargetAt(profile, deviceId, t);
+
+  if (metric === 'temp_c' && hasTargetProgramme(profile)) {
+    return mockTempAt(profile, deviceId, t, base);
+  }
 
   if (metric === 'hvac_state') {
-    // Derive the relay state from the temp series vs the (effective) setpoint at
-    // this instant, so cooling/heating tracks where the operator set the target.
+    // Derive the relay state from the temp series vs the setpoint at this
+    // instant, so cooling/heating tracks the target through the window.
     const temp = historyValue('temp_c', profile.base.temp_c ?? 0, frac, spanDays, t, profile, deviceId);
-    const setpoint = effectiveSetpoint(deviceId, profile.base.setpoint_c ?? temp);
+    const setpoint = mockTargetAt(profile, deviceId, t);
     return hvacStateFor(temp, setpoint, profile.heatOnly);
   }
 

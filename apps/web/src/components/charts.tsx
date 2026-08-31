@@ -6,9 +6,164 @@
  * numbers, so it renders the same against mock and live telemetry.
  */
 
-import { useState } from 'react';
+import { Fragment, type PointerEvent as ReactPointerEvent, useState } from 'react';
 import type { Span } from './chartZoom';
 import { cardShift, markerFraction } from './eventMarkers';
+import {
+  type TimeWindow,
+  coversSample,
+  sampleTimeAt,
+  snapToBar,
+  snapToSample,
+} from './chartHover';
+import { clockTime } from '../util';
+
+// --- Hover -------------------------------------------------------------------
+
+/**
+ * Pointing at a mini chart to read a value off it. The geometry — which sample
+ * is under the pointer, and when it was recorded — lives in chartHover.ts; what
+ * follows is the card and crosshair it draws.
+ */
+
+/** One line of a hover card: what it is, what it read, and the line's own mark. */
+export interface SparkTooltipRow {
+  label: string;
+  value: string;
+  color?: string;
+  dash?: keyof typeof SPARK_DASH;
+}
+
+/** How a chart turns a hovered sample into a card. Omit to leave it un-hoverable. */
+export interface SparkTooltip {
+  /** Formats a plotted value, units and all. */
+  format: (value: number) => string;
+  /** Names the one series, on the single-series charts. */
+  label?: string;
+}
+
+export type { TimeWindow };
+
+/**
+ * Past this, a bare clock time stops identifying a point: "09:56" on a week of
+ * history could be any of seven mornings, so the day goes in front of it.
+ */
+const HOVER_DATE_SPAN_MS = 36 * 60 * 60 * 1000;
+
+/** How a hovered moment is written, given how much time is on screen around it. */
+function hoverTime(t: number, spanMs: number): string {
+  if (spanMs <= HOVER_DATE_SPAN_MS) return clockTime(t);
+  const day = new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
+  return `${day} ${clockTime(t)}`;
+}
+
+/** When sample `index` of `points` spread across `window` was recorded. */
+function sampleTime(index: number, points: number, window: TimeWindow | undefined): string | undefined {
+  const t = sampleTimeAt(index, points, window);
+  if (t == null || !window) return undefined;
+  return hoverTime(t, window.end - window.start);
+}
+
+/**
+ * Where the pointer is across a chart, 0 to 1.
+ *
+ * Left raw rather than snapped here because the charts don't agree on what a
+ * sample is (see chartHover.ts): a line's points sit on the grid, a bar spans a
+ * slice of it, and a forecast's are unevenly spaced along a real time axis.
+ */
+function useSparkPointer(enabled: boolean): {
+  frac: number | null;
+  bind: {
+    onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
+    onPointerLeave: () => void;
+  };
+} {
+  const [frac, setFrac] = useState<number | null>(null);
+  return {
+    frac: enabled ? frac : null,
+    bind: {
+      onPointerMove: (e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (!(rect.width > 0)) return;
+        setFrac(Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)));
+      },
+      onPointerLeave: () => setFrac(null),
+    },
+  };
+}
+
+/** The thin rule under the pointer, marking which sample the card is quoting. */
+function SparkCrosshair({ frac }: { frac: number }): JSX.Element {
+  return (
+    <div
+      className="pointer-events-none absolute inset-y-0 w-px bg-zinc-500/70"
+      style={{ left: `${frac * 100}%` }}
+      aria-hidden
+    />
+  );
+}
+
+/**
+ * The card itself: a heading, a row per series, and an optional note under a
+ * rule for something that happened at this point rather than something measured
+ * there (a target change).
+ *
+ * HTML rather than SVG because the plots are drawn with
+ * `preserveAspectRatio="none"` — text inside one would be stretched by whatever
+ * aspect the parent happens to give the chart.
+ */
+function SparkHoverCard({
+  frac,
+  heading,
+  rows,
+  note,
+  noteColor,
+}: {
+  frac: number;
+  heading?: string;
+  rows: SparkTooltipRow[];
+  note?: string;
+  noteColor?: string;
+}): JSX.Element {
+  return (
+    <div
+      className="pointer-events-none absolute z-10 whitespace-nowrap rounded-lg border border-zinc-800 bg-zinc-950/95 px-2 py-1 text-[11px] leading-tight shadow-lg shadow-black/40"
+      style={{ left: `${frac * 100}%`, top: 2, transform: cardShift(frac) }}
+    >
+      {heading && <div className="mb-1 font-medium text-zinc-400">{heading}</div>}
+      <div className="grid grid-cols-[auto_auto] items-center gap-x-3 gap-y-0.5">
+        {rows.map((row) => (
+          <Fragment key={row.label}>
+            <span className="flex items-center gap-1.5 text-zinc-400">
+              {row.color && (
+                <span
+                  className="inline-block w-2.5 border-t-2"
+                  style={{
+                    borderColor: row.color,
+                    borderStyle: row.dash === 'dotted' ? 'dotted' : row.dash === 'dashed' ? 'dashed' : 'solid',
+                  }}
+                  aria-hidden
+                />
+              )}
+              {row.label}
+            </span>
+            <span className="justify-self-end font-semibold tabular-nums text-zinc-100">
+              {row.value}
+            </span>
+          </Fragment>
+        ))}
+      </div>
+      {note && (
+        <div
+          className="mt-1 border-t border-zinc-800 pt-1 font-semibold"
+          style={{ color: noteColor }}
+        >
+          {note}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Widen a value range so it spans at least `minSpan`, keeping the data centred.
@@ -56,7 +211,12 @@ export function formatAxisValue(v: number, span: number | null): string {
   return v.toFixed(4);
 }
 
-/** A thin line sparkline that stretches to fill its box (width comes from CSS). */
+/**
+ * A thin line sparkline that stretches to fill its box (width comes from CSS).
+ *
+ * Pass `tooltip` to make it readable: a crosshair then follows the pointer and a
+ * card names the sample under it (see {@link SparkTooltip}).
+ */
 export function Sparkline({
   data,
   stroke = '#38bdf8',
@@ -64,6 +224,8 @@ export function Sparkline({
   height = 44,
   grow = false,
   minSpan,
+  tooltip,
+  timeWindow,
   className,
 }: {
   data: number[];
@@ -76,10 +238,15 @@ export function Sparkline({
   grow?: boolean;
   /** Floor on the Y-span (see {@link withMinSpan}) so a tiny swing stays small. */
   minSpan?: number;
+  /** Makes the chart hoverable; omit on one too small to read a card over. */
+  tooltip?: SparkTooltip;
+  /** The span the samples cover, for dating the hovered one. */
+  timeWindow?: TimeWindow;
   className?: string;
 }): JSX.Element {
   const w = 100;
   const renderedHeight = grow ? '100%' : height;
+  const pointer = useSparkPointer(tooltip != null);
   if (data.length < 2) {
     return <div className={className} style={{ height: renderedHeight }} aria-hidden />;
   }
@@ -90,26 +257,48 @@ export function Sparkline({
   const toY = (v: number): number => height - pad - ((v - min) / range) * (height - pad * 2);
   const pts = data.map((v, i) => [(i / (data.length - 1)) * w, toY(v)] as const);
   const line = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+  const hover = pointer.frac == null ? null : snapToSample(pointer.frac, data.length);
 
   return (
-    <svg
-      viewBox={`0 0 ${w} ${height}`}
-      preserveAspectRatio="none"
+    <div
       className={className}
-      style={{ height: renderedHeight, width: '100%', display: 'block' }}
-      aria-hidden
+      style={{ height: renderedHeight, position: 'relative' }}
+      {...(tooltip ? pointer.bind : {})}
     >
-      {fill && <path d={`${line} L${w},${height} L0,${height} Z`} fill={fill} stroke="none" />}
-      <path
-        d={line}
-        fill="none"
-        stroke={stroke}
-        strokeWidth={1.5}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
+      <svg
+        viewBox={`0 0 ${w} ${height}`}
+        preserveAspectRatio="none"
+        style={{ height: '100%', width: '100%', display: 'block' }}
+        aria-hidden
+      >
+        {fill && <path d={`${line} L${w},${height} L0,${height} Z`} fill={fill} stroke="none" />}
+        <path
+          d={line}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={1.5}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      {tooltip && hover && (
+        <>
+          <SparkCrosshair frac={hover.frac} />
+          <SparkHoverCard
+            frac={hover.frac}
+            heading={sampleTime(hover.index, data.length, timeWindow)}
+            rows={[
+              {
+                label: tooltip.label ?? 'Value',
+                value: tooltip.format(data[hover.index]!),
+                color: stroke,
+              },
+            ]}
+          />
+        </>
+      )}
+    </div>
   );
 }
 
@@ -152,6 +341,7 @@ export function ForecastSparkline({
   fill,
   height = 44,
   grow = false,
+  tooltip,
   className,
 }: {
   history: ForecastPoint[];
@@ -163,11 +353,18 @@ export function ForecastSparkline({
   fill?: string;
   height?: number;
   grow?: boolean;
+  /**
+   * Makes the chart hoverable. This one plots on a real time axis, so a hovered
+   * point is dated exactly rather than read back off a window, and one past the
+   * centre is labelled as the prediction it is.
+   */
+  tooltip?: SparkTooltip;
   className?: string;
 }): JSX.Element {
   const w = 100;
   const mid = w / 2;
   const renderedHeight = grow ? '100%' : height;
+  const pointer = useSparkPointer(tooltip != null);
   if (history.length < 2 || forecast.length === 0) {
     return <div className={className} style={{ height: renderedHeight }} aria-hidden />;
   }
@@ -213,12 +410,32 @@ export function ForecastSparkline({
   ];
   const leftEdge = histPts[0]![0];
 
+  // Nearest plotted point to the pointer, measured along the shared time axis —
+  // the history and the forecast are unevenly spaced, so there is no grid to
+  // round onto as the other charts have.
+  const plotted = [
+    ...visible.map((point) => ({ ...point, predicted: false })),
+    ...foreVals.map((point) => ({ ...point, predicted: true })),
+  ];
+  const hover =
+    pointer.frac == null
+      ? null
+      : plotted.reduce((best, point) =>
+          Math.abs(x(point.t) / w - pointer.frac!) < Math.abs(x(best.t) / w - pointer.frac!)
+            ? point
+            : best,
+        );
+
   return (
+    <div
+      className={className}
+      style={{ height: renderedHeight, position: 'relative' }}
+      {...(tooltip ? pointer.bind : {})}
+    >
     <svg
       viewBox={`0 0 ${w} ${height}`}
       preserveAspectRatio="none"
-      className={className}
-      style={{ height: renderedHeight, width: '100%', display: 'block' }}
+      style={{ height: '100%', width: '100%', display: 'block' }}
       aria-hidden
     >
       {fill && (
@@ -261,108 +478,173 @@ export function ForecastSparkline({
         vectorEffect="non-scaling-stroke"
       />
     </svg>
+      {tooltip && hover && (
+        <>
+          <SparkCrosshair frac={x(hover.t) / w} />
+          <SparkHoverCard
+            frac={x(hover.t) / w}
+            heading={
+              hover.predicted
+                ? `${hoverTime(hover.t, span)} · forecast`
+                : hoverTime(hover.t, span)
+            }
+            rows={[
+              {
+                label: tooltip.label ?? 'Value',
+                value: tooltip.format(hover.value),
+                color: stroke,
+                dash: hover.predicted ? 'dashed' : undefined,
+              },
+            ]}
+          />
+        </>
+      )}
+    </div>
   );
 }
 
-/** A mini bar chart that stretches to fill its box — used for power draw. */
+/**
+ * A mini bar chart that stretches to fill its box — used for power draw.
+ *
+ * Pass `tooltip` to make it readable: the bar under the pointer lifts out of the
+ * row and a card names it. No crosshair — a bar is already a mark of its own,
+ * and a rule down the middle of one only obscures it.
+ */
 export function BarSpark({
   data,
   fill = '#84cc16',
   height = 44,
+  tooltip,
+  timeWindow,
   className,
 }: {
   data: number[];
   fill?: string;
   height?: number;
+  /** Makes the chart hoverable; omit on one too small to read a card over. */
+  tooltip?: SparkTooltip;
+  /** The span the bars cover, for dating the hovered one. */
+  timeWindow?: TimeWindow;
   className?: string;
 }): JSX.Element {
+  const pointer = useSparkPointer(tooltip != null);
   if (data.length === 0) {
     return <div className={className} style={{ height }} aria-hidden />;
   }
   const max = Math.max(...data, 1);
   const n = data.length;
+  const hover = pointer.frac == null ? null : snapToBar(pointer.frac, n);
+  const at = hover?.index ?? null;
   return (
-    <svg
-      viewBox={`0 0 ${n} ${height}`}
-      preserveAspectRatio="none"
-      className={className}
-      style={{ height, width: '100%', display: 'block' }}
-      aria-hidden
-    >
-      {data.map((v, i) => {
-        const bh = Math.max((v / max) * height, 0.5);
-        return (
-          <rect key={i} x={i + 0.12} y={height - bh} width={0.76} height={bh} fill={fill} rx={0.15} />
-        );
-      })}
-    </svg>
+    <div className={className} style={{ height, position: 'relative' }} {...(tooltip ? pointer.bind : {})}>
+      <svg
+        viewBox={`0 0 ${n} ${height}`}
+        preserveAspectRatio="none"
+        style={{ height: '100%', width: '100%', display: 'block' }}
+        aria-hidden
+      >
+        {data.map((v, i) => {
+          const bh = Math.max((v / max) * height, 0.5);
+          return (
+            <rect
+              key={i}
+              x={i + 0.12}
+              y={height - bh}
+              width={0.76}
+              height={bh}
+              fill={fill}
+              opacity={at == null || at === i ? 1 : 0.45}
+              rx={0.15}
+            />
+          );
+        })}
+      </svg>
+      {tooltip && hover && (
+        <SparkHoverCard
+          frac={hover.frac}
+          heading={sampleTime(hover.index, n, timeWindow)}
+          rows={[
+            { label: tooltip.label ?? 'Value', value: tooltip.format(data[hover.index]!), color: fill },
+          ]}
+        />
+      )}
+    </div>
   );
 }
+
+/** Stroke patterns a mini chart's lines can be told apart by. */
+const SPARK_DASH = { dashed: '4 3', dotted: '1 2.5' } as const;
 
 export interface SparkSeries {
   data: number[];
   stroke: string;
-  /** Render as a dashed line (e.g. the fridge against the solid beer line). */
-  dashed?: boolean;
+  /**
+   * Set a line apart from the solid one — the fridge is `dashed` against the
+   * solid beer trace, the target `dotted` against both.
+   */
+  dash?: keyof typeof SPARK_DASH;
+  /** Names this line in the hover card. */
+  label?: string;
 }
 
 /**
- * A moment worth marking with a vertical line across a mini chart — today, the
- * brewer changing a fermenter's target temperature.
+ * A moment on a mini chart worth calling out: today, where the brewer moved a
+ * fermenter's target temperature.
+ *
+ * Nothing is drawn for one. The change is already visible as the step in the
+ * target line, and a vertical rule beside that step would only be saying the
+ * same thing again; a marker adds a line to the hover card of the sample it
+ * falls in, so pointing at the step tells you what it was.
  */
 export interface SparkMarker {
   /** Epoch milliseconds. */
   t: number;
-  /** Headline on hover, e.g. "18.0 -> 20.0". */
+  /** The note added to that sample's card, e.g. "Target changed 18.0° → 20.0°". */
   label: string;
-  /** Second, quieter line on hover — normally when it happened. */
-  detail?: string;
 }
 
 /**
- * A mini multi-series line chart sharing one Y-scale, plus an optional dotted
- * horizontal reference line (e.g. the setpoint) and optional vertical event
- * markers (e.g. where that setpoint was changed). Like {@link Sparkline} but for
- * comparing a couple of series at a glance; no area fill.
+ * A mini multi-series line chart sharing one Y-scale. Like {@link Sparkline} but
+ * for comparing a couple of series at a glance; no area fill.
  *
- * Markers need `timeWindow` to place them, and hovering one shows a small card
- * naming the event. That card is HTML rather than SVG because the plot is drawn
- * with `preserveAspectRatio="none"` — text inside it would be stretched by
- * whatever aspect the parent happens to give the chart.
+ * Pass `tooltip` to make it readable: hovering names every line at the sample
+ * under the pointer, and adds a note where a {@link SparkMarker} falls in that
+ * sample. Markers need `timeWindow` to place them.
  */
 export function MultiLineSparkline({
   series,
-  refLine,
   markers,
-  markerStroke = '#f59e0b',
+  markerColor = '#f59e0b',
   timeWindow,
+  tooltip,
   height = 44,
   grow = false,
   minSpan,
   className,
 }: {
   series: SparkSeries[];
-  /** A constant horizontal line, e.g. the target temperature. */
-  refLine?: { value: number; stroke: string };
-  /** Vertical event lines; ignored without a `timeWindow` to place them in. */
+  /** Events to note on the card of whichever sample they fall in. */
   markers?: SparkMarker[];
-  markerStroke?: string;
-  /** The time span the plot covers, needed to position {@link markers}. */
-  timeWindow?: { start: number; end: number };
+  /** Accent for a marker's note. */
+  markerColor?: string;
+  /** The time span the plot covers, for dating a hovered sample and its markers. */
+  timeWindow?: TimeWindow;
+  /** Makes the chart hoverable; omit on one too small to read a card over. */
+  tooltip?: SparkTooltip;
   height?: number;
   grow?: boolean;
   /** Floor on the Y-span (see {@link withMinSpan}) so a tiny swing stays small. */
   minSpan?: number;
   className?: string;
 }): JSX.Element {
-  // Keyed by the marker's timestamp rather than its index: a poll that adds an
-  // older change would shift every index under a pointer that hasn't moved.
-  const [hovered, setHovered] = useState<number | null>(null);
   const w = 100;
   const renderedHeight = grow ? '100%' : height;
   const allValues = series.flatMap((s) => s.data);
-  if (refLine) allValues.push(refLine.value);
   const drawable = series.filter((s) => s.data.length >= 2);
+  // Every line is drawn across the same width, so the longest sets the grid a
+  // hover snaps to; a shorter one is read at the same fraction along itself.
+  const points = Math.max(0, ...drawable.map((sp) => sp.data.length));
+  const pointer = useSparkPointer(tooltip != null);
   if (allValues.length === 0 || drawable.length === 0) {
     return <div className={className} style={{ height: renderedHeight }} aria-hidden />;
   }
@@ -378,34 +660,27 @@ export function MultiLineSparkline({
       )
       .join(' ');
 
-  const placed = timeWindow
-    ? (markers ?? []).flatMap((m) => {
-        const frac = markerFraction(m.t, timeWindow);
-        return frac == null ? [] : [{ marker: m, frac }];
-      })
-    : [];
-  const open = placed.find((p) => p.marker.t === hovered);
+  const hover = pointer.frac == null ? null : snapToSample(pointer.frac, points);
+  const note =
+    hover == null || !timeWindow
+      ? undefined
+      : (markers ?? []).find((m) => {
+          const mf = markerFraction(m.t, timeWindow);
+          return mf != null && coversSample(mf, hover.frac, points);
+        })?.label;
 
   return (
-    <div className={className} style={{ height: renderedHeight, position: 'relative' }}>
+    <div
+      className={className}
+      style={{ height: renderedHeight, position: 'relative' }}
+      {...(tooltip ? pointer.bind : {})}
+    >
       <svg
         viewBox={`0 0 ${w} ${height}`}
         preserveAspectRatio="none"
         style={{ height: '100%', width: '100%', display: 'block' }}
         aria-hidden
       >
-        {refLine && (
-          <line
-            x1={0}
-            x2={w}
-            y1={toY(refLine.value)}
-            y2={toY(refLine.value)}
-            stroke={refLine.stroke}
-            strokeWidth={1.2}
-            strokeDasharray="1 2.5"
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
         {drawable.map((s, i) => (
           <path
             key={i}
@@ -413,52 +688,31 @@ export function MultiLineSparkline({
             fill="none"
             stroke={s.stroke}
             strokeWidth={1.5}
-            strokeDasharray={s.dashed ? '4 3' : undefined}
+            strokeDasharray={s.dash ? SPARK_DASH[s.dash] : undefined}
             strokeLinejoin="round"
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
           />
         ))}
-        {/* Over the traces, so a marker stays visible where a line crosses it
-            and wins the pointer at that crossing. */}
-        {placed.map(({ marker, frac }) => (
-          <g key={marker.t}>
-            <line
-              x1={frac * w}
-              x2={frac * w}
-              y1={0}
-              y2={height}
-              stroke={markerStroke}
-              strokeWidth={hovered === marker.t ? 2 : 1.2}
-              strokeOpacity={hovered === marker.t ? 1 : 0.75}
-              strokeDasharray="2 2"
-              vectorEffect="non-scaling-stroke"
-            />
-            {/* Hit area: the line itself is a hair wide, and on a phone this is
-                the whole target. */}
-            <rect
-              x={frac * w - 2}
-              y={0}
-              width={4}
-              height={height}
-              fill="transparent"
-              pointerEvents="all"
-              onPointerEnter={() => setHovered(marker.t)}
-              onPointerLeave={() => setHovered((cur) => (cur === marker.t ? null : cur))}
-            />
-          </g>
-        ))}
       </svg>
-      {open && (
-        <div
-          className="pointer-events-none absolute z-10 whitespace-nowrap rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1 text-[11px] leading-tight shadow-lg shadow-black/40"
-          style={{ left: `${open.frac * 100}%`, top: 2, transform: cardShift(open.frac) }}
-        >
-          <span className="font-semibold" style={{ color: markerStroke }}>
-            {open.marker.label}
-          </span>
-          {open.marker.detail && <span className="block text-zinc-400">{open.marker.detail}</span>}
-        </div>
+      {tooltip && hover && (
+        <>
+          <SparkCrosshair frac={hover.frac} />
+          <SparkHoverCard
+            frac={hover.frac}
+            heading={sampleTime(hover.index, points, timeWindow)}
+            rows={drawable.map((sp, i) => ({
+              label: sp.label ?? `Series ${i + 1}`,
+              // A shorter series is read at the same fraction along its own
+              // points, since it too was stretched across the full width.
+              value: tooltip.format(sp.data[snapToSample(hover.frac, sp.data.length).index]!),
+              color: sp.stroke,
+              dash: sp.dash,
+            }))}
+            note={note}
+            noteColor={markerColor}
+          />
+        </>
       )}
     </div>
   );

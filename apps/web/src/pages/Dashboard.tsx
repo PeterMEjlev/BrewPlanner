@@ -20,7 +20,7 @@ import {
   Sparkline,
   withMinSpan,
 } from '../components/charts';
-import { setpointChangeLabel } from '../components/eventMarkers';
+import { setpointChangeLabel, setpointTargetSeries } from '../components/eventMarkers';
 import { DashboardShell } from '../components/DashboardShell';
 import { FitScale } from '../components/FitScale';
 import { useGraphColors, withAlpha } from '../graphColors';
@@ -64,14 +64,13 @@ import {
   RANGES,
   useDeviceTotal,
   useFleet,
-  useMetricSeries,
   useMetricSeriesFull,
   useMetricSeriesT,
   useSetpointChanges,
 } from '../useDeviceData';
 import { useIsMobile } from '../useIsMobile';
 import { usePoll } from '../usePoll';
-import { dateTime, relativeTime } from '../util';
+import { relativeTime } from '../util';
 
 // recharts lives behind this lazy boundary, so the brew-system chart is only
 // pulled in when the card is actually opened.
@@ -289,6 +288,16 @@ const COMPACT_FERMENTER_TAB_MIN_REM = 28;
  * nothing on a short screen — the card is sized to give it more than this.
  */
 const COMPACT_TAB_CHART = 'min-h-[7rem]';
+
+/**
+ * How each mini chart spells a hovered value out. The Overview's charts have no
+ * axis to read against, so pointing at one is how a brewer gets a number off it
+ * (see `tooltip` on Sparkline) — and a number without its unit is not one.
+ */
+const fmtTempC = (v: number): string => `${v.toFixed(1)} °C`;
+const fmtGravity = (v: number): string => `${v.toFixed(3)} SG`;
+const fmtWatts = (v: number): string => `${Math.round(v)} W`;
+const fmtFlow = (v: number): string => `${v.toFixed(2)} L/min`;
 
 /** A metric the user clicked to enlarge in the chart overlay. */
 interface ChartTarget {
@@ -673,7 +682,8 @@ function FermenterCommandCenter({
   // combined view opens (the fridge device, or the beer device when no fridge).
   const pressureRangeMs = useChartRange(pressure?.deviceId ?? null, 'pressure_bar');
   const tempRangeMs = useChartRange((fridge ?? beer)?.deviceId ?? null, 'temp_c');
-  const pressureSeries = useMetricSeries(pressure?.deviceId ?? null, 'pressure_bar', pressureRangeMs);
+  const pressureFull = useMetricSeriesFull(pressure?.deviceId ?? null, 'pressure_bar', pressureRangeMs);
+  const pressureSeries = pressureFull.values;
   const beerFull = useMetricSeriesFull(beer?.deviceId ?? null, 'temp_c', tempRangeMs);
   const tempSeries = beerFull.values;
   // The fridge line is the one whose extremes get spelled out below, so it takes
@@ -686,21 +696,54 @@ function FermenterCommandCenter({
   // is the controller's own trace, so it is the one the marks belong to.
   const setpointChanges = useSetpointChanges(setpoint?.deviceId ?? null, tempRangeMs);
   const tempMarkers = useMemo(
-    () =>
-      setpointChanges.map((c) => ({
-        t: c.t,
-        label: setpointChangeLabel(c),
-        detail: dateTime(c.t),
-      })),
+    () => setpointChanges.map((c) => ({ t: c.t, label: `Target set ${setpointChangeLabel(c)}` })),
     [setpointChanges],
   );
   const tempWindow = (fridge ? fridgeFull.window : beerFull.window) ?? undefined;
+  // The target as a line through time rather than a flat rule at wherever it
+  // happens to sit now: the steps in it *are* the changes, so the chart says
+  // where the fridge was told to go and when, in one line.
+  //
+  // Sampled onto the same index grid the traces are drawn on — a sparkline
+  // spaces its points by index, so a series only lines up with the others by
+  // sharing their point count across the same window.
+  const targetSeries = useMemo(() => {
+    const points = Math.max(tempSeries.length, fridgeSeries.length);
+    if (!tempWindow || points < 2) return [];
+    const span = tempWindow.end - tempWindow.start;
+    const times = Array.from(
+      { length: points },
+      (_, i) => tempWindow.start + (i / (points - 1)) * span,
+    );
+    return setpointTargetSeries(setpointChanges, times, setpoint?.reading.value ?? null);
+  }, [setpointChanges, setpoint, tempWindow, tempSeries.length, fridgeSeries.length]);
+
+  // The card's three lines, named so a hover can label them. Shared by the phone
+  // tab and the desktop card, which draw the same chart at two sizes.
+  const tempLines = useMemo(
+    () => [
+      ...(beer ? [{ data: tempSeries, stroke: colors.beerTemp, label: 'Beer' }] : []),
+      ...(fridge
+        ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dash: 'dashed' as const, label: 'Fridge' }]
+        : []),
+      ...(targetSeries.length > 0
+        ? [{ data: targetSeries, stroke: colors.setpoint, dash: 'dotted' as const, label: 'Target' }]
+        : []),
+    ],
+    [beer, fridge, tempSeries, fridgeSeries, targetSeries, colors],
+  );
 
   // Fit a decay curve to the gravity history and project it forward, so the
   // gravity card can show a dashed forecast and an estimated finish (using the
   // same stable-window rule as the live status). Falls back to a plain trend
   // when there isn't enough data to fit confidently.
   const gravityValues = useMemo(() => gravityHistory.map((p) => p.value), [gravityHistory]);
+  // The plain fallback line is drawn from the same points, so its window is
+  // simply their extent — no need to ask the series hook for one.
+  const gravityWindow =
+    gravityHistory.length > 1
+      ? { start: gravityHistory[0]!.t, end: gravityHistory[gravityHistory.length - 1]!.t }
+      : undefined;
   const gravityNow =
     gravityHistory.length > 0 ? gravityHistory[gravityHistory.length - 1]!.t : Date.now();
   const gravityFit = useMemo(() => fitGravityDecay(gravityHistory), [gravityHistory]);
@@ -752,11 +795,9 @@ function FermenterCommandCenter({
       : gravityValues,
   );
   const tempDrawable = tempSeries.length >= 2 || fridgeSeries.length >= 2;
-  const tempValues = [
-    ...tempSeries,
-    ...fridgeSeries,
-    ...(setpoint ? [setpoint.reading.value] : []),
-  ];
+  // Every value the target visits, not just today's: a line that steps down to
+  // a cold crash has to stay on the chart.
+  const tempValues = [...tempSeries, ...fridgeSeries, ...targetSeries];
   const tempRange =
     tempDrawable && tempValues.length > 0
       ? withMinSpan(Math.min(...tempValues), Math.max(...tempValues), tempMinSpanC)
@@ -884,7 +925,9 @@ function FermenterCommandCenter({
                     <MultiLineSparkline
                       series={[
                         ...(beer ? [{ data: tempSeries, stroke: colors.beerTemp }] : []),
-                        ...(fridge ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dashed: true }] : []),
+                        ...(fridge
+                          ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dash: 'dashed' as const }]
+                          : []),
                       ]}
                       height={28}
                       minSpan={tempMinSpanC}
@@ -936,7 +979,20 @@ function FermenterCommandCenter({
                       min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
                       caption={pressureRange ? <RangeCaption rangeMs={pressureRangeMs} /> : undefined}
                     >
-                      <Sparkline data={pressureSeries} stroke={colors.pressure} fill={withAlpha(colors.pressure, 0.1)} grow />
+                      <Sparkline
+                        data={pressureSeries}
+                        stroke={colors.pressure}
+                        fill={withAlpha(colors.pressure, 0.1)}
+                        grow
+                        timeWindow={pressureFull.window ?? undefined}
+                        tooltip={{
+                          label: 'Pressure',
+                          format: (v) => {
+                            const f = formatPressure(v, pressureUnit);
+                            return `${f.value} ${f.unit}`;
+                          },
+                        }}
+                      />
                     </MiniChartFrame>
                   </div>
                 </>
@@ -1003,14 +1059,11 @@ function FermenterCommandCenter({
                       captionRight={tempRange ? <RangeCaption rangeMs={tempRangeMs} /> : undefined}
                     >
                       <MultiLineSparkline
-                        series={[
-                          ...(beer ? [{ data: tempSeries, stroke: colors.beerTemp }] : []),
-                          ...(fridge ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dashed: true }] : []),
-                        ]}
-                        refLine={setpoint ? { value: setpoint.reading.value, stroke: colors.setpoint } : undefined}
+                        series={tempLines}
                         markers={tempMarkers}
-                        markerStroke={colors.setpoint}
+                        markerColor={colors.setpoint}
                         timeWindow={tempWindow}
+                        tooltip={{ format: fmtTempC }}
                         grow
                         minSpan={tempMinSpanC}
                       />
@@ -1070,6 +1123,7 @@ function FermenterCommandCenter({
                       >
                         {gravityForecast ? (
                           <ForecastSparkline
+                            tooltip={{ label: 'Gravity', format: fmtGravity }}
                             history={gravityHistory}
                             forecast={gravityForecast}
                             now={gravityNow}
@@ -1078,7 +1132,14 @@ function FermenterCommandCenter({
                             grow
                           />
                         ) : (
-                          <Sparkline data={gravityValues} stroke={colors.gravity} fill={withAlpha(colors.gravity, 0.12)} grow />
+                          <Sparkline
+                            data={gravityValues}
+                            stroke={colors.gravity}
+                            fill={withAlpha(colors.gravity, 0.12)}
+                            grow
+                            timeWindow={gravityWindow}
+                            tooltip={{ label: 'Gravity', format: fmtGravity }}
+                          />
                         )}
                       </MiniChartFrame>
                     ) : (
@@ -1180,7 +1241,20 @@ function FermenterCommandCenter({
                   min={pressureRange ? formatPressure(pressureRange.min, pressureUnit).value : undefined}
                   caption={pressureRange ? <RangeCaption rangeMs={pressureRangeMs} /> : undefined}
                 >
-                  <Sparkline data={pressureSeries} stroke={colors.pressure} fill={withAlpha(colors.pressure, 0.1)} grow />
+                  <Sparkline
+                    data={pressureSeries}
+                    stroke={colors.pressure}
+                    fill={withAlpha(colors.pressure, 0.1)}
+                    grow
+                    timeWindow={pressureFull.window ?? undefined}
+                    tooltip={{
+                      label: 'Pressure',
+                      format: (v) => {
+                        const f = formatPressure(v, pressureUnit);
+                        return `${f.value} ${f.unit}`;
+                      },
+                    }}
+                  />
                 </MiniChartFrame>
               </div>
             </>
@@ -1282,14 +1356,11 @@ function FermenterCommandCenter({
                     captionRight={tempRange ? <RangeCaption rangeMs={tempRangeMs} /> : undefined}
                   >
                     <MultiLineSparkline
-                      series={[
-                        ...(beer ? [{ data: tempSeries, stroke: colors.beerTemp }] : []),
-                        ...(fridge ? [{ data: fridgeSeries, stroke: colors.fridgeTemp, dashed: true }] : []),
-                      ]}
-                      refLine={setpoint ? { value: setpoint.reading.value, stroke: colors.setpoint } : undefined}
+                      series={tempLines}
                       markers={tempMarkers}
-                      markerStroke={colors.setpoint}
+                      markerColor={colors.setpoint}
                       timeWindow={tempWindow}
+                      tooltip={{ format: fmtTempC }}
                       grow
                       minSpan={tempMinSpanC}
                     />
@@ -1355,6 +1426,7 @@ function FermenterCommandCenter({
                   >
                     {gravityForecast ? (
                       <ForecastSparkline
+                        tooltip={{ label: 'Gravity', format: fmtGravity }}
                         history={gravityHistory}
                         forecast={gravityForecast}
                         now={gravityNow}
@@ -1363,7 +1435,14 @@ function FermenterCommandCenter({
                         grow
                       />
                     ) : (
-                      <Sparkline data={gravityValues} stroke={colors.gravity} fill={withAlpha(colors.gravity, 0.12)} grow />
+                      <Sparkline
+                        data={gravityValues}
+                        stroke={colors.gravity}
+                        fill={withAlpha(colors.gravity, 0.12)}
+                        grow
+                        timeWindow={gravityWindow}
+                        tooltip={{ label: 'Gravity', format: fmtGravity }}
+                      />
                     )}
                   </MiniChartFrame>
                 ) : (
@@ -1873,7 +1952,8 @@ function BreweryTempCard({
   compact?: boolean;
 }): JSX.Element {
   const rangeMs = useChartRange(device?.id ?? null, 'temp_c');
-  const series = useMetricSeries(device?.id ?? null, 'temp_c', rangeMs);
+  const full = useMetricSeriesFull(device?.id ?? null, 'temp_c', rangeMs);
+  const series = full.values;
   const colors = useGraphColors();
   const { tempMinSpanC } = useSettings();
   if (!device || !device.online) {
@@ -1931,7 +2011,15 @@ function BreweryTempCard({
           )}
         </div>
         <div className="mt-3">
-          <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} minSpan={tempMinSpanC} />
+          <Sparkline
+            data={series}
+            stroke={colors.fridgeTemp}
+            fill={withAlpha(colors.fridgeTemp, 0.1)}
+            height={40}
+            minSpan={tempMinSpanC}
+            timeWindow={full.window ?? undefined}
+            tooltip={{ label: 'Ambient', format: fmtTempC }}
+          />
         </div>
         {range && <TempRangeLine range={range} rangeMs={rangeMs} />}
       </UtilityShell>
@@ -1948,7 +2036,8 @@ function PowerCard({
   onOpen: OpenChart;
   compact?: boolean;
 }): JSX.Element {
-  const series = useMetricSeries(device?.id ?? null, 'power_w', useChartRange(device?.id ?? null, 'power_w'));
+  const full = useMetricSeriesFull(device?.id ?? null, 'power_w', useChartRange(device?.id ?? null, 'power_w'));
+  const series = full.values;
   const total = useDeviceTotal(device?.id ?? -1, device ? 'energy_kwh' : undefined);
   const colors = useGraphColors();
   if (!device || !device.online)
@@ -1982,7 +2071,13 @@ function PowerCard({
           <StatPair label="Today" value={today ? formatValue(today) : '—'} />
         </div>
         <div className="mt-3">
-          <BarSpark data={series} fill={colors.power} height={40} />
+          <BarSpark
+            data={series}
+            fill={colors.power}
+            height={40}
+            timeWindow={full.window ?? undefined}
+            tooltip={{ label: 'Power', format: fmtWatts }}
+          />
         </div>
         {total != null && (
           <p className="mt-3 text-xs text-zinc-500">
@@ -2006,7 +2101,8 @@ function WaterCard({
   onOpen: OpenChart;
   compact?: boolean;
 }): JSX.Element {
-  const series = useMetricSeries(device?.id ?? null, 'flow_lpm', useChartRange(device?.id ?? null, 'flow_lpm'));
+  const full = useMetricSeriesFull(device?.id ?? null, 'flow_lpm', useChartRange(device?.id ?? null, 'flow_lpm'));
+  const series = full.values;
   const total = useDeviceTotal(device?.id ?? -1, device ? 'water_l' : undefined);
   const colors = useGraphColors();
   if (!device || !device.online)
@@ -2040,7 +2136,14 @@ function WaterCard({
           <StatPair label="Today" value={today ? formatValue(today) : '—'} />
         </div>
         <div className="mt-3">
-          <Sparkline data={series} stroke={colors.water} fill={withAlpha(colors.water, 0.1)} height={40} />
+          <Sparkline
+            data={series}
+            stroke={colors.water}
+            fill={withAlpha(colors.water, 0.1)}
+            height={40}
+            timeWindow={full.window ?? undefined}
+            tooltip={{ label: 'Flow', format: fmtFlow }}
+          />
         </div>
         {total != null && (
           <p className="mt-3 text-xs text-zinc-500">
@@ -2334,7 +2437,8 @@ function KegFridgeCard({
   const { tempMinSpanC } = useSettings();
   const rangeMs = useChartRange(device?.id ?? null, 'temp_c');
   // The phone card draws no sparkline, so it doesn't pull the history behind one.
-  const series = useMetricSeries(compact ? null : device?.id ?? null, 'temp_c', rangeMs);
+  const full = useMetricSeriesFull(compact ? null : device?.id ?? null, 'temp_c', rangeMs);
+  const series = full.values;
   const temp = device?.latest.find((r) => r.metric === 'temp_c');
   const setpoint = device?.latest.find((r) => r.metric === 'setpoint_c');
   const state = device?.latest.find((r) => r.metric === 'hvac_state');
@@ -2403,7 +2507,15 @@ function KegFridgeCard({
                 onClick={() => onOpen({ deviceId: device.id, metric: 'temp_c', title: 'Keg fridge temperature' })}
                 className="mt-3 block w-full text-left transition hover:opacity-90 focus:outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500"
               >
-                <Sparkline data={series} stroke={colors.fridgeTemp} fill={withAlpha(colors.fridgeTemp, 0.1)} height={40} minSpan={tempMinSpanC} />
+                <Sparkline
+                  data={series}
+                  stroke={colors.fridgeTemp}
+                  fill={withAlpha(colors.fridgeTemp, 0.1)}
+                  height={40}
+                  minSpan={tempMinSpanC}
+                  timeWindow={full.window ?? undefined}
+                  tooltip={{ label: 'Fridge', format: fmtTempC }}
+                />
                 {range && <TempRangeLine range={range} rangeMs={rangeMs} />}
               </button>
               <div className="mt-3">

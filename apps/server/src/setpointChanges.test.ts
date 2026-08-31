@@ -172,14 +172,20 @@ describe('GET /api/devices/:id/setpoint-changes', () => {
     assert.deepEqual(res.json(), []);
   });
 
-  it('has nothing to show for a controller served from mock data', () => {
-    // Its readings are synthesized too, so real steps in a stale table would be
-    // markers on a curve they never belonged to.
+  it('answers from the mock for a controller served from mock data', async () => {
+    // Its curve is synthesized too, so a real step out of a stale table would be
+    // a marker on a line it never belonged to. What comes back is the mock
+    // fermenter's own schedule (see devices/mock.ts) — the steps in the curve
+    // the chart is actually drawing.
     const id = controllerWith('stale', [18, 20]);
     assert.ok(repo.getSetpointChanges(id).length > 0, 'the rows are there');
-    return app
-      .inject({ url: `/api/devices/${id}/setpoint-changes` })
-      .then((res) => assert.deepEqual(res.json(), []));
+    const res = await app.inject({ url: `/api/devices/${id}/setpoint-changes` });
+    const body = res.json() as { at: string }[];
+    assert.equal(
+      body.some((c) => c.at === iso(1)),
+      false,
+      'the stale table row must not surface',
+    );
   });
 
   it('404s for a device that does not exist', async () => {

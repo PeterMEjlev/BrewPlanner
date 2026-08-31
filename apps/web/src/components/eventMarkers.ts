@@ -1,14 +1,75 @@
 /**
- * Labelling and geometry for the vertical event markers on the temperature
- * charts — today, the moments the brewer moved a fermenter's target (see
- * `SetpointChange` in @checklist/shared for where the events come from).
+ * The target temperature drawn through time, and the labelling for the moments
+ * it moved (see `SetpointChange` in @checklist/shared for where those come
+ * from).
  *
- * Two very different charts draw them: the Overview's hand-rolled mini charts
+ * A target used to be one flat reference line at whatever the controller is
+ * holding *now*, with a vertical mark at each change beside it. That said the
+ * same thing twice and neither half well: the flat line was a lie about every
+ * minute before the last change, and the vertical marks were an annotation
+ * standing in for the shape the line should have had. A stepped line says both
+ * at once — where the target was, and when it moved.
+ *
+ * Two very different charts draw it: the Overview's hand-rolled mini charts
  * (see `markers` on MultiLineSparkline in charts.tsx) and the enlarged recharts
  * one (setpointMarkers.tsx). The maths and the wording live here so the two
- * agree, and so the Overview can label a marker without pulling recharts into
+ * agree, and so the Overview can build its line without pulling recharts into
  * its bundle.
  */
+
+/** One step in the target: when it moved, and between which two values. */
+export interface SetpointStep {
+  /** Epoch milliseconds. */
+  t: number;
+  from: number;
+  to: number;
+}
+
+/**
+ * The target in force at each of `times` — a step function, sampled onto
+ * whatever grid the chart plots on. `times` must be ascending.
+ *
+ * Before the first change the target is that change's `from`: the controller
+ * was already holding something when the window opened, and the change itself
+ * is what says what. After the last change it stays at its `to` rather than
+ * jumping to `current` — a difference between the two means a change too recent
+ * to have been logged yet, and inventing a step at an unknown moment would be
+ * worse than being a poll behind.
+ *
+ * `current` is only the answer when there are no changes at all: a target that
+ * held steady across the whole window, which is the common case and the one the
+ * old flat reference line drew. Returns an empty series when there is no target
+ * to draw, so a caller can leave the line out entirely.
+ */
+export function setpointTargetSeries(
+  changes: readonly SetpointStep[],
+  times: readonly number[],
+  current: number | null,
+): number[] {
+  if (times.length === 0) return [];
+  if (changes.length === 0) return current == null ? [] : times.map(() => current);
+  const steps = [...changes].sort((a, b) => a.t - b.t);
+  let next = 0;
+  let value = steps[0]!.from;
+  return times.map((t) => {
+    while (next < steps.length && steps[next]!.t <= t) {
+      value = steps[next]!.to;
+      next += 1;
+    }
+    return value;
+  });
+}
+
+/** The values a target line will span, for sizing an axis that has to hold it. */
+export function setpointTargetSpan(
+  changes: readonly SetpointStep[],
+  current: number | null,
+): { min: number; max: number } | null {
+  const values = changes.flatMap((c) => [c.from, c.to]);
+  if (current != null) values.push(current);
+  if (values.length === 0) return null;
+  return { min: Math.min(...values), max: Math.max(...values) };
+}
 
 /** "18.0° → 20.0°" — what a marker stands for, in as few characters as fit. */
 export function setpointChangeLabel(change: { from: number; to: number }): string {
