@@ -76,12 +76,6 @@ export function dateInputToIso(value: string, keepTimeFrom: string | null): stri
   return d.toISOString();
 }
 
-/** A measured figure with its unit, or "—" when it was never measured. */
-export function measured(value: number | null, unit: string, decimals = 1): string {
-  if (value == null || !Number.isFinite(value)) return '—';
-  return `${value.toFixed(decimals).replace(/\.0$/, '')} ${unit}`;
-}
-
 /**
  * A gravity as a brewer actually types it, read back as the reading they meant.
  *

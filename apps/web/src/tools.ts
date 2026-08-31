@@ -1,3 +1,10 @@
+import {
+  BAR_PER_PSI as SHARED_BAR_PER_PSI,
+  carbonationPressure as calculateCarbonationPressure,
+  correctedGravity as calculateCorrectedGravity,
+  dilutedVolumeL as calculateDilutedVolumeL,
+} from '@checklist/shared';
+
 /**
  * The arithmetic behind the standalone brewing calculators on the Tools page —
  * dilution, hydrometer temperature correction, and force-carbonation pressure.
@@ -54,7 +61,7 @@ export function parseNumber(input: string): number | null {
  * it's the half-filled form that needs telling, not this function.
  */
 export function dilutedVolumeL(volumeL: number, currentSg: number, targetSg: number): number {
-  return (volumeL * (currentSg - 1)) / (targetSg - 1);
+  return calculateDilutedVolumeL(volumeL, currentSg, targetSg);
 }
 
 /**
@@ -72,10 +79,7 @@ export function dilutedVolumeL(volumeL: number, currentSg: number, targetSg: num
  * to well under a point over the range a brewer will ever measure in.
  */
 export function correctedGravity(reading: number, sampleC: number, calibrationC: number): number {
-  const toF = (c: number): number => (c * 9) / 5 + 32;
-  const offset = (tF: number): number =>
-    (1.313454 - 0.132674 * tF + 0.002057793 * tF * tF - 0.000002627634 * tF * tF * tF) * 0.001;
-  return reading + offset(toF(sampleC)) - offset(toF(calibrationC));
+  return calculateCorrectedGravity(reading, sampleC, calibrationC);
 }
 
 /**
@@ -95,20 +99,11 @@ export function carbonationPressure(
   volumesCo2: number,
   tempC: number,
 ): { bar: number; psi: number } {
-  const t = (tempC * 9) / 5 + 32;
-  const v = volumesCo2;
-  const psi =
-    -16.6999 -
-    0.0101059 * t +
-    0.00116512 * t * t +
-    0.173354 * t * v +
-    4.24267 * v -
-    0.0684226 * v * v;
-  return { bar: psi * BAR_PER_PSI, psi };
+  return calculateCarbonationPressure(volumesCo2, tempC);
 }
 
 /** Exact conversion — 1 psi in bar. */
-export const BAR_PER_PSI = 0.0689476;
+export const BAR_PER_PSI = SHARED_BAR_PER_PSI;
 
 /**
  * Where the styles sit on the carbonation scale, in volumes of CO₂. The

@@ -1,6 +1,6 @@
 import { DEFAULT_RECIPE_DEFAULTS, type RecipeDefaults } from '@checklist/shared';
-import { useSyncExternalStore } from 'react';
 import { api } from './api';
+import { createServerStore } from './serverStore';
 
 /**
  * The figures a blank brew sheet opens on, held once for the whole app and
@@ -12,51 +12,24 @@ import { api } from './api';
  * reached — a new recipe still opens on real numbers rather than on blanks.
  */
 
-let cache: RecipeDefaults = DEFAULT_RECIPE_DEFAULTS;
-let hydrated = false;
-const listeners = new Set<() => void>();
-
-function emit(): void {
-  for (const l of listeners) l();
-}
-
-function hydrate(): void {
-  if (hydrated) return;
-  hydrated = true;
-  api
-    .getRecipeDefaults()
-    .then((defaults) => {
-      cache = defaults;
-      emit();
-    })
-    .catch(() => {
-      // No server / not reachable — keep the brewery's own numbers.
-    });
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  hydrate();
-  return () => {
-    listeners.delete(listener);
-  };
-}
+const store = createServerStore({
+  initial: DEFAULT_RECIPE_DEFAULTS,
+  load: api.getRecipeDefaults,
+  persist: api.updateRecipeDefaults,
+});
 
 export function getRecipeDefaults(): RecipeDefaults {
-  return cache;
+  return store.getSnapshot();
 }
 
 export function useRecipeDefaults(): RecipeDefaults {
-  return useSyncExternalStore(subscribe, getRecipeDefaults, getRecipeDefaults);
+  return store.useValue();
 }
 
 export async function saveRecipeDefaults(next: RecipeDefaults): Promise<void> {
-  cache = next;
-  emit();
-  await api.updateRecipeDefaults(next);
+  await store.save(next);
 }
 
 export async function resetRecipeDefaults(): Promise<RecipeDefaults> {
-  await saveRecipeDefaults(DEFAULT_RECIPE_DEFAULTS);
-  return DEFAULT_RECIPE_DEFAULTS;
+  return store.reset();
 }

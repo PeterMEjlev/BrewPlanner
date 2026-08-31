@@ -5,13 +5,9 @@
 
 - Brew Session page: The efficiency should be auto calculated from the other values the user inputs
 
-- ## Add support for
-  - Electricity (Watt) usage
-  - Water usage 
+- limit zoom level on charts (temp: max zoom into y = 0.1 increment)
 
-- 
-
-
+- if no brew session is currenty active (not fermenting, active as in the brewing system is being used), then the Brew stage control buttons and card (in the brew system page, should be greyed out), both the Brew system page and on the actual brewing system ("C:\Users\Torsten\Desktop\brew-system-v3")
 
 
 # Optimization / improvement suggestions (code review)

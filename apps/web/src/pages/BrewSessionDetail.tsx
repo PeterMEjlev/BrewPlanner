@@ -38,11 +38,13 @@ import {
   targetDelta,
 } from '../brewSessions';
 import { useRigTheme } from '../components/brewsystem/rigTheme';
+import type { BrewTheme } from '../components/brewsystem/theme';
 import { VESSELS, vesselColor } from '../components/brewsystem/vessels';
+import { ChartOverlay } from '../components/ChartOverlay';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
 import { SheetSection } from '../components/SheetSection';
-import { timeAxis } from '../components/timeAxis';
+import { timeAxis, type TimeAxis } from '../components/timeAxis';
 import { kr } from '../money';
 import { figuresFromRecipe, figuresFromSnapshot, fmt } from '../recipeFigures';
 import { loadRecipeDetail } from '../recipeStore';
@@ -601,6 +603,7 @@ export function BrewSessionDetailPage(): JSX.Element {
           </Section>
 
           <RigTemperatures
+            title={`${plan.name} · Brewing rig`}
             samples={brewSession.rigSamples}
             stats={brewSession.rigStats}
             stageMarkers={brewSession.stageMarkers}
@@ -811,18 +814,22 @@ function nextStage(status: BrewSessionStatus): BrewSessionStatus | null {
  * there is nothing to say about it, and an axis with no line reads as a fault.
  */
 function RigTemperatures({
+  title,
   samples,
   stats,
   stageMarkers,
   collapsed,
   onToggle,
 }: {
+  /** What the enlarged view calls itself — the batch, not just "the rig". */
+  title: string;
   samples: BrewSessionRigSample[];
   stats: BrewSessionDetail['rigStats'];
   stageMarkers: BrewSessionStageMarker[];
   collapsed: Record<SectionKey, boolean>;
   onToggle: (section: SectionKey) => void;
 }): JSX.Element | null {
+  const [enlarged, setEnlarged] = useState(false);
   // The vessels' own names and the rig's own colours, from the same source the
   // Overview card and the Brew System panel read — so MLT is the green it is
   // everywhere else, and stays that colour if the rig is re-themed.
@@ -872,68 +879,25 @@ function RigTemperatures({
       collapsed={collapsed}
       onToggle={onToggle}
     >
-      <div className="h-64 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-            <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
-            <XAxis
-              dataKey="t"
-              type="number"
-              domain={['dataMin', 'dataMax']}
-              ticks={axis.ticks}
-              tickFormatter={axis.format}
-              stroke="#71717a"
-              fontSize={11}
-            />
-            <YAxis
-              width={48}
-              stroke="#71717a"
-              fontSize={11}
-              tickFormatter={(v: number) => `${Math.round(v)}°`}
-            />
-            <Tooltip
-              contentStyle={{
-                background: '#18181b',
-                border: '1px solid #3f3f46',
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-              labelFormatter={(t) => dateTime(t as number)}
-              formatter={(value, name) => {
-                const n = typeof value === 'number' ? value : Number(value);
-                return [Number.isFinite(n) ? `${n.toFixed(1)} °C` : '—', name];
-              }}
-            />
-            {VESSELS.map((vessel) => (
-              <Line
-                key={vessel.key}
-                type="monotone"
-                dataKey={vessel.key}
-                name={vessel.label}
-                stroke={vesselColor(theme, vessel)}
-                strokeWidth={2}
-                dot={false}
-                // A sensor that dropped out leaves a gap rather than a straight
-                // line across the minutes it wasn't reading.
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-            ))}
-            {/* After the traces, so a stage mark reads over the curve it
-                annotates rather than under it. */}
-            {marks.map((mark) => (
-              <ReferenceLine
-                key={`${mark.index}:${mark.at}`}
-                x={mark.t}
-                stroke={STAGE_MARK}
-                strokeWidth={1}
-                strokeDasharray="4 4"
-                label={<StageMarkLabel mark={mark} />}
-              />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Click the curve to open it large, the way the Overview's cards do. A
+          five-hour brew day in a 16rem-tall card is a summary; the stage marks
+          and the minute-by-minute shape of a ramp are only readable full size. */}
+      <button
+        type="button"
+        onClick={() => setEnlarged(true)}
+        aria-label="Enlarge the brewing rig chart"
+        className="group relative block w-full rounded-lg text-left transition hover:bg-zinc-800/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+      >
+        {/* Hint rather than a control: the whole chart is the target, and the
+            chart is what the pointer is already on. Click-through so it can sit
+            over the plot without eating a hover the tooltip wanted. */}
+        <span className="pointer-events-none absolute right-2 top-1 z-10 rounded-md bg-zinc-900/80 px-1.5 py-0.5 text-[11px] text-zinc-400 opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+          Enlarge ⤢
+        </span>
+        <div className="h-64 w-full">
+          <RigChart data={data} axis={axis} marks={marks} theme={theme} />
+        </div>
+      </button>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
         {VESSELS.map((vessel) => (
           <PotStats
@@ -951,7 +915,116 @@ function RigTemperatures({
         {marks.length > 0 &&
           ' The dashed marks are the brew stages the rig stepped through, at the times it stepped.'}
       </p>
+      {enlarged && (
+        <ChartOverlay title={title} wide onClose={() => setEnlarged(false)}>
+          {/* Taller than the card's preview and as wide as the overlay allows:
+              hours across the x axis is what this chart is short of. */}
+          <div className="h-[60vh] min-h-[320px] w-full">
+            <RigChart data={data} axis={axis} marks={marks} theme={theme} />
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {VESSELS.map((vessel) => (
+              <PotStats
+                key={vessel.key}
+                label={vessel.label}
+                name={vessel.name}
+                color={vesselColor(theme, vessel)}
+                stats={stats[vessel.key]}
+              />
+            ))}
+          </div>
+        </ChartOverlay>
+      )}
     </Section>
+  );
+}
+
+/** One plotted sample: the three pot temperatures at a moment of the brew day. */
+interface RigPoint {
+  t: number;
+  bk: number | null;
+  mlt: number | null;
+  hlt: number | null;
+}
+
+/**
+ * The three vessel traces and the stage marks, drawn to fill whatever box it is
+ * given. The card's preview and the enlarged overlay render this same component
+ * at two heights, so opening the chart makes it bigger and changes nothing else
+ * about it.
+ */
+function RigChart({
+  data,
+  axis,
+  marks,
+  theme,
+}: {
+  data: RigPoint[];
+  axis: TimeAxis;
+  marks: (BrewSessionStageMarker & { t: number })[];
+  theme: BrewTheme;
+}): JSX.Element {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+        <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+        <XAxis
+          dataKey="t"
+          type="number"
+          domain={['dataMin', 'dataMax']}
+          ticks={axis.ticks}
+          tickFormatter={axis.format}
+          stroke="#71717a"
+          fontSize={11}
+        />
+        <YAxis
+          width={48}
+          stroke="#71717a"
+          fontSize={11}
+          tickFormatter={(v: number) => `${Math.round(v)}°`}
+        />
+        <Tooltip
+          contentStyle={{
+            background: '#18181b',
+            border: '1px solid #3f3f46',
+            borderRadius: 8,
+            fontSize: 12,
+          }}
+          labelFormatter={(t) => dateTime(t as number)}
+          formatter={(value, name) => {
+            const n = typeof value === 'number' ? value : Number(value);
+            return [Number.isFinite(n) ? `${n.toFixed(1)} °C` : '—', name];
+          }}
+        />
+        {VESSELS.map((vessel) => (
+          <Line
+            key={vessel.key}
+            type="monotone"
+            dataKey={vessel.key}
+            name={vessel.label}
+            stroke={vesselColor(theme, vessel)}
+            strokeWidth={2}
+            dot={false}
+            // A sensor that dropped out leaves a gap rather than a straight
+            // line across the minutes it wasn't reading.
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        ))}
+        {/* After the traces, so a stage mark reads over the curve it
+            annotates rather than under it. */}
+        {marks.map((mark) => (
+          <ReferenceLine
+            key={`${mark.index}:${mark.at}`}
+            x={mark.t}
+            stroke={STAGE_MARK}
+            strokeWidth={1}
+            strokeDasharray="4 4"
+            label={<StageMarkLabel mark={mark} />}
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 

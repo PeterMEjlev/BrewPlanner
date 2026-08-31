@@ -1,10 +1,10 @@
 import {
   BRUCE_WAKE_WORD_GAIN,
   DEFAULT_DEVICE_DATA_SOURCES,
-  DEFAULT_GRAPH_COLORS,
   DEFAULT_NOTIFICATION_SETTINGS,
   REPORTING_INTERVAL_OPTIONS,
   SENSOR_CATALOG,
+  isMockDeviceId,
   type BruceServiceStatus,
   type BruceWakeAck,
   type BruceWakeWordGain,
@@ -730,12 +730,6 @@ function DataSourcesSection(): JSX.Element {
 
 // --- Logging interval (per device) -----------------------------------------
 
-/**
- * Synthesized mock/placeholder devices use ids at/above this base (the server's
- * MOCK_ID_BASE) and have no agent, so their logging interval isn't editable.
- */
-const MOCK_ID_BASE = 900_000;
-
 const DEVICE_KIND_LABEL: Record<string, string> = {
   pressure_sensor: 'Pressure',
   brew_controller: 'Controller',
@@ -775,7 +769,7 @@ function LoggingIntervalSection(): JSX.Element {
 
   // Real (registered) devices only — mock sensors have no agent to honour it.
   const real = (devices ?? [])
-    .filter((d) => d.id < MOCK_ID_BASE)
+    .filter((d) => !isMockDeviceId(d.id))
     .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
 
   return (

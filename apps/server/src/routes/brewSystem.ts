@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
 import { RIG_TIMEOUT_MS, rigBase, rigGet } from '../brewSystemClient.js';
+import { parse } from './parse.js';
 
 /**
  * Proxy to the brewing rig (a separate Raspberry Pi running brew-system-v3).
@@ -59,16 +60,6 @@ async function rigPost(reply: FastifyReply, base: string, path: string, body: un
     return reply.status(502).send({ error: detail });
   }
   return await res.json();
-}
-
-/** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
-function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T | null {
-  const result = schema.safeParse(data);
-  if (!result.success) {
-    reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });
-    return null;
-  }
-  return result.data;
 }
 
 const potParamSchema = z.object({ pot: z.enum(['BK', 'HLT']) });

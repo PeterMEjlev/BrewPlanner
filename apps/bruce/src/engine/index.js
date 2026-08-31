@@ -9,6 +9,7 @@ const AudioManager = require('./AudioManager');
 const AudioEchoCanceller = require('./AudioEchoCanceller');
 const RealtimeClient = require('./RealtimeClient');
 const FunctionRegistry = require('./FunctionRegistry');
+const { pcmRms } = require('./pcm');
 const cfg = require('../../config');
 
 
@@ -548,7 +549,7 @@ class BruceAssistant extends EventEmitter {
   }
 
   _checkSilence(chunk) {
-    const rms = this._computeRMS(chunk);
+    const rms = pcmRms(chunk);
     if (DEBUG_ENERGY === 'listening' || DEBUG_ENERGY === 'all') {
       process.stdout.write(`\r[Energy] listening: ${Math.round(rms).toString().padStart(5)} (threshold: ${SILENCE_ENERGY_THRESHOLD})`);
     }
@@ -596,17 +597,6 @@ class BruceAssistant extends EventEmitter {
       return;
     }
     this._realtime.commitAndRespond();
-  }
-
-  _computeRMS(buffer) {
-    // PCM16 LE: 2 bytes per sample, signed
-    let sum = 0;
-    const samples = Math.floor(buffer.length / 2);
-    for (let i = 0; i < buffer.length - 1; i += 2) {
-      const sample = buffer.readInt16LE(i);
-      sum += sample * sample;
-    }
-    return samples > 0 ? Math.sqrt(sum / samples) : 0;
   }
 
   async _startFollowUp() {

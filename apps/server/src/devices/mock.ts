@@ -6,8 +6,8 @@ import type {
   Reading,
   SetpointChange,
 } from '@checklist/shared';
+import { MOCK_DEVICE_ID_BASE } from '@checklist/shared';
 
-const MOCK_ID_BASE = 900_000;
 const MOCK_DEVICE_AGE_DAYS = 21;
 /** Stand-in push cadence for synthesized devices, matching the real ~30s agents. */
 const MOCK_PUSH_INTERVAL_SEC = 30;
@@ -203,7 +203,7 @@ const pendingSetpoints = new Map<number, PendingSetpoint>();
 const appliedSetpoints = new Map<number, AppliedSetpoint>();
 
 export function mockDeviceId(profile: MockProfile): number {
-  return MOCK_ID_BASE + profile.id;
+  return MOCK_DEVICE_ID_BASE + profile.id;
 }
 
 export function profileByMockDeviceId(id: number): MockProfile | null {
@@ -467,7 +467,7 @@ function latestValue(
 }
 
 /** When the target in force at `t` was set — a programme boundary, or a hand-set change. */
-function targetSetAt(profile: MockProfile, deviceId: number, t: number): number {
+function targetSetAt(deviceId: number, t: number): number {
   const applied = appliedSetpoints.get(deviceId);
   if (applied && t >= applied.at) return applied.at;
   return programmePhaseAt(t).startedAt;
@@ -487,7 +487,7 @@ function mockTempAt(profile: MockProfile, deviceId: number, t: number, base: num
   const target = mockTargetAt(profile, deviceId, t);
   // Ease from the target this one replaced, so a step reads as a fridge
   // travelling to it rather than teleporting — including one set by hand.
-  const setAt = targetSetAt(profile, deviceId, t);
+  const setAt = targetSetAt(deviceId, t);
   const previous = mockTargetAt(profile, deviceId, setAt - 1);
   const progress = Math.min(1, Math.max(0, (t - setAt) / FERMENT_PULL_MS));
   const held = previous + (target - previous) * progress;

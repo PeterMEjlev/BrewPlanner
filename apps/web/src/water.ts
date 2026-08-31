@@ -241,7 +241,6 @@ export {
   LACTIC_88_MEQ_PER_ML,
   acidMilliequivalents,
   bicarbonateForResidualAlkalinity,
-  gristDistilledMashPh,
   mashBufferCapacity,
   mashWaterVolumeL,
   predictedMashPh,

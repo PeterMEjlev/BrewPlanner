@@ -15,7 +15,8 @@
     "user": "tsx src/auth/cli.ts",
     "device": "tsx src/devices/cli.ts",
     "knowledge": "tsx src/knowledge/cli.ts",
-    "seed:demo": "tsx src/devices/seed-demo.ts"
+    "seed:demo": "tsx src/devices/seed-demo.ts",
+    "seed:brew-session": "tsx src/brewSessions/seed-demo.ts"
   },
   "dependencies": {
     "@checklist/shared": "*",

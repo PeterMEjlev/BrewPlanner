@@ -28,6 +28,9 @@ import {
   SENSOR_CATALOG,
   abvFromGravities,
   apparentAttenuation,
+  carbonationPressure,
+  correctedGravity,
+  dilutedVolumeL,
   measuredEfficiency,
   type BrewSession,
   type BrewSessionDetail,
@@ -842,7 +845,7 @@ function dilution(volumeL: number, current: number, desired: number): string {
   if (dg <= 1) return 'The target gravity has to be above 1.000.';
   if (dg >= og) return 'Diluting only lowers gravity — the target has to be below the current gravity.';
 
-  const total = (volumeL * (og - 1)) / (dg - 1);
+  const total = dilutedVolumeL(volumeL, og, dg);
   const water = total - volumeL;
   return `Add **${water.toFixed(1)} L** of water: ${volumeL} L at ${og.toFixed(3)} becomes ${total.toFixed(1)} L at ${dg.toFixed(3)}.`;
 }
@@ -851,10 +854,7 @@ function dilution(volumeL: number, current: number, desired: number): string {
 function hydrometerCorrection(reading: number, sampleC: number, calibrationC: number): string {
   const sg = gravity(reading);
   if (sg <= 0) return 'The hydrometer reading has to be above zero.';
-  const toF = (c: number): number => (c * 9) / 5 + 32;
-  const adjust = (f: number): number =>
-    (1.313454 - 0.132674 * f + 0.002057793 * f * f - 0.000002627634 * f * f * f) * 0.001;
-  const corrected = sg + adjust(toF(sampleC)) - adjust(toF(calibrationC));
+  const corrected = correctedGravity(sg, sampleC, calibrationC);
   return `Corrected gravity **${corrected.toFixed(3)}** — read ${sg.toFixed(3)} at ${sampleC} °C on a hydrometer calibrated for ${calibrationC} °C.`;
 }
 
@@ -872,18 +872,11 @@ const CARBONATION_STYLES: [string, string][] = [
 
 function carbonation(volumes: number, kegC: number): string {
   if (volumes <= 0) return 'Volumes of CO2 has to be above zero.';
-  const f = (kegC * 9) / 5 + 32;
-  const psi =
-    -16.6999 -
-    0.0101059 * f +
-    0.00116512 * f * f +
-    0.173354 * f * volumes +
-    4.24267 * volumes -
-    0.0684226 * volumes * volumes;
+  const { bar, psi } = carbonationPressure(volumes, kegC);
   if (psi <= 0) {
     return `At ${kegC} °C the beer already holds about ${volumes} volumes on its own — no pressure needed, and it is warm enough that you should chill it before carbonating.`;
   }
-  return `Set the regulator to **${(psi * 0.0689476).toFixed(2)} bar** (${psi.toFixed(1)} PSI) for ${volumes} volumes at ${kegC} °C.`;
+  return `Set the regulator to **${bar.toFixed(2)} bar** (${psi.toFixed(1)} PSI) for ${volumes} volumes at ${kegC} °C.`;
 }
 
 // ---------------------------------------------------------------------------

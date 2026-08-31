@@ -29,6 +29,21 @@ let repo: typeof import('./devices/repo.js');
 let deviceId: number;
 let auth: { authorization: string };
 
+/**
+ * Production long-poll timers are deliberately unref'd so they cannot hold the
+ * server open during shutdown. Timeout-path tests need one referenced handle or
+ * Node's test runner correctly concludes that their pending promise cannot make
+ * progress and cancels the rest of the suite.
+ */
+async function withReferencedEventLoop<T>(work: PromiseLike<T>): Promise<T> {
+  const keepAlive = setTimeout(() => {}, 20_000);
+  try {
+    return await work;
+  } finally {
+    clearTimeout(keepAlive);
+  }
+}
+
 before(async () => {
   const { buildApp } = await import('./app.js');
   sqlite = (await import('./db/index.js')).sqlite;
@@ -85,7 +100,9 @@ describe('GET /api/commands', () => {
 
   it('gives up after the requested wait when nothing is queued', async () => {
     const started = Date.now();
-    const res = await app.inject({ method: 'GET', url: '/api/commands?wait=1', headers: auth });
+    const res = await withReferencedEventLoop(
+      app.inject({ method: 'GET', url: '/api/commands?wait=1', headers: auth }),
+    );
     const elapsed = Date.now() - started;
     assert.equal(res.statusCode, 200);
     assert.deepEqual(res.json(), []);
@@ -104,7 +121,7 @@ describe('GET /api/commands', () => {
 
     repo.queueSetpoint(deviceId, 8);
 
-    const res = await parked;
+    const res = await withReferencedEventLoop(parked);
     assert.deepEqual(res.json(), []);
     assert.ok(Date.now() - started >= 900, 'another device’s command must not wake this poll');
     repo.ackCommands(deviceId, repo.pendingCommands(deviceId).map((c) => c.id));

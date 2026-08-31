@@ -335,11 +335,6 @@ export function loadIndex(): LoadedIndex | null {
   }
 }
 
-/** Manifest for the current index, for tools that don't need the vectors. */
-export function currentManifest(): IndexManifest | null {
-  return loadIndex()?.manifest ?? null;
-}
-
 export const INDEX_FORMAT_VERSION = INDEX_VERSION;
 
 /**

@@ -1,5 +1,6 @@
 import {
   REPORTING_INTERVAL_OPTIONS,
+  isMockDeviceId,
   type DeviceStatus,
   type DeviceType,
   type HostStatus,
@@ -15,16 +16,15 @@ import tiltIcon from '../assets/tilt.png';
 import { canControl, useAuth } from '../auth';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
+import {
+  isBreweryTempDevice,
+  isFermenterDevice,
+  isKegsTempDevice,
+  latestDeviceTimestamp,
+} from '../deviceRoles';
 import { useFleet, useHosts } from '../useDeviceData';
 import { dateTime } from '../util';
 import { metricLabel, relativeTime } from './Dashboard';
-
-/**
- * Synthesized mock/placeholder devices use ids at/above this base (see the
- * server's MOCK_ID_BASE). They have no real agent behind them, so their logging
- * interval can't be changed — the editor falls back to a static value for them.
- */
-const MOCK_ID_BASE = 900_000;
 
 /**
  * Cumulative meter metrics hidden from the Devices page. A water/power meter
@@ -215,25 +215,6 @@ function loadTone(load: number, cores: number | null): string {
 // kegs controllers, then the water & power meters. These mirror the Overview's
 // own device grouping (see Dashboard.tsx).
 
-/** The brewery ambient thermometer — a brew_controller named brewery/ambient. */
-function isBreweryTempDevice(d: DeviceStatus): boolean {
-  return d.type === 'brew_controller' && /brewery|ambient/i.test(d.name);
-}
-
-/** The filled-keg fridge controller — a brew_controller named for kegs. */
-function isKegsTempDevice(d: DeviceStatus): boolean {
-  return d.type === 'brew_controller' && /keg/i.test(d.name);
-}
-
-/** A fermenter-station device: pressure/gravity sensor, or the ferment controller. */
-function isFermenterDevice(d: DeviceStatus): boolean {
-  return (
-    d.type === 'pressure_sensor' ||
-    d.type === 'hydrometer' ||
-    (d.type === 'brew_controller' && !isBreweryTempDevice(d) && !isKegsTempDevice(d))
-  );
-}
-
 /** Order inside the fermenter row: pressure, then controller, then Tilt. */
 const FERMENTER_TYPE_RANK: Partial<Record<DeviceType, number>> = {
   pressure_sensor: 0,
@@ -366,7 +347,7 @@ export function DevicesPage(): JSX.Element {
                   <DeviceCard
                     key={d.id}
                     device={d}
-                    editable={editable && d.id < MOCK_ID_BASE}
+                    editable={editable && !isMockDeviceId(d.id)}
                     onSetInterval={saveInterval}
                   />
                 ))}
@@ -779,11 +760,3 @@ function StatusBadge({ online }: { online: boolean }): JSX.Element {
   );
 }
 
-function latestDeviceTimestamp(devices: DeviceStatus[]): string | null {
-  let latest: string | null = null;
-  for (const d of devices) {
-    if (!d.lastSeenAt) continue;
-    if (!latest || Date.parse(d.lastSeenAt) > Date.parse(latest)) latest = d.lastSeenAt;
-  }
-  return latest;
-}

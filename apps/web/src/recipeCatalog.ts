@@ -121,7 +121,6 @@ export const COUNT_UNITS = ['pkg', 'each', 'vial'];
 export const HOP_FORMS = ['Pellet', 'Leaf / Whole', 'Plug', 'Extract'];
 export const OTHER_TYPES = ['Flavor', 'Spice', 'Fining', 'Water Agent', 'Herb', 'Other'];
 export const OTHER_USES = ['Mash', 'Boil', 'Flameout', 'Primary', 'Secondary', 'Packaging'];
-export const YEAST_TYPES = ['Ale', 'Lager', 'Wheat', 'Sour', 'Brett', 'Bacteria', 'Wine', 'Other'];
 export const YEAST_FORMS = ['Dry', 'Liquid', 'Slant', 'Culture', 'Other'];
 export const FLOCCULATION_OPTIONS = ['Low', 'Medium-Low', 'Medium', 'Medium-High', 'High'];
 export const MASH_TYPES = ['Strike', 'Infusion', 'Temperature', 'Decoction', 'Mash Out', 'Sparge', 'Other'];

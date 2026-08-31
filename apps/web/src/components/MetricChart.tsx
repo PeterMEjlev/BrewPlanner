@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { SetpointControl } from '../SetpointControl';
 import { useChartRangeStore } from '../chartRange';
+import { isBreweryTempDevice } from '../deviceRoles';
 import { metricColor, useGraphColors } from '../graphColors';
 import {
   StateBadge,
@@ -34,10 +35,6 @@ import { type Span, useChartZoom } from './chartZoom';
 import { type ThinMode, thinForPlot } from './decimate';
 import { setpointChangeLines } from './setpointMarkers';
 import { timeAxis } from './timeAxis';
-
-function isBreweryTempDevice(device: { name: string; type: string }): boolean {
-  return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
-}
 
 /** Metrics measured in °C, so the "Temp chart min span" setting applies. */
 function isTempMetric(metric: string): boolean {

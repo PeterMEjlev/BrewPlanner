@@ -10,7 +10,6 @@ import {
 } from '@checklist/shared';
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { hashPassword } from './password.js';
 import {
   authenticate,
   changeUserPassword,
@@ -382,4 +381,3 @@ export function seedAdminUser(log: FastifyBaseLogger): void {
   }
 }
 
-export { hashPassword };

@@ -23,7 +23,6 @@ import {
   saveWaterProfileSchema,
   recipeDefaultsSchema,
   recipeDraftSchema,
-  recipeEditSchema,
   recipeSaveSchema,
   recipeIngredientCatalogQuerySchema,
   setActiveRecipeSchema,
@@ -39,7 +38,6 @@ import {
   updateTodoSchema,
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { z } from 'zod';
 import { dismissAlert, dismissAllAlerts, listAlerts } from '../alerts/repo.js';
 import * as alertRules from '../alerts/rules.js';
 import { auditFilters, listAudit } from '../audit/repo.js';
@@ -77,20 +75,7 @@ import {
   triggerBrewSystemUpdate,
 } from '../system/brewSystemUpdate.js';
 import { readHosts } from '../system/hosts.js';
-
-/** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
-function parse<S extends z.ZodTypeAny>(
-  schema: S,
-  data: unknown,
-  reply: FastifyReply,
-): z.output<S> | null {
-  const result = schema.safeParse(data);
-  if (!result.success) {
-    reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });
-    return null;
-  }
-  return result.data;
-}
+import { parse } from './parse.js';
 
 /**
  * Shared failure handling for Brewer's Friend import requests: a missing

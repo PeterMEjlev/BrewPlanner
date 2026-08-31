@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export * from './recipeCalculations.js';
 export * from './mashPh.js';
+export * from './brewingTools.js';
 
 /**
  * Shared types and validation schemas used by both the server and the web app.
@@ -507,21 +508,6 @@ export interface BrewSessionMeasurements {
   energyKwh: number | null;
 }
 
-export const EMPTY_BREW_SESSION_MEASUREMENTS: BrewSessionMeasurements = {
-  preBoilGravity: '',
-  preBoilVolumeL: null,
-  postBoilGravity: '',
-  postBoilVolumeL: null,
-  og: '',
-  fg: '',
-  volumeL: null,
-  mashTempC: null,
-  boilTimeMin: null,
-  efficiencyPct: null,
-  waterL: null,
-  energyKwh: null,
-};
-
 /**
  * A recipe's headline figures as the sheet reads *now* — read straight off the
  * stored recipe, with no ingredient hydration or pricing behind it.
@@ -811,8 +797,6 @@ export interface IngredientPrice {
  * across kinds without being the same product.
  */
 export type IngredientKind = 'fermentable' | 'hop' | 'yeast' | 'other';
-
-export const INGREDIENT_KINDS: IngredientKind[] = ['fermentable', 'hop', 'yeast', 'other'];
 
 /**
  * Where a line's price came from, so an automatic guess is never mistaken for a
@@ -1564,6 +1548,13 @@ export type DeviceType =
   | 'hydrometer'
   | 'other';
 
+/** Reserved ID range used by synthesized demo devices. */
+export const MOCK_DEVICE_ID_BASE = 900_000;
+
+export function isMockDeviceId(id: number): boolean {
+  return id >= MOCK_DEVICE_ID_BASE;
+}
+
 /**
  * A satellite that pushes data to the hub (e.g. the fermentation-pressure Pi).
  * The API key never leaves the server — only its hash is stored — so the shape
@@ -1978,8 +1969,6 @@ export const DEFAULT_KEG_CONTENT_COLORS = {
 };
 export type KegContent = keyof typeof DEFAULT_KEG_CONTENT_COLORS;
 export type KegContentColors = Record<KegContent, string>;
-export const KEG_CONTENT_COLORS: KegContentColors = DEFAULT_KEG_CONTENT_COLORS;
-
 /**
  * The selectable keg-content values, in display order, for the desktop editor's
  * dropdown. Derived from the colour palette so the two never drift — every
@@ -2668,8 +2657,6 @@ export type CustomAlertTest =
   | { kind: 'flat'; within: number };
 
 export type CustomAlertTestKind = CustomAlertTest['kind'];
-
-export const CUSTOM_ALERT_TEST_KINDS: CustomAlertTestKind[] = ['above', 'below', 'equals', 'flat'];
 
 /**
  * One rule the brewer wrote: watch this signal, and tell me when it does this.

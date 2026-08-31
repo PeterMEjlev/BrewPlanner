@@ -99,7 +99,6 @@ export function KegsDesktopPage(): JSX.Element {
   const [selectMode, setSelectMode] = useState(false);
   const [bulkEditing, setBulkEditing] = useState(false);
 
-  const filled = kegs.filter((k) => !isUnknownContents(k.contents)).length;
   const sorted = sortKegs(kegs, sortKey, sortAsc);
   const ageThresholds = { warnDays: kegWarnDays, oldDays: kegOldDays };
   const selectedKegs = kegs.filter((k) => selected.has(k.number));

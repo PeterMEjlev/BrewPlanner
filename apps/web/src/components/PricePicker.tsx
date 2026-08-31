@@ -7,6 +7,7 @@ import type {
 } from '@checklist/shared';
 import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../api';
+import { kr } from '../money';
 import { asCleanMessage } from '../util';
 
 /**
@@ -23,14 +24,6 @@ import { asCleanMessage } from '../util';
  * asks the page to re-read the recipe: the change reaches lines this component
  * knows nothing about.
  */
-
-/** Danish kroner, matching the recipe page's formatting. */
-function kr(amount: number, decimals = 2): string {
-  return `${amount.toLocaleString('en-GB', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })} kr`;
-}
 
 /** The line as the price endpoints need to see it. */
 export interface PricedLine {

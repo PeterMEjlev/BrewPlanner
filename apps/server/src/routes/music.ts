@@ -6,19 +6,9 @@ import {
   setVolumeSchema,
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import type { z } from 'zod';
 import { requireAdmin, requireAuth } from '../auth/index.js';
 import * as sonos from '../sonos.js';
-
-/** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
-function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T | null {
-  const result = schema.safeParse(data);
-  if (!result.success) {
-    reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });
-    return null;
-  }
-  return result.data;
-}
+import { parse } from './parse.js';
 
 /**
  * Brewery speaker (Sonos / IKEA SYMFONISK) control, mounted at /api/music.

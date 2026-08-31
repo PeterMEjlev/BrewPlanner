@@ -312,18 +312,6 @@ export function HistoryIcon(props: IconProps): JSX.Element {
   );
 }
 
-/** Brand mark: a beer mug. */
-export function BeerMugIcon(props: IconProps): JSX.Element {
-  return (
-    <Svg {...props}>
-      <path d="M6 8h9v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8Z" />
-      <path d="M15 10h2.5A1.5 1.5 0 0 1 19 11.5v3A1.5 1.5 0 0 1 17.5 16H15" />
-      <path d="M8 8V6a3 3 0 0 1 3-3 2.5 2.5 0 0 1 2.5 2.5" />
-      <path d="M9 12v5M12 12v5" />
-    </Svg>
-  );
-}
-
 /**
  * Brew Sessions: a boil kettle with steam coming off it. Deliberately a vessel
  * rather than a calendar — the log is a list of brews, and a calendar would read

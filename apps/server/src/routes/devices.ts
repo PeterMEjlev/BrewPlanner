@@ -9,31 +9,14 @@ import {
   setReportingIntervalSchema,
   setSetpointSchema,
 } from '@checklist/shared';
-import type { FastifyInstance, FastifyReply } from 'fastify';
-import { z } from 'zod';
+import type { FastifyInstance } from 'fastify';
 import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
 import { requireDevice } from '../devices/auth.js';
 import * as deviceFallback from '../devices/fallback.js';
 import { waitForCommand } from '../devices/notify.js';
 import * as devices from '../devices/repo.js';
-
-/**
- * Parse with a Zod schema, replying 400 on failure. Returns null when invalid.
- *
- * Typed on the schema's *output*, with its input left `unknown`: the query
- * schemas here coerce and apply defaults (`limit`, `wait`), so their input and
- * output types differ, and pinning both to one parameter would hand back a
- * result whose defaulted fields still looked optional.
- */
-function parse<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, data: unknown, reply: FastifyReply): T | null {
-  const result = schema.safeParse(data);
-  if (!result.success) {
-    reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });
-    return null;
-  }
-  return result.data;
-}
+import { parse } from './parse.js';
 
 /**
  * Ingestion API — satellites push here with an `Authorization: Bearer <key>`.

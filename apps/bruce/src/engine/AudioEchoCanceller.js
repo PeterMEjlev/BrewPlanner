@@ -1,5 +1,7 @@
 'use strict';
 
+const { pcmRms } = require('./pcm');
+
 /**
  * AudioEchoCanceller
  *
@@ -56,7 +58,7 @@ class AudioEchoCanceller {
    * @param {Buffer} chunk - Raw PCM16 LE audio
    */
   feedFarEnd(chunk) {
-    const rms = this._computeRMS(chunk);
+    const rms = pcmRms(chunk);
     this._farEndPeak = Math.max(rms, this._farEndPeak * this._farEndDecay);
   }
 
@@ -66,7 +68,7 @@ class AudioEchoCanceller {
    * @returns {boolean} true if a genuine barge-in is detected
    */
   detectBargeIn(micChunk) {
-    const micRMS = this._computeRMS(micChunk);
+    const micRMS = pcmRms(micChunk);
     this._playbackFrameCount++;
 
     // ── Auto-calibrate echo coupling ──────────────────────────────────────
@@ -144,16 +146,6 @@ class AudioEchoCanceller {
 
   // ─── Private ──────────────────────────────────────────────────────────────
 
-  _computeRMS(chunk) {
-    const numSamples = Math.floor(chunk.length / 2);
-    if (numSamples === 0) return 0;
-    let sumSq = 0;
-    for (let i = 0; i < chunk.length; i += 2) {
-      const s = chunk.readInt16LE(i);
-      sumSq += s * s;
-    }
-    return Math.sqrt(sumSq / numSamples);
-  }
 }
 
 module.exports = AudioEchoCanceller;

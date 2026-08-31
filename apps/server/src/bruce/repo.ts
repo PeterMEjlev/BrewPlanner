@@ -4,7 +4,7 @@ import type {
   BruceConversation,
   BruceToolCall,
 } from '@checklist/shared';
-import { asc, desc, eq, lt, sql } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { bruceConversations, bruceMessages } from '../db/schema.js';
 

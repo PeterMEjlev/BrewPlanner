@@ -2,11 +2,18 @@
   DeviceStatus,
   DeviceType,
   LatestReading,
-  Reading,
 } from '@checklist/shared';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import {
+  TYPE_RANK,
+  findReading,
+  groupByName,
+  groupRank,
+  isBreweryTempDevice,
+  isKegsTempDevice,
+} from '../deviceRoles';
 import {
   BoltIcon,
   ChecklistIcon,
@@ -68,15 +75,6 @@ const METRIC_CAPTION: Record<string, string> = {
  * tier, devices (and name-groups) are ordered by this rank so the fermenter
  * sits first.
  */
-const TYPE_RANK: Record<DeviceType, number> = {
-  pressure_sensor: 0,
-  hydrometer: 1,
-  brew_controller: 2,
-  other: 3,
-  power_meter: 4,
-  water_meter: 5,
-};
-
 const SECONDARY_TYPES = new Set<DeviceType>(['power_meter', 'water_meter']);
 
 /**
@@ -102,29 +100,6 @@ function metricRank(metric: string): number {
 /** Latest readings ordered so the headline metric is first. */
 function orderedMetrics(latest: LatestReading[]): LatestReading[] {
   return [...latest].sort((a, b) => metricRank(a.metric) - metricRank(b.metric));
-}
-
-/**
- * A "station" is a logical piece of equipment built from several physical
- * devices that share a name — e.g. the fermenter combines its pressure sensor,
- * fridge controller (Inkbird) and floating hydrometer (Tilt) into one card so
- * pressure, both temperatures and gravity sit together. Group devices by name
- * and only the multi-device groups render as a station; a lone device keeps its
- * own single-metric tile.
- */
-function groupByName(devices: DeviceStatus[]): DeviceStatus[][] {
-  const groups = new Map<string, DeviceStatus[]>();
-  for (const d of devices) {
-    const g = groups.get(d.name);
-    if (g) g.push(d);
-    else groups.set(d.name, [d]);
-  }
-  return [...groups.values()];
-}
-
-/** A group sorts by its most important member (fermenter first). */
-function groupRank(group: DeviceStatus[]): number {
-  return Math.min(...group.map((d) => TYPE_RANK[d.type]));
 }
 
 // --- Fermentation status (derived from gravity history) ---------------------
@@ -195,34 +170,6 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
 }
 
 // --- Reading lookups + display formatting for the fermenter card ------------
-
-interface Source {
-  reading: LatestReading;
-  deviceId: number;
-}
-
-/** First reading matching `metric` (optionally from a given device type). */
-function findReading(
-  devices: DeviceStatus[],
-  metric: string,
-  type?: DeviceType,
-): Source | undefined {
-  for (const d of devices) {
-    if (type && d.type !== type) continue;
-    const reading = d.latest.find((r) => r.metric === metric);
-    if (reading) return { reading, deviceId: d.id };
-  }
-  return undefined;
-}
-
-function isBreweryTempDevice(device: DeviceStatus): boolean {
-  return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
-}
-
-/** The filled-keg fridge Inkbird — gets its own compact temp card in the rail. */
-function isKegsTempDevice(device: DeviceStatus): boolean {
-  return device.type === 'brew_controller' && /keg/i.test(device.name);
-}
 
 /**
  * Tint for the fridge temperature from the controller's hvac_state: blue while

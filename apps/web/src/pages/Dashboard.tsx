@@ -1,9 +1,7 @@
 import type {
   BrewPumpControl,
   DeviceStatus,
-  DeviceType,
   LatestReading,
-  Reading,
   Recipe,
 } from '@checklist/shared';
 import { getRecipeColor, isDirtyContents, matchContentOption } from '@checklist/shared';
@@ -11,6 +9,15 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { canControl, useAuth } from '../auth';
+import {
+  findReading,
+  groupByName,
+  groupRank,
+  isBreweryTempDevice,
+  isFermenterDevice,
+  isKegsTempDevice,
+  latestDeviceTimestamp,
+} from '../deviceRoles';
 import {
   BarSpark,
   Donut,
@@ -88,50 +95,7 @@ const GRAVITY_FORECAST_MS = 2 * DAY_MS;
 /** Spacing of sampled points along the forecast curve. */
 const GRAVITY_FORECAST_STEP_MS = 2 * 60 * 60 * 1000;
 
-function isBreweryTempDevice(device: DeviceStatus): boolean {
-  return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
-}
-
-/**
- * The Inkbird on the filled-keg fridge. It's a brew_controller but not part of a
- * fermenter station — it gets its own home in the dashboard later, so for now we
- * keep it out of the fermenter cards (it still appears in the Devices fleet).
- */
-function isKegsTempDevice(device: DeviceStatus): boolean {
-  return device.type === 'brew_controller' && /keg/i.test(device.name);
-}
-
-function isFermenterDevice(device: DeviceStatus): boolean {
-  return (
-    device.type === 'pressure_sensor' ||
-    device.type === 'hydrometer' ||
-    (device.type === 'brew_controller' && !isBreweryTempDevice(device) && !isKegsTempDevice(device))
-  );
-}
-
-const TYPE_RANK: Record<DeviceType, number> = {
-  pressure_sensor: 0,
-  hydrometer: 1,
-  brew_controller: 2,
-  other: 3,
-  power_meter: 4,
-  water_meter: 5,
-};
-
-function groupByName(devices: DeviceStatus[]): DeviceStatus[][] {
-  const groups = new Map<string, DeviceStatus[]>();
-  for (const d of devices) {
-    const group = groups.get(d.name);
-    if (group) group.push(d);
-    else groups.set(d.name, [d]);
-  }
-  return [...groups.values()];
-}
-
-function groupRank(group: DeviceStatus[]): number {
-  return Math.min(...group.map((d) => TYPE_RANK[d.type]));
-}
-
+/** A logical station contains at least one fermentation device. */
 function isStationGroup(group: DeviceStatus[]): boolean {
   return group.some(isFermenterDevice);
 }
@@ -224,24 +188,6 @@ function useFermentStatus(devices: DeviceStatus[]): FermentStatus {
     textClass: 'text-amber-300',
     shellClass: 'border-amber-500/30 bg-amber-500/10 text-amber-100',
   };
-}
-
-interface Source {
-  reading: LatestReading;
-  deviceId: number;
-}
-
-function findReading(
-  devices: DeviceStatus[],
-  metric: string,
-  type?: DeviceType,
-): Source | undefined {
-  for (const d of devices) {
-    if (type && d.type !== type) continue;
-    const reading = d.latest.find((r) => r.metric === metric);
-    if (reading) return { reading, deviceId: d.id };
-  }
-  return undefined;
 }
 
 function hvacColor(value: number): string {
@@ -2533,15 +2479,6 @@ function KegFridgeCard({
       )}
     </section>
   );
-}
-
-function latestDeviceTimestamp(devices: DeviceStatus[]): string | null {
-  let latest: string | null = null;
-  for (const d of devices) {
-    if (!d.lastSeenAt) continue;
-    if (!latest || Date.parse(d.lastSeenAt) > Date.parse(latest)) latest = d.lastSeenAt;
-  }
-  return latest;
 }
 
 // --- formatting helpers -----------------------------------------------------

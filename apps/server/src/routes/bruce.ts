@@ -29,7 +29,6 @@ import {
   bruceWebSearchSchema,
 } from '@checklist/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { z } from 'zod';
 import { registerAuditHook } from '../audit/hook.js';
 import { getSessionUser, requireAdmin, requireAuth } from '../auth/index.js';
 import {
@@ -69,6 +68,7 @@ import {
   writeKnowledgeFile,
 } from '../knowledge/store.js';
 import { isOpenAIConfigured } from '../openai.js';
+import { parse } from './parse.js';
 
 /**
  * The Bruce page's two halves.
@@ -108,16 +108,6 @@ const PHASE_NAMES = ['library', 'thinking', 'web', 'recipes', 'brewery', 'writin
 
 function isPhaseName(value: string | undefined): value is BrucePhaseName {
   return value != null && (PHASE_NAMES as readonly string[]).includes(value);
-}
-
-/** Parse with a Zod schema, replying 400 on failure. Returns null when invalid. */
-function parse<T>(schema: z.ZodType<T>, data: unknown, reply: FastifyReply): T | null {
-  const result = schema.safeParse(data);
-  if (!result.success) {
-    reply.status(400).send({ error: 'Validation failed', issues: result.error.issues });
-    return null;
-  }
-  return result.data;
 }
 
 /** Forward a control command; 502 with a friendly message when Bruce is down. */

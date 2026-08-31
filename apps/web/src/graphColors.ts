@@ -1,6 +1,6 @@
 import { DEFAULT_GRAPH_COLORS, type GraphColors } from '@checklist/shared';
-import { useSyncExternalStore } from 'react';
 import { api } from './api';
+import { createServerStore } from './serverStore';
 
 /**
  * The shared chart colour palette. Unlike the per-browser prefs in settings.ts,
@@ -14,43 +14,19 @@ import { api } from './api';
  * Other screens pick up the change on their next load.
  */
 
-let cache: GraphColors = DEFAULT_GRAPH_COLORS;
-let hydrated = false;
-const listeners = new Set<() => void>();
-
-function emit(): void {
-  for (const l of listeners) l();
-}
-
-function hydrate(): void {
-  if (hydrated) return;
-  hydrated = true;
-  api
-    .getGraphColors()
-    .then((c) => {
-      cache = c;
-      emit();
-    })
-    .catch(() => {
-      // No server / not reachable — keep the default palette.
-    });
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  hydrate();
-  return () => {
-    listeners.delete(listener);
-  };
-}
+const store = createServerStore({
+  initial: DEFAULT_GRAPH_COLORS,
+  load: api.getGraphColors,
+  persist: api.updateGraphColors,
+});
 
 export function getGraphColors(): GraphColors {
-  return cache;
+  return store.getSnapshot();
 }
 
 /** Subscribe a component to the live palette (re-renders on any change). */
 export function useGraphColors(): GraphColors {
-  return useSyncExternalStore(subscribe, getGraphColors, getGraphColors);
+  return store.useValue();
 }
 
 /**
@@ -59,15 +35,12 @@ export function useGraphColors(): GraphColors {
  * an error (the optimistic value stays until the next successful load).
  */
 export async function saveGraphColors(next: GraphColors): Promise<void> {
-  cache = next;
-  emit();
-  await api.updateGraphColors(next);
+  await store.save(next);
 }
 
 /** Restore and persist the default palette. */
 export async function resetGraphColors(): Promise<GraphColors> {
-  await saveGraphColors(DEFAULT_GRAPH_COLORS);
-  return DEFAULT_GRAPH_COLORS;
+  return store.reset();
 }
 
 function isGravityMetric(metric: string): boolean {

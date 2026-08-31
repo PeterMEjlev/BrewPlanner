@@ -25,6 +25,7 @@ process.env.BRUCE_STATE_DIR = stateDir;
 
 const BruceAssistant = require('../src/engine');
 const RealtimeClient = require('../src/engine/RealtimeClient.js');
+const { pcmRms } = require('../src/engine/pcm.js');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let passed = 0;
@@ -54,6 +55,16 @@ function makeStub(spoken = []) {
 }
 
 (async () => {
+  {
+    const pcm = Buffer.alloc(6);
+    pcm.writeInt16LE(300, 0);
+    pcm.writeInt16LE(-400, 2);
+    pcm.writeInt16LE(0, 4);
+    assert.strictEqual(pcmRms(Buffer.alloc(0)), 0);
+    assert.ok(Math.abs(pcmRms(pcm) - Math.sqrt((300 ** 2 + 400 ** 2) / 3)) < 1e-9);
+    ok('PCM RMS is shared by listening and echo cancellation');
+  }
+
   // ── Engine: watchdog ─────────────────────────────────────────────────────
 
   {

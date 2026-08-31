@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import { SetpointControl } from '../SetpointControl';
+import { isBreweryTempDevice } from '../deviceRoles';
 import { metricColor, useGraphColors } from '../graphColors';
 import { timeAxis } from '../components/timeAxis';
 import { RANGES, cumulativeMetricOf, useDeviceData, useDeviceTotal } from '../useDeviceData';
@@ -21,10 +22,6 @@ import {
   metricLabel,
   stateTick,
 } from './Dashboard';
-
-function isBreweryTempDevice(device: { name: string; type: string }): boolean {
-  return device.type === 'brew_controller' && /brewery|ambient/i.test(device.name);
-}
 
 /** Touch-first sensor view for the Pi screen: big number, big controls, big chart. */
 export function KioskDevicePage(): JSX.Element {
