@@ -829,8 +829,8 @@ function settingsSection(section: string): string {
 // solve a cubic for regulator pressure will produce a confident number that is
 // wrong by a few PSI, and nothing about the answer will look wrong.
 //
-// Ported from the brewery speaker's own calculators (apps/bruce), which is
-// where they were first written.
+// The pure formulas are shared with the browser calculators; this module keeps
+// Bruce's conversational input validation and response wording.
 
 /** Gravity as SG, accepting either `1.050` or `1050` — brewers write both. */
 function gravity(value: number): number {
@@ -850,7 +850,7 @@ function dilution(volumeL: number, current: number, desired: number): string {
   return `Add **${water.toFixed(1)} L** of water: ${volumeL} L at ${og.toFixed(3)} becomes ${total.toFixed(1)} L at ${dg.toFixed(3)}.`;
 }
 
-/** The standard cubic correction, in °F internally as the coefficients require. */
+/** Temperature-correct a reading and phrase the result for Bruce. */
 function hydrometerCorrection(reading: number, sampleC: number, calibrationC: number): string {
   const sg = gravity(reading);
   if (sg <= 0) return 'The hydrometer reading has to be above zero.';

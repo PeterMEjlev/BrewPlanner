@@ -5,6 +5,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -14,6 +15,12 @@ import { api } from '../../api';
 import { useSettings } from '../../settings';
 import { clockTime } from '../../util';
 import { formatAxisValue, niceRange, withMinSpan } from '../charts';
+import {
+  SELECTION_AREA,
+  SelectionSummary,
+  type SelectionSeries,
+  selectionStats,
+} from '../chartSelect';
 import { type Span, useChartZoom } from '../chartZoom';
 import { timeAxis } from '../timeAxis';
 import { useBrewSystemLive } from './useBrewSystemLive';
@@ -255,6 +262,32 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
   );
   const hasChart = plotted.length > 1;
 
+  // What the vessels did over a shift-dragged period. Off `windowed` rather than
+  // the thinned `plotted`: a zoomed-out chart draws every nth row, and a summary
+  // taken from those would miss the peak between two of them.
+  const selectionSeries = useMemo<SelectionSeries[]>(
+    () =>
+      shown.map((vessel) => ({
+        key: vessel.key,
+        label: vessel.label,
+        color: vesselColor(rigTheme, vessel),
+      })),
+    [shown, rigTheme],
+  );
+  const selectionStatsRows = useMemo(
+    () =>
+      zoom.selection == null
+        ? []
+        : selectionStats(
+            windowed,
+            zoom.selection,
+            (row) => row.ts,
+            selectionSeries,
+            (row, key) => row[key as Vessel],
+          ),
+    [windowed, zoom.selection, selectionSeries],
+  );
+
   const pumps = state?.controlState.pumps;
   const timer = state?.timer;
 
@@ -404,12 +437,27 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
               <div
                 ref={zoom.ref}
                 onDoubleClick={zoom.reset}
-                className={hasChart ? 'cursor-grab select-none active:cursor-grabbing' : undefined}
+                className={`relative ${
+                  hasChart
+                    ? `select-none ${
+                        zoom.selecting ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'
+                      }`
+                    : ''
+                }`}
               >
                 {hasChart ? (
                   <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
                     <LineChart data={plotted} margin={CHART_MARGIN}>
                       <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
+                      {/* Before the traces, so the band tints them rather than
+                          washing them out. */}
+                      {zoom.selection && (
+                        <ReferenceArea
+                          x1={zoom.selection.min}
+                          x2={zoom.selection.max}
+                          {...SELECTION_AREA}
+                        />
+                      )}
                       <XAxis
                         dataKey="ts"
                         type="number"
@@ -438,9 +486,9 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
                         }
                         tickFormatter={(v) => formatAxisValue(v, visibleYSpan)}
                       />
-                      {/* A tooltip chasing the cursor mid-pan is noise, and
+                      {/* A tooltip chasing the cursor mid-gesture is noise, and
                           skipping it keeps the drag cheaper. */}
-                      {!zoom.dragging && (
+                      {!zoom.dragging && !zoom.selecting && (
                         <Tooltip
                           contentStyle={{
                             background: '#0f172a',
@@ -477,11 +525,22 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
                       : 'No temperature log yet — the rig logs one while a brew runs.'}
                   </div>
                 )}
+                {zoom.selection && (
+                  <SelectionSummary
+                    range={zoom.selection}
+                    view={xView}
+                    inset={PLOT_INSET}
+                    stats={selectionStatsRows}
+                    formatValue={(v) => `${formatTemp(v)}°`}
+                    formatTime={(t) => clockTime(t, true)}
+                    onClear={zoom.clearSelection}
+                  />
+                )}
               </div>
               {hasChart && (
                 <p className="mt-2 text-center text-[11px] text-zinc-600">
-                  Scroll to zoom, drag to pan · over an axis to affect just that axis ·
-                  double-click to reset
+                  Scroll to zoom, drag to pan · over an axis for that axis only · shift-drag to
+                  measure a period · double-click to reset
                 </p>
               )}
             </div>

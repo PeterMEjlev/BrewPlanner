@@ -1,0 +1,160 @@
+{
+  "app": "BrewPlanner",
+  "kind": "recipe-library",
+  "version": 1,
+  "exportedAt": "2026-08-31T08:47:29.427Z",
+  "recipeCount": 1,
+  "unreadableIds": [],
+  "recipes": [
+    {
+      "id": "f4090d83-7c80-426e-9d26-2217c529f211",
+      "origin": "local",
+      "url": "",
+      "familyId": "f4090d83-7c80-426e-9d26-2217c529f211",
+      "version": 1,
+      "versionNote": "Seeded demo recipe",
+      "createdAt": "2026-08-31T08:31:02.461Z",
+      "updatedAt": "2026-08-31T08:31:02.461Z",
+      "recipe": {
+        "name": "Demo Brew Day Pale Ale",
+        "style": "American Pale Ale",
+        "settings": {
+          "styleCategory": "",
+          "styleSubcategory": "",
+          "batchTarget": "Fermenter",
+          "boilSizePreL": 29,
+          "boilSizePostL": 22,
+          "autoBoilSizePre": true,
+          "autoBoilSizePost": true,
+          "boilTimeMinutes": 60,
+          "boilOffLPerHour": 7,
+          "trubChillerLossL": 2,
+          "efficiencyPercent": 72,
+          "pitchRate": "Manufacturer recommended"
+        },
+        "og": "1.055",
+        "preBoilGravity": "1.038",
+        "postBoilGravity": "1.050",
+        "fg": "1.010",
+        "abv": "5.85",
+        "fruitAbvIncluded": true,
+        "ibu": "64.85",
+        "ebc": "9.7",
+        "ebcEstimated": true,
+        "batchSizeL": 20,
+        "mashTemp": "67°C",
+        "fermentationTemp": "19°C",
+        "fermentables": [
+          {
+            "name": "Pilsner Malt",
+            "amount": "4.2",
+            "unit": "kg",
+            "percent": "84.0",
+            "ebc": 4,
+            "ppg": 37,
+            "fermentable": null,
+            "lateAddition": false
+          },
+          {
+            "name": "Munich Malt",
+            "amount": "0.5",
+            "unit": "kg",
+            "percent": "10.0",
+            "ebc": 20,
+            "ppg": 36,
+            "fermentable": null,
+            "lateAddition": false
+          },
+          {
+            "name": "Carapils",
+            "amount": "0.3",
+            "unit": "kg",
+            "percent": "6.0",
+            "ebc": 8,
+            "ppg": 33,
+            "fermentable": null,
+            "lateAddition": false
+          }
+        ],
+        "hops": [
+          {
+            "name": "Magnum",
+            "amount": "20",
+            "unit": "g",
+            "use": "Boil",
+            "stage": "Boil",
+            "time": "60",
+            "timeUnit": "min",
+            "aa": "12",
+            "ibu": "33.92",
+            "form": "Pellet",
+            "utilization": "",
+            "temp": ""
+          },
+          {
+            "name": "Citra",
+            "amount": "40",
+            "unit": "g",
+            "use": "Boil",
+            "stage": "Boil",
+            "time": "10",
+            "timeUnit": "min",
+            "aa": "12",
+            "ibu": "24.60",
+            "form": "Pellet",
+            "utilization": "",
+            "temp": ""
+          },
+          {
+            "name": "Citra",
+            "amount": "60",
+            "unit": "g",
+            "use": "Whirlpool",
+            "stage": "Whirlpool",
+            "time": "15",
+            "timeUnit": "min",
+            "aa": "12",
+            "ibu": "6.34",
+            "form": "Pellet",
+            "utilization": "",
+            "temp": "80"
+          }
+        ],
+        "yeast": [
+          {
+            "name": "US-05",
+            "lab": "Fermentis",
+            "attenuation": "81",
+            "amount": "1",
+            "amountUnit": "pkg",
+            "type": "Ale",
+            "form": "Dry",
+            "flocculation": "Medium",
+            "minTempC": 18,
+            "maxTempC": 22,
+            "alcoholTolerance": "9%",
+            "starter": false,
+            "addAfterDays": "",
+            "heldAtC": ""
+          }
+        ],
+        "otherIngredients": [],
+        "notes": "Seeded by npm run seed:brew-session — not a real brew.",
+        "mashGuidelines": null,
+        "waterProfile": {
+          "sourceName": null,
+          "profileId": null,
+          "name": null,
+          "ph": "5.63",
+          "notes": null,
+          "calcium": null,
+          "magnesium": null,
+          "sodium": null,
+          "chloride": null,
+          "sulfate": null,
+          "bicarbonate": null
+        }
+      }
+    }
+  ]
+}

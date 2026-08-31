@@ -14,11 +14,9 @@ import {
  *
  * The water chemistry is a bigger model and lives on its own in {@link ./water}.
  *
- * These same three sums exist server-side as Bruce's calculator tools
- * (apps/server/src/bruce/tools.ts) so the assistant doesn't do them in its head.
- * The coefficients there are the same ones — deliberately, since a brewer who
- * asks Bruce and a brewer who opens this page must get the same answer — so
- * treat a change here as a change to check there.
+ * The pure formulas live in @checklist/shared, so this page and Bruce always use
+ * the same coefficients. This module retains browser form parsing and style
+ * suggestions.
  */
 
 /**

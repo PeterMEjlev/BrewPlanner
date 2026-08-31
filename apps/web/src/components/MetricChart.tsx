@@ -3,6 +3,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -31,6 +32,12 @@ import {
 import { dateTime } from '../util';
 import { formatAxisValue, niceRange, withMinSpan } from './charts';
 import { setpointTargetSeries, setpointTargetSpan } from './eventMarkers';
+import {
+  SELECTION_AREA,
+  SelectionSummary,
+  type SelectionSeries,
+  selectionStats,
+} from './chartSelect';
 import { type Span, useChartZoom } from './chartZoom';
 import { type ThinMode, thinForPlot } from './decimate';
 import { setpointChangeLines } from './setpointMarkers';
@@ -260,6 +267,53 @@ export default function MetricChart({
     return { min: Math.min(...values), max: Math.max(...values) };
   }, [chartData, stateMetric, zoom.xDomain]);
 
+  // Both lines a shift-dragged period can be asked about: what the sensor read,
+  // and what it was being held to. A state metric has no meaningful average, so
+  // that one summarises the period alone.
+  const selectionSeries = useMemo<SelectionSeries[]>(() => {
+    if (stateMetric || !chartMetric) return [];
+    const rows: SelectionSeries[] = [
+      { key: 'value', label: metricLabel(chartMetric), color: metricColor(chartMetric, colors) },
+    ];
+    if (targetSpan != null) rows.push({ key: 'target', label: 'Target', color: colors.setpoint });
+    return rows;
+  }, [stateMetric, chartMetric, colors, targetSpan]);
+
+  // The rows under the band, at full resolution — `plotData` below is
+  // bucket-averaged at this zoom, and a summary quoting its peak would
+  // under-report the one actually recorded. The target is resolved onto just
+  // these rows rather than the whole loaded window, which is what keeps this
+  // cheap enough to run on every frame of a paint.
+  const selectionRows = useMemo(() => {
+    const range = zoom.selection;
+    if (range == null) return [];
+    const inside: { t: number; value: number; target?: number }[] = chartData.filter(
+      (point) => point.t >= range.min && point.t <= range.max,
+    );
+    if (targetSpan == null || inside.length === 0) return inside;
+    const target = setpointTargetSeries(
+      setpointChanges,
+      inside.map((point) => point.t),
+      targetC,
+    );
+    if (target.length !== inside.length) return inside;
+    return inside.map((point, i) => ({ ...point, target: target[i]! }));
+  }, [chartData, zoom.selection, targetSpan, setpointChanges, targetC]);
+
+  const selectionStatsRows = useMemo(
+    () =>
+      zoom.selection == null
+        ? []
+        : selectionStats(
+            selectionRows,
+            zoom.selection,
+            (point) => point.t,
+            selectionSeries,
+            (point, key) => (key === 'target' ? point.target : point.value),
+          ),
+    [selectionRows, zoom.selection, selectionSeries],
+  );
+
   // Draw only what's on screen, thinned to about one point per pixel: a day of
   // 30s readings is ~2,900 points, and redrawing all of them each frame is what
   // makes a drag drag. A temperature trace is averaged into buckets instead of
@@ -417,7 +471,9 @@ export default function MetricChart({
         <div
           ref={zoom.ref}
           onDoubleClick={zoom.reset}
-          className="cursor-grab select-none active:cursor-grabbing"
+          className={`relative select-none ${
+            zoom.selecting ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'
+          }`}
         >
           {chartData.length === 0 ? (
             <p className="py-20 text-center text-sm text-zinc-500">No readings in this range.</p>
@@ -425,6 +481,15 @@ export default function MetricChart({
             <ResponsiveContainer width="100%" height={chartHeight}>
               <LineChart data={plotRows} margin={CHART_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                {/* Before the lines, so the band tints the trace rather than
+                    washing it out. */}
+                {zoom.selection && (
+                  <ReferenceArea
+                    x1={zoom.selection.min}
+                    x2={zoom.selection.max}
+                    {...SELECTION_AREA}
+                  />
+                )}
                 <XAxis
                   dataKey="t"
                   type="number"
@@ -457,9 +522,9 @@ export default function MetricChart({
                     stateMetric ? (v) => stateTick(v) : (v) => formatAxisValue(v, visibleYSpan)
                   }
                 />
-                {/* A tooltip chasing the cursor mid-pan is noise, and skipping
-                    it keeps the drag cheaper. */}
-                {!zoom.dragging && (
+                {/* A tooltip chasing the cursor mid-gesture is noise, and
+                    skipping it keeps the drag cheaper. */}
+                {!zoom.dragging && !zoom.selecting && (
                   <Tooltip
                     // Two tooltips over one marker is one too many: while a
                     // setpoint marker's badge is up, it *is* the answer to
@@ -522,11 +587,26 @@ export default function MetricChart({
               </LineChart>
             </ResponsiveContainer>
           )}
+          {zoom.selection && (
+            <SelectionSummary
+              range={zoom.selection}
+              view={xView}
+              inset={PLOT_INSET}
+              stats={selectionStatsRows}
+              formatValue={(v) =>
+                chartMetric
+                  ? formatValue({ metric: chartMetric, value: v, recordedAt: '' })
+                  : String(v)
+              }
+              formatTime={(t) => dateTime(t, true)}
+              onClear={zoom.clearSelection}
+            />
+          )}
         </div>
         {chartData.length > 0 && (
           <p className="mt-2 text-center text-[11px] text-zinc-600">
-            Scroll to zoom, drag to pan · over an axis to affect just that axis · double-click to
-            reset
+            Scroll to zoom, drag to pan · over an axis for that axis only · shift-drag to measure
+            a period · double-click to reset
           </p>
         )}
       </div>

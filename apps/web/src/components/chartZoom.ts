@@ -1,11 +1,17 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 
 /**
- * Wheel-zoom and drag-pan for the recharts line charts. recharts has neither, so
- * we drive the axes' `domain` props ourselves from pointer events: scrolling over
- * the plot scales both axes about the cursor and dragging slides the view, while
- * doing either over a single axis affects only that axis. Kept out of the chart
- * component so the geometry maths stays readable and testable on its own.
+ * Wheel-zoom, drag-pan and shift-drag range selection for the recharts line
+ * charts. recharts has none of the three, so we drive the axes' `domain` props
+ * ourselves from pointer events: scrolling over the plot scales both axes about
+ * the cursor and dragging slides the view, while doing either over a single axis
+ * affects only that axis. Kept out of the chart component so the geometry maths
+ * stays readable and testable on its own.
+ *
+ * Shift-drag paints a time range instead of panning, which the chart draws as a
+ * band and summarises (see chartSelect.tsx). The modifier rather than a plain
+ * drag because panning was here first and is the gesture in the fingers already;
+ * the hint line under each chart is where both are advertised.
  */
 
 /** A value window on one axis, in data units (ms for time, °C, SG, …). */
@@ -91,6 +97,16 @@ export function scaleSpan(
   return clampWindow(anchor - frac * span, span, extent);
 }
 
+/**
+ * The value under a client X, given the plot's left edge and width in px and the
+ * window it is currently showing. Clamped to the plot, so a paint that wanders
+ * off the side of the chart ends at its edge rather than off the data.
+ */
+export function valueAt(clientX: number, originClientX: number, width: number, view: Span): number {
+  const frac = clamp01((clientX - originClientX) / width);
+  return view.min + frac * (view.max - view.min);
+}
+
 /** Slide `start` along its axis by `delta` data units, keeping the data in view. */
 export function panSpan(start: Span, extent: Span, delta: number): Span {
   return clampWindow(start.min + delta, start.max - start.min, extent);
@@ -110,6 +126,26 @@ interface Drag {
   height: number;
 }
 
+/**
+ * A range being painted with shift-drag: where it was anchored, and enough plot
+ * geometry to turn later pointer positions into values without measuring the
+ * element again mid-gesture.
+ */
+interface Paint {
+  pointerId: number;
+  /** Data value under the grab point — one end of the range, fixed. */
+  anchor: number;
+  /** Client X of the plot's left edge, so a move is a subtraction. */
+  originClientX: number;
+  /** Plot width in px, to convert pixels to data units. */
+  width: number;
+  /** The x window on screen when the paint began; a paint can't zoom or pan. */
+  view: Span;
+}
+
+/** Below this many pixels a shift-drag is a click, and clears the selection. */
+const MIN_SELECTION_PX = 4;
+
 export interface ChartZoom {
   /** Attach to a wrapper that hugs the chart exactly (no padding of its own). */
   ref: RefObject<HTMLDivElement>;
@@ -119,6 +155,15 @@ export interface ChartZoom {
   zoomed: boolean;
   /** True while a pan is in progress — callers can shed work (e.g. tooltips). */
   dragging: boolean;
+  /**
+   * The range the user has shift-dragged across, in x data units, or null when
+   * nothing is selected. Held in data units rather than pixels, so it stays over
+   * the same period as the view is zoomed and panned around it.
+   */
+  selection: Span | null;
+  /** True while the band is being painted — same reason as `dragging`. */
+  selecting: boolean;
+  clearSelection: () => void;
   reset: () => void;
 }
 
@@ -141,10 +186,19 @@ export function useChartZoom({
   const [xDomain, setXDomain] = useState<Span | null>(null);
   const [yDomain, setYDomain] = useState<Span | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [selection, setSelection] = useState<Span | null>(null);
+  const [selecting, setSelecting] = useState(false);
 
+  const clearSelection = useCallback((): void => {
+    setSelection(null);
+  }, []);
+
+  // One "put the chart back" gesture: a double-click that reset the zoom but
+  // left a band painted across it would leave the picture half-cleared.
   const reset = useCallback((): void => {
     setXDomain(null);
     setYDomain(null);
+    setSelection(null);
   }, []);
 
   useEffect(() => {
@@ -160,6 +214,7 @@ export function useChartZoom({
     const el = ref.current;
     if (!el) return;
     const drag = { current: null as Drag | null };
+    const paint = { current: null as Paint | null };
 
     /**
      * Which axes a gesture at (px, py) acts on: inside the plot both move
@@ -221,6 +276,26 @@ export function useChartZoom({
       const region = regionOf(px, py, r);
       if (!region || (!region.x && !region.y)) return;
 
+      // Shift paints a range along X instead of panning. Needs the X axis to
+      // mean something, so a chart with no x extent falls through to the pan.
+      if (e.shiftKey && region.x && xe) {
+        e.preventDefault();
+        el.setPointerCapture(e.pointerId);
+        const view = latest.current.xDomain ?? xe;
+        const originClientX = r.left + region.left;
+        const anchor = valueAt(e.clientX, originClientX, region.width, view);
+        paint.current = {
+          pointerId: e.pointerId,
+          anchor,
+          originClientX,
+          width: region.width,
+          view,
+        };
+        setSelection({ min: anchor, max: anchor });
+        setSelecting(true);
+        return;
+      }
+
       e.preventDefault(); // no text selection / native drag while panning
       el.setPointerCapture(e.pointerId);
       drag.current = {
@@ -241,9 +316,24 @@ export function useChartZoom({
     // chart re-renders once per painted frame instead of once per event.
     let frame = 0;
     let pending: { dx: number; dy: number } | null = null;
+    let pendingPaintX: number | null = null;
+
+    const applyFrame = (): void => {
+      frame = 0;
+      applyPaint();
+      applyPan();
+    };
+
+    const applyPaint = (): void => {
+      const p = paint.current;
+      const clientX = pendingPaintX;
+      pendingPaintX = null;
+      if (!p || clientX == null) return;
+      const value = valueAt(clientX, p.originClientX, p.width, p.view);
+      setSelection({ min: Math.min(p.anchor, value), max: Math.max(p.anchor, value) });
+    };
 
     const applyPan = (): void => {
-      frame = 0;
       const d = drag.current;
       const move = pending;
       pending = null;
@@ -262,17 +352,40 @@ export function useChartZoom({
     };
 
     const onPointerMove = (e: PointerEvent): void => {
+      const p = paint.current;
+      if (p && e.pointerId === p.pointerId) {
+        pendingPaintX = e.clientX;
+        if (!frame) frame = requestAnimationFrame(applyFrame);
+        return;
+      }
       const d = drag.current;
       if (!d || e.pointerId !== d.pointerId) return;
       pending = { dx: e.clientX - d.clientX, dy: e.clientY - d.clientY };
-      if (!frame) frame = requestAnimationFrame(applyPan);
+      if (!frame) frame = requestAnimationFrame(applyFrame);
     };
 
     const endDrag = (e: PointerEvent): void => {
+      const p = paint.current;
+      if (p && p.pointerId === e.pointerId) {
+        if (frame) {
+          cancelAnimationFrame(frame);
+          frame = 0;
+          applyPaint();
+        }
+        paint.current = null;
+        setSelecting(false);
+        // A shift-click, or a band too narrow to have been meant, dismisses the
+        // one on screen instead of leaving a sliver behind.
+        const value = valueAt(e.clientX, p.originClientX, p.width, p.view);
+        const px = (Math.abs(value - p.anchor) / (p.view.max - p.view.min)) * p.width;
+        if (!(px >= MIN_SELECTION_PX)) setSelection(null);
+        return;
+      }
       if (drag.current?.pointerId !== e.pointerId) return;
       // Land on the final position even if the last move hasn't painted yet.
       if (frame) {
         cancelAnimationFrame(frame);
+        frame = 0;
         applyPan();
       }
       drag.current = null;
@@ -300,6 +413,9 @@ export function useChartZoom({
     yDomain,
     zoomed: xDomain != null || yDomain != null,
     dragging,
+    selection,
+    selecting,
+    clearSelection,
     reset,
   };
 }

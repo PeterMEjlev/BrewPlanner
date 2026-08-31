@@ -20,6 +20,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -41,10 +42,17 @@ import { useRigTheme } from '../components/brewsystem/rigTheme';
 import type { BrewTheme } from '../components/brewsystem/theme';
 import { VESSELS, vesselColor } from '../components/brewsystem/vessels';
 import { ChartOverlay } from '../components/ChartOverlay';
+import {
+  SELECTION_AREA,
+  SelectionSummary,
+  type SelectionSeries,
+  selectionStats,
+} from '../components/chartSelect';
+import { type Span, useChartZoom } from '../components/chartZoom';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
 import { SheetSection } from '../components/SheetSection';
-import { timeAxis, type TimeAxis } from '../components/timeAxis';
+import { timeAxis } from '../components/timeAxis';
 import { kr } from '../money';
 import { figuresFromRecipe, figuresFromSnapshot, fmt } from '../recipeFigures';
 import { loadRecipeDetail } from '../recipeStore';
@@ -70,6 +78,26 @@ const STAGE_MARK = '#a1a1aa';
 /** Font size of a stage mark's label, and the rough per-character width at it. */
 const STAGE_LABEL_FONT = 11;
 const STAGE_LABEL_CHAR = STAGE_LABEL_FONT * 0.55;
+
+const CHART_MARGIN = { top: 8, right: 16, bottom: 8, left: 0 } as const;
+const Y_AXIS_WIDTH = 48;
+const X_AXIS_HEIGHT = 30; // recharts' default XAxis height
+
+/**
+ * Where the plot area sits inside the chart wrapper — the axes eat a gutter on
+ * the left and bottom. Mirrors the margins and axis sizes below so
+ * {@link useChartZoom} can tell "over the plot" from "over an axis", exactly as
+ * the device chart and the Brew System panel do.
+ */
+const PLOT_INSET = {
+  left: CHART_MARGIN.left + Y_AXIS_WIDTH,
+  right: CHART_MARGIN.right,
+  top: CHART_MARGIN.top,
+  bottom: CHART_MARGIN.bottom + X_AXIS_HEIGHT,
+};
+
+/** Don't let the time axis zoom in past a one-minute window. */
+const MIN_X_SPAN_MS = 60_000;
 
 /** The page's cards, in the order they appear. */
 type SectionKey = 'stage' | 'brewSession' | 'rig' | 'fermentation' | 'notes';
@@ -849,7 +877,6 @@ function RigTemperatures({
     if (data.length === 0) return null;
     return { min: data[0]!.t, max: data[data.length - 1]!.t };
   }, [data]);
-  const axis = useMemo(() => timeAxis(span), [span]);
 
   // Only the marks that fall inside the logged curve can be drawn against it.
   // A stage entered before the rig started logging (or after the batch moved on
@@ -895,7 +922,7 @@ function RigTemperatures({
           Enlarge ⤢
         </span>
         <div className="h-64 w-full">
-          <RigChart data={data} axis={axis} marks={marks} theme={theme} />
+          <RigChart data={data} span={span} marks={marks} theme={theme} />
         </div>
       </button>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -920,7 +947,7 @@ function RigTemperatures({
           {/* Taller than the card's preview and as wide as the overlay allows:
               hours across the x axis is what this chart is short of. */}
           <div className="h-[60vh] min-h-[320px] w-full">
-            <RigChart data={data} axis={axis} marks={marks} theme={theme} />
+            <RigChart data={data} span={span} marks={marks} theme={theme} zoomable />
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {VESSELS.map((vessel) => (
@@ -952,79 +979,202 @@ interface RigPoint {
  * given. The card's preview and the enlarged overlay render this same component
  * at two heights, so opening the chart makes it bigger and changes nothing else
  * about it.
+ *
+ * `zoomable` is what the enlarged view adds: wheel-zoom and drag-pan on the
+ * same terms as every other chart here (see chartZoom.ts). Deliberately not on
+ * the preview, which is a button that opens this one — a chart that swallowed
+ * the page's scroll and read a drag as a pan would make a poor button.
  */
 function RigChart({
   data,
-  axis,
+  span,
   marks,
   theme,
+  zoomable = false,
 }: {
   data: RigPoint[];
-  axis: TimeAxis;
+  /** The whole logged window: what a zoom scales against and returns to. */
+  span: Span | null;
   marks: (BrewSessionStageMarker & { t: number })[];
   theme: BrewTheme;
+  zoomable?: boolean;
 }): JSX.Element {
+  // Framed over all three traces together, so a Y zoom keeps the vessels on one
+  // scale. Only ever the zoom's floor — the resting chart is left to recharts'
+  // own framing, which is the one this chart has always been read at.
+  const yExtent = useMemo<Span | null>(() => {
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const point of data) {
+      for (const vessel of VESSELS) {
+        const value = point[vessel.key];
+        if (value == null || !Number.isFinite(value)) continue;
+        if (value < min) min = value;
+        if (value > max) max = value;
+      }
+    }
+    return min > max ? null : { min, max };
+  }, [data]);
+
+  // Null extents leave the gesture handlers inert, which is how the preview
+  // stays an ordinary button: no wheel swallowed, no drag claimed.
+  const zoom = useChartZoom({
+    xExtent: zoomable ? span : null,
+    yExtent: zoomable ? yExtent : null,
+    plotInset: PLOT_INSET,
+    minXSpan: MIN_X_SPAN_MS,
+  });
+
+  // The window actually on screen, handed to the axis as an explicit domain so
+  // its ticks follow the zoom instead of the whole logged session.
+  const xView = zoom.xDomain ?? span;
+  const axis = useMemo(() => timeAxis(xView), [xView]);
+
+  // What the three pots did over a shift-dragged period. Off the full samples,
+  // not the drawn ones — they are the same list here, but the rule is the same
+  // one every chart follows (see chartSelect.ts).
+  const series = useMemo<SelectionSeries[]>(
+    () =>
+      VESSELS.map((vessel) => ({
+        key: vessel.key,
+        label: vessel.label,
+        color: vesselColor(theme, vessel),
+      })),
+    [theme],
+  );
+  const stats = useMemo(
+    () =>
+      zoom.selection == null
+        ? []
+        : selectionStats(
+            data,
+            zoom.selection,
+            (point) => point.t,
+            series,
+            (point, key) => point[key as keyof RigPoint] as number | null,
+          ),
+    [data, zoom.selection, series],
+  );
+
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-        <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
-        <XAxis
-          dataKey="t"
-          type="number"
-          domain={['dataMin', 'dataMax']}
-          ticks={axis.ticks}
-          tickFormatter={axis.format}
-          stroke="#71717a"
-          fontSize={11}
-        />
-        <YAxis
-          width={48}
-          stroke="#71717a"
-          fontSize={11}
-          tickFormatter={(v: number) => `${Math.round(v)}°`}
-        />
-        <Tooltip
-          contentStyle={{
-            background: '#18181b',
-            border: '1px solid #3f3f46',
-            borderRadius: 8,
-            fontSize: 12,
-          }}
-          labelFormatter={(t) => dateTime(t as number)}
-          formatter={(value, name) => {
-            const n = typeof value === 'number' ? value : Number(value);
-            return [Number.isFinite(n) ? `${n.toFixed(1)} °C` : '—', name];
-          }}
-        />
-        {VESSELS.map((vessel) => (
-          <Line
-            key={vessel.key}
-            type="monotone"
-            dataKey={vessel.key}
-            name={vessel.label}
-            stroke={vesselColor(theme, vessel)}
-            strokeWidth={2}
-            dot={false}
-            // A sensor that dropped out leaves a gap rather than a straight
-            // line across the minutes it wasn't reading.
-            connectNulls={false}
-            isAnimationActive={false}
+    <div className="flex h-full w-full flex-col">
+      {/* Hugs the chart exactly — the zoom maths measures the cursor against
+          this box to tell the plot area from the axis gutters. */}
+      <div
+        ref={zoom.ref}
+        onDoubleClick={zoomable ? zoom.reset : undefined}
+        className={`relative min-h-0 w-full flex-1 ${
+          zoomable
+            ? `select-none ${zoom.selecting ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`
+            : ''
+        }`}
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={CHART_MARGIN}>
+            <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+            {/* Before the traces, so the band tints the curve rather than
+                washing it out. */}
+            {zoom.selection && (
+              <ReferenceArea x1={zoom.selection.min} x2={zoom.selection.max} {...SELECTION_AREA} />
+            )}
+            <XAxis
+              dataKey="t"
+              type="number"
+              domain={xView ? [xView.min, xView.max] : ['dataMin', 'dataMax']}
+              allowDataOverflow
+              ticks={axis.ticks}
+              tickFormatter={axis.format}
+              stroke="#71717a"
+              fontSize={11}
+              height={X_AXIS_HEIGHT}
+            />
+            <YAxis
+              width={Y_AXIS_WIDTH}
+              stroke="#71717a"
+              fontSize={11}
+              allowDataOverflow
+              // Undefined until zoomed, so the unzoomed chart keeps the framing
+              // it has always had rather than being re-scaled by this feature.
+              domain={zoom.yDomain ? [zoom.yDomain.min, zoom.yDomain.max] : undefined}
+              tickFormatter={(v: number) => `${Math.round(v)}°`}
+            />
+            {/* A tooltip chasing the cursor mid-gesture is noise, and skipping
+                it keeps the drag cheaper. */}
+            {!zoom.dragging && !zoom.selecting && (
+              <Tooltip
+                contentStyle={{
+                  background: '#18181b',
+                  border: '1px solid #3f3f46',
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+                labelFormatter={(t) => dateTime(t as number)}
+                formatter={(value, name) => {
+                  const n = typeof value === 'number' ? value : Number(value);
+                  return [Number.isFinite(n) ? `${n.toFixed(1)} °C` : '—', name];
+                }}
+              />
+            )}
+            {VESSELS.map((vessel) => (
+              <Line
+                key={vessel.key}
+                type="monotone"
+                dataKey={vessel.key}
+                name={vessel.label}
+                stroke={vesselColor(theme, vessel)}
+                strokeWidth={2}
+                dot={false}
+                // A sensor that dropped out leaves a gap rather than a straight
+                // line across the minutes it wasn't reading.
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            ))}
+            {/* After the traces, so a stage mark reads over the curve it
+                annotates rather than under it. A mark outside a zoomed window
+                is dropped by recharts rather than pinned to the edge. */}
+            {marks.map((mark) => (
+              <ReferenceLine
+                key={`${mark.index}:${mark.at}`}
+                x={mark.t}
+                stroke={STAGE_MARK}
+                strokeWidth={1}
+                strokeDasharray="4 4"
+                label={<StageMarkLabel mark={mark} />}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+        {zoom.selection && (
+          <SelectionSummary
+            range={zoom.selection}
+            view={xView}
+            inset={PLOT_INSET}
+            stats={stats}
+            formatValue={(v) => `${v.toFixed(1)}°`}
+            formatTime={(t) => clockTime(t, true)}
+            onClear={zoom.clearSelection}
           />
-        ))}
-        {/* After the traces, so a stage mark reads over the curve it
-            annotates rather than under it. */}
-        {marks.map((mark) => (
-          <ReferenceLine
-            key={`${mark.index}:${mark.at}`}
-            x={mark.t}
-            stroke={STAGE_MARK}
-            strokeWidth={1}
-            strokeDasharray="4 4"
-            label={<StageMarkLabel mark={mark} />}
-          />
-        ))}
-      </LineChart>
-    </ResponsiveContainer>
+        )}
+      </div>
+      {zoomable && (
+        <div className="mt-2 flex items-center justify-center gap-3">
+          <p className="text-[11px] text-zinc-600">
+            Scroll to zoom, drag to pan · over an axis for that axis only · shift-drag to measure
+            a period · double-click to reset
+          </p>
+          {zoom.zoomed && (
+            <button
+              type="button"
+              onClick={zoom.reset}
+              className="rounded-lg border border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:bg-zinc-800"
+            >
+              Reset zoom
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

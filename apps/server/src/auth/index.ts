@@ -380,4 +380,3 @@ export function seedAdminUser(log: FastifyBaseLogger): void {
     );
   }
 }
-
