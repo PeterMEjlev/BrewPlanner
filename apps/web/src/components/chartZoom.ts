@@ -32,6 +32,15 @@ export interface PlotInset {
 const MAX_ZOOM_IN = 100;
 
 /**
+ * Floor on a temperature axis' window, in °C. The probes read to a tenth of a
+ * degree, so a window narrower than a handful of those tenths is zoomed past
+ * what was ever measured: the trace turns into a staircase of sensor quantisation
+ * and the axis labels it in thousandths. Five gridlines' worth of 0.1 °C keeps
+ * the deepest zoom at the resolution the readings actually have.
+ */
+export const MIN_TEMP_ZOOM_SPAN_C = 0.5;
+
+/**
  * Furthest zoom out, as a multiple of the full data extent. Stopping at the data
  * itself would mean the axes could never scale *below* the default view, so a
  * chart can be pulled out to 20× — enough to squash a jittery trace flat.
@@ -92,6 +101,13 @@ export function scaleSpan(
   if (!(full > 0)) return null;
   const curSpan = cur.max - cur.min;
   const span = Math.min(Math.max(curSpan * factor, minSpan), full * MAX_ZOOM_OUT);
+  // The floor can be wider than the window already on screen — a metric that
+  // barely moved across the loaded range. A scroll to zoom in then has nowhere
+  // to go, so the axis falls back to fitting the data rather than *widening*
+  // under a gesture that asked for the opposite. Strictly wider: a window
+  // already sitting on the floor holds it (and keeps drifting towards the
+  // cursor) instead of springing back out to the full extent.
+  if (factor < 1 && span > curSpan) return null;
   if ((curSpan < full && span >= full) || (curSpan > full && span <= full)) return null;
   const anchor = cur.min + frac * curSpan;
   return clampWindow(anchor - frac * span, span, extent);
@@ -172,6 +188,7 @@ export function useChartZoom({
   yExtent,
   plotInset,
   minXSpan = 0,
+  minYSpan = 0,
   resetKey,
 }: {
   xExtent: Span | null;
@@ -179,6 +196,12 @@ export function useChartZoom({
   plotInset: PlotInset;
   /** Floor on the X window (ms), below which zooming in stops. */
   minXSpan?: number;
+  /**
+   * Floor on the Y window, in the metric's own units, below which zooming in
+   * stops — the finest step the sensor resolves, not the finest the maths can
+   * draw (see {@link MIN_TEMP_ZOOM_SPAN_C}).
+   */
+  minYSpan?: number;
   /** Zoom resets whenever this changes — a new metric or range is a new picture. */
   resetKey?: unknown;
 }): ChartZoom {
@@ -207,8 +230,8 @@ export function useChartZoom({
 
   // The listeners are attached once (see below), so they read their inputs from
   // a ref rather than closing over a stale render's values.
-  const latest = useRef({ xExtent, yExtent, plotInset, minXSpan, xDomain, yDomain });
-  latest.current = { xExtent, yExtent, plotInset, minXSpan, xDomain, yDomain };
+  const latest = useRef({ xExtent, yExtent, plotInset, minXSpan, minYSpan, xDomain, yDomain });
+  latest.current = { xExtent, yExtent, plotInset, minXSpan, minYSpan, xDomain, yDomain };
 
   useEffect(() => {
     const el = ref.current;
@@ -242,7 +265,7 @@ export function useChartZoom({
     };
 
     const onWheel = (e: WheelEvent): void => {
-      const { xExtent: xe, yExtent: ye, minXSpan: minX } = latest.current;
+      const { xExtent: xe, yExtent: ye, minXSpan: minX, minYSpan: minY } = latest.current;
       const r = el.getBoundingClientRect();
       const px = e.clientX - r.left;
       const py = e.clientY - r.top;
@@ -262,7 +285,8 @@ export function useChartZoom({
       if (region.y && ye) {
         // Screen Y grows downward, but values grow upward.
         const frac = 1 - clamp01((py - region.top) / region.height);
-        setYDomain((cur) => scaleSpan(cur ?? ye, ye, frac, factor, (ye.max - ye.min) / MAX_ZOOM_IN));
+        const floor = Math.max(minY, (ye.max - ye.min) / MAX_ZOOM_IN);
+        setYDomain((cur) => scaleSpan(cur ?? ye, ye, frac, factor, floor));
       }
     };
 

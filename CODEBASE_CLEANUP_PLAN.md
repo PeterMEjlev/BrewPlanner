@@ -14,7 +14,7 @@ The best remaining consolidation opportunities are:
 2. Extract the common Google service-account JWT/token implementation used by Drive and FCM.
 3. Extract the common lifecycle used by the five Python sensor agents without erasing their hardware-specific behavior.
 4. Centralize update-status wire contracts and status-file/log reading while leaving local and remote update triggers separate.
-5. Consolidate server ingredient unit conversion and the remaining duplicated carbonation-style table.
+5. Consolidate server ingredient unit conversion.
 6. Decompose Dashboard and Settings along stable feature boundaries after their shared logic has moved out.
 
 The remaining confirmed deletions are mostly binary artifacts and unused public/type surface. The checked-in recipe backups, legacy environment alias, CommonJS aliases, and any shared exports potentially consumed by an external brew-system repository still require external verification.
@@ -98,15 +98,7 @@ Both independently locate a gravity device, fetch recent gravity history, poll o
 
 Create `apps/web/src/hooks/useFermentStatus.ts` that returns semantic state (`offline`, `online`, `fermenting`, `complete`) and any needed metadata. Preserve Dashboard's cache behavior explicitly. Let each page continue mapping state to its own classes. Remove both local hooks afterward. Add fake-timer/history tests for every state, remount behavior, failures, and device changes. Risk: **Medium**.
 
-## 5.2 Carbonation style guidelines
-
-**Locations:** `apps/web/src/tools.ts` (`CARBONATION_GUIDELINES`) and `apps/server/src/bruce/tools.ts` (`CARBONATION_STYLES`).
-
-The pure pressure formula is already shared, but the same style ranges remain represented once as numeric objects and once as display strings with slightly different names/order.
-
-Move numeric style ranges into `@checklist/shared`. Keep browser rendering and Bruce sentence/table formatting local. Normalize deliberate naming differences in one mapping or give each shared entry a canonical name plus aliases. Remove `CARBONATION_STYLES` after Bruce consumes shared data. Risk: **Low**.
-
-## 5.3 Google service-account authentication
+## 5.2 Google service-account authentication
 
 **Locations:** `apps/server/src/googleDrive.ts` and `apps/server/src/notify/push.ts`.
 
@@ -114,7 +106,7 @@ Both parse service-account JSON, base64url-encode JWT parts, sign an RSA asserti
 
 Extract a server-internal `googleAuth.ts` that validates service-account credentials and mints/caches a token keyed by credentials and scope. Keep Drive refresh-token support, FCM project selection, optional-feature behavior, logging, and endpoint-specific errors in their callers. Risk: **High**.
 
-## 5.4 Sensor-agent lifecycle
+## 5.3 Sensor-agent lifecycle
 
 **Locations:** all `deploy/agents/*/agent.py` files.
 
@@ -122,7 +114,7 @@ All five repeat timestamping, logging, MAC lookup, authenticated posting, server
 
 Extract `deploy/agents/common.py` or a small deployable package containing lifecycle/network/scheduling primitives with callback-based sensor reads. Keep hardware imports and acquisition local; keep Inkbird command handling separate. Update every copy/install/service path to deploy the shared module. Risk: **High**.
 
-## 5.5 Local and remote update status handling
+## 5.4 Local and remote update status handling
 
 **Locations:** `apps/server/src/system/update.ts`, `system/brewSystemUpdate.ts`, and duplicated web response interfaces.
 
@@ -130,7 +122,7 @@ The server modules repeat status shapes, status-file parsing, and log-tail assem
 
 Move wire response types into `@checklist/shared`. Extract only a server-internal status-file/log utility parameterized by paths and state validation. Keep both trigger workflows and safety rules in their existing modules. Risk: **Medium**.
 
-## 5.6 Ingredient-unit conversion
+## 5.5 Ingredient-unit conversion
 
 **Locations:** `apps/server/src/brewersfriend.ts` and `recipeData.ts`.
 
@@ -138,7 +130,7 @@ Both define grams/count conversion with slightly different accepted types and mi
 
 Extract a common server utility for normalized weight-to-grams and unit/count conversion with an explicit missing-unit policy. Keep miscellaneous volume conversion and import-specific validation in their callers. Test imported and stored recipes across kg/g/lb/oz/count/blank units before deleting local functions. Risk: **Medium**.
 
-## 5.7 Password-visibility icons
+## 5.6 Password-visibility icons
 
 **Locations:** `apps/web/src/pages/Login.tsx` and `SettingsDesktop.tsx`.
 
@@ -237,15 +229,7 @@ The lockfile still contains deprecated transitive packages, including `@esbuild-
 - **Risk:** Medium.
 - **Verify:** fake-timer tests, device-change/remount/failure cases, manual offline/online/fermenting/complete checks.
 
-### Step 2.2 — Share carbonation guideline data
-
-- **Files affected:** shared package, web tools, Bruce tools/tests.
-- **Change:** store numeric ranges once; keep caller-specific formatting and aliases.
-- **Dependencies:** shared export cleanup should settle ownership first.
-- **Risk:** Low.
-- **Verify:** exact ranges/names in Tools UI and Bruce style responses.
-
-### Step 2.3 — Consolidate ingredient conversions
+### Step 2.2 — Consolidate ingredient conversions
 
 - **Files affected:** `brewersfriend.ts`, `recipeData.ts`, new server helper/tests.
 - **Change:** share normalized weight/count conversion; preserve caller-specific missing-unit and volume semantics.
@@ -253,7 +237,7 @@ The lockfile still contains deprecated transitive packages, including `@esbuild-
 - **Risk:** Medium.
 - **Verify:** imported and stored recipe fixtures across every supported unit.
 
-### Step 2.4 — Share password visibility icons
+### Step 2.3 — Share password visibility icons
 
 - **Files affected:** Login, Settings, `components/icons.tsx`.
 - **Change:** move identical SVGs to the icon module and update imports.
@@ -357,7 +341,7 @@ Validate every cleanup as a small change and run the complete matrix at phase bo
 Current green baseline:
 
 - Normal and strict TypeScript checks pass.
-- Shared: 33 tests passed.
+- Shared: 34 tests passed.
 - Bruce: 24 test groups passed.
 - Server: 222 tests passed, zero failures or cancellations.
 - Web: 122 tests passed.
@@ -375,7 +359,6 @@ Current green baseline:
 | Unused schema-derived aliases | `packages/shared/src/index.ts` | Remove | Delete aliases after external search; retain schemas | High in repo | Low–Medium |
 | Internally used public exports | server/web modules in §3.3 | Simplify | Remove export modifiers only | High in repo | Low–Medium |
 | Ferment-status polling | Dashboard and KioskHome | Consolidate | Canonical semantic hook, preserve cache/styling | High | Medium |
-| Carbonation style ranges | web and Bruce tools | Merge | Shared numeric ranges with local formatting | High | Low |
 | Google service auth | Drive and FCM | Consolidate | Scope-aware shared token helper | High | High |
 | Sensor runtime | five Python agents | Consolidate | Shared lifecycle, local hardware reads | High | High |
 | Update status/contracts | two server modules and web API | Consolidate | Shared wire types and status reader only | High | Medium |

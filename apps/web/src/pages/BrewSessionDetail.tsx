@@ -48,7 +48,7 @@ import {
   type SelectionSeries,
   selectionStats,
 } from '../components/chartSelect';
-import { type Span, useChartZoom } from '../components/chartZoom';
+import { MIN_TEMP_ZOOM_SPAN_C, type Span, useChartZoom } from '../components/chartZoom';
 import { DashboardShell } from '../components/DashboardShell';
 import { Select } from '../components/Select';
 import { SheetSection } from '../components/SheetSection';
@@ -1023,6 +1023,8 @@ function RigChart({
     yExtent: zoomable ? yExtent : null,
     plotInset: PLOT_INSET,
     minXSpan: MIN_X_SPAN_MS,
+    // Every trace here is a pot temperature, read to a tenth of a degree.
+    minYSpan: MIN_TEMP_ZOOM_SPAN_C,
   });
 
   // The window actually on screen, handed to the axis as an explicit domain so

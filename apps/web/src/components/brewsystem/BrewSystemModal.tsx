@@ -21,7 +21,7 @@ import {
   type SelectionSeries,
   selectionStats,
 } from '../chartSelect';
-import { type Span, useChartZoom } from '../chartZoom';
+import { MIN_TEMP_ZOOM_SPAN_C, type Span, useChartZoom } from '../chartZoom';
 import { timeAxis } from '../timeAxis';
 import { useBrewSystemLive } from './useBrewSystemLive';
 import { useRigTheme } from './rigTheme';
@@ -238,6 +238,8 @@ export default function BrewSystemModal({ onClose }: { onClose: () => void }): J
     yExtent,
     plotInset: PLOT_INSET,
     minXSpan: MIN_X_SPAN_MS,
+    // Every trace here is a pot temperature, read to a tenth of a degree.
+    minYSpan: MIN_TEMP_ZOOM_SPAN_C,
     resetKey: rangeMs,
   });
 

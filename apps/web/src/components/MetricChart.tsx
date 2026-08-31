@@ -38,7 +38,7 @@ import {
   type SelectionSeries,
   selectionStats,
 } from './chartSelect';
-import { type Span, useChartZoom } from './chartZoom';
+import { MIN_TEMP_ZOOM_SPAN_C, type Span, useChartZoom } from './chartZoom';
 import { type ThinMode, thinForPlot } from './decimate';
 import { setpointChangeLines } from './setpointMarkers';
 import { timeAxis } from './timeAxis';
@@ -46,6 +46,20 @@ import { timeAxis } from './timeAxis';
 /** Metrics measured in °C, so the "Temp chart min span" setting applies. */
 function isTempMetric(metric: string): boolean {
   return metric === 'temp_c' || metric === 'setpoint_c';
+}
+
+/**
+ * How far the value axis may be zoomed in, in the metric's own units — a floor
+ * of about five of the steps the metric is actually reported in. Any narrower
+ * and the zoom is magnifying sensor quantisation rather than the reading: the
+ * trace turns into a staircase and the axis labels a tenth of a degree in
+ * thousandths. Gravity is the one metric read finer than two decimals, at a
+ * point (0.001) a step.
+ */
+function minYSpanFor(metric: string | null): number {
+  if (!metric) return 0;
+  if (isTempMetric(metric)) return MIN_TEMP_ZOOM_SPAN_C;
+  return metric.endsWith('_sg') ? 0.005 : 0.05;
 }
 
 const CHART_MARGIN = { top: 8, right: 16, bottom: 8, left: 0 } as const;
@@ -234,6 +248,7 @@ export default function MetricChart({
     yExtent,
     plotInset: PLOT_INSET,
     minXSpan: MIN_X_SPAN_MS,
+    minYSpan: minYSpanFor(chartMetric),
     resetKey: `${chartMetric ?? ''}:${rangeMs}`,
   });
 
