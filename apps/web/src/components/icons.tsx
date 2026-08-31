@@ -142,7 +142,19 @@ export function FermenterIcon({
   className,
   style,
   strokeWidth = 4.5,
-}: IconProps & { strokeWidth?: number }): JSX.Element {
+  fill = null,
+  title,
+}: IconProps & {
+  strokeWidth?: number;
+  /**
+   * Fills the vessel's interior (body + cone) with a colour — used on the
+   * dashboard to show the beer currently fermenting in it. Null leaves the icon
+   * as plain line art.
+   */
+  fill?: string | null;
+  /** Hover tooltip. Given one, the icon stops being decorative-only. */
+  title?: string;
+}): JSX.Element {
   return (
     <svg
       viewBox="0 0 64 64"
@@ -156,8 +168,19 @@ export function FermenterIcon({
       strokeLinejoin="round"
       className={className ?? 'h-5 w-5'}
       style={style}
-      aria-hidden
+      role={title ? 'img' : undefined}
+      aria-hidden={title ? undefined : true}
     >
+      {title ? <title>{title}</title> : null}
+      {/* Beer inside: the same outline as the lid dome, body sides, and cone
+          below, painted before the strokes so the line art stays crisp on top. */}
+      {fill ? (
+        <path
+          d="M17 18c0-4 6.7-7 15-7s15 3 15 7v18L32 55 17 36Z"
+          fill={fill}
+          stroke="none"
+        />
+      ) : null}
       {/* top port */}
       <path d="M29 6h6M32 6v5" />
       {/* domed lid + cylindrical body */}

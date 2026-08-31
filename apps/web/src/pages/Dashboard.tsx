@@ -542,25 +542,6 @@ function EmptyPanel({ title, body }: { title: string; body: string }): JSX.Eleme
 
 // --- Fermenter command centre -----------------------------------------------
 
-/**
- * A small colour dot beside the FERMENTER title showing the linked recipe's beer
- * style (from the shared keg palette, so a beer wears one colour app-wide). Sized
- * to sit inline with the title; hollow when the style is unrecognised or nothing
- * is linked, so the title never looks broken.
- */
-function BeerStyleDot({ color, label }: { color: string | null; label: string | null }): JSX.Element {
-  return (
-    <span
-      className={`h-3 w-3 shrink-0 rounded-full ${
-        color ? 'ring-1 ring-white/70' : 'border border-zinc-600'
-      }`}
-      style={color ? { backgroundColor: color } : undefined}
-      title={label ? `Fermenting: ${label}` : 'No recipe linked'}
-      aria-hidden
-    />
-  );
-}
-
 function FermenterCommandCenter({
   name,
   devices,
@@ -592,9 +573,9 @@ function FermenterCommandCenter({
 }): JSX.Element {
   const { pressureUnit, fermentStableDays, fermentThresholdSg, tempMinSpanC } = useSettings();
   const colors = useGraphColors();
-  // The beer-style palette (shared with the kegs), so the title dot matches the
-  // linked recipe's colour elsewhere in the app. Hollow when the style is
-  // unrecognised or nothing is linked.
+  // The beer-style palette (shared with the kegs), so the beer inside the
+  // fermenter icon matches the linked recipe's colour elsewhere in the app. The
+  // icon stays empty line art when the style is unrecognised or nothing is linked.
   const kegColors = useKegContentColors();
   const recipeColor = recipe ? getRecipeColor(recipe, kegColors) : null;
   const recipeMatch = recipe ? matchContentOption(recipe.name, recipe.style) : null;
@@ -767,11 +748,15 @@ function FermenterCommandCenter({
     return (
       <article className="flex h-full flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
         <div className="flex shrink-0 items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
-          <FermenterIcon className="h-8 w-8 shrink-0 text-white" strokeWidth={2.6} />
+          <FermenterIcon
+            className="h-8 w-8 shrink-0 text-white"
+            strokeWidth={2.6}
+            fill={recipeColor}
+            title={recipeMatch ? `Fermenting: ${recipeMatch}` : undefined}
+          />
           <div className="min-w-0 flex-1">
             <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-white">
               <span className="truncate">{name}</span>
-              <BeerStyleDot color={recipeColor} label={recipeMatch} />
             </h2>
             {recipe ? (
               <Link
@@ -1107,11 +1092,15 @@ function FermenterCommandCenter({
     <article className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
       <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 px-5 py-4">
         <div className="flex min-w-0 shrink-0 items-center gap-3">
-          <FermenterIcon className="h-11 w-11 shrink-0 text-white" strokeWidth={2.6} />
+          <FermenterIcon
+            className="h-11 w-11 shrink-0 text-white"
+            strokeWidth={2.6}
+            fill={recipeColor}
+            title={recipeMatch ? `Fermenting: ${recipeMatch}` : undefined}
+          />
           <div className="min-w-0">
             <h2 className="flex items-center gap-2 text-base font-semibold uppercase tracking-wide text-white">
               <span className="truncate">{name}</span>
-              <BeerStyleDot color={recipeColor} label={recipeMatch} />
             </h2>
             {/* The beer's name opens its brew sheet — readable by guests too,
                 even though only an admin can change what's in the fermenter. */}
