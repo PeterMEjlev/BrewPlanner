@@ -3840,6 +3840,16 @@ export interface BrewSystemStatus {
   configured: boolean;
   online: boolean;
   state?: BrewSystemState;
+  /**
+   * Whether this hub's logbook has a brew session at `brewing` right now — a
+   * batch being brewed on the rig, as opposed to one already in the fermenter.
+   * It is what gates the brew-stage controls: a stage mark exists to label a
+   * logged session's curve, so with no session there is nothing to mark.
+   *
+   * Read from this server's own database rather than the rig, so it is answered
+   * even when the rig is off (`online: false`) and never depends on the tunnel.
+   */
+  brewSessionActive: boolean;
 }
 
 /**

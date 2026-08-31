@@ -94,6 +94,13 @@ export function BrewingPanel(): JSX.Element {
   // Which part of the brew day is running. null until the rig says — and on a
   // rig too old to track stages it stays null, and the card stays away.
   const [stage, setStage] = useState<BrewStageState | null>(null);
+  // Whether this hub's logbook has a batch at `brewing` — the rig being in use
+  // for a session, not a beer already fermenting. Answered by our own server
+  // from its database, so it survives the rig being off, and it gates the stage
+  // card: with no session there is nothing for a stage mark to belong to.
+  // Starts false so the card opens inert and is enabled by the first poll,
+  // rather than offering a step that turns out to have nowhere to go.
+  const [sessionActive, setSessionActive] = useState(false);
   const [priorityPot, setPriorityPot] = useState<BrewPot>('BK');
   // null = we don't know yet (first poll pending); false = server has no BREW_SYSTEM_URL.
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -175,6 +182,10 @@ export function BrewingPanel(): JSX.Element {
         status = null;
       }
       if (cancelled) return;
+
+      // Ours to answer, not the rig's: kept up to date even on the sweeps where
+      // the rig doesn't pick up, and before the early return below.
+      if (status) setSessionActive(status.brewSessionActive);
 
       if (status && !status.configured) {
         setConfigured(false);
@@ -315,11 +326,18 @@ export function BrewingPanel(): JSX.Element {
     [debouncedApi],
   );
 
-  const handleStageStep = useCallback((delta: 1 | -1) => {
-    lastCommandTime.current = Date.now();
-    quiet(api.brewStageAction(delta > 0 ? 'next' : 'back'));
-    setStage((prev) => (prev ? stepStage(prev, delta) : prev));
-  }, []);
+  const handleStageStep = useCallback(
+    (delta: 1 | -1) => {
+      // The card's chevrons are already disabled without a session; this is the
+      // same rule stated where the write happens, so a future caller can't
+      // mark a stage onto a brew day the logbook has no row for.
+      if (!sessionActive) return;
+      lastCommandTime.current = Date.now();
+      quiet(api.brewStageAction(delta > 0 ? 'next' : 'back'));
+      setStage((prev) => (prev ? stepStage(prev, delta) : prev));
+    },
+    [sessionActive],
+  );
 
   const handlePumpUpdate = useCallback(
     (pumpName: BrewPump, updates: PumpUpdate) => {
@@ -446,7 +464,9 @@ export function BrewingPanel(): JSX.Element {
               accentBlue={rigTheme.accentBlue}
               onUpdate={onUpdateMLT}
             />
-            {stage && <BrewStageCard stage={stage} onStep={handleStageStep} />}
+            {stage && (
+              <BrewStageCard stage={stage} active={sessionActive} onStep={handleStageStep} />
+            )}
           </div>
           <PotCard
             name="HLT"

@@ -21,6 +21,7 @@
  */
 
 import {
+  CARBONATION_GUIDELINE_RANGES,
   DEFAULT_GRAPH_COLORS,
   EMPTIED_KEG_FIELDS,
   KEG_STATE_CONTENTS,
@@ -858,17 +859,21 @@ function hydrometerCorrection(reading: number, sampleC: number, calibrationC: nu
   return `Corrected gravity **${corrected.toFixed(3)}** — read ${sg.toFixed(3)} at ${sampleC} °C on a hydrometer calibrated for ${calibrationC} °C.`;
 }
 
-/** Typical carbonation levels, volumes of CO2, by family of style. */
-const CARBONATION_STYLES: [string, string][] = [
-  ['British ales', '1.5–2.0'],
-  ['Porter and stout', '1.7–2.3'],
-  ['Belgian ales', '1.9–2.4'],
-  ['American ales and lager', '2.2–2.7'],
-  ['European lagers', '2.2–2.7'],
-  ['Lambic', '2.4–2.8'],
-  ['German wheat beer', '3.3–4.5'],
-  ['Fruit lambic', '3.0–4.5'],
+/** Bruce-specific names/order over the shared numeric style ranges. */
+const CARBONATION_STYLES: [string, { min: number; max: number }][] = [
+  ['British ales', CARBONATION_GUIDELINE_RANGES.britishAles],
+  ['Porter and stout', CARBONATION_GUIDELINE_RANGES.porterAndStout],
+  ['Belgian ales', CARBONATION_GUIDELINE_RANGES.belgianAles],
+  ['American ales and lager', CARBONATION_GUIDELINE_RANGES.americanAlesAndLager],
+  ['European lagers', CARBONATION_GUIDELINE_RANGES.europeanLagers],
+  ['Lambic', CARBONATION_GUIDELINE_RANGES.lambic],
+  ['German wheat beer', CARBONATION_GUIDELINE_RANGES.germanWheatBeer],
+  ['Fruit lambic', CARBONATION_GUIDELINE_RANGES.fruitLambic],
 ];
+
+function carbonationRangeText(range: { min: number; max: number }): string {
+  return `${range.min.toFixed(1)}–${range.max.toFixed(1)}`;
+}
 
 function carbonation(volumes: number, kegC: number): string {
   if (volumes <= 0) return 'Volumes of CO2 has to be above zero.';
@@ -1438,9 +1443,11 @@ const TOOLS: Record<string, ToolSpec> = {
             const hit = CARBONATION_STYLES.find(
               ([name]) => name.toLowerCase().includes(wanted) || wanted.includes(name.toLowerCase().split(' ')[0] ?? ''),
             );
-            const table = CARBONATION_STYLES.map(([name, range]) => `${name}: ${range}`).join('; ');
+            const table = CARBONATION_STYLES.map(
+              ([name, range]) => `${name}: ${carbonationRangeText(range)}`,
+            ).join('; ');
             return hit
-              ? `${hit[0]} are usually carbonated at **${hit[1]} volumes** of CO2. Ask which they want, then call this again with co2_volumes and keg_temp_c.`
+              ? `${hit[0]} are usually carbonated at **${carbonationRangeText(hit[1])} volumes** of CO2. Ask which they want, then call this again with co2_volumes and keg_temp_c.`
               : `No style here matches "${style}". The usual ranges, in volumes of CO2: ${table}. Ask which they want, then call this again with the number.`;
           }
           if (volumes == null || kegTemp == null) {

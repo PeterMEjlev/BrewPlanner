@@ -13,6 +13,16 @@
   box-shadow: var(--shadow-card);
 }
 
+/* No brew session in the logbook: the stage is not a thing that can be stepped,
+   because there is no session for a mark to belong to. Dimmed rather than
+   hidden so the panel's layout doesn't jump when a brew starts, and the meta
+   line says why (see BrewStageCard.tsx) so a dead card doesn't read as broken.
+   The chevrons carry their own :disabled dimming, hence the whole-card rule
+   stopping short of them. */
+.inactive .body {
+  opacity: 0.45;
+}
+
 .body {
   flex: 1;
   min-width: 0;

@@ -17,15 +17,27 @@ import { clockTime } from '../../util';
  *
  * The rig owns the stage the way it owns the timer; this card only renders what
  * the panel last polled and hands presses back to it.
+ *
+ * With no brew session running the card goes inert: a stage mark exists to
+ * label a logged session's temperature curve, so with nothing in the logbook to
+ * label there is nothing for the chevrons to do. It stays on screen, dimmed and
+ * saying so, rather than disappearing — the panel is laid out to one screen on
+ * both the kiosk and the phone, and a card that came and went would move the
+ * pumps and the timer under the brewer's hand at the moment a brew starts.
  */
 
 interface BrewStageCardProps {
   stage: BrewStageState;
+  /**
+   * Whether a brew session is being brewed right now (the hub's logbook, not the
+   * rig — see BrewSystemStatus.brewSessionActive). False greys the card out.
+   */
+  active: boolean;
   /** +1 = the stage ahead, -1 = back out of the current one. */
   onStep: (delta: 1 | -1) => void;
 }
 
-function BrewStageCard({ stage, onStep }: BrewStageCardProps): JSX.Element {
+function BrewStageCard({ stage, active, onStep }: BrewStageCardProps): JSX.Element {
   const { stages, index, markers } = stage;
 
   const notStarted = index < 0;
@@ -48,12 +60,17 @@ function BrewStageCard({ stage, onStep }: BrewStageCardProps): JSX.Element {
   const ahead = complete ? null : notStarted ? stages[0] ?? null : stages[index + 1] ?? 'Finish brew';
   const since = enteredAt == null ? null : `${complete ? 'ended' : 'since'} ${clockTime(enteredAt)}`;
 
+  // Why the chevrons are dead, in the line that would otherwise name the stage
+  // ahead — the one place on the card a brewer is already looking for what
+  // happens next.
+  const meta = active ? ahead && `› ${ahead}` : 'No brew session';
+
   return (
-    <div className={styles.stageCard}>
+    <div className={`${styles.stageCard} ${active ? '' : styles.inactive}`}>
       <button
         className={styles.backBtn}
         onClick={() => onStep(-1)}
-        disabled={notStarted}
+        disabled={!active || notStarted}
         aria-label="Previous stage"
       >
         ‹
@@ -64,20 +81,24 @@ function BrewStageCard({ stage, onStep }: BrewStageCardProps): JSX.Element {
           <span className={styles.label}>Brew Stage</span>
           <span className={styles.step}>{step}</span>
         </div>
-        <div className={`${styles.heading} ${notStarted || complete ? styles.headingIdle : ''}`}>
+        <div
+          className={`${styles.heading} ${notStarted || complete || !active ? styles.headingIdle : ''}`}
+        >
           {heading}
         </div>
         <div className={styles.meta}>
-          <span className={styles.ahead}>{ahead && `› ${ahead}`}</span>
-          {since && <span className={styles.since}>{since}</span>}
+          <span className={styles.ahead}>{meta}</span>
+          {active && since && <span className={styles.since}>{since}</span>}
         </div>
       </div>
 
       <button
         className={styles.forwardBtn}
         onClick={() => onStep(1)}
-        disabled={complete}
-        aria-label={complete ? 'Brew complete' : `Next stage: ${ahead ?? ''}`}
+        disabled={!active || complete}
+        aria-label={
+          !active ? 'No brew session' : complete ? 'Brew complete' : `Next stage: ${ahead ?? ''}`
+        }
       >
         ›
       </button>

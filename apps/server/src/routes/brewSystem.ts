@@ -16,6 +16,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { registerAuditHook } from '../audit/hook.js';
 import { requireAdmin, requireAuth } from '../auth/index.js';
+import { brewSessionsInProgress } from '../brewSessions/repo.js';
 import { RIG_TIMEOUT_MS, rigBase, rigGet } from '../brewSystemClient.js';
 import { parse } from './parse.js';
 
@@ -118,13 +119,17 @@ export async function brewSystemRoutes(app: FastifyInstance): Promise<void> {
   // availability envelope. Polled by the dashboard, so failures must be cheap
   // and silent (a powered-off rig is the normal case most of the year).
   app.get('/state', { preHandler: requireAuth }, async () => {
+    // From this server's logbook, not the rig: it has to be answered whether or
+    // not the rig picks up, since it is what tells the panel whether the brew
+    // stage is a thing that can be stepped at all.
+    const brewSessionActive = brewSessionsInProgress().length > 0;
     const base = rigBase();
-    if (!base) return { configured: false, online: false };
+    if (!base) return { configured: false, online: false, brewSessionActive };
     try {
       const state = await rigGet<BrewSystemState>(base, '/api/hardware/state');
-      return { configured: true, online: true, state };
+      return { configured: true, online: true, state, brewSessionActive };
     } catch {
-      return { configured: true, online: false };
+      return { configured: true, online: false, brewSessionActive };
     }
   });
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { carbonationPressure, correctedGravity, dilutedVolumeL } from './brewingTools';
+import {
+  CARBONATION_GUIDELINE_RANGES,
+  carbonationPressure,
+  correctedGravity,
+  dilutedVolumeL,
+} from './brewingTools';
 
 describe('shared brewing calculators', () => {
   it('dilutes by preserving gravity points times volume', () => {
@@ -19,5 +24,11 @@ describe('shared brewing calculators', () => {
     expect(bar).toBeCloseTo(0.68, 2);
     expect(carbonationPressure(2.4, 12).psi).toBeGreaterThan(psi);
     expect(carbonationPressure(0.8, 2).psi).toBeLessThan(0);
+  });
+
+  it('keeps the customary carbonation ranges in one numeric table', () => {
+    expect(CARBONATION_GUIDELINE_RANGES.britishAles).toEqual({ min: 1.5, max: 2.0 });
+    expect(CARBONATION_GUIDELINE_RANGES.germanWheatBeer).toEqual({ min: 3.3, max: 4.5 });
+    expect(Object.keys(CARBONATION_GUIDELINE_RANGES)).toHaveLength(8);
   });
 });

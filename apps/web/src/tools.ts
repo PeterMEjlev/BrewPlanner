@@ -1,5 +1,6 @@
 import {
   BAR_PER_PSI as SHARED_BAR_PER_PSI,
+  CARBONATION_GUIDELINE_RANGES,
   carbonationPressure as calculateCarbonationPressure,
   correctedGravity as calculateCorrectedGravity,
   dilutedVolumeL as calculateDilutedVolumeL,
@@ -109,12 +110,12 @@ export const BAR_PER_PSI = SHARED_BAR_PER_PSI;
  * above, not a rule.
  */
 export const CARBONATION_GUIDELINES: { style: string; min: number; max: number }[] = [
-  { style: 'British style ales', min: 1.5, max: 2.0 },
-  { style: 'Belgian ales', min: 1.9, max: 2.4 },
-  { style: 'American ales and lager', min: 2.2, max: 2.7 },
-  { style: 'Porter, stout', min: 1.7, max: 2.3 },
-  { style: 'European lagers', min: 2.2, max: 2.7 },
-  { style: 'Fruit lambic', min: 3.0, max: 4.5 },
-  { style: 'Lambic', min: 2.4, max: 2.8 },
-  { style: 'German wheat beer', min: 3.3, max: 4.5 },
+  { style: 'British style ales', ...CARBONATION_GUIDELINE_RANGES.britishAles },
+  { style: 'Belgian ales', ...CARBONATION_GUIDELINE_RANGES.belgianAles },
+  { style: 'American ales and lager', ...CARBONATION_GUIDELINE_RANGES.americanAlesAndLager },
+  { style: 'Porter, stout', ...CARBONATION_GUIDELINE_RANGES.porterAndStout },
+  { style: 'European lagers', ...CARBONATION_GUIDELINE_RANGES.europeanLagers },
+  { style: 'Fruit lambic', ...CARBONATION_GUIDELINE_RANGES.fruitLambic },
+  { style: 'Lambic', ...CARBONATION_GUIDELINE_RANGES.lambic },
+  { style: 'German wheat beer', ...CARBONATION_GUIDELINE_RANGES.germanWheatBeer },
 ];

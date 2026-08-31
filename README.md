@@ -201,6 +201,17 @@ screens can't disagree. Those steps stay out of the change history on purpose:
 most of them are pressed on the rig itself and never reach this server, so a log
 of only the remote ones would read as a brew day skipping stages.
 
+The stage card is live only while a brew session is at `brewing`. A stage mark
+exists to label a logged session's temperature curve, so with no session there is
+nothing for one to belong to and the card is dimmed with its chevrons disabled
+(`brewSessionActive` on `GET /api/brew-system/state`, read from this server's own
+logbook so it is answered whether or not the rig picks up). The rig's own card
+follows the same rule from the other side: it asks this server on a slow poll and
+falls back to the session it remembers starting when the answer doesn't arrive,
+so a hub reboot mid-mash can't take the brewer's stage buttons away. Brewing with
+no session — cleaning, a water test, seasoning an element — is unaffected apart
+from having no stages to mark.
+
 The rig also owns how it *looks*. `GET /api/brew-system/config` carries its power
 limits, auto-efficiency curves and theme colours, so recolouring a vessel on the
 rig's own Settings → Theme screen recolours it here too — on this page, on the

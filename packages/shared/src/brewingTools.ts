@@ -1,6 +1,18 @@
 /** Exact conversion: one pound per square inch in bar. */
 export const BAR_PER_PSI = 0.0689476;
 
+/** Canonical carbonation ranges; callers own display names, aliases, and order. */
+export const CARBONATION_GUIDELINE_RANGES = {
+  britishAles: { min: 1.5, max: 2.0 },
+  belgianAles: { min: 1.9, max: 2.4 },
+  americanAlesAndLager: { min: 2.2, max: 2.7 },
+  porterAndStout: { min: 1.7, max: 2.3 },
+  europeanLagers: { min: 2.2, max: 2.7 },
+  fruitLambic: { min: 3.0, max: 4.5 },
+  lambic: { min: 2.4, max: 2.8 },
+  germanWheatBeer: { min: 3.3, max: 4.5 },
+} as const;
+
 /**
  * Final wort volume after diluting from `currentSg` to `targetSg`.
  * Callers own validation because the web form and Bruce intentionally report

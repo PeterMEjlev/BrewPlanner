@@ -53,6 +53,42 @@ describe('GET /api/auth/me', () => {
   });
 });
 
+/**
+ * The brew-stage controls on the Brew System page (and on the rig's own screen,
+ * which asks this server the same question) are gated on this flag: a stage mark
+ * exists to label a logged session's temperature curve, so with nothing at
+ * `brewing` there is nothing for one to belong to and the card goes inert.
+ *
+ * It is answered from this server's logbook, not the rig, which is why it has to
+ * be on the envelope even on the sweeps where there is no rig to reach — the
+ * panel would otherwise lose its stage controls whenever the rig was off.
+ */
+describe('GET /api/brew-system/state', () => {
+  it('says whether a brew session is being brewed, rig or no rig', async () => {
+    const active = async (): Promise<unknown> =>
+      (await app.inject({ method: 'GET', url: '/api/brew-system/state' })).json()
+        .brewSessionActive;
+
+    assert.equal(await active(), false);
+
+    const at = new Date().toISOString();
+    const row = sqlite
+      .prepare(
+        `INSERT INTO brew_sessions (recipe_snapshot, status, brewed_at, created_at, updated_at)
+         VALUES ('{}', 'brewing', ?, ?, ?)`,
+      )
+      .run(at, at, at);
+    assert.equal(await active(), true);
+
+    // Once the wort is in the tank the brewing system is no longer in use — the
+    // batch stays in the logbook for weeks, the brew day is over.
+    sqlite
+      .prepare(`UPDATE brew_sessions SET status = 'fermenting' WHERE id = ?`)
+      .run(row.lastInsertRowid);
+    assert.equal(await active(), false);
+  });
+});
+
 describe('guarded routes', () => {
   it('serves the device list to the LAN kiosk', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/devices' });
