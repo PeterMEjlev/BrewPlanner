@@ -184,6 +184,13 @@ export function useDeviceData(
   const cursors = useRef<Map<string, { key: string; anchor: Reading | null; appendable: boolean }>>(
     new Map(),
   );
+  // The rows currently held, readable from inside a poll without making the
+  // poll depend on them (that would restart the loop on every response). What
+  // it guards is the tail fetch: `history` is rebuilt from the drawn set, so a
+  // metric switched off and back on has no rows left to append to even though
+  // its cursor survived. See loadHistory.
+  const held = useRef(history);
+  held.current = history;
 
   const metric = selected[0] ?? null;
 
@@ -252,12 +259,21 @@ export function useDeviceData(
     // already drawn keeps tailing.
     const loadOne = async (m: string): Promise<{ metric: string; page: Reading[]; append: boolean }> => {
       const key = `${deviceId}:${m}:${rangeMs}`;
-      const held = cursors.current.get(m);
+      const cursor = cursors.current.get(m);
       const { anchor, appendable } =
-        held && held.key === key ? held : { anchor: null, appendable: true };
-      // An anchor that has aged out of the window has nothing left to append to.
+        cursor && cursor.key === key ? cursor : { anchor: null, appendable: true };
+      // An anchor is only good while we still hold the window it points at: it
+      // has to be inside the window (one that has aged out has nothing left to
+      // append to), and the rows it was read for have to still be here. A metric
+      // the brewer switched off had its rows dropped below while its cursor
+      // stayed — tail onto that and the series comes back as the handful of
+      // readings since it left, which a dotless line draws as nothing at all.
       const tailing =
-        !bucketed && appendable && anchor != null && Date.parse(anchor.recordedAt) >= windowStartMs;
+        !bucketed &&
+        appendable &&
+        anchor != null &&
+        (held.current[m]?.length ?? 0) > 0 &&
+        Date.parse(anchor.recordedAt) >= windowStartMs;
 
       const fetchSince = (sinceMs: number): Promise<Reading[]> =>
         api.getDeviceHistory(deviceId, {
@@ -307,11 +323,11 @@ export function useDeviceData(
       // Drop every anchor: one failed leg leaves the whole poll unapplied, and
       // building on a series with a hole in it is worse than re-reading it.
       for (const m of selected) {
-        const held = cursors.current.get(m);
+        const cursor = cursors.current.get(m);
         cursors.current.set(m, {
           key: `${deviceId}:${m}:${rangeMs}`,
           anchor: null,
-          appendable: held?.appendable ?? true,
+          appendable: cursor?.appendable ?? true,
         });
       }
       setError(e instanceof Error ? e.message : 'Failed to load history');
