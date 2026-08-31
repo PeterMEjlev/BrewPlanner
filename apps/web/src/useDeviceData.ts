@@ -46,6 +46,37 @@ export function useFleet(): SharedState<DeviceStatus[]> & { refresh: () => Promi
 }
 
 /**
+ * One device's live status, polled at its own logging cadence — the name,
+ * online state and latest readings, without the history {@link useDeviceData}
+ * also loads.
+ *
+ * For a view that wants the status *beside* a chart rather than instead of one:
+ * the device page's header used to read it off a second `useDeviceData`, which
+ * quietly ran a second history poll — up to 5000 rows a tick — for data it never
+ * drew. Keeps the last status through a transient error, like the series hooks.
+ */
+export function useDeviceStatus(deviceId: number): DeviceStatus | null {
+  const [device, setDevice] = useState<DeviceStatus | null>(null);
+  const pollMs =
+    (device?.reportingIntervalSec ?? 0) > 0 ? device!.reportingIntervalSec * 1000 : DEFAULT_POLL_MS;
+
+  usePoll(
+    async (isStale) => {
+      try {
+        const d = await api.getDevice(deviceId);
+        if (!isStale()) setDevice(d);
+      } catch {
+        // Keep the last known status through a transient failure.
+      }
+    },
+    pollMs,
+    [deviceId],
+  );
+
+  return device;
+}
+
+/**
  * Cadence for the host vitals (the two Pis). Matches the server's own cache
  * window: asking faster only re-serves the same snapshot, and the reading it
  * carries — temperature, uptime, disk — moves far more slowly than a sensor's.
@@ -109,6 +140,69 @@ export function historyWindowQuery(rangeMs: number): { limit: number; buckets?: 
   return rangeMs > RAW_HISTORY_MS
     ? { limit: HISTORY_LIMIT, buckets: HISTORY_BUCKETS }
     : { limit: HISTORY_LIMIT };
+}
+
+/**
+ * Where a metric's last history fetch got to. `key` pins the entry to the series
+ * it was read for (a different device/metric/range invalidates it), `anchor` is
+ * the newest reading held, and `appendable` goes false for a series that turned
+ * out not to support tailing at all. See {@link canTailHistory}.
+ */
+export interface HistoryCursor {
+  key: string;
+  anchor: Reading | null;
+  appendable: boolean;
+}
+
+/**
+ * Whether the next fetch of a series may ask only for the tail since its anchor
+ * instead of re-reading the whole window.
+ *
+ * Every condition here is a way the anchor can stop being something new rows can
+ * be appended *to*:
+ *
+ * - a bucketed window has no tail — every poll re-averages the whole of it, so
+ *   its trailing point moves rather than a new one arriving after it;
+ * - a series that already failed the append check isn't one we can tail (the
+ *   synthesized history a mock sensor serves is regenerated per request, ids and
+ *   all);
+ * - the cursor has to belong to this exact series — device, metric and range;
+ * - the anchor has to still be inside the window, not aged off the back of it;
+ * - and the rows it was read for have to still be held. That last one is the
+ *   subtle one: `history` is rebuilt from the drawn set on every poll, so a
+ *   metric the brewer switched off loses its rows while its cursor survives.
+ *   Tail onto that and the series comes back as the handful of readings since it
+ *   was hidden — which a dotless line draws as nothing at all.
+ */
+export function canTailHistory(opts: {
+  cursor: HistoryCursor | undefined;
+  key: string;
+  heldRows: number;
+  bucketed: boolean;
+  windowStartMs: number;
+}): boolean {
+  const { cursor, key, heldRows, bucketed, windowStartMs } = opts;
+  if (bucketed || heldRows === 0) return false;
+  if (!cursor || cursor.key !== key || !cursor.appendable || !cursor.anchor) return false;
+  return Date.parse(cursor.anchor.recordedAt) >= windowStartMs;
+}
+
+/**
+ * One metric's rows after a poll: the page just fetched merged onto what was
+ * held (when it was a tail fetch), with anything that has aged past the start of
+ * the window dropped. Rows are newest-first, as the API serves them.
+ */
+export function mergeHistoryWindow(
+  held: Reading[],
+  page: Reading[],
+  append: boolean,
+  windowStartMs: number,
+): Reading[] {
+  const kept = append ? held : [];
+  const seen = new Set(kept.map((r) => r.id));
+  const fresh = page.filter((r) => !seen.has(r.id));
+  const merged = fresh.length ? [...fresh, ...kept] : kept;
+  return merged.filter((r) => Date.parse(r.recordedAt) >= windowStartMs);
 }
 
 /** A chart point: epoch milliseconds and the reading at it. */
@@ -177,31 +271,38 @@ export function useDeviceData(
   const [history, setHistory] = useState<Record<string, Reading[]>>({});
   const [error, setError] = useState<string | null>(null);
   // Where the last successful history fetch got to, per metric, so the next one
-  // can ask for the tail instead of the whole window. `key` pins each entry to
-  // the series it was read for — a different device/metric/range invalidates it;
-  // `anchor` is the newest reading held; `appendable` goes false for a series
-  // that turned out not to support tailing at all. See loadHistory.
-  const cursors = useRef<Map<string, { key: string; anchor: Reading | null; appendable: boolean }>>(
-    new Map(),
-  );
-  // The rows currently held, readable from inside a poll without making the
-  // poll depend on them (that would restart the loop on every response). What
-  // it guards is the tail fetch: `history` is rebuilt from the drawn set, so a
-  // metric switched off and back on has no rows left to append to even though
-  // its cursor survived. See loadHistory.
+  // can ask for the tail instead of the whole window (see {@link HistoryCursor}
+  // and loadHistory).
+  const cursors = useRef<Map<string, HistoryCursor>>(new Map());
+  // The rows currently held, readable from inside a poll without making the poll
+  // depend on them — that would restart the loop on every response. Only the
+  // tail decision reads it, and only to check a series still has rows to append
+  // to; see canTailHistory.
   const held = useRef(history);
   held.current = history;
+
+  // The metric this chart is *about* — what it was opened on, or the device's
+  // first. It owns the big value and the left axis whenever it is drawn at all.
+  // Kept aside so switching it off doesn't lose it: hiding the primary has to
+  // hand the role to something else, and without this, switching it back on
+  // would append it to the end of the set and leave the chart permanently
+  // rescaled around whichever metric happened to inherit the role.
+  const preferredPrimary = useRef<string | null>(lockedMetric ?? null);
 
   const metric = selected[0] ?? null;
 
   const setMetric = useCallback((m: string): void => {
+    preferredPrimary.current = m;
     setSelected([m]);
   }, []);
 
   const toggleMetric = useCallback((m: string): void => {
-    setSelected((cur) =>
-      cur.includes(m) ? (cur.length > 1 ? cur.filter((x) => x !== m) : cur) : [...cur, m],
-    );
+    setSelected((cur) => {
+      if (cur.includes(m)) return cur.length > 1 ? cur.filter((x) => x !== m) : cur;
+      // Back at the head if it is the chart's own metric returning, otherwise
+      // overlaid on top of what's already drawn.
+      return m === preferredPrimary.current ? [m, ...cur] : [...cur, m];
+    });
   }, []);
 
   const rangeMs = rangeControl ? rangeControl.get(metric) : internalRangeMs;
@@ -217,11 +318,9 @@ export function useDeviceData(
     try {
       const d = await api.getDevice(deviceId);
       setDevice(d);
-      setSelected((cur) => {
-        if (cur.length > 0) return cur;
-        const first = d.latest[0]?.metric;
-        return first ? [first] : cur;
-      });
+      const first = d.latest[0]?.metric;
+      if (first) preferredPrimary.current ??= first;
+      setSelected((cur) => (cur.length > 0 || !first ? cur : [first]));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load device');
@@ -260,20 +359,14 @@ export function useDeviceData(
     const loadOne = async (m: string): Promise<{ metric: string; page: Reading[]; append: boolean }> => {
       const key = `${deviceId}:${m}:${rangeMs}`;
       const cursor = cursors.current.get(m);
-      const { anchor, appendable } =
-        cursor && cursor.key === key ? cursor : { anchor: null, appendable: true };
-      // An anchor is only good while we still hold the window it points at: it
-      // has to be inside the window (one that has aged out has nothing left to
-      // append to), and the rows it was read for have to still be here. A metric
-      // the brewer switched off had its rows dropped below while its cursor
-      // stayed — tail onto that and the series comes back as the handful of
-      // readings since it left, which a dotless line draws as nothing at all.
-      const tailing =
-        !bucketed &&
-        appendable &&
-        anchor != null &&
-        (held.current[m]?.length ?? 0) > 0 &&
-        Date.parse(anchor.recordedAt) >= windowStartMs;
+      const appendable = cursor && cursor.key === key ? cursor.appendable : true;
+      const tailing = canTailHistory({
+        cursor,
+        key,
+        heldRows: held.current[m]?.length ?? 0,
+        bucketed,
+        windowStartMs,
+      });
 
       const fetchSince = (sinceMs: number): Promise<Reading[]> =>
         api.getDeviceHistory(deviceId, {
@@ -282,11 +375,12 @@ export function useDeviceData(
           ...windowQuery,
         });
 
-      let page = await fetchSince(tailing ? Date.parse(anchor!.recordedAt) : windowStartMs);
+      const anchor = tailing ? cursor!.anchor! : null;
+      let page = await fetchSince(anchor ? Date.parse(anchor.recordedAt) : windowStartMs);
       let append = false;
       let stillAppendable = appendable;
-      if (tailing) {
-        append = page.some((r) => r.id === anchor!.id && r.recordedAt === anchor!.recordedAt);
+      if (anchor) {
+        append = page.some((r) => r.id === anchor.id && r.recordedAt === anchor.recordedAt);
         if (!append) {
           stillAppendable = false;
           page = await fetchSince(windowStartMs);
@@ -311,11 +405,7 @@ export function useDeviceData(
         // brewer switched off stops being held in memory.
         const next: Record<string, Reading[]> = {};
         for (const { metric: m, page, append } of loaded) {
-          const kept = append ? prev[m] ?? [] : [];
-          const seen = new Set(kept.map((r) => r.id));
-          const fresh = page.filter((r) => !seen.has(r.id));
-          const merged = fresh.length ? [...fresh, ...kept] : kept;
-          next[m] = merged.filter((r) => Date.parse(r.recordedAt) >= windowStartMs);
+          next[m] = mergeHistoryWindow(prev[m] ?? [], page, append, windowStartMs);
         }
         return next;
       });

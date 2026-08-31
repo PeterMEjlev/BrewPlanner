@@ -1,6 +1,6 @@
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import MetricChart from '../components/MetricChart';
-import { useDeviceData } from '../useDeviceData';
+import { useDeviceStatus } from '../useDeviceData';
 import { relativeTime } from '../util';
 
 /** Detail view for one device: live status plus a history chart per metric. */
@@ -9,9 +9,9 @@ export function DevicePage(): JSX.Element {
   const [params] = useSearchParams();
   const deviceId = Number(id);
   const initialMetric = params.get('metric') ?? undefined;
-  // The header mirrors the chart's own device fetch; cheap and keeps the header
-  // status/name reactive without threading state out of MetricChart.
-  const { device } = useDeviceData(deviceId, initialMetric);
+  // The header keeps its own status poll rather than threading state out of
+  // MetricChart — status only, so it doesn't also re-fetch the chart's history.
+  const device = useDeviceStatus(deviceId);
 
   return (
     <div className="min-h-full bg-zinc-950 text-zinc-100">
