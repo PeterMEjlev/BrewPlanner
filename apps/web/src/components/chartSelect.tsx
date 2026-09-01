@@ -22,13 +22,20 @@ export interface SelectionSeries {
 export interface SelectionSeriesStats extends SelectionSeries {
   min: number;
   max: number;
+  /**
+   * When each extreme was first recorded, so the card can print the pair in the
+   * order they happened rather than numerically: a period the fridge spent
+   * cooling reads 33.2 → 0.15, not 0.15 – 33.2.
+   */
+  minAt: number;
+  maxAt: number;
   avg: number;
   /** Samples inside the band — a period the sensor slept through has none. */
   count: number;
 }
 
 /**
- * Min, max and mean per trace over `range`.
+ * Min, max, mean and when each extreme was reached, per trace over `range`.
  *
  * Fed the full-resolution rows rather than the thinned ones the chart plots:
  * the drawn curve is bucket-averaged at this zoom, and a summary that quoted its
@@ -45,6 +52,8 @@ export function selectionStats<T>(
     ...s,
     min: Number.POSITIVE_INFINITY,
     max: Number.NEGATIVE_INFINITY,
+    minAt: 0,
+    maxAt: 0,
     sum: 0,
     count: 0,
   }));
@@ -54,8 +63,16 @@ export function selectionStats<T>(
     for (const s of acc) {
       const value = valueOf(row, s.key);
       if (value == null || !Number.isFinite(value)) continue;
-      if (value < s.min) s.min = value;
-      if (value > s.max) s.max = value;
+      // Strictly, so a level the sensor held for hours is dated from the moment
+      // it first reached it rather than the last row that repeated it.
+      if (value < s.min) {
+        s.min = value;
+        s.minAt = t;
+      }
+      if (value > s.max) {
+        s.max = value;
+        s.maxAt = t;
+      }
       s.sum += value;
       s.count += 1;
     }
@@ -99,6 +116,21 @@ export function formatSpan(ms: number): string {
   const days = Math.floor(hours / 24);
   const rest = hours % 24;
   return rest > 0 ? `${days}d ${rest}h` : `${days}d`;
+}
+
+/**
+ * A trace's two extremes over the period, oldest first: which way the curve
+ * moved is the thing being read off a painted band, and a pair sorted by value
+ * would show a four-day crash as "0.15 → 33.20". A trace that never moved is
+ * quoted once rather than as a range against itself.
+ */
+function formatRange(
+  s: SelectionSeriesStats,
+  formatValue: (value: number, series: SelectionSeriesStats) => string,
+): string {
+  if (s.min === s.max) return formatValue(s.min, s);
+  const [first, last] = s.minAt <= s.maxAt ? [s.min, s.max] : [s.max, s.min];
+  return `${formatValue(first, s)} → ${formatValue(last, s)}`;
 }
 
 /**
@@ -148,7 +180,9 @@ export function SelectionSummary({
           <div className="truncate text-xs font-medium tabular-nums text-zinc-200">
             {formatTime(range.min)} → {formatTime(range.max)}
           </div>
-          <div className="text-[11px] text-zinc-500">{formatSpan(range.max - range.min)}</div>
+          <div className="text-sm font-semibold tabular-nums text-zinc-200">
+            {formatSpan(range.max - range.min)}
+          </div>
         </div>
         <button
           type="button"
@@ -171,9 +205,7 @@ export function SelectionSummary({
                 aria-hidden
               />
               <span className="shrink-0 truncate font-medium text-zinc-400">{s.label}</span>
-              <span className="text-zinc-300">
-                {formatValue(s.min, s)} – {formatValue(s.max, s)}
-              </span>
+              <span className="text-zinc-300">{formatRange(s, formatValue)}</span>
               <span className="ml-auto shrink-0 text-zinc-400">avg {formatValue(s.avg, s)}</span>
             </div>
           ))}

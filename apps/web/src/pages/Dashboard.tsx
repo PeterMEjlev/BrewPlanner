@@ -2502,6 +2502,9 @@ function isGravityMetric(metric: string): boolean {
 
 function splitMetric(metric: string): { label: string; unit: string | null } {
   if (isGravityMetric(metric)) return { label: 'Gravity', unit: null };
+  // HVAC is an initialism, not a word `capitalize` can title-case correctly —
+  // the generic fallback below would otherwise read "Hvac state".
+  if (isStateMetric(metric)) return { label: 'HVAC State', unit: null };
   // Cumulative totals read clearer with a "Total" qualifier (e.g. the metric
   // selector buttons next to the instantaneous Flow / Power rates). Units are
   // kept so the "Today" / "All-time" values still format with L / kWh.

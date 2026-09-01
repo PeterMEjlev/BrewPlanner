@@ -53,6 +53,30 @@ describe('selectionStats', () => {
   it('says nothing at all about a period with no samples in it', () => {
     expect(stats({ min: 100, max: 200 })).toEqual([]);
   });
+
+  it('dates each extreme, so a falling trace can be quoted newest-last', () => {
+    // BK climbs across the window and MLT peaks in the middle then falls back:
+    // one reads min-first, the other max-first.
+    const [bk, mlt] = stats({ min: 0, max: 30 });
+    expect(bk).toMatchObject({ min: 20, minAt: 0, max: 100, maxAt: 30 });
+    expect(mlt).toMatchObject({ min: 60, minAt: 0, max: 66, maxAt: 10 });
+  });
+
+  it('dates a held level from the first row that reached it, not the last', () => {
+    const flat = [
+      { t: 0, bk: 5, mlt: null },
+      { t: 10, bk: 5, mlt: null },
+      { t: 20, bk: 5, mlt: null },
+    ];
+    const [bk] = selectionStats(
+      flat,
+      { min: 0, max: 20 },
+      (row) => row.t,
+      SERIES,
+      (row, key) => row[key as 'bk' | 'mlt'],
+    );
+    expect(bk).toMatchObject({ min: 5, max: 5, minAt: 0, maxAt: 0, count: 3 });
+  });
 });
 
 describe('formatSpan', () => {
