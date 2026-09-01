@@ -546,54 +546,64 @@ export default function MetricChart({
         </div>
       )}
 
-      {latestForDisplay && (
-        <div className="mb-6">
-          {isStateMetric(latestForDisplay.metric) ? (
-            <StateBadge value={latestForDisplay.value} size="lg" />
-          ) : (
-            <>
-              <span className="text-5xl font-bold tabular-nums text-zinc-50">
-                {formatValue(latestForDisplay)}
-              </span>
-              {!hasMetricSelector && (
-                <span className="ml-2 text-lg text-zinc-400">
-                  {metricLabel(latestForDisplay.metric)}
-                </span>
+      {/* The reading and the setpoint share a row: the number is a few
+          characters wide and the control is a card of fixed height, so stacking
+          them pushed the chart itself down a whole band for no reason. They fall
+          back to stacking when the card can't fit beside the number. */}
+      {(latestForDisplay || supportsSetpoint) && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          {latestForDisplay && (
+            <div className="min-w-0">
+              {isStateMetric(latestForDisplay.metric) ? (
+                <StateBadge value={latestForDisplay.value} size="lg" />
+              ) : (
+                <>
+                  <span className="text-5xl font-bold tabular-nums text-zinc-50">
+                    {formatValue(latestForDisplay)}
+                  </span>
+                  {!hasMetricSelector && (
+                    <span className="ml-2 text-lg text-zinc-400">
+                      {metricLabel(latestForDisplay.metric)}
+                    </span>
+                  )}
+                </>
               )}
-            </>
+              {chartMetric && visibleExtremes && (
+                <p className="mt-2 text-sm text-zinc-400">
+                  Min{' '}
+                  <span className="font-semibold tabular-nums text-zinc-200">
+                    {formatValue({ metric: chartMetric, value: visibleExtremes.min, recordedAt: '' })}
+                  </span>
+                  {'  ·  Max '}
+                  <span className="font-semibold tabular-nums text-zinc-200">
+                    {formatValue({ metric: chartMetric, value: visibleExtremes.max, recordedAt: '' })}
+                  </span>
+                </p>
+              )}
+              {totalMetric && total != null && (
+                <p className="mt-2 text-sm text-zinc-400">
+                  All-time{' '}
+                  <span className="font-semibold tabular-nums text-zinc-200">
+                    {formatValue({ metric: totalMetric, value: total, recordedAt: '' })}
+                  </span>
+                </p>
+              )}
+            </div>
           )}
-          {chartMetric && visibleExtremes && (
-            <p className="mt-2 text-sm text-zinc-400">
-              Min{' '}
-              <span className="font-semibold tabular-nums text-zinc-200">
-                {formatValue({ metric: chartMetric, value: visibleExtremes.min, recordedAt: '' })}
-              </span>
-              {'  ·  Max '}
-              <span className="font-semibold tabular-nums text-zinc-200">
-                {formatValue({ metric: chartMetric, value: visibleExtremes.max, recordedAt: '' })}
-              </span>
-            </p>
-          )}
-          {totalMetric && total != null && (
-            <p className="mt-2 text-sm text-zinc-400">
-              All-time{' '}
-              <span className="font-semibold tabular-nums text-zinc-200">
-                {formatValue({ metric: totalMetric, value: total, recordedAt: '' })}
-              </span>
-            </p>
-          )}
-        </div>
-      )}
 
-      {supportsSetpoint && (
-        <div className="mb-6 max-w-md">
-          <SetpointControl
-            deviceId={deviceId}
-            setpointC={setpointReading?.value ?? null}
-            pendingC={device?.pendingSetpointC ?? null}
-            onApplied={refresh}
-            variant="compact"
-          />
+          {supportsSetpoint && (
+            // Sized to its own content beside the reading; only a row too narrow
+            // for both gives it the full width it used to have.
+            <div className="w-full max-w-md sm:w-auto">
+              <SetpointControl
+                deviceId={deviceId}
+                setpointC={setpointReading?.value ?? null}
+                pendingC={device?.pendingSetpointC ?? null}
+                onApplied={refresh}
+                variant="compact"
+              />
+            </div>
+          )}
         </div>
       )}
 

@@ -57,6 +57,20 @@ function wheelPixels(e: WheelEvent): number {
   return e.deltaY;
 }
 
+/**
+ * True when a pointer landed on a control floating over the plot rather than on
+ * the plot itself — anything carrying `data-chart-control`, which today means
+ * the selection card's dismiss button (see chartSelect.tsx).
+ *
+ * The gestures are bound to the wrapper those controls sit inside, and a pan
+ * starting under one would capture the pointer to the wrapper; the browser then
+ * retargets the compatibility mouse events, and the click never reaches the
+ * button. So a press on a control is not a gesture, and is left alone.
+ */
+export function isChartControl(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-chart-control]') != null;
+}
+
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
 }
@@ -316,6 +330,7 @@ export function useChartZoom({
     const onPointerDown = (e: PointerEvent): void => {
       // Mouse/pen only: claiming touch drags would break scrolling past the chart.
       if (e.pointerType === 'touch' || e.button !== 0) return;
+      if (isChartControl(e.target)) return;
       const { xExtent: xe, yExtent: ye } = latest.current;
       const r = el.getBoundingClientRect();
       const px = e.clientX - r.left;

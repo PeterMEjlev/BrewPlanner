@@ -184,8 +184,11 @@ export function SelectionSummary({
             {formatSpan(range.max - range.min)}
           </div>
         </div>
+        {/* Claims its own clicks: without the marker the pan gesture on the
+            wrapper underneath swallows the press (see isChartControl). */}
         <button
           type="button"
+          data-chart-control=""
           onClick={onClear}
           aria-label="Clear selection"
           className="pointer-events-auto -mr-1 -mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"
