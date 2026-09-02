@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react';
 import { api } from './api';
 import { canControl, useAuth } from './auth';
 
-/** Stepper bounds (°C) and increment. A 1° step suits both fermenter and brewery. */
-const MIN_C = 0;
+/**
+ * Stepper bounds (°C) and increment. A 1° step suits both fermenter and
+ * brewery. MIN_C matches the server's `setSetpointSchema` floor so the UI
+ * never rejects a value the API would accept.
+ */
+const MIN_C = -10;
 const MAX_C = 35;
 const STEP_C = 1;
 /** Fallback target when a controller hasn't reported a setpoint yet. */
