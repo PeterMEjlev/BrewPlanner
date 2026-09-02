@@ -1101,7 +1101,8 @@ function GraphColorsSection(): JSX.Element {
     >
       <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
         {COLOR_FIELDS.map((f) => (
-          <Row key={f.key} label={f.label}>
+          <div key={f.key} className="flex items-center gap-3 py-2">
+            <div className="w-48 shrink-0 text-sm font-medium text-zinc-200">{f.label}</div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs uppercase tabular-nums text-zinc-500">
                 {draft[f.key]}
@@ -1118,7 +1119,7 @@ function GraphColorsSection(): JSX.Element {
                 className="h-8 w-12 cursor-pointer rounded-md border border-zinc-700 bg-transparent"
               />
             </div>
-          </Row>
+          </div>
         ))}
       </div>
 
@@ -1234,7 +1235,8 @@ function KegContentColorsSection(): JSX.Element {
           const valid = isHexColor(value);
 
           return (
-            <Row key={f.key} label={f.label}>
+            <div key={f.key} className="flex items-center gap-3 py-2">
+              <div className="w-32 shrink-0 text-sm font-medium text-zinc-200">{f.label}</div>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -1275,7 +1277,7 @@ function KegContentColorsSection(): JSX.Element {
                   className="h-8 w-12 cursor-pointer rounded-md border border-zinc-700 bg-transparent"
                 />
               </div>
-            </Row>
+            </div>
           );
         })}
       </div>
