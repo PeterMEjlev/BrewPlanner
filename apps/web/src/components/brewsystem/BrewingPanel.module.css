@@ -83,6 +83,19 @@
   flex-grow: 1;
 }
 
+/* Amber rather than the connection banner's red, and it does not pulse: a
+   failed probe is something to go and fix, not an emergency in progress. */
+.sensorFaultBanner {
+  background: #78350f;
+  border: 2px solid #f59e0b;
+  border-radius: 12px;
+  color: #fde68a;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  padding: 12px 20px;
+  text-align: center;
+}
+
 .connectionBanner {
   background: #7f1d1d;
   border: 2px solid #ef4444;

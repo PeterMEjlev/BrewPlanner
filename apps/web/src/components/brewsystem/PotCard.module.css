@@ -443,3 +443,16 @@
     padding: 12px;
   }
 }
+
+/* Sits under the '--' where the temperature would be, so the card says why it
+   has no reading rather than only that it has none. */
+.sensorFault {
+  color: #fbbf24;
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1.3;
+  margin-top: 4px;
+  max-width: 22ch;
+  text-align: center;
+  text-wrap: balance;
+}

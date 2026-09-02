@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import type { BrewPotAutoEfficiency } from '@checklist/shared';
+import type { BrewPotAutoEfficiency, BrewSensorFault } from '@checklist/shared';
 import styles from './PotCard.module.css';
 import { getTemperatureColor } from './theme';
 
@@ -40,6 +40,8 @@ interface PotCardProps {
   efficiencyCap: number;
   /** Slider gradient start colour (the rig theme's accent blue). */
   accentBlue: string;
+  /** Why this pot has no reading, from the rig. Undefined on an older rig. */
+  sensorFault?: BrewSensorFault;
   onUpdate: (updates: PotUpdate) => void;
 }
 
@@ -52,6 +54,7 @@ function PotCard({
   potMaxWatts,
   efficiencyCap,
   accentBlue,
+  sensorFault,
   onUpdate,
 }: PotCardProps): JSX.Element {
   const [localSV, setLocalSV] = useState(potState.sv || 75);
@@ -97,6 +100,9 @@ function PotCard({
 
   // pv can be null when the sensor fails — show '--' rather than a fake number
   const sensorOk = potState.pv != null;
+  // Why it failed, stated under the '--'. The title attribute below stays for a
+  // mouse, but this view is also used on a phone, where nothing hovers.
+  const sensorFaultDetail = !sensorOk && sensorFault?.active ? sensorFault.detail : null;
   const pvColor = sensorOk ? getTemperatureColor(potState.pv!) : 'var(--color-text-muted)';
   const svColor = getTemperatureColor(localSV);
   const glowIntensity = type !== 'MLT' && potState.heaterOn ? effectiveEfficiency / 100 : 0;
@@ -151,6 +157,9 @@ function PotCard({
           >
             {sensorOk ? `${potState.pv!.toFixed(1)}°` : '--'}
           </div>
+          {sensorFaultDetail && (
+            <div className={styles.sensorFault}>Sensor {sensorFaultDetail}</div>
+          )}
         </div>
         {type !== 'MLT' && potState.regulationEnabled && (
           <div className={styles.svSection}>

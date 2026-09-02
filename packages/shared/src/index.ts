@@ -3826,6 +3826,22 @@ export interface BrewSystemState {
   timer: BrewTimerState;
   /** Absent on a rig that predates brew-system-v3's stage tracking. */
   brewStage?: BrewStageState;
+  /**
+   * Why a pot's temperature is null, per sensor. The rig decides the wording
+   * (see _sensor_fault_report) so its own screen and this one say the same
+   * thing about the same probe. Absent on a rig that predates it, and inactive
+   * for a sensor that is simply reading.
+   */
+  sensorFaults?: { bk: BrewSensorFault; mlt: BrewSensorFault; hlt: BrewSensorFault };
+}
+
+/** One sensor's standing fault. `detail` reads as the tail of "<POT> sensor ...". */
+export interface BrewSensorFault {
+  active: boolean;
+  /** Machine-readable cause, e.g. 'no-presence' | 'absent' | 'crc'. Null when healthy. */
+  reason: string | null;
+  /** What to go and check, in plain English. Null when healthy. */
+  detail: string | null;
 }
 
 export interface BrewAutoEfficiencyStep {

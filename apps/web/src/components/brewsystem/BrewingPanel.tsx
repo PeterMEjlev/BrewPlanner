@@ -5,6 +5,7 @@ import type {
   BrewPump,
   BrewStageState,
   BrewSystemAppSettings,
+  BrewSystemState,
   BrewTimerState,
 } from '@checklist/shared';
 import { api } from '../../api';
@@ -94,6 +95,10 @@ export function BrewingPanel(): JSX.Element {
   // Which part of the brew day is running. null until the rig says — and on a
   // rig too old to track stages it stays null, and the card stays away.
   const [stage, setStage] = useState<BrewStageState | null>(null);
+  // Why a pot is showing '--'. The rig decides the wording so this view and the
+  // rig's own screen say the same thing — which matters most here, because this
+  // is the screen a failed probe usually gets noticed on, away from the rig.
+  const [sensorFaults, setSensorFaults] = useState<BrewSystemState['sensorFaults']>(undefined);
   // Whether this hub's logbook has a batch at `brewing` — the rig being in use
   // for a session, not a beer already fermenting. Answered by our own server
   // from its database, so it survives the rig being off, and it gates the stage
@@ -215,6 +220,7 @@ export function BrewingPanel(): JSX.Element {
         }));
         if (state.timer) setTimerState(state.timer);
         setStage(state.brewStage ?? null);
+        setSensorFaults(state.sensorFaults);
       } else {
         // Rig unreachable (or our server didn't answer) — after a few misses,
         // warn loudly instead of silently showing frozen readings.
@@ -435,6 +441,14 @@ export function BrewingPanel(): JSX.Element {
           {clockTime(frozenSince, true)}. Controls are inactive.
         </div>
       )}
+      {frozenSince == null &&
+        Object.entries(sensorFaults ?? {})
+          .filter(([, fault]) => fault?.active)
+          .map(([pot, fault]) => (
+            <div key={`sensor-${pot}`} className={styles.sensorFaultBanner}>
+              ⚠ {pot.toUpperCase()} sensor {fault.detail}.
+            </div>
+          ))}
       <div className={`${styles.panelBody} ${frozenSince != null ? styles.offline : ''}`}>
         {/* Pot Cards Row - Strict order: BK, MLT, HLT */}
         <div className={styles.potRow}>
@@ -448,6 +462,7 @@ export function BrewingPanel(): JSX.Element {
             efficiencyCap={bkCap}
             accentBlue={rigTheme.accentBlue}
             onUpdate={onUpdateBK}
+            sensorFault={sensorFaults?.bk}
           />
           {/* MLT carries no heater controls, so its column is the short one —
               which is the room the stage card takes on the rig's own panel,
@@ -463,6 +478,7 @@ export function BrewingPanel(): JSX.Element {
               efficiencyCap={100}
               accentBlue={rigTheme.accentBlue}
               onUpdate={onUpdateMLT}
+            sensorFault={sensorFaults?.mlt}
             />
             {stage && (
               <BrewStageCard stage={stage} active={sessionActive} onStep={handleStageStep} />
@@ -478,6 +494,7 @@ export function BrewingPanel(): JSX.Element {
             efficiencyCap={hltCap}
             accentBlue={rigTheme.accentBlue}
             onUpdate={onUpdateHLT}
+            sensorFault={sensorFaults?.hlt}
           />
         </div>
 
